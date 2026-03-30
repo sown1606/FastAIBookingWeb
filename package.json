@@ -1,0 +1,27 @@
+{
+  "name": "fastaibooking",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/api",
+    "apps/admin",
+    "apps/app"
+  ],
+  "scripts": {
+    "dev:api": "npm --workspace @fastaibooking/api run dev",
+    "dev:admin": "npm --workspace @fastaibooking/admin run dev",
+    "dev:app": "npm --workspace @fastaibooking/app run dev",
+    "build:api": "npm --workspace @fastaibooking/api run build",
+    "build:admin": "npm --workspace @fastaibooking/admin run build",
+    "build:app": "npm --workspace @fastaibooking/app run build",
+    "start:api": "npm --workspace @fastaibooking/api run start",
+    "typecheck:api": "npm --workspace @fastaibooking/api run typecheck",
+    "typecheck:admin": "npm --workspace @fastaibooking/admin run typecheck",
+    "typecheck:app": "npm --workspace @fastaibooking/app run typecheck",
+    "migrate": "npm --workspace @fastaibooking/api run prisma:migrate:deploy",
+    "seed": "npm --workspace @fastaibooking/api run prisma:seed",
+    "deploy:ec2": "./infra/scripts/deploy_remote_ec2.sh",
+    "docker:up": "docker compose up -d --build",
+    "docker:down": "docker compose down"
+  }
+}

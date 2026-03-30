@@ -1,0 +1,10 @@
+.git
+.idea
+node_modules
+.env
+.env.*
+!.env.example
+apps/api/dist
+*.log
+README.md
+fastAibooking.pem
