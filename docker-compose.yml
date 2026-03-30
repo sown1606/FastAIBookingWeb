@@ -1,0 +1,119 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: fastaibooking-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DATABASE_NAME:-fastaibooking}
+      POSTGRES_USER: ${DATABASE_USER:-postgres}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-postgres}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER:-postgres} -d ${DATABASE_NAME:-fastaibooking}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - private
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: fastaibooking-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 3000
+      DATABASE_HOST: postgres
+      DATABASE_URL: postgresql://${DATABASE_USER:-postgres}:${DATABASE_PASSWORD:-postgres}@postgres:5432/${DATABASE_NAME:-fastaibooking}
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/health/liveness').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+    networks:
+      - private
+      - public
+
+  admin:
+    build:
+      context: .
+      dockerfile: apps/admin/Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-https://api-new-nail.kendemo.com}
+        VITE_ADMIN_BASE_URL: ${VITE_ADMIN_BASE_URL:-https://admin-new-nail.kendemo.com}
+        VITE_APP_BASE_URL: ${VITE_APP_BASE_URL:-https://app-new-nail.kendemo.com}
+        VITE_APP_NAME: ${VITE_ADMIN_APP_NAME:-FastAIBooking Admin}
+    container_name: fastaibooking-admin
+    restart: unless-stopped
+    expose:
+      - "80"
+    networks:
+      - public
+
+  app:
+    build:
+      context: .
+      dockerfile: apps/app/Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-https://api-new-nail.kendemo.com}
+        VITE_APP_BASE_URL: ${VITE_APP_BASE_URL:-https://app-new-nail.kendemo.com}
+        VITE_ADMIN_BASE_URL: ${VITE_ADMIN_BASE_URL:-https://admin-new-nail.kendemo.com}
+        VITE_APP_NAME: ${VITE_OWNER_APP_NAME:-FastAIBooking}
+    container_name: fastaibooking-app
+    restart: unless-stopped
+    expose:
+      - "80"
+    networks:
+      - public
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: fastaibooking-nginx
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+      admin:
+        condition: service_started
+      app:
+        condition: service_started
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - letsencrypt:/etc/letsencrypt
+      - certbot_webroot:/var/www/certbot
+    networks:
+      - public
+
+  certbot:
+    image: certbot/certbot:latest
+    container_name: fastaibooking-certbot
+    profiles:
+      - tools
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - certbot_webroot:/var/www/certbot
+    networks:
+      - public
+
+volumes:
+  postgres_data:
+  letsencrypt:
+  certbot_webroot:
+
+networks:
+  private:
+    internal: true
+  public:
