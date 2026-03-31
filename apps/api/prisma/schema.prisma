@@ -1,0 +1,661 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  PLATFORM_ADMIN
+  SALON_OWNER
+  STAFF
+  CALL_CENTER_AGENT
+}
+
+enum SalonStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  CANCELED
+}
+
+enum StaffStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum StaffWorkStatus {
+  AVAILABLE
+  ASSIGNED
+  IN_PROGRESS
+  DONE
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELED
+  NO_SHOW
+}
+
+enum AppointmentSource {
+  DASHBOARD
+  AI
+  MANUAL
+  CALL_CENTER
+}
+
+enum ExternalProvider {
+  CALLRAIL
+  AMAZON_CONNECT
+  VERTEX
+}
+
+enum CallSessionStatus {
+  RECEIVED
+  RINGING
+  IN_PROGRESS
+  COMPLETED
+  MISSED
+  FAILED
+  CANCELED
+  VOICEMAIL
+  UNKNOWN
+}
+
+enum BookingAttemptStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  NEEDS_INPUT
+  NO_AVAILABILITY
+}
+
+model User {
+  id                       String                      @id @default(uuid())
+  email                    String                      @unique
+  passwordHash             String
+  fullName                 String
+  phone                    String?
+  role                     Role
+  isEmailVerified          Boolean                     @default(false)
+  isActive                 Boolean                     @default(true)
+  salonId                  String?
+  salon                    Salon?                      @relation("SalonMembers", fields: [salonId], references: [id], onDelete: SetNull)
+  staffId                  String?                     @unique
+  staffProfile             Staff?                      @relation("StaffUser", fields: [staffId], references: [id], onDelete: SetNull)
+  ownedSalon               Salon?                      @relation("SalonOwner")
+  refreshTokens            RefreshToken[]
+  passwordResetTokens      PasswordResetToken[]
+  appointmentsCreated      Appointment[]               @relation("AppointmentCreatedBy")
+  appointmentStatusChanges AppointmentStatusHistory[]  @relation("AppointmentStatusChangedBy")
+  auditLogs                AuditLog[]                  @relation("AuditActor")
+  bookingAttempts          BookingAttempt[]            @relation("BookingAttemptCreatedBy")
+  aiInteractions           AiInteractionLog[]          @relation("AIInteractionCreatedBy")
+  callCenterAssignments    CallCenterSalonAssignment[] @relation("CallCenterAgentAssignments")
+  assignmentsCreated       CallCenterSalonAssignment[] @relation("CallCenterAssignmentCreatedBy")
+  chatMessages             ChatMessage[]               @relation("ChatMessageSender")
+  createdAt                DateTime                    @default(now())
+  updatedAt                DateTime                    @updatedAt
+
+  @@index([salonId])
+}
+
+model Salon {
+  id                          String                      @id @default(uuid())
+  name                        String
+  contactEmail                String?
+  contactPhone                String?
+  originalPhoneNumber         String?
+  customerIncomingPhoneNumber String?
+  notificationPhoneNumber     String?
+  timezone                    String
+  status                      SalonStatus                 @default(PENDING)
+  planName                    String                      @default("starter")
+  subscriptionStatus          SubscriptionStatus          @default(TRIAL)
+  addressLine1                String?
+  addressLine2                String?
+  city                        String?
+  state                       String?
+  postalCode                  String?
+  country                     String                      @default("US")
+  ownerId                     String                      @unique
+  owner                       User                        @relation("SalonOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  members                     User[]                      @relation("SalonMembers")
+  settings                    SalonSetting?
+  subscription                Subscription?
+  staff                       Staff[]
+  services                    Service[]
+  staffServices               StaffService[]
+  businessHours               BusinessHour[]
+  customers                   Customer[]
+  appointments                Appointment[]
+  appointmentServices         AppointmentService[]
+  callSessions                CallSession[]
+  callEvents                  CallEvent[]
+  callTranscripts             CallTranscript[]
+  bookingAttempts             BookingAttempt[]
+  aiInteractionLogs           AiInteractionLog[]
+  integrationConfigs          IntegrationConfig[]
+  billingUsage                BillingUsage[]
+  auditLogs                   AuditLog[]
+  callCenterAssignments       CallCenterSalonAssignment[]
+  alerts                      Alert[]
+  chatMessages                ChatMessage[]
+  workSessions                StaffWorkSession[]
+  staffReminders              StaffReminder[]
+  customerFeedback            CustomerFeedback[]
+  createdAt                   DateTime                    @default(now())
+  updatedAt                   DateTime                    @updatedAt
+
+  @@index([status])
+}
+
+model SalonSetting {
+  id                      String   @id @default(uuid())
+  salonId                 String   @unique
+  salon                   Salon    @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  currency                String   @default("USD")
+  locale                  String   @default("vi-VN")
+  bookingLeadTimeMinutes  Int      @default(0)
+  cancellationPolicy      String?
+  aiForwardingEnabled     Boolean  @default(false)
+  aiTransferRingCount     Int      @default(3)
+  callCenterRoutingNumber String?
+  callCenterRoutingNote   String?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+}
+
+model Subscription {
+  id                 String             @id @default(uuid())
+  salonId            String             @unique
+  salon              Salon              @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  planCode           String             @default("starter")
+  basePriceCents     Int                @default(0)
+  status             SubscriptionStatus @default(TRIAL)
+  currentPeriodStart DateTime           @default(now())
+  currentPeriodEnd   DateTime
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+}
+
+model Staff {
+  id                  String             @id @default(uuid())
+  salonId             String
+  salon               Salon              @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  fullName            String
+  email               String?
+  phone               String?
+  title               String?
+  status              StaffStatus        @default(ACTIVE)
+  currentWorkStatus   StaffWorkStatus    @default(AVAILABLE)
+  activeAppointmentId String?
+  isBookable          Boolean            @default(true)
+  user                User?              @relation("StaffUser")
+  appointments        Appointment[]
+  workSessions        StaffWorkSession[]
+  reminders           StaffReminder[]
+  chatMessages        ChatMessage[]
+  staffServices       StaffService[]
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  @@index([salonId, status])
+}
+
+model Service {
+  id                  String               @id @default(uuid())
+  salonId             String
+  salon               Salon                @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  name                String
+  description         String?
+  durationMinutes     Int
+  priceCents          Int
+  isActive            Boolean              @default(true)
+  appointments        Appointment[]
+  appointmentServices AppointmentService[]
+  staffServices       StaffService[]
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  @@index([salonId, isActive])
+}
+
+model StaffService {
+  id        String   @id @default(uuid())
+  salonId   String
+  salon     Salon    @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  staffId   String
+  staff     Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  serviceId String
+  service   Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([staffId, serviceId])
+  @@index([salonId])
+}
+
+model BusinessHour {
+  id        String   @id @default(uuid())
+  salonId   String
+  salon     Salon    @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  dayOfWeek Int
+  isOpen    Boolean
+  openTime  String?
+  closeTime String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([salonId, dayOfWeek])
+  @@index([salonId])
+}
+
+model Customer {
+  id           String        @id @default(uuid())
+  salonId      String
+  salon        Salon         @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  firstName    String
+  lastName     String
+  email        String?
+  phone        String
+  notes        String?
+  appointments Appointment[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@index([salonId, lastName, firstName])
+  @@index([salonId, phone])
+  @@index([salonId, email])
+}
+
+model Appointment {
+  id                  String                     @id @default(uuid())
+  salonId             String
+  salon               Salon                      @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  customerId          String
+  customer            Customer                   @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  staffId             String
+  staff               Staff                      @relation(fields: [staffId], references: [id], onDelete: Restrict)
+  serviceId           String
+  service             Service                    @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  startTime           DateTime
+  endTime             DateTime
+  durationMinutes     Int                        @default(0)
+  status              AppointmentStatus          @default(SCHEDULED)
+  source              AppointmentSource          @default(DASHBOARD)
+  notes               String?
+  canceledReason      String?
+  feedbackToken       String?                    @unique
+  createdByUserId     String?
+  createdBy           User?                      @relation("AppointmentCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  statusHistory       AppointmentStatusHistory[]
+  bookingAttempts     BookingAttempt[]
+  appointmentServices AppointmentService[]
+  workSessions        StaffWorkSession[]
+  reminders           StaffReminder[]
+  feedback            CustomerFeedback?
+  createdAt           DateTime                   @default(now())
+  updatedAt           DateTime                   @updatedAt
+
+  @@index([salonId, startTime])
+  @@index([staffId, startTime])
+  @@index([customerId, startTime])
+}
+
+model AppointmentService {
+  id              String      @id @default(uuid())
+  salonId         String
+  salon           Salon       @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  appointmentId   String
+  appointment     Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  serviceId       String
+  service         Service     @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  durationMinutes Int
+  priceCents      Int
+  createdAt       DateTime    @default(now())
+
+  @@unique([appointmentId, serviceId])
+  @@index([salonId, appointmentId])
+}
+
+model AppointmentStatusHistory {
+  id              String             @id @default(uuid())
+  appointmentId   String
+  appointment     Appointment        @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  previousStatus  AppointmentStatus?
+  newStatus       AppointmentStatus
+  reason          String?
+  changedByUserId String?
+  changedBy       User?              @relation("AppointmentStatusChangedBy", fields: [changedByUserId], references: [id], onDelete: SetNull)
+  changedAt       DateTime           @default(now())
+
+  @@index([appointmentId, changedAt])
+}
+
+model StaffWorkSession {
+  id              String          @id @default(uuid())
+  salonId         String
+  salon           Salon           @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  staffId         String
+  staff           Staff           @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  appointmentId   String
+  appointment     Appointment     @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  status          StaffWorkStatus @default(IN_PROGRESS)
+  startedAt       DateTime        @default(now())
+  expectedEndAt   DateTime
+  endedAt         DateTime?
+  extendedMinutes Int             @default(0)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([salonId, staffId, status])
+  @@index([appointmentId, startedAt])
+}
+
+model StaffReminder {
+  id            String      @id @default(uuid())
+  salonId       String
+  salon         Salon       @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  staffId       String
+  staff         Staff       @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  appointmentId String
+  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  reminderType  String
+  remindAt      DateTime
+  message       String
+  deliveredAt   DateTime?
+  createdAt     DateTime    @default(now())
+
+  @@index([salonId, staffId, remindAt])
+  @@index([appointmentId, reminderType])
+}
+
+model ChatMessage {
+  id           String    @id @default(uuid())
+  salonId      String
+  salon        Salon     @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  staffId      String
+  staff        Staff     @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  senderUserId String
+  sender       User      @relation("ChatMessageSender", fields: [senderUserId], references: [id], onDelete: Cascade)
+  body         String
+  readAt       DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([salonId, staffId, createdAt])
+  @@index([senderUserId, createdAt])
+}
+
+model Alert {
+  id                String    @id @default(uuid())
+  salonId           String
+  salon             Salon     @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  alertType         String
+  title             String
+  message           String
+  priority          String    @default("NORMAL")
+  notificationPhone String?
+  metadata          Json?
+  readAt            DateTime?
+  createdAt         DateTime  @default(now())
+
+  @@index([salonId, readAt, createdAt])
+  @@index([alertType, createdAt])
+}
+
+model CustomerFeedback {
+  id            String      @id @default(uuid())
+  salonId       String
+  salon         Salon       @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  appointmentId String      @unique
+  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  customerPhone String
+  rating        Int
+  reason        String?
+  createdAt     DateTime    @default(now())
+
+  @@index([salonId, rating, createdAt])
+}
+
+model CallCenterSalonAssignment {
+  id               String   @id @default(uuid())
+  salonId          String
+  salon            Salon    @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  agentUserId      String
+  agent            User     @relation("CallCenterAgentAssignments", fields: [agentUserId], references: [id], onDelete: Cascade)
+  assignedByUserId String?
+  assignedBy       User?    @relation("CallCenterAssignmentCreatedBy", fields: [assignedByUserId], references: [id], onDelete: SetNull)
+  createdAt        DateTime @default(now())
+
+  @@unique([salonId, agentUserId])
+  @@index([agentUserId])
+}
+
+model CallSession {
+  id                String             @id @default(uuid())
+  salonId           String?
+  salon             Salon?             @relation(fields: [salonId], references: [id], onDelete: SetNull)
+  provider          ExternalProvider
+  providerCallId    String
+  providerAccountId String?
+  providerCompanyId String?
+  callerPhone       String?
+  dialedPhone       String?
+  trackingNumber    String?
+  sourceName        String?
+  campaignName      String?
+  status            CallSessionStatus  @default(RECEIVED)
+  startedAt         DateTime?
+  endedAt           DateTime?
+  durationSeconds   Int?
+  transcriptSummary String?
+  bookingResult     Json?
+  failureReason     String?
+  rawPayload        Json?
+  events            CallEvent[]
+  transcripts       CallTranscript[]
+  bookingAttempts   BookingAttempt[]
+  aiInteractions    AiInteractionLog[]
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@unique([provider, providerCallId])
+  @@index([salonId, createdAt])
+  @@index([provider, status])
+}
+
+model CallEvent {
+  id              String             @id @default(uuid())
+  salonId         String?
+  salon           Salon?             @relation(fields: [salonId], references: [id], onDelete: SetNull)
+  callSessionId   String
+  callSession     CallSession        @relation(fields: [callSessionId], references: [id], onDelete: Cascade)
+  provider        ExternalProvider
+  providerEventId String?
+  eventType       String
+  eventTimestamp  DateTime?
+  statusBefore    CallSessionStatus?
+  statusAfter     CallSessionStatus?
+  payload         Json
+  payloadHash     String
+  receivedAt      DateTime           @default(now())
+  processedAt     DateTime?
+  processError    String?
+
+  @@unique([provider, providerEventId])
+  @@unique([callSessionId, payloadHash])
+  @@index([callSessionId, receivedAt])
+  @@index([salonId, receivedAt])
+}
+
+model CallTranscript {
+  id                String             @id @default(uuid())
+  salonId           String?
+  salon             Salon?             @relation(fields: [salonId], references: [id], onDelete: SetNull)
+  callSessionId     String
+  callSession       CallSession        @relation(fields: [callSessionId], references: [id], onDelete: Cascade)
+  transcriptSource  String             @default("unknown")
+  transcriptText    String
+  transcriptSummary String?
+  speakerMap        Json?
+  startedAt         DateTime?
+  endedAt           DateTime?
+  rawPayload        Json?
+  bookingAttempts   BookingAttempt[]
+  aiInteractions    AiInteractionLog[]
+  createdAt         DateTime           @default(now())
+
+  @@index([callSessionId, createdAt])
+  @@index([salonId, createdAt])
+}
+
+model BookingAttempt {
+  id                    String               @id @default(uuid())
+  salonId               String
+  salon                 Salon                @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  callSessionId         String?
+  callSession           CallSession?         @relation(fields: [callSessionId], references: [id], onDelete: SetNull)
+  transcriptId          String?
+  transcript            CallTranscript?      @relation(fields: [transcriptId], references: [id], onDelete: SetNull)
+  appointmentId         String?
+  appointment           Appointment?         @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  status                BookingAttemptStatus @default(PENDING)
+  source                String
+  customerName          String?
+  customerPhone         String?
+  requestedService      String?
+  requestedStaff        String?
+  requestedDateTimeText String?
+  normalizedRequest     Json?
+  alternativeSlots      Json?
+  failureReason         String?
+  rawInput              Json?
+  createdByUserId       String?
+  createdBy             User?                @relation("BookingAttemptCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  aiInteractions        AiInteractionLog[]
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  @@index([salonId, createdAt])
+  @@index([callSessionId, createdAt])
+  @@index([status, createdAt])
+}
+
+model AiInteractionLog {
+  id               String           @id @default(uuid())
+  salonId          String
+  salon            Salon            @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  provider         ExternalProvider
+  model            String?
+  taskType         String
+  requestText      String?
+  requestPayload   Json?
+  responseText     String?
+  responsePayload  Json?
+  parsedOutput     Json?
+  isValid          Boolean          @default(false)
+  validationErrors Json?
+  confidence       Float?
+  callSessionId    String?
+  callSession      CallSession?     @relation(fields: [callSessionId], references: [id], onDelete: SetNull)
+  transcriptId     String?
+  transcript       CallTranscript?  @relation(fields: [transcriptId], references: [id], onDelete: SetNull)
+  bookingAttemptId String?
+  bookingAttempt   BookingAttempt?  @relation(fields: [bookingAttemptId], references: [id], onDelete: SetNull)
+  createdByUserId  String?
+  createdBy        User?            @relation("AIInteractionCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  createdAt        DateTime         @default(now())
+
+  @@index([salonId, createdAt])
+  @@index([callSessionId, createdAt])
+  @@index([bookingAttemptId, createdAt])
+  @@map("AIInteractionLog")
+}
+
+model IntegrationConfig {
+  id          String           @id @default(uuid())
+  salonId     String
+  salon       Salon            @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  provider    ExternalProvider
+  configKey   String
+  configValue String
+  metadata    Json?
+  isActive    Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@unique([provider, salonId, configKey, configValue])
+  @@index([provider, configKey, configValue])
+  @@index([salonId, provider, isActive])
+}
+
+model BillingUsage {
+  id                       String   @id @default(uuid())
+  salonId                  String
+  salon                    Salon    @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  periodStart              DateTime
+  periodEnd                DateTime
+  freeStaffLimit           Int
+  activeStaffCount         Int
+  includedStaffCount       Int
+  billableExtraStaffCount  Int
+  extraStaffUnitPriceCents Int
+  estimatedExtraCostCents  Int
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  @@unique([salonId, periodStart, periodEnd])
+  @@index([salonId, periodStart])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, expiresAt])
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  jti       String    @unique
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, expiresAt])
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  salonId     String?
+  salon       Salon?   @relation(fields: [salonId], references: [id], onDelete: SetNull)
+  actorUserId String?
+  actor       User?    @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  action      String
+  entityType  String
+  entityId    String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([salonId, createdAt])
+  @@index([actorUserId, createdAt])
+}
