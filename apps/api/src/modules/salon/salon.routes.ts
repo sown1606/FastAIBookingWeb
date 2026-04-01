@@ -1,0 +1,99 @@
+import { Router } from "express";
+import { Role } from "@prisma/client";
+import { z } from "zod";
+import { asyncHandler } from "../../middleware/async-handler";
+import { sendSuccess } from "../../utils/response";
+import { validate } from "../../middleware/validate";
+import { requireRoles } from "../../middleware/auth";
+import { isValidUsPhone } from "../../utils/phone";
+import {
+  getSalonProfile,
+  getSalonSettings,
+  updateSalonProfile,
+  updateSalonSettings
+} from "./salon.service";
+
+const optionalUsPhoneSchema = z
+  .string()
+  .min(10)
+  .max(25)
+  .refine((value) => isValidUsPhone(value), "Phone must be a valid US phone number.")
+  .nullable()
+  .optional();
+
+const profileUpdateSchema = z.object({
+  name: z.string().min(2).max(160).optional(),
+  contactEmail: z.string().email().nullable().optional(),
+  contactPhone: optionalUsPhoneSchema,
+  originalPhoneNumber: optionalUsPhoneSchema,
+  customerIncomingPhoneNumber: optionalUsPhoneSchema,
+  notificationPhoneNumber: optionalUsPhoneSchema,
+  timezone: z.string().min(2).max(64).optional(),
+  addressLine1: z.string().max(200).nullable().optional(),
+  addressLine2: z.string().max(200).nullable().optional(),
+  city: z.string().max(120).nullable().optional(),
+  state: z.string().max(120).nullable().optional(),
+  postalCode: z.string().max(20).nullable().optional(),
+  country: z.string().max(2).optional()
+});
+
+const settingsUpdateSchema = z.object({
+  currency: z.string().min(3).max(3).optional(),
+  locale: z.string().min(2).max(16).optional(),
+  bookingLeadTimeMinutes: z.coerce.number().int().nonnegative().optional(),
+  cancellationPolicy: z.string().max(1000).nullable().optional(),
+  aiForwardingEnabled: z.boolean().optional(),
+  aiTransferRingCount: z.coerce.number().int().min(1).max(10).optional(),
+  callCenterRoutingNumber: optionalUsPhoneSchema,
+  callCenterRoutingNote: z.string().max(1000).nullable().optional()
+});
+
+export const salonRouter = Router();
+
+salonRouter.use(requireRoles(Role.SALON_OWNER));
+
+salonRouter.get(
+  "/profile",
+  asyncHandler(async (req, res) => {
+    const salon = await getSalonProfile(req.auth!.salonId!);
+    return sendSuccess(res, {
+      data: salon
+    });
+  })
+);
+
+salonRouter.put(
+  "/profile",
+  validate(profileUpdateSchema),
+  asyncHandler(async (req, res) => {
+    const payload = req.body as z.infer<typeof profileUpdateSchema>;
+    const salon = await updateSalonProfile(req.auth!.salonId!, req.auth!.userId, payload);
+    return sendSuccess(res, {
+      message: "Salon profile updated.",
+      data: salon
+    });
+  })
+);
+
+salonRouter.get(
+  "/settings",
+  asyncHandler(async (req, res) => {
+    const settings = await getSalonSettings(req.auth!.salonId!);
+    return sendSuccess(res, {
+      data: settings
+    });
+  })
+);
+
+salonRouter.put(
+  "/settings",
+  validate(settingsUpdateSchema),
+  asyncHandler(async (req, res) => {
+    const payload = req.body as z.infer<typeof settingsUpdateSchema>;
+    const settings = await updateSalonSettings(req.auth!.salonId!, req.auth!.userId, payload);
+    return sendSuccess(res, {
+      message: "Salon settings updated.",
+      data: settings
+    });
+  })
+);
