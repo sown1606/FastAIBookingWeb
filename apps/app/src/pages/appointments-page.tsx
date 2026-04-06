@@ -1,0 +1,541 @@
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { apiGet, apiPatch, apiPost, extractErrorMessage } from "../lib/api";
+import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
+import { useToast } from "../components/toast";
+import { useAuth } from "../auth/auth-context";
+import { formatDateTime } from "../lib/format";
+import type { Pagination } from "../types";
+import { toDateTimeLocalValue, useFormDialog } from "../components/form-dialog";
+
+interface AppointmentItem {
+  id: string;
+  startTime: string;
+  endTime: string;
+  status: "SCHEDULED" | "CONFIRMED" | "IN_PROGRESS" | "COMPLETED" | "CANCELED" | "NO_SHOW";
+  source: string;
+  durationMinutes: number;
+  notes: string | null;
+  customer: {
+    id: string;
+    firstName: string;
+    lastName: string;
+  };
+  staff: {
+    id: string;
+    fullName: string;
+  };
+  service: {
+    id: string;
+    name: string;
+  };
+  workSessions?: Array<{
+    id: string;
+    status: string;
+    expectedEndAt: string;
+    startedAt: string;
+    extendedMinutes: number;
+  }>;
+}
+
+interface AppointmentsResponse {
+  items: AppointmentItem[];
+  pagination: Pagination;
+}
+
+interface CustomerItem {
+  id: string;
+  firstName: string;
+  lastName: string;
+}
+
+interface StaffItem {
+  id: string;
+  fullName: string;
+}
+
+interface ServiceItem {
+  id: string;
+  name: string;
+  isActive: boolean;
+}
+
+interface CustomersResponse {
+  items: CustomerItem[];
+}
+
+interface StaffReminder {
+  id: string;
+  reminderType: string;
+  remindAt: string;
+  message: string;
+  appointment: AppointmentItem;
+}
+
+const appointmentStatusOptions = [
+  { value: "SCHEDULED", label: "SCHEDULED" },
+  { value: "CONFIRMED", label: "CONFIRMED" },
+  { value: "CANCELED", label: "CANCELED" },
+  { value: "NO_SHOW", label: "NO_SHOW" }
+];
+
+export const AppointmentsPage = () => {
+  const { session } = useAuth();
+  const { notify } = useToast();
+  const { openFormDialog, FormDialog } = useFormDialog();
+
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [appointments, setAppointments] = useState<AppointmentItem[]>([]);
+  const [reminders, setReminders] = useState<StaffReminder[]>([]);
+  const [statusFilter, setStatusFilter] = useState("");
+  const [now, setNow] = useState(Date.now());
+
+  const [customers, setCustomers] = useState<CustomerItem[]>([]);
+  const [staff, setStaff] = useState<StaffItem[]>([]);
+  const [services, setServices] = useState<ServiceItem[]>([]);
+
+  const [form, setForm] = useState({
+    customerId: "",
+    staffId: "",
+    serviceId: "",
+    startTime: ""
+  });
+
+  const isOwner = session?.user.role === "SALON_OWNER";
+
+  const load = async () => {
+    setError("");
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({
+        page: "1",
+        limit: "50"
+      });
+      if (statusFilter) {
+        params.set("status", statusFilter);
+      }
+      const appointmentResponse = await apiGet<AppointmentsResponse>(
+        `/api/v1/appointments?${params.toString()}`
+      );
+      setAppointments(appointmentResponse.items);
+
+      if (isOwner) {
+        const [customerResponse, staffResponse, serviceResponse] = await Promise.all([
+          apiGet<CustomersResponse>("/api/v1/customers?page=1&limit=100"),
+          apiGet<StaffItem[]>("/api/v1/staff?includeInactive=false"),
+          apiGet<ServiceItem[]>("/api/v1/services")
+        ]);
+        setCustomers(customerResponse.items);
+        setStaff(staffResponse);
+        setServices(serviceResponse.filter((item) => item.isActive));
+        setReminders([]);
+      } else {
+        setCustomers([]);
+        setStaff([]);
+        setServices([]);
+        const reminderResult = await apiGet<StaffReminder[]>("/api/v1/staff/me/reminders");
+        setReminders(reminderResult);
+      }
+    } catch (loadError) {
+      setError(extractErrorMessage(loadError));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void load();
+  }, [isOwner, statusFilter]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  const createAppointment = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!isOwner) {
+      return;
+    }
+    try {
+      await apiPost<unknown, unknown>("/api/v1/appointments", {
+        customerId: form.customerId,
+        staffId: form.staffId,
+        serviceId: form.serviceId,
+        startTime: new Date(form.startTime).toISOString(),
+        source: "DASHBOARD"
+      });
+      setForm({
+        customerId: "",
+        staffId: "",
+        serviceId: "",
+        startTime: ""
+      });
+      notify("success", "Đã tạo lịch hẹn.");
+      await load();
+    } catch (createError) {
+      notify("error", extractErrorMessage(createError));
+    }
+  };
+
+  const cancelAppointment = async (appointment: AppointmentItem) => {
+    const values = await openFormDialog({
+      title: "Hủy lịch hẹn",
+      description: `${appointment.customer.firstName} ${appointment.customer.lastName}`,
+      fields: [{ name: "reason", label: "Lý do hủy", type: "textarea", rows: 3 }],
+      initialValues: {
+        reason: "Khách yêu cầu hủy"
+      },
+      confirmLabel: "Hủy lịch"
+    });
+    if (!values) {
+      return;
+    }
+    try {
+      await apiPatch<unknown, { reason?: string }>(`/api/v1/appointments/${appointment.id}/cancel`, {
+        reason: values.reason || undefined
+      });
+      notify("success", "Đã hủy lịch hẹn.");
+      await load();
+    } catch (cancelError) {
+      notify("error", extractErrorMessage(cancelError));
+    }
+  };
+
+  const rescheduleAppointment = async (appointment: AppointmentItem) => {
+    const values = await openFormDialog({
+      title: "Đổi giờ lịch hẹn",
+      description: `${appointment.customer.firstName} ${appointment.customer.lastName}`,
+      fields: [{ name: "startTime", label: "Giờ mới", type: "datetime-local", required: true }],
+      initialValues: {
+        startTime: toDateTimeLocalValue(appointment.startTime)
+      },
+      confirmLabel: "Đổi giờ"
+    });
+    if (!values?.startTime) {
+      return;
+    }
+    try {
+      await apiPatch<unknown, { startTime: string }>(`/api/v1/appointments/${appointment.id}/reschedule`, {
+        startTime: new Date(values.startTime).toISOString()
+      });
+      notify("success", "Đã đổi giờ lịch hẹn.");
+      await load();
+    } catch (rescheduleError) {
+      notify("error", extractErrorMessage(rescheduleError));
+    }
+  };
+
+  const updateStatus = async (appointment: AppointmentItem) => {
+    const values = await openFormDialog({
+      title: "Cập nhật trạng thái",
+      description: "Dùng nút Bắt đầu / Xong cho quy trình làm việc.",
+      fields: [
+        {
+          name: "status",
+          label: "Trạng thái",
+          type: "select",
+          required: true,
+          options: appointmentStatusOptions
+        }
+      ],
+      initialValues: {
+        status: appointment.status
+      },
+      confirmLabel: "Cập nhật"
+    });
+    if (!values?.status) {
+      return;
+    }
+    try {
+      await apiPatch<unknown, { status: string }>(`/api/v1/appointments/${appointment.id}`, {
+        status: values.status
+      });
+      notify("success", "Đã cập nhật trạng thái.");
+      await load();
+    } catch (updateError) {
+      notify("error", extractErrorMessage(updateError));
+    }
+  };
+
+  const startWork = async (appointmentId: string) => {
+    try {
+      await apiPost<unknown, Record<string, never>>(`/api/v1/appointments/${appointmentId}/start`, {});
+      notify("success", "Đã bắt đầu.");
+      await load();
+    } catch (startError) {
+      notify("error", extractErrorMessage(startError));
+    }
+  };
+
+  const extendWork = async (appointmentId: string) => {
+    const values = await openFormDialog({
+      title: "Thêm thời gian",
+      fields: [
+        { name: "minutes", label: "Số phút thêm", type: "number", required: true, min: 1, max: 180 }
+      ],
+      initialValues: {
+        minutes: "10"
+      },
+      confirmLabel: "Thêm"
+    });
+    if (!values?.minutes) {
+      return;
+    }
+    try {
+      await apiPost<unknown, { minutes: number }>(`/api/v1/appointments/${appointmentId}/extend`, {
+        minutes: Number(values.minutes)
+      });
+      notify("success", "Đã thêm thời gian.");
+      await load();
+    } catch (extendError) {
+      notify("error", extractErrorMessage(extendError));
+    }
+  };
+
+  const finishWork = async (appointmentId: string) => {
+    const values = await openFormDialog({
+      title: "Hoàn thành dịch vụ",
+      description: "Xác nhận đã làm xong để gửi SMS đánh giá cho khách.",
+      fields: [],
+      initialValues: {},
+      confirmLabel: "Xác nhận xong"
+    });
+    if (!values) {
+      return;
+    }
+    try {
+      await apiPost<unknown, { confirm: boolean }>(`/api/v1/appointments/${appointmentId}/done`, {
+        confirm: true
+      });
+      notify("success", "Đã hoàn thành. Khách sẽ nhận SMS đánh giá.");
+      await load();
+    } catch (doneError) {
+      notify("error", extractErrorMessage(doneError));
+    }
+  };
+
+  const countdownText = (appointment: AppointmentItem) => {
+    const session = appointment.workSessions?.[0];
+    if (!session || appointment.status !== "IN_PROGRESS") {
+      return "";
+    }
+    const remaining = Math.max(new Date(session.expectedEndAt).getTime() - now, 0);
+    const minutes = Math.floor(remaining / 60000);
+    const seconds = Math.floor((remaining % 60000) / 1000);
+    return `${minutes}:${String(seconds).padStart(2, "0")}`;
+  };
+
+  const groupedByDay = useMemo(() => {
+    const byDay = new Map<string, AppointmentItem[]>();
+    appointments.forEach((appointment) => {
+      const dateKey = new Date(appointment.startTime).toISOString().split("T")[0] ?? "unknown";
+      const list = byDay.get(dateKey) ?? [];
+      list.push(appointment);
+      byDay.set(dateKey, list);
+    });
+    return [...byDay.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  }, [appointments]);
+
+  if (loading) {
+    return <LoadingBlock />;
+  }
+
+  if (error) {
+    return <ErrorBlock message={error} onRetry={load} />;
+  }
+
+  return (
+    <div className="stack">
+      <FormDialog />
+      {isOwner ? (
+        <section className="card">
+          <h2>Tạo lịch hẹn</h2>
+          <form className="form-grid two-columns" onSubmit={createAppointment}>
+            <label className="field">
+              <span>Khách</span>
+              <select
+                value={form.customerId}
+                onChange={(event) => setForm((prev) => ({ ...prev, customerId: event.target.value }))}
+                required
+              >
+                <option value="">Chọn khách</option>
+                {customers.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.firstName} {item.lastName}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span>Nhân viên</span>
+              <select
+                value={form.staffId}
+                onChange={(event) => setForm((prev) => ({ ...prev, staffId: event.target.value }))}
+                required
+              >
+                <option value="">Chọn nhân viên</option>
+                {staff.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.fullName}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span>Dịch vụ</span>
+              <select
+                value={form.serviceId}
+                onChange={(event) => setForm((prev) => ({ ...prev, serviceId: event.target.value }))}
+                required
+              >
+                <option value="">Chọn dịch vụ</option>
+                {services.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span>Giờ bắt đầu</span>
+              <input
+                type="datetime-local"
+                value={form.startTime}
+                onChange={(event) => setForm((prev) => ({ ...prev, startTime: event.target.value }))}
+                required
+              />
+            </label>
+            <div className="form-actions">
+              <button type="submit" className="button-primary">
+                Tạo lịch hẹn
+              </button>
+            </div>
+          </form>
+        </section>
+      ) : null}
+
+      {!isOwner ? (
+        <section className="card">
+          <h2>Nhắc việc</h2>
+          {reminders.length ? (
+            <div className="mobile-list">
+              {reminders.slice(0, 6).map((reminder) => (
+                <article key={reminder.id} className="mobile-item">
+                  <strong>{formatDateTime(reminder.remindAt)}</strong>
+                  <span>{reminder.message}</span>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <EmptyBlock message="Chưa có nhắc việc." />
+          )}
+        </section>
+      ) : null}
+
+      <section className="card">
+        <div className="section-header">
+          <h2>{isOwner ? "Lịch hẹn" : "Lịch của tôi"}</h2>
+          <label className="field compact">
+            <span>Trạng thái</span>
+            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+              <option value="">Tất cả</option>
+              <option value="SCHEDULED">SCHEDULED</option>
+              <option value="CONFIRMED">CONFIRMED</option>
+              <option value="IN_PROGRESS">IN_PROGRESS</option>
+              <option value="COMPLETED">COMPLETED</option>
+              <option value="CANCELED">CANCELED</option>
+              <option value="NO_SHOW">NO_SHOW</option>
+            </select>
+          </label>
+        </div>
+        {groupedByDay.length ? (
+          groupedByDay.map(([day, items]) => (
+            <div key={day} className="stack">
+              <h3>{day}</h3>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Giờ</th>
+                      <th>Khách</th>
+                      <th>Nhân viên</th>
+                      <th>Dịch vụ</th>
+                      <th>Trạng thái</th>
+                      <th>Nguồn</th>
+                      <th>Thao tác</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map((item) => (
+                      <tr key={item.id}>
+                        <td>{formatDateTime(item.startTime)}</td>
+                        <td>
+                          {item.customer.firstName} {item.customer.lastName}
+                        </td>
+                        <td>{item.staff.fullName}</td>
+                        <td>{item.service.name}</td>
+                        <td>
+                          {item.status}
+                          {countdownText(item) ? <div className="timer-pill">{countdownText(item)}</div> : null}
+                        </td>
+                        <td>{item.source}</td>
+                        <td>
+                          <div className="inline-actions">
+                            {isOwner ? (
+                              <>
+                                <button type="button" className="button-secondary" onClick={() => void updateStatus(item)}>
+                                  Trạng thái
+                                </button>
+                                <button
+                                  type="button"
+                                  className="button-secondary"
+                                  onClick={() => void rescheduleAppointment(item)}
+                                >
+                                  Đổi giờ
+                                </button>
+                                <button
+                                  type="button"
+                                  className="button-secondary"
+                                  onClick={() => void cancelAppointment(item)}
+                                >
+                                  Hủy
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                {item.status !== "IN_PROGRESS" &&
+                                item.status !== "COMPLETED" &&
+                                item.status !== "CANCELED" ? (
+                                  <button type="button" className="button-primary" onClick={() => startWork(item.id)}>
+                                    Bắt đầu
+                                  </button>
+                                ) : null}
+                                {item.status === "IN_PROGRESS" ? (
+                                  <>
+                                    <button type="button" className="button-secondary" onClick={() => void extendWork(item.id)}>
+                                      Thêm giờ
+                                    </button>
+                                    <button type="button" className="button-primary" onClick={() => void finishWork(item.id)}>
+                                      Xong
+                                    </button>
+                                  </>
+                                ) : null}
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))
+        ) : (
+          <EmptyBlock message={isOwner ? "Chưa có lịch hẹn." : "Bạn chưa có lịch hẹn."} />
+        )}
+      </section>
+    </div>
+  );
+};
