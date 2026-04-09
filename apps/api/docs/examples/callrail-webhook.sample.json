@@ -1,0 +1,17 @@
+{
+  "event_type": "call.completed",
+  "event_id": "evt_20260401_0001",
+  "call_id": "cr_call_123456789",
+  "account_id": "callrail_account_123",
+  "company_id": "callrail_company_456",
+  "status": "completed",
+  "customer_phone_number": "+1 (555) 010-1010",
+  "tracking_phone_number": "+1 (555) 020-2020",
+  "source_name": "Google Ads",
+  "campaign_name": "Spring Nails Promo",
+  "start_time": "2026-04-01T14:05:00Z",
+  "end_time": "2026-04-01T14:18:00Z",
+  "duration_seconds": 780,
+  "transcript": "Hi, my name is Jane Smith. I want a Gel Manicure with Emma Kim on 2026-04-03T15:00:00Z. My phone is +15550101010.",
+  "transcript_summary": "Caller requested Gel Manicure with Emma Kim at 3:00 PM UTC on April 3, 2026."
+}
