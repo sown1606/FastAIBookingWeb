@@ -30,6 +30,7 @@ interface SalonSettings {
   cancellationPolicy: string | null;
   aiForwardingEnabled: boolean;
   aiTransferRingCount: number;
+  callCenterEnabled: boolean;
   callCenterRoutingNumber: string | null;
   callCenterRoutingNote: string | null;
 }
@@ -66,6 +67,7 @@ export const SalonProfilePage = () => {
     cancellationPolicy: "",
     aiForwardingEnabled: false,
     aiTransferRingCount: "3",
+    callCenterEnabled: false,
     callCenterRoutingNumber: "",
     callCenterRoutingNote: ""
   });
@@ -102,6 +104,7 @@ export const SalonProfilePage = () => {
         cancellationPolicy: settingsResult.cancellationPolicy ?? "",
         aiForwardingEnabled: settingsResult.aiForwardingEnabled,
         aiTransferRingCount: String(settingsResult.aiTransferRingCount),
+        callCenterEnabled: settingsResult.callCenterEnabled,
         callCenterRoutingNumber: formatUsPhoneInput(settingsResult.callCenterRoutingNumber ?? ""),
         callCenterRoutingNote: settingsResult.callCenterRoutingNote ?? ""
       });
@@ -165,6 +168,7 @@ export const SalonProfilePage = () => {
         cancellationPolicy: settingsForm.cancellationPolicy || null,
         aiForwardingEnabled: settingsForm.aiForwardingEnabled,
         aiTransferRingCount: Number(settingsForm.aiTransferRingCount),
+        callCenterEnabled: settingsForm.callCenterEnabled,
         callCenterRoutingNumber: settingsForm.callCenterRoutingNumber || null,
         callCenterRoutingNote: settingsForm.callCenterRoutingNote || null
       });
@@ -346,6 +350,11 @@ export const SalonProfilePage = () => {
       <section className="card">
         <h2>{t("profile.settingsTitle")}</h2>
         <form className="form-grid two-columns" onSubmit={saveSettings}>
+          <div className="settings-panel">
+            <div>
+              <h3>{t("profile.businessSettings")}</h3>
+              <p className="muted">{t("profile.businessSettingsHint")}</p>
+            </div>
           <label className="field">
             <span>{t("profile.currency")}</span>
             <select
@@ -401,6 +410,13 @@ export const SalonProfilePage = () => {
               }
             />
           </label>
+          </div>
+
+          <div className="settings-panel">
+            <div>
+              <h3>{t("profile.aiSettings")}</h3>
+              <p className="muted">{t("profile.aiSettingsHint")}</p>
+            </div>
           <label className="field checkbox-row">
             <span>{t("profile.aiForwarding")}</span>
             <input
@@ -413,6 +429,7 @@ export const SalonProfilePage = () => {
                 }))
               }
             />
+            <small>{t("profile.aiForwardingHint")}</small>
           </label>
           <label className="field">
             <span>{t("profile.ringCount")}</span>
@@ -428,6 +445,28 @@ export const SalonProfilePage = () => {
                 }))
               }
             />
+            <small>{t("profile.ringCountHint")}</small>
+          </label>
+          </div>
+
+          <div className="settings-panel">
+            <div>
+              <h3>{t("profile.callCenterSettings")}</h3>
+              <p className="muted">{t("profile.callCenterSettingsHint")}</p>
+            </div>
+          <label className="field checkbox-row">
+            <span>{t("profile.callCenterEnabled")}</span>
+            <input
+              type="checkbox"
+              checked={settingsForm.callCenterEnabled}
+              onChange={(event) =>
+                setSettingsForm((prev) => ({
+                  ...prev,
+                  callCenterEnabled: event.target.checked
+                }))
+              }
+            />
+            <small>{t("profile.callCenterEnabledHint")}</small>
           </label>
           <label className="field">
             <span>{t("profile.routingNumber")}</span>
@@ -458,6 +497,7 @@ export const SalonProfilePage = () => {
               }
             />
           </label>
+          </div>
           <div className="form-actions">
             <button type="submit" className="button-primary">
               {t("profile.saveSettings")}

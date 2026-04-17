@@ -2,6 +2,8 @@ import { FormEvent, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiPost, extractErrorMessage } from "../lib/api";
 import { useToast } from "../components/toast";
+import { countryOptions, timezoneOptions } from "../lib/form-options";
+import { formatUsPhoneInput, validateOptionalUsPhone } from "../lib/phone";
 
 interface CreateSalonResponse {
   id: string;
@@ -44,6 +46,17 @@ export const SalonCreatePage = () => {
       setError("Salon and owner required fields must be completed.");
       return;
     }
+    const phoneValues = [
+      form.contactPhone,
+      form.originalPhoneNumber,
+      form.customerIncomingPhoneNumber,
+      form.notificationPhoneNumber,
+      form.ownerPhone
+    ];
+    if (!phoneValues.every(validateOptionalUsPhone)) {
+      setError("Please enter valid US phone numbers.");
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -80,19 +93,34 @@ export const SalonCreatePage = () => {
 
   return (
     <section className="card">
-      <h2>Create salon</h2>
+      <div>
+        <p className="eyebrow">FastAIBooking Admin</p>
+        <h2>Create salon</h2>
+        <p className="muted">Create the salon profile, routing phones, and owner login in one flow.</p>
+      </div>
       <form className="form-grid two-columns" onSubmit={onSubmit}>
+        <div className="form-panel">
+          <div>
+            <h3>Salon profile</h3>
+            <p className="muted">Core business details used across owner, staff, and call operations.</p>
+          </div>
         <label className="field">
           <span>Salon name *</span>
           <input value={form.name} onChange={(event) => onChange("name", event.target.value)} required />
         </label>
         <label className="field">
           <span>Timezone *</span>
-          <input
+          <select
             value={form.timezone}
             onChange={(event) => onChange("timezone", event.target.value)}
             required
-          />
+          >
+            {timezoneOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
         </label>
         <label className="field">
           <span>Salon email</span>
@@ -106,38 +134,53 @@ export const SalonCreatePage = () => {
           <span>Salon phone</span>
           <input
             type="tel"
-            inputMode="numeric"
+            inputMode="tel"
+            placeholder="(212) 555-0100"
             value={form.contactPhone}
-            onChange={(event) => onChange("contactPhone", event.target.value)}
+            onChange={(event) => onChange("contactPhone", formatUsPhoneInput(event.target.value))}
           />
+          <small>US format, for example (212) 555-0100</small>
         </label>
         <label className="field">
           <span>Original salon phone</span>
           <input
             type="tel"
-            inputMode="numeric"
+            inputMode="tel"
+            placeholder="(212) 555-0100"
             value={form.originalPhoneNumber}
-            onChange={(event) => onChange("originalPhoneNumber", event.target.value)}
+            onChange={(event) => onChange("originalPhoneNumber", formatUsPhoneInput(event.target.value))}
           />
+          <small>Used when calls should ring the salon directly.</small>
         </label>
         <label className="field">
           <span>Customer incoming phone</span>
           <input
             type="tel"
-            inputMode="numeric"
+            inputMode="tel"
+            placeholder="(212) 555-0100"
             value={form.customerIncomingPhoneNumber}
-            onChange={(event) => onChange("customerIncomingPhoneNumber", event.target.value)}
+            onChange={(event) => onChange("customerIncomingPhoneNumber", formatUsPhoneInput(event.target.value))}
           />
+          <small>Tracking or public number customers call.</small>
         </label>
         <label className="field">
           <span>Notification phone</span>
           <input
             type="tel"
-            inputMode="numeric"
+            inputMode="tel"
+            placeholder="(212) 555-0100"
             value={form.notificationPhoneNumber}
-            onChange={(event) => onChange("notificationPhoneNumber", event.target.value)}
+            onChange={(event) => onChange("notificationPhoneNumber", formatUsPhoneInput(event.target.value))}
           />
+          <small>Used for urgent salon alerts.</small>
         </label>
+        </div>
+
+        <div className="form-panel">
+          <div>
+            <h3>Address</h3>
+            <p className="muted">Location data for operations and local reporting.</p>
+          </div>
         <label className="field">
           <span>Address line 1</span>
           <input value={form.addressLine1} onChange={(event) => onChange("addressLine1", event.target.value)} />
@@ -156,10 +199,21 @@ export const SalonCreatePage = () => {
         </label>
         <label className="field">
           <span>Country</span>
-          <input value={form.country} onChange={(event) => onChange("country", event.target.value)} />
+          <select value={form.country} onChange={(event) => onChange("country", event.target.value)}>
+            {countryOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
         </label>
+        </div>
 
-        <h3 className="section-title">Owner account</h3>
+        <div className="form-panel">
+          <div>
+            <h3>Owner account</h3>
+            <p className="muted">This login becomes the salon owner workspace account.</p>
+          </div>
         <label className="field">
           <span>Owner full name *</span>
           <input
@@ -181,10 +235,12 @@ export const SalonCreatePage = () => {
           <span>Owner phone</span>
           <input
             type="tel"
-            inputMode="numeric"
+            inputMode="tel"
+            placeholder="(212) 555-0100"
             value={form.ownerPhone}
-            onChange={(event) => onChange("ownerPhone", event.target.value)}
+            onChange={(event) => onChange("ownerPhone", formatUsPhoneInput(event.target.value))}
           />
+          <small>US format, for example (212) 555-0100</small>
         </label>
         <label className="field">
           <span>Owner password *</span>
@@ -196,6 +252,7 @@ export const SalonCreatePage = () => {
             minLength={8}
           />
         </label>
+        </div>
         {error ? <div className="form-error">{error}</div> : null}
         <div className="form-actions">
           <button type="submit" className="button-primary" disabled={submitting}>

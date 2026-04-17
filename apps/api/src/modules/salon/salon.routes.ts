@@ -44,6 +44,7 @@ const settingsUpdateSchema = z.object({
   cancellationPolicy: z.string().max(1000).nullable().optional(),
   aiForwardingEnabled: z.boolean().optional(),
   aiTransferRingCount: z.coerce.number().int().min(1).max(10).optional(),
+  callCenterEnabled: z.boolean().optional(),
   callCenterRoutingNumber: optionalUsPhoneSchema,
   callCenterRoutingNote: z.string().max(1000).nullable().optional()
 });

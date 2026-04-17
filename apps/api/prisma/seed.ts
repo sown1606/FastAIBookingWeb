@@ -157,6 +157,7 @@ const run = async (): Promise<void> => {
       bookingLeadTimeMinutes: 30,
       aiForwardingEnabled: true,
       aiTransferRingCount: 3,
+      callCenterEnabled: true,
       callCenterRoutingNumber: "+12125550190"
     },
     create: {
@@ -166,6 +167,7 @@ const run = async (): Promise<void> => {
       bookingLeadTimeMinutes: 30,
       aiForwardingEnabled: true,
       aiTransferRingCount: 3,
+      callCenterEnabled: true,
       callCenterRoutingNumber: "+12125550190"
     }
   });

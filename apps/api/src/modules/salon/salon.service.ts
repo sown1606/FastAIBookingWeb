@@ -2,6 +2,7 @@ import { prisma } from "../../db/prisma";
 import { createAuditLog } from "../../lib/audit";
 import { AppError } from "../../lib/errors";
 import { requireUsPhone } from "../../utils/phone";
+import { buildSalonRoutingSummary } from "./routing-summary";
 
 interface UpdateSalonProfileInput {
   name?: string;
@@ -26,6 +27,7 @@ interface UpdateSalonSettingsInput {
   cancellationPolicy?: string | null;
   aiForwardingEnabled?: boolean;
   aiTransferRingCount?: number;
+  callCenterEnabled?: boolean;
   callCenterRoutingNumber?: string | null;
   callCenterRoutingNote?: string | null;
 }
@@ -108,7 +110,10 @@ export const getSalonSettings = async (salonId: string) => {
   if (!settings) {
     throw new AppError("Salon settings not found.", 404, "SALON_SETTINGS_NOT_FOUND");
   }
-  return settings;
+  return {
+    ...settings,
+    routingSummary: buildSalonRoutingSummary(settings)
+  };
 };
 
 export const updateSalonSettings = async (
@@ -134,6 +139,7 @@ export const updateSalonSettings = async (
       cancellationPolicy: data.cancellationPolicy,
       aiForwardingEnabled: data.aiForwardingEnabled ?? false,
       aiTransferRingCount: data.aiTransferRingCount ?? 3,
+      callCenterEnabled: data.callCenterEnabled ?? false,
       callCenterRoutingNumber: data.callCenterRoutingNumber,
       callCenterRoutingNote: data.callCenterRoutingNote
     },
@@ -151,5 +157,8 @@ export const updateSalonSettings = async (
     metadata: data
   });
 
-  return settings;
+  return {
+    ...settings,
+    routingSummary: buildSalonRoutingSummary(settings)
+  };
 };

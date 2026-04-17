@@ -25,7 +25,8 @@ body,
 body {
   font-family: "Segoe UI", "SF Pro Text", "Helvetica Neue", sans-serif;
   color: var(--text);
-  background: #edf3ef;
+  background:
+    linear-gradient(180deg, #f8fbfa 0%, #edf3ef 100%);
 }
 
 a {
@@ -70,6 +71,7 @@ p {
   font-weight: 700;
   display: block;
   margin-bottom: 12px;
+  letter-spacing: 0;
 }
 
 .nav-links {
@@ -132,6 +134,7 @@ p {
   padding: 16px;
   display: grid;
   gap: 12px;
+  box-shadow: 0 8px 24px rgba(18, 36, 30, 0.06);
 }
 
 .card-grid {
@@ -142,6 +145,14 @@ p {
 
 .stat-card strong {
   font-size: 1.6rem;
+}
+
+.eyebrow {
+  color: var(--primary);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
 }
 
 .muted {
@@ -179,6 +190,20 @@ p {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
+.form-panel {
+  grid-column: 1 / -1;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.form-panel > div:first-child {
+  grid-column: 1 / -1;
+}
+
 .field {
   display: grid;
   gap: 6px;
@@ -187,6 +212,11 @@ p {
 
 .field.compact {
   min-width: 200px;
+}
+
+.field small {
+  color: var(--muted);
+  font-size: 0.8rem;
 }
 
 .field input,
@@ -210,6 +240,24 @@ p {
   display: flex;
   gap: 8px;
   align-items: center;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.status-pill.success {
+  border-color: rgba(15, 122, 69, 0.24);
+  background: #e8f6ee;
+  color: var(--success);
 }
 
 .button-primary,
@@ -338,16 +386,20 @@ pre {
   display: grid;
   place-items: center;
   padding: 24px;
+  background:
+    linear-gradient(120deg, rgba(7, 74, 64, 0.95), rgba(11, 111, 95, 0.72)),
+    linear-gradient(45deg, rgba(240, 111, 97, 0.24), rgba(255, 255, 255, 0.08));
 }
 
 .auth-card {
   width: min(460px, 100%);
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.72);
   border-radius: 8px;
   padding: 24px;
   display: grid;
   gap: 12px;
+  box-shadow: 0 22px 60px rgba(9, 34, 30, 0.26);
 }
 
 .toast-stack {
@@ -462,5 +514,24 @@ pre {
 
   .page-content {
     padding: 16px 14px 28px;
+  }
+}
+
+@media (min-width: 760px) {
+  .form-panel {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .topbar,
+  .topbar-actions,
+  .section-header {
+    align-items: stretch;
+  }
+
+  .button-primary,
+  .button-secondary {
+    width: 100%;
   }
 }

@@ -53,6 +53,15 @@ interface CustomerResponse {
 interface SalonSettings {
   aiForwardingEnabled: boolean;
   aiTransferRingCount: number;
+  callCenterEnabled: boolean;
+  callCenterRoutingNumber: string | null;
+  routingSummary: {
+    mode:
+      | "SALON_PHONE_ONLY"
+      | "AI_FORWARDING_ACTIVE"
+      | "CALL_CENTER_ENABLED"
+      | "AI_WITH_CALL_CENTER_ESCALATION";
+  };
 }
 
 export const DashboardPage = () => {
@@ -138,6 +147,24 @@ export const DashboardPage = () => {
       .slice(0, 8);
   }, [appointments]);
 
+  const routingMode = settings?.routingSummary.mode ?? "SALON_PHONE_ONLY";
+  const routingTitle = {
+    SALON_PHONE_ONLY: t("dashboard.routingSalonOnly"),
+    AI_FORWARDING_ACTIVE: t("dashboard.routingAiOnly"),
+    CALL_CENTER_ENABLED: t("dashboard.routingCallCenter"),
+    AI_WITH_CALL_CENTER_ESCALATION: t("dashboard.routingMixed")
+  }[routingMode];
+  const routingDescription = {
+    SALON_PHONE_ONLY: t("dashboard.routingSalonOnlyHint"),
+    AI_FORWARDING_ACTIVE: t("dashboard.routingAiOnlyHint", {
+      count: settings?.aiTransferRingCount ?? 3
+    }),
+    CALL_CENTER_ENABLED: t("dashboard.routingCallCenterHint"),
+    AI_WITH_CALL_CENTER_ESCALATION: t("dashboard.routingMixedHint", {
+      count: settings?.aiTransferRingCount ?? 3
+    })
+  }[routingMode];
+
   if (loading) {
     return <LoadingBlock />;
   }
@@ -168,16 +195,48 @@ export const DashboardPage = () => {
           <div className="dashboard-hero-copy">
             <p className="eyebrow">{t("app.name")}</p>
             <h2>
-              {settings?.aiForwardingEnabled
-                ? t("dashboard.ownerHeroTitleAi")
-                : t("dashboard.ownerHeroTitlePhone")}
+              {routingTitle}
             </h2>
             <p className="muted">
-              {t("dashboard.ringCount", { count: settings?.aiTransferRingCount ?? 3 })}
+              {routingDescription}
             </p>
-            <button type="button" className="button-primary" onClick={toggleAi}>
-              {settings?.aiForwardingEnabled ? t("dashboard.toggleAiOff") : t("dashboard.toggleAiOn")}
-            </button>
+            <div className="inline-actions">
+              <button type="button" className="button-primary" onClick={toggleAi}>
+                {settings?.aiForwardingEnabled ? t("dashboard.toggleAiOff") : t("dashboard.toggleAiOn")}
+              </button>
+              <Link to="/salon-profile" className="button-secondary">
+                {t("dashboard.manageRouting")}
+              </Link>
+            </div>
+          </div>
+        </section>
+        <section className="card routing-status-card">
+          <div className="section-header">
+            <div>
+              <p className="eyebrow">{t("dashboard.routingStatus")}</p>
+              <h2>{routingTitle}</h2>
+            </div>
+            <Link to="/salon-profile" className="button-secondary">
+              {t("profile.saveSettings")}
+            </Link>
+          </div>
+          <div className="metrics-grid">
+            <div>
+              <span className="muted">{t("profile.aiForwarding")}</span>
+              <strong>{settings?.aiForwardingEnabled ? t("common.statusOn") : t("common.statusOff")}</strong>
+            </div>
+            <div>
+              <span className="muted">{t("profile.ringCount")}</span>
+              <strong>{settings?.aiTransferRingCount ?? 3}</strong>
+            </div>
+            <div>
+              <span className="muted">{t("profile.callCenterEnabled")}</span>
+              <strong>{settings?.callCenterEnabled ? t("common.statusOn") : t("common.statusOff")}</strong>
+            </div>
+            <div>
+              <span className="muted">{t("profile.routingNumber")}</span>
+              <strong>{settings?.callCenterRoutingNumber ?? t("common.none")}</strong>
+            </div>
           </div>
         </section>
         <section className="card-grid">

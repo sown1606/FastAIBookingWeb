@@ -74,6 +74,18 @@ export const DashboardPage = () => {
 
   return (
     <div className="stack">
+      <section className="card">
+        <div className="section-header">
+          <div>
+            <p className="eyebrow">FastAIBooking Admin</p>
+            <h2>Vận hành nền tảng</h2>
+            <p className="muted">Theo dõi tiệm, chủ tiệm, lịch hẹn và các luồng tổng đài đang chạy.</p>
+          </div>
+          <Link to="/salons/new" className="button-primary">
+            Tạo tiệm
+          </Link>
+        </div>
+      </section>
       <section className="card-grid">
         <article className="card stat-card">
           <h3>Tổng số tiệm</h3>
@@ -84,8 +96,8 @@ export const DashboardPage = () => {
           <strong>{metrics.activeSalons}</strong>
         </article>
         <article className="card stat-card">
-          <h3>Chủ tiệm</h3>
-          <strong>{metrics.totalOwners}</strong>
+          <h3>Tiệm tạm dừng</h3>
+          <strong>{metrics.suspendedSalons}</strong>
         </article>
         <article className="card stat-card">
           <h3>Lịch hẹn</h3>

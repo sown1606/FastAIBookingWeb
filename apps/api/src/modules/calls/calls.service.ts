@@ -10,6 +10,7 @@ import { prisma } from "../../db/prisma";
 import { createAuditLog } from "../../lib/audit";
 import { AppError } from "../../lib/errors";
 import { createSalonAlert } from "../alerts/alerts.service";
+import { buildSalonRoutingSummary } from "../salon/routing-summary";
 import { CallRailProviderAdapter, normalizePhoneForMatching } from "./providers/callrail.provider";
 
 interface ListCallsInput {
@@ -407,7 +408,10 @@ export const buildCallRoutingPlan = async (input: {
 
   const settings = salon.settings;
   const livePersonRequested = isLivePersonRequest(input);
-  if (livePersonRequested) {
+  const callCenterEnabled = settings?.callCenterEnabled ?? false;
+  const routingSummary = buildSalonRoutingSummary(settings);
+
+  if (livePersonRequested && callCenterEnabled) {
     const assignedAgent = salon.callCenterAssignments.find((assignment) => assignment.agent.phone);
     const transferNumber =
       settings?.callCenterRoutingNumber ?? assignedAgent?.agent.phone ?? env.CALL_CENTER_DEFAULT_PHONE ?? null;
@@ -432,7 +436,18 @@ export const buildCallRoutingPlan = async (input: {
       transferNumber,
       callRailFlowId: env.CALLRAIL_LIVE_PERSON_FLOW_ID ?? null,
       assignedAgent: assignedAgent?.agent ?? null,
-      reason: "LIVE_PERSON_REQUEST"
+      reason: "LIVE_PERSON_REQUEST",
+      routingSummary
+    };
+  }
+
+  if (livePersonRequested) {
+    return {
+      salonId: salon.id,
+      routeType: "SALON_ORIGINAL_PHONE",
+      transferNumber: salon.originalPhoneNumber ?? salon.contactPhone ?? env.CALLRAIL_TARGET_NUMBER ?? null,
+      reason: "LIVE_PERSON_REQUEST_CALL_CENTER_DISABLED",
+      routingSummary
     };
   }
 
@@ -443,7 +458,8 @@ export const buildCallRoutingPlan = async (input: {
       transferAfterRings: settings.aiTransferRingCount,
       callRailFlowId: env.CALLRAIL_AI_FLOW_ID ?? null,
       trackingNumber: salon.customerIncomingPhoneNumber ?? env.CALLRAIL_TRACKING_NUMBER ?? null,
-      reason: "AI_FORWARDING_ON"
+      reason: "AI_FORWARDING_ON",
+      routingSummary
     };
   }
 
@@ -451,7 +467,8 @@ export const buildCallRoutingPlan = async (input: {
     salonId: salon.id,
     routeType: "SALON_ORIGINAL_PHONE",
     transferNumber: salon.originalPhoneNumber ?? salon.contactPhone ?? env.CALLRAIL_TARGET_NUMBER ?? null,
-    reason: "AI_FORWARDING_OFF"
+    reason: "AI_FORWARDING_OFF",
+    routingSummary
   };
 };
 

@@ -67,7 +67,8 @@ import {
   replaceSalonCallCenterAssignmentsForAdmin,
   replaceSalonIntegrationsForAdmin,
   setSalonStatusForAdmin,
-  updateSalonForAdmin
+  updateSalonForAdmin,
+  updateSalonSettingsForAdmin
 } from "./admin.service";
 
 const loginSchema = z.object({
@@ -155,6 +156,18 @@ const updateSalonSchema = z.object({
   state: z.string().max(120).nullable().optional(),
   postalCode: z.string().max(20).nullable().optional(),
   country: z.string().max(2).optional()
+});
+
+const salonSettingsSchema = z.object({
+  currency: z.string().min(3).max(3).optional(),
+  locale: z.string().min(2).max(16).optional(),
+  bookingLeadTimeMinutes: z.coerce.number().int().nonnegative().optional(),
+  cancellationPolicy: z.string().max(1000).nullable().optional(),
+  aiForwardingEnabled: z.boolean().optional(),
+  aiTransferRingCount: z.coerce.number().int().min(1).max(10).optional(),
+  callCenterEnabled: z.boolean().optional(),
+  callCenterRoutingNumber: optionalUsPhoneSchema,
+  callCenterRoutingNote: z.string().max(1000).nullable().optional()
 });
 
 const salonStatusSchema = z.object({
@@ -489,6 +502,21 @@ adminRouter.post(
     return sendSuccess(res, {
       message: "Salon status updated.",
       data: salon
+    });
+  })
+);
+
+adminRouter.put(
+  "/salons/:salonId/settings",
+  validate(salonIdSchema, "params"),
+  validate(salonSettingsSchema),
+  asyncHandler(async (req, res) => {
+    const { salonId } = req.params as z.infer<typeof salonIdSchema>;
+    const payload = req.body as z.infer<typeof salonSettingsSchema>;
+    const settings = await updateSalonSettingsForAdmin(salonId, req.auth!.userId, payload);
+    return sendSuccess(res, {
+      message: "Salon settings updated.",
+      data: settings
     });
   })
 );

@@ -15,6 +15,7 @@ import { hashPassword } from "../../lib/password";
 import { requireUsPhone } from "../../utils/phone";
 import { getCurrentBillingPeriod } from "../../utils/date";
 import { calculateStaffBillingUsage, refreshBillingUsageForSalon } from "../billing/billing.service";
+import { buildSalonRoutingSummary } from "../salon/routing-summary";
 
 interface ListSalonsInput {
   page: number;
@@ -64,6 +65,18 @@ interface UpdateSalonInputForAdmin {
   state?: string | null;
   postalCode?: string | null;
   country?: string;
+}
+
+interface UpdateSalonSettingsInputForAdmin {
+  currency?: string;
+  locale?: string;
+  bookingLeadTimeMinutes?: number;
+  cancellationPolicy?: string | null;
+  aiForwardingEnabled?: boolean;
+  aiTransferRingCount?: number;
+  callCenterEnabled?: boolean;
+  callCenterRoutingNumber?: string | null;
+  callCenterRoutingNote?: string | null;
 }
 
 interface UpsertIntegrationConfigInput {
@@ -211,6 +224,12 @@ export const getSalonDetailForAdmin = async (salonId: string) => {
 
   return {
     ...salon,
+    settings: salon.settings
+      ? {
+          ...salon.settings,
+          routingSummary: buildSalonRoutingSummary(salon.settings)
+        }
+      : null,
     metrics: {
       activeStaffCount: staffCount,
       activeServiceCount: serviceCount,
@@ -482,6 +501,59 @@ export const updateSalonForAdmin = async (
   });
 
   return getSalonDetailForAdmin(salonId);
+};
+
+export const updateSalonSettingsForAdmin = async (
+  salonId: string,
+  actorUserId: string,
+  input: UpdateSalonSettingsInputForAdmin
+) => {
+  const salon = await prisma.salon.findUnique({
+    where: { id: salonId },
+    select: { id: true }
+  });
+  if (!salon) {
+    throw new AppError("Salon not found.", 404, "SALON_NOT_FOUND");
+  }
+
+  const data = {
+    ...input,
+    callCenterRoutingNumber: normalizeOptionalPhone(
+      input.callCenterRoutingNumber,
+      "Call center routing phone"
+    )
+  };
+
+  const settings = await prisma.salonSetting.upsert({
+    where: { salonId },
+    create: {
+      salonId,
+      currency: data.currency,
+      locale: data.locale,
+      bookingLeadTimeMinutes: data.bookingLeadTimeMinutes ?? 0,
+      cancellationPolicy: data.cancellationPolicy,
+      aiForwardingEnabled: data.aiForwardingEnabled ?? false,
+      aiTransferRingCount: data.aiTransferRingCount ?? 3,
+      callCenterEnabled: data.callCenterEnabled ?? false,
+      callCenterRoutingNumber: data.callCenterRoutingNumber,
+      callCenterRoutingNote: data.callCenterRoutingNote
+    },
+    update: data
+  });
+
+  await createAuditLog({
+    salonId,
+    actorUserId,
+    action: "ADMIN_UPDATED_SALON_SETTINGS",
+    entityType: "SalonSetting",
+    entityId: settings.id,
+    metadata: data
+  });
+
+  return {
+    ...settings,
+    routingSummary: buildSalonRoutingSummary(settings)
+  };
 };
 
 export const setSalonStatusForAdmin = async (

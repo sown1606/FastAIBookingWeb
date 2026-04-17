@@ -34,8 +34,11 @@ export const LoginPage = () => {
   return (
     <div className="auth-page">
       <div className="auth-card">
-        <h1>{import.meta.env.VITE_APP_NAME}</h1>
-        <p className="muted">Cổng quản trị nền tảng</p>
+        <div>
+          <p className="eyebrow">FastAIBooking Platform</p>
+          <h1>{import.meta.env.VITE_APP_NAME ?? "FastAIBooking Admin"}</h1>
+          <p className="muted">Cổng quản trị nền tảng, tiệm nail và tổng đài.</p>
+        </div>
         <form onSubmit={onSubmit} className="form-grid">
           <label className="field">
             <span>Email</span>
@@ -62,6 +65,10 @@ export const LoginPage = () => {
             {submitting ? "Đang đăng nhập..." : "Đăng nhập"}
           </button>
         </form>
+        <div className="mobile-item">
+          <strong>Tài khoản demo</strong>
+          <span className="muted">admin@fastaibooking.local / Admin123!</span>
+        </div>
       </div>
     </div>
   );

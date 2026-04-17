@@ -171,6 +171,7 @@ model SalonSetting {
   cancellationPolicy      String?
   aiForwardingEnabled     Boolean  @default(false)
   aiTransferRingCount     Int      @default(3)
+  callCenterEnabled       Boolean  @default(false)
   callCenterRoutingNumber String?
   callCenterRoutingNote   String?
   createdAt               DateTime @default(now())

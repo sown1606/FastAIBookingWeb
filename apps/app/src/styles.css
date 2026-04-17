@@ -266,6 +266,20 @@ textarea:focus-visible {
   grid-template-columns: 1fr;
 }
 
+.settings-panel {
+  grid-column: 1 / -1;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.settings-panel > div:first-child {
+  grid-column: 1 / -1;
+}
+
 .form-section-title {
   grid-column: 1 / -1;
   padding-top: 4px;
@@ -690,6 +704,10 @@ pre {
   font-size: 1.75rem;
 }
 
+.routing-status-card .metrics-grid strong {
+  overflow-wrap: anywhere;
+}
+
 .eyebrow {
   color: var(--primary);
   font-weight: 800;
@@ -984,6 +1002,10 @@ pre {
   }
 
   .form-grid.two-columns {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .settings-panel {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 

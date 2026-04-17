@@ -12,6 +12,27 @@ import { useToast } from "../components/toast";
 import { formatCurrencyCents, formatDateTime } from "../lib/format";
 import type { Pagination } from "../types";
 import { toDateTimeLocalValue, useFormDialog } from "../components/form-dialog";
+import { countryOptions, currencyOptions, localePreferenceOptions, timezoneOptions } from "../lib/form-options";
+import { formatUsPhoneInput, validateOptionalUsPhone } from "../lib/phone";
+
+interface SalonSettings {
+  currency: string;
+  locale: string;
+  bookingLeadTimeMinutes: number;
+  cancellationPolicy: string | null;
+  aiForwardingEnabled: boolean;
+  aiTransferRingCount: number;
+  callCenterEnabled: boolean;
+  callCenterRoutingNumber: string | null;
+  callCenterRoutingNote: string | null;
+  routingSummary: {
+    mode:
+      | "SALON_PHONE_ONLY"
+      | "AI_FORWARDING_ACTIVE"
+      | "CALL_CENTER_ENABLED"
+      | "AI_WITH_CALL_CENTER_ESCALATION";
+  };
+}
 
 interface SalonDetail {
   id: string;
@@ -36,11 +57,7 @@ interface SalonDetail {
     email: string;
     phone: string | null;
   };
-  settings: {
-    currency: string;
-    locale: string;
-    bookingLeadTimeMinutes: number;
-  } | null;
+  settings: SalonSettings | null;
   subscription: {
     planCode: string;
     status: string;
@@ -193,6 +210,13 @@ const appointmentStatusOptions = [
   { value: "NO_SHOW", label: "NO_SHOW" }
 ];
 
+const routingModeLabels: Record<SalonSettings["routingSummary"]["mode"], string> = {
+  SALON_PHONE_ONLY: "Salon phone only",
+  AI_FORWARDING_ACTIVE: "AI forwarding active",
+  CALL_CENTER_ENABLED: "Call center enabled",
+  AI_WITH_CALL_CENTER_ESCALATION: "AI with call center escalation"
+};
+
 const createDefaultHours = (): BusinessHour[] => [
   { dayOfWeek: 0, isOpen: false, openTime: null, closeTime: null },
   { dayOfWeek: 1, isOpen: true, openTime: "09:00", closeTime: "18:00" },
@@ -228,6 +252,17 @@ export const SalonDetailPage = () => {
     state: "",
     postalCode: "",
     country: "US"
+  });
+  const [settingsForm, setSettingsForm] = useState({
+    currency: "USD",
+    locale: "vi-VN",
+    bookingLeadTimeMinutes: "0",
+    cancellationPolicy: "",
+    aiForwardingEnabled: false,
+    aiTransferRingCount: "3",
+    callCenterEnabled: false,
+    callCenterRoutingNumber: "",
+    callCenterRoutingNote: ""
   });
   const [integrations, setIntegrations] = useState<IntegrationConfig[]>([]);
   const [staff, setStaff] = useState<StaffItem[]>([]);
@@ -315,10 +350,10 @@ export const SalonDetailPage = () => {
       setProfileForm({
         name: salonDetail.name,
         contactEmail: salonDetail.contactEmail ?? "",
-        contactPhone: salonDetail.contactPhone ?? "",
-        originalPhoneNumber: salonDetail.originalPhoneNumber ?? "",
-        customerIncomingPhoneNumber: salonDetail.customerIncomingPhoneNumber ?? "",
-        notificationPhoneNumber: salonDetail.notificationPhoneNumber ?? "",
+        contactPhone: formatUsPhoneInput(salonDetail.contactPhone ?? ""),
+        originalPhoneNumber: formatUsPhoneInput(salonDetail.originalPhoneNumber ?? ""),
+        customerIncomingPhoneNumber: formatUsPhoneInput(salonDetail.customerIncomingPhoneNumber ?? ""),
+        notificationPhoneNumber: formatUsPhoneInput(salonDetail.notificationPhoneNumber ?? ""),
         timezone: salonDetail.timezone,
         status: salonDetail.status,
         subscriptionStatus: salonDetail.subscriptionStatus,
@@ -328,6 +363,17 @@ export const SalonDetailPage = () => {
         state: salonDetail.state ?? "",
         postalCode: salonDetail.postalCode ?? "",
         country: salonDetail.country ?? "US"
+      });
+      setSettingsForm({
+        currency: salonDetail.settings?.currency ?? "USD",
+        locale: salonDetail.settings?.locale ?? "vi-VN",
+        bookingLeadTimeMinutes: String(salonDetail.settings?.bookingLeadTimeMinutes ?? 0),
+        cancellationPolicy: salonDetail.settings?.cancellationPolicy ?? "",
+        aiForwardingEnabled: salonDetail.settings?.aiForwardingEnabled ?? false,
+        aiTransferRingCount: String(salonDetail.settings?.aiTransferRingCount ?? 3),
+        callCenterEnabled: salonDetail.settings?.callCenterEnabled ?? false,
+        callCenterRoutingNumber: formatUsPhoneInput(salonDetail.settings?.callCenterRoutingNumber ?? ""),
+        callCenterRoutingNote: salonDetail.settings?.callCenterRoutingNote ?? ""
       });
       setIntegrations(integrationItems);
       setStaff(staffItems);
@@ -358,6 +404,16 @@ export const SalonDetailPage = () => {
     if (!salonId) {
       return;
     }
+    const phoneValues = [
+      profileForm.contactPhone,
+      profileForm.originalPhoneNumber,
+      profileForm.customerIncomingPhoneNumber,
+      profileForm.notificationPhoneNumber
+    ];
+    if (!phoneValues.every(validateOptionalUsPhone)) {
+      notify("error", "Please enter valid US phone numbers.");
+      return;
+    }
     try {
       const updated = await apiPatch<SalonDetail, unknown>(`/api/v1/admin/salons/${salonId}`, {
         name: profileForm.name,
@@ -378,6 +434,34 @@ export const SalonDetailPage = () => {
       });
       setSalon(updated);
       notify("success", "Salon profile updated.");
+    } catch (saveError) {
+      notify("error", extractErrorMessage(saveError));
+    }
+  };
+
+  const saveSettings = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!salonId) {
+      return;
+    }
+    if (!validateOptionalUsPhone(settingsForm.callCenterRoutingNumber)) {
+      notify("error", "Please enter a valid US call center phone number.");
+      return;
+    }
+    try {
+      const updated = await apiPut<SalonSettings, unknown>(`/api/v1/admin/salons/${salonId}/settings`, {
+        currency: settingsForm.currency,
+        locale: settingsForm.locale,
+        bookingLeadTimeMinutes: Number(settingsForm.bookingLeadTimeMinutes),
+        cancellationPolicy: settingsForm.cancellationPolicy || null,
+        aiForwardingEnabled: settingsForm.aiForwardingEnabled,
+        aiTransferRingCount: Number(settingsForm.aiTransferRingCount),
+        callCenterEnabled: settingsForm.callCenterEnabled,
+        callCenterRoutingNumber: settingsForm.callCenterRoutingNumber || null,
+        callCenterRoutingNote: settingsForm.callCenterRoutingNote || null
+      });
+      setSalon((prev) => (prev ? { ...prev, settings: updated } : prev));
+      notify("success", "Salon settings updated.");
     } catch (saveError) {
       notify("error", extractErrorMessage(saveError));
     }
@@ -861,12 +945,18 @@ export const SalonDetailPage = () => {
           </label>
           <label className="field">
             <span>Timezone</span>
-            <input
+            <select
               value={profileForm.timezone}
               onChange={(event) =>
                 setProfileForm((prev) => ({ ...prev, timezone: event.target.value }))
               }
-            />
+            >
+              {timezoneOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </label>
           <label className="field">
             <span>Contact email</span>
@@ -882,10 +972,11 @@ export const SalonDetailPage = () => {
             <span>Contact phone</span>
             <input
               type="tel"
-              inputMode="numeric"
+              inputMode="tel"
+              placeholder="(212) 555-0100"
               value={profileForm.contactPhone}
               onChange={(event) =>
-                setProfileForm((prev) => ({ ...prev, contactPhone: event.target.value }))
+                setProfileForm((prev) => ({ ...prev, contactPhone: formatUsPhoneInput(event.target.value) }))
               }
             />
           </label>
@@ -893,10 +984,14 @@ export const SalonDetailPage = () => {
             <span>Original salon phone</span>
             <input
               type="tel"
-              inputMode="numeric"
+              inputMode="tel"
+              placeholder="(212) 555-0100"
               value={profileForm.originalPhoneNumber}
               onChange={(event) =>
-                setProfileForm((prev) => ({ ...prev, originalPhoneNumber: event.target.value }))
+                setProfileForm((prev) => ({
+                  ...prev,
+                  originalPhoneNumber: formatUsPhoneInput(event.target.value)
+                }))
               }
             />
           </label>
@@ -904,12 +999,13 @@ export const SalonDetailPage = () => {
             <span>Customer incoming phone</span>
             <input
               type="tel"
-              inputMode="numeric"
+              inputMode="tel"
+              placeholder="(212) 555-0100"
               value={profileForm.customerIncomingPhoneNumber}
               onChange={(event) =>
                 setProfileForm((prev) => ({
                   ...prev,
-                  customerIncomingPhoneNumber: event.target.value
+                  customerIncomingPhoneNumber: formatUsPhoneInput(event.target.value)
                 }))
               }
             />
@@ -918,10 +1014,14 @@ export const SalonDetailPage = () => {
             <span>Notification phone</span>
             <input
               type="tel"
-              inputMode="numeric"
+              inputMode="tel"
+              placeholder="(212) 555-0100"
               value={profileForm.notificationPhoneNumber}
               onChange={(event) =>
-                setProfileForm((prev) => ({ ...prev, notificationPhoneNumber: event.target.value }))
+                setProfileForm((prev) => ({
+                  ...prev,
+                  notificationPhoneNumber: formatUsPhoneInput(event.target.value)
+                }))
               }
             />
           </label>
@@ -1001,14 +1101,164 @@ export const SalonDetailPage = () => {
           </label>
           <label className="field">
             <span>Country</span>
-            <input
+            <select
               value={profileForm.country}
               onChange={(event) => setProfileForm((prev) => ({ ...prev, country: event.target.value }))}
-            />
+            >
+              {countryOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </label>
           <div className="form-actions">
             <button type="submit" className="button-primary">
               Save profile
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <section className="card">
+        <div className="section-header">
+          <div>
+            <h3>Salon settings</h3>
+            <p className="muted">
+              {salon.settings?.routingSummary.mode
+                ? routingModeLabels[salon.settings.routingSummary.mode]
+                : "Settings are not configured yet."}
+            </p>
+          </div>
+          <span className={settingsForm.callCenterEnabled ? "status-pill success" : "status-pill"}>
+            Call center {settingsForm.callCenterEnabled ? "enabled" : "disabled"}
+          </span>
+        </div>
+        <form className="form-grid two-columns" onSubmit={saveSettings}>
+          <div className="form-panel">
+            <div>
+              <h4>Business rules</h4>
+              <p className="muted">Defaults used by booking and owner-facing screens.</p>
+            </div>
+            <label className="field">
+              <span>Currency</span>
+              <select
+                value={settingsForm.currency}
+                onChange={(event) => setSettingsForm((prev) => ({ ...prev, currency: event.target.value }))}
+              >
+                {currencyOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span>Default language</span>
+              <select
+                value={settingsForm.locale}
+                onChange={(event) => setSettingsForm((prev) => ({ ...prev, locale: event.target.value }))}
+              >
+                {localePreferenceOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span>Minimum lead time (minutes)</span>
+              <input
+                type="number"
+                min={0}
+                value={settingsForm.bookingLeadTimeMinutes}
+                onChange={(event) =>
+                  setSettingsForm((prev) => ({
+                    ...prev,
+                    bookingLeadTimeMinutes: event.target.value
+                  }))
+                }
+              />
+            </label>
+            <label className="field">
+              <span>Cancellation policy</span>
+              <textarea
+                rows={3}
+                value={settingsForm.cancellationPolicy}
+                onChange={(event) =>
+                  setSettingsForm((prev) => ({ ...prev, cancellationPolicy: event.target.value }))
+                }
+              />
+            </label>
+          </div>
+
+          <div className="form-panel">
+            <div>
+              <h4>AI and call center</h4>
+              <p className="muted">Business-facing controls for how calls are routed.</p>
+            </div>
+            <label className="field checkbox-row">
+              <span>AI forwarding enabled</span>
+              <input
+                type="checkbox"
+                checked={settingsForm.aiForwardingEnabled}
+                onChange={(event) =>
+                  setSettingsForm((prev) => ({ ...prev, aiForwardingEnabled: event.target.checked }))
+                }
+              />
+            </label>
+            <label className="field">
+              <span>AI transfer ring count</span>
+              <input
+                type="number"
+                min={1}
+                max={10}
+                value={settingsForm.aiTransferRingCount}
+                onChange={(event) =>
+                  setSettingsForm((prev) => ({ ...prev, aiTransferRingCount: event.target.value }))
+                }
+              />
+            </label>
+            <label className="field checkbox-row">
+              <span>Call center enabled</span>
+              <input
+                type="checkbox"
+                checked={settingsForm.callCenterEnabled}
+                onChange={(event) =>
+                  setSettingsForm((prev) => ({ ...prev, callCenterEnabled: event.target.checked }))
+                }
+              />
+            </label>
+            <label className="field">
+              <span>Call center routing number</span>
+              <input
+                type="tel"
+                inputMode="tel"
+                placeholder="(212) 555-0100"
+                value={settingsForm.callCenterRoutingNumber}
+                onChange={(event) =>
+                  setSettingsForm((prev) => ({
+                    ...prev,
+                    callCenterRoutingNumber: formatUsPhoneInput(event.target.value)
+                  }))
+                }
+              />
+              <small>Used before assigned agent phones and default platform routing.</small>
+            </label>
+            <label className="field">
+              <span>Call center note</span>
+              <textarea
+                rows={3}
+                value={settingsForm.callCenterRoutingNote}
+                onChange={(event) =>
+                  setSettingsForm((prev) => ({ ...prev, callCenterRoutingNote: event.target.value }))
+                }
+              />
+            </label>
+          </div>
+          <div className="form-actions">
+            <button type="submit" className="button-primary">
+              Save salon settings
             </button>
           </div>
         </form>
