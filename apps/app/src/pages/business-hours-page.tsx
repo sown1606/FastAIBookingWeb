@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { apiGet, apiPut, extractErrorMessage } from "../lib/api";
 import { ErrorBlock, LoadingBlock } from "../components/states";
 import { useToast } from "../components/toast";
+import { useI18n, type TranslationKey } from "../lib/i18n";
 
 interface BusinessHour {
   dayOfWeek: number;
@@ -9,8 +10,6 @@ interface BusinessHour {
   openTime: string | null;
   closeTime: string | null;
 }
-
-const weekdays = ["Chủ nhật", "Thứ hai", "Thứ ba", "Thứ tư", "Thứ năm", "Thứ sáu", "Thứ bảy"];
 
 const defaultHours = (): BusinessHour[] => [
   { dayOfWeek: 0, isOpen: false, openTime: null, closeTime: null },
@@ -24,6 +23,7 @@ const defaultHours = (): BusinessHour[] => [
 
 export const BusinessHoursPage = () => {
   const { notify } = useToast();
+  const { t } = useI18n();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [hours, setHours] = useState<BusinessHour[]>(defaultHours());
@@ -50,7 +50,7 @@ export const BusinessHoursPage = () => {
       await apiPut<BusinessHour[], { hours: BusinessHour[] }>("/api/v1/business-hours", {
         hours
       });
-      notify("success", "Đã cập nhật giờ làm việc.");
+      notify("success", t("hours.saved"));
       await load();
     } catch (saveError) {
       notify("error", extractErrorMessage(saveError));
@@ -68,25 +68,25 @@ export const BusinessHoursPage = () => {
   return (
     <section className="card">
       <div className="section-header">
-        <h2>Giờ làm việc</h2>
+        <h2>{t("hours.title")}</h2>
         <button type="button" className="button-primary" onClick={save}>
-          Lưu giờ
+          {t("hours.save")}
         </button>
       </div>
       <div className="table-wrap">
         <table>
           <thead>
             <tr>
-              <th>Ngày</th>
-              <th>Mở cửa</th>
-              <th>Giờ mở</th>
-              <th>Giờ đóng</th>
+              <th>{t("hours.day")}</th>
+              <th>{t("hours.isOpen")}</th>
+              <th>{t("hours.openTime")}</th>
+              <th>{t("hours.closeTime")}</th>
             </tr>
           </thead>
           <tbody>
             {hours.map((item, index) => (
               <tr key={item.dayOfWeek}>
-                <td>{weekdays[item.dayOfWeek]}</td>
+                <td>{t(`weekday.${item.dayOfWeek}` as TranslationKey)}</td>
                 <td>
                   <input
                     type="checkbox"

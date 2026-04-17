@@ -4,6 +4,7 @@ import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
 import { useToast } from "../components/toast";
 import { formatCurrencyCents } from "../lib/format";
 import { useFormDialog } from "../components/form-dialog";
+import { statusLabelKey, useI18n } from "../lib/i18n";
 
 interface StaffItem {
   id: string;
@@ -30,6 +31,7 @@ interface ServiceItem {
 export const ServicesPage = () => {
   const { notify } = useToast();
   const { openFormDialog, FormDialog } = useFormDialog();
+  const { t } = useI18n();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [services, setServices] = useState<ServiceItem[]>([]);
@@ -78,7 +80,7 @@ export const ServicesPage = () => {
         durationMinutes: "45",
         priceCents: "4500"
       });
-      notify("success", "Đã tạo dịch vụ.");
+      notify("success", t("services.created"));
       await load();
     } catch (createError) {
       notify("error", extractErrorMessage(createError));
@@ -87,12 +89,12 @@ export const ServicesPage = () => {
 
   const editService = async (item: ServiceItem) => {
     const values = await openFormDialog({
-      title: "Sửa dịch vụ",
+      title: t("services.edit"),
       fields: [
-        { name: "name", label: "Tên dịch vụ", required: true },
-        { name: "description", label: "Mô tả", type: "textarea" },
-        { name: "durationMinutes", label: "Thời lượng (phút)", type: "number", required: true, min: 1, max: 600 },
-        { name: "priceCents", label: "Giá (cent)", type: "number", required: true, min: 0 }
+        { name: "name", label: t("services.name"), required: true },
+        { name: "description", label: t("services.description"), type: "textarea" },
+        { name: "durationMinutes", label: t("services.duration"), type: "number", required: true, min: 1, max: 600 },
+        { name: "priceCents", label: t("services.priceCents"), type: "number", required: true, min: 0 }
       ],
       initialValues: {
         name: item.name,
@@ -100,7 +102,7 @@ export const ServicesPage = () => {
         durationMinutes: String(item.durationMinutes),
         priceCents: String(item.priceCents)
       },
-      confirmLabel: "Lưu dịch vụ"
+      confirmLabel: t("services.save")
     });
     if (!values) {
       return;
@@ -112,7 +114,7 @@ export const ServicesPage = () => {
         durationMinutes: Number(values.durationMinutes),
         priceCents: Number(values.priceCents)
       });
-      notify("success", "Đã cập nhật dịch vụ.");
+      notify("success", t("services.updated"));
       await load();
     } catch (updateError) {
       notify("error", extractErrorMessage(updateError));
@@ -123,7 +125,7 @@ export const ServicesPage = () => {
     const action = item.isActive ? "deactivate" : "activate";
     try {
       await apiPost<unknown, Record<string, never>>(`/api/v1/services/${item.id}/${action}`, {});
-      notify("success", item.isActive ? "Đã tắt dịch vụ." : "Đã bật dịch vụ.");
+      notify("success", item.isActive ? t("services.disabled") : t("services.enabled"));
       await load();
     } catch (toggleError) {
       notify("error", extractErrorMessage(toggleError));
@@ -133,12 +135,12 @@ export const ServicesPage = () => {
   const mapServiceToStaff = async (item: ServiceItem) => {
     const defaultValue = item.staffServices.map((row) => row.staffId).join(",");
     const values = await openFormDialog({
-      title: "Gán nhân viên cho dịch vụ",
+      title: t("services.assignStaff"),
       description: item.name,
       fields: [
         {
           name: "staffIds",
-          label: "Nhân viên nhận dịch vụ này",
+          label: t("services.staffForService"),
           type: "checkbox-list",
           options: staff.map((member) => ({
             value: member.id,
@@ -149,7 +151,7 @@ export const ServicesPage = () => {
       initialValues: {
         staffIds: defaultValue
       },
-      confirmLabel: "Lưu phân công"
+      confirmLabel: t("common.save")
     });
     if (!values) {
       return;
@@ -163,7 +165,7 @@ export const ServicesPage = () => {
       await apiPut<unknown, { staffIds: string[] }>(`/api/v1/services/${item.id}/staff`, {
         staffIds
       });
-      notify("success", "Đã cập nhật nhân viên cho dịch vụ.");
+      notify("success", t("services.staffAssigned"));
       await load();
     } catch (mapError) {
       notify("error", extractErrorMessage(mapError));
@@ -182,10 +184,10 @@ export const ServicesPage = () => {
     <div className="stack">
       <FormDialog />
       <section className="card">
-        <h2>Tạo dịch vụ</h2>
+        <h2>{t("services.createTitle")}</h2>
         <form className="form-grid two-columns" onSubmit={createService}>
           <label className="field">
-            <span>Tên dịch vụ</span>
+            <span>{t("services.name")}</span>
             <input
               value={form.name}
               onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
@@ -193,14 +195,14 @@ export const ServicesPage = () => {
             />
           </label>
           <label className="field">
-            <span>Mô tả</span>
+            <span>{t("services.description")}</span>
             <input
               value={form.description}
               onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value }))}
             />
           </label>
           <label className="field">
-            <span>Thời lượng (phút)</span>
+            <span>{t("services.duration")}</span>
             <input
               type="number"
               min={1}
@@ -212,7 +214,7 @@ export const ServicesPage = () => {
             />
           </label>
           <label className="field">
-            <span>Giá (cent)</span>
+            <span>{t("services.priceCents")}</span>
             <input
               type="number"
               min={0}
@@ -222,25 +224,25 @@ export const ServicesPage = () => {
           </label>
           <div className="form-actions">
             <button type="submit" className="button-primary">
-              Thêm dịch vụ
+              {t("services.add")}
             </button>
           </div>
         </form>
       </section>
 
       <section className="card">
-        <h2>Dịch vụ</h2>
+        <h2>{t("services.listTitle")}</h2>
         {services.length ? (
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Tên</th>
-                <th>Thời lượng</th>
-                <th>Giá</th>
-                <th>Trạng thái</th>
-                <th>Nhân viên</th>
-                <th>Thao tác</th>
+                <th>{t("services.name")}</th>
+                <th>{t("services.duration")}</th>
+                <th>{t("services.priceCents")}</th>
+                <th>{t("common.status")}</th>
+                <th>{t("nav.staff")}</th>
+                <th>{t("common.actions")}</th>
               </tr>
             </thead>
             <tbody>
@@ -249,18 +251,24 @@ export const ServicesPage = () => {
                   <td>{item.name}</td>
                   <td>{item.durationMinutes} min</td>
                   <td>{formatCurrencyCents(item.priceCents)}</td>
-                  <td>{item.isActive ? "ACTIVE" : "INACTIVE"}</td>
+                  <td>
+                    {statusLabelKey(item.isActive ? "ACTIVE" : "INACTIVE")
+                      ? t(statusLabelKey(item.isActive ? "ACTIVE" : "INACTIVE")!)
+                      : item.isActive
+                        ? "ACTIVE"
+                        : "INACTIVE"}
+                  </td>
                   <td>{item.staffServices.length}</td>
                   <td>
                     <div className="inline-actions">
                       <button type="button" className="button-secondary" onClick={() => void editService(item)}>
-                        Sửa
+                        {t("staff.editAction")}
                       </button>
                       <button type="button" className="button-secondary" onClick={() => toggleServiceState(item)}>
-                        {item.isActive ? "Tắt" : "Bật"}
+                        {item.isActive ? t("staff.disable") : t("staff.enable")}
                       </button>
                       <button type="button" className="button-secondary" onClick={() => void mapServiceToStaff(item)}>
-                        Gán nhân viên
+                        {t("services.assignStaff")}
                       </button>
                     </div>
                   </td>
@@ -270,7 +278,7 @@ export const ServicesPage = () => {
           </table>
         </div>
         ) : (
-          <EmptyBlock message="Chưa có dịch vụ nào." />
+          <EmptyBlock message={t("services.empty")} />
         )}
       </section>
     </div>

@@ -5,6 +5,7 @@ import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
 import { useAuth } from "../auth/auth-context";
 import { useToast } from "../components/toast";
 import { formatDateTime, formatCurrencyCents } from "../lib/format";
+import { statusLabelKey, useI18n } from "../lib/i18n";
 
 interface AppointmentItem {
   id: string;
@@ -57,6 +58,7 @@ interface SalonSettings {
 export const DashboardPage = () => {
   const { session } = useAuth();
   const { notify } = useToast();
+  const { t } = useI18n();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -122,7 +124,7 @@ export const DashboardPage = () => {
         aiTransferRingCount: settings.aiTransferRingCount
       });
       setSettings(updated);
-      notify("success", updated.aiForwardingEnabled ? "Đã bật AI." : "Đã tắt AI.");
+      notify("success", updated.aiForwardingEnabled ? t("dashboard.toggleAiOn") : t("dashboard.toggleAiOff"));
     } catch (toggleError) {
       notify("error", extractErrorMessage(toggleError));
     }
@@ -148,10 +150,10 @@ export const DashboardPage = () => {
     return (
       <div className="stack">
         <section className="mobile-hero">
-          <p className="eyebrow">Tổng đài</p>
-          <h2>Xử lý lịch hẹn cho tiệm được phân công</h2>
+          <p className="eyebrow">{t("nav.callCenter")}</p>
+          <h2>{t("dashboard.operatorTitle")}</h2>
           <Link to="/call-center" className="button-primary">
-            Mở màn hình tổng đài
+            {t("dashboard.openOperator")}
           </Link>
         </section>
       </div>
@@ -162,70 +164,78 @@ export const DashboardPage = () => {
     <div className="stack">
       {session?.user.role === "SALON_OWNER" ? (
         <>
-        <section className="mobile-hero">
-          <p className="eyebrow">FastAIBooking</p>
-          <h2>{settings?.aiForwardingEnabled ? "AI đang nhận cuộc gọi" : "Cuộc gọi đang về số tiệm"}</h2>
-          <p className="muted">Ngưỡng chuyển mặc định {settings?.aiTransferRingCount ?? 3} hồi chuông.</p>
-          <button type="button" className="button-primary" onClick={toggleAi}>
-            {settings?.aiForwardingEnabled ? "Tắt AI" : "Bật AI"}
-          </button>
+        <section className="dashboard-hero">
+          <div className="dashboard-hero-copy">
+            <p className="eyebrow">{t("app.name")}</p>
+            <h2>
+              {settings?.aiForwardingEnabled
+                ? t("dashboard.ownerHeroTitleAi")
+                : t("dashboard.ownerHeroTitlePhone")}
+            </h2>
+            <p className="muted">
+              {t("dashboard.ringCount", { count: settings?.aiTransferRingCount ?? 3 })}
+            </p>
+            <button type="button" className="button-primary" onClick={toggleAi}>
+              {settings?.aiForwardingEnabled ? t("dashboard.toggleAiOff") : t("dashboard.toggleAiOn")}
+            </button>
+          </div>
         </section>
         <section className="card-grid">
           <article className="card stat-card">
-            <h3>Nhân viên</h3>
+            <h3>{t("dashboard.staff")}</h3>
             <strong>{staffCount}</strong>
           </article>
           <article className="card stat-card">
-            <h3>Dịch vụ</h3>
+            <h3>{t("dashboard.services")}</h3>
             <strong>{serviceCount}</strong>
           </article>
           <article className="card stat-card">
-            <h3>Khách hàng</h3>
+            <h3>{t("dashboard.customers")}</h3>
             <strong>{customerCount}</strong>
           </article>
           <article className="card stat-card">
-            <h3>Chi phí thêm</h3>
+            <h3>{t("dashboard.extraCost")}</h3>
             <strong>{formatCurrencyCents(billing?.currentUsage.estimatedExtraCostCents)}</strong>
           </article>
         </section>
         <section className="quick-actions">
-          <Link to="/appointments">Lịch hẹn</Link>
-          <Link to="/customers">Khách hàng</Link>
-          <Link to="/services">Dịch vụ</Link>
-          <Link to="/staff">Nhân viên</Link>
-          <Link to="/availability">Giờ trống</Link>
-          <Link to="/business-hours">Giờ làm việc</Link>
-          <Link to="/calls">Cuộc gọi</Link>
-          <Link to="/alerts">Cảnh báo</Link>
-          <Link to="/billing">Chi phí</Link>
-          <Link to="/ai-logs">Nhật ký AI</Link>
+          <Link to="/appointments">{t("nav.appointments")}</Link>
+          <Link to="/customers">{t("nav.customers")}</Link>
+          <Link to="/services">{t("nav.services")}</Link>
+          <Link to="/staff">{t("nav.staff")}</Link>
+          <Link to="/availability">{t("nav.availability")}</Link>
+          <Link to="/business-hours">{t("nav.businessHours")}</Link>
+          <Link to="/calls">{t("nav.calls")}</Link>
+          <Link to="/alerts">{t("nav.alerts")}</Link>
+          <Link to="/billing">{t("nav.billing")}</Link>
+          <Link to="/ai-logs">{t("nav.aiLogs")}</Link>
         </section>
         </>
       ) : (
         <section className="card-grid">
           <article className="card stat-card">
-            <h3>Hôm nay / sắp tới</h3>
+            <h3>{t("dashboard.upcoming")}</h3>
             <strong>{upcoming.length}</strong>
           </article>
           <article className="card stat-card">
-            <h3>Trạng thái</h3>
-            <strong>Nhân viên</strong>
+            <h3>{t("common.status")}</h3>
+            <strong>{t("nav.staff")}</strong>
           </article>
         </section>
       )}
 
       <section className="card">
-        <h2>Lịch hẹn sắp tới</h2>
+        <h2>{t("dashboard.upcoming")}</h2>
         {upcoming.length ? (
           <div className="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>Giờ</th>
-                  <th>Khách</th>
-                  <th>Dịch vụ</th>
-                  <th>Nhân viên</th>
-                  <th>Trạng thái</th>
+                  <th>{t("appointments.time")}</th>
+                  <th>{t("appointments.customer")}</th>
+                  <th>{t("appointments.service")}</th>
+                  <th>{t("appointments.staff")}</th>
+                  <th>{t("common.status")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -237,14 +247,14 @@ export const DashboardPage = () => {
                     </td>
                     <td>{item.service.name}</td>
                     <td>{item.staff.fullName}</td>
-                    <td>{item.status}</td>
+                    <td>{statusLabelKey(item.status) ? t(statusLabelKey(item.status)!) : item.status}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         ) : (
-          <EmptyBlock message="Chưa có lịch hẹn sắp tới." />
+          <EmptyBlock message={t("dashboard.noUpcoming")} />
         )}
       </section>
     </div>

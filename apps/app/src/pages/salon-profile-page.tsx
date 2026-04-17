@@ -2,6 +2,9 @@ import { FormEvent, useEffect, useState } from "react";
 import { apiGet, apiPut, extractErrorMessage } from "../lib/api";
 import { ErrorBlock, LoadingBlock } from "../components/states";
 import { useToast } from "../components/toast";
+import { countryOptions, currencyOptions, localePreferenceOptions, timezoneOptions } from "../lib/form-options";
+import { formatUsPhoneInput, requiredLabel, validateOptionalUsPhone } from "../lib/phone";
+import { useI18n } from "../lib/i18n";
 
 interface SalonProfile {
   id: string;
@@ -33,6 +36,7 @@ interface SalonSettings {
 
 export const SalonProfilePage = () => {
   const { notify } = useToast();
+  const { t } = useI18n();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -79,10 +83,10 @@ export const SalonProfilePage = () => {
       setProfileForm({
         name: profileResult.name,
         contactEmail: profileResult.contactEmail ?? "",
-        contactPhone: profileResult.contactPhone ?? "",
-        originalPhoneNumber: profileResult.originalPhoneNumber ?? "",
-        customerIncomingPhoneNumber: profileResult.customerIncomingPhoneNumber ?? "",
-        notificationPhoneNumber: profileResult.notificationPhoneNumber ?? "",
+        contactPhone: formatUsPhoneInput(profileResult.contactPhone ?? ""),
+        originalPhoneNumber: formatUsPhoneInput(profileResult.originalPhoneNumber ?? ""),
+        customerIncomingPhoneNumber: formatUsPhoneInput(profileResult.customerIncomingPhoneNumber ?? ""),
+        notificationPhoneNumber: formatUsPhoneInput(profileResult.notificationPhoneNumber ?? ""),
         timezone: profileResult.timezone,
         addressLine1: profileResult.addressLine1 ?? "",
         addressLine2: profileResult.addressLine2 ?? "",
@@ -98,7 +102,7 @@ export const SalonProfilePage = () => {
         cancellationPolicy: settingsResult.cancellationPolicy ?? "",
         aiForwardingEnabled: settingsResult.aiForwardingEnabled,
         aiTransferRingCount: String(settingsResult.aiTransferRingCount),
-        callCenterRoutingNumber: settingsResult.callCenterRoutingNumber ?? "",
+        callCenterRoutingNumber: formatUsPhoneInput(settingsResult.callCenterRoutingNumber ?? ""),
         callCenterRoutingNote: settingsResult.callCenterRoutingNote ?? ""
       });
     } catch (loadError) {
@@ -114,6 +118,16 @@ export const SalonProfilePage = () => {
 
   const saveProfile = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const phoneValues = [
+      profileForm.contactPhone,
+      profileForm.originalPhoneNumber,
+      profileForm.customerIncomingPhoneNumber,
+      profileForm.notificationPhoneNumber
+    ];
+    if (!phoneValues.every(validateOptionalUsPhone)) {
+      notify("error", t("form.phoneInvalid"));
+      return;
+    }
     try {
       const updated = await apiPut<SalonProfile, unknown>("/api/v1/salon/profile", {
         name: profileForm.name,
@@ -131,7 +145,7 @@ export const SalonProfilePage = () => {
         country: profileForm.country
       });
       setProfile(updated);
-      notify("success", "Đã cập nhật hồ sơ tiệm.");
+      notify("success", t("profile.saved"));
     } catch (saveError) {
       notify("error", extractErrorMessage(saveError));
     }
@@ -139,6 +153,10 @@ export const SalonProfilePage = () => {
 
   const saveSettings = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!validateOptionalUsPhone(settingsForm.callCenterRoutingNumber)) {
+      notify("error", t("form.phoneInvalid"));
+      return;
+    }
     try {
       const updated = await apiPut<SalonSettings, unknown>("/api/v1/salon/settings", {
         currency: settingsForm.currency,
@@ -151,7 +169,7 @@ export const SalonProfilePage = () => {
         callCenterRoutingNote: settingsForm.callCenterRoutingNote || null
       });
       setSettings(updated);
-      notify("success", "Đã cập nhật cài đặt tiệm.");
+      notify("success", t("profile.settingsSaved"));
     } catch (saveError) {
       notify("error", extractErrorMessage(saveError));
     }
@@ -168,10 +186,10 @@ export const SalonProfilePage = () => {
   return (
     <div className="stack">
       <section className="card">
-        <h2>Hồ sơ tiệm</h2>
+        <h2>{t("profile.title")}</h2>
         <form className="form-grid two-columns" onSubmit={saveProfile}>
           <label className="field">
-            <span>Tên tiệm</span>
+            <span>{requiredLabel(t("auth.register.salonName"))}</span>
             <input
               value={profileForm.name}
               onChange={(event) => setProfileForm((prev) => ({ ...prev, name: event.target.value }))}
@@ -179,15 +197,21 @@ export const SalonProfilePage = () => {
             />
           </label>
           <label className="field">
-            <span>Múi giờ</span>
-            <input
+            <span>{requiredLabel(t("common.timezone"))}</span>
+            <select
               value={profileForm.timezone}
               onChange={(event) => setProfileForm((prev) => ({ ...prev, timezone: event.target.value }))}
               required
-            />
+            >
+              {timezoneOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </label>
           <label className="field">
-            <span>Email liên hệ</span>
+            <span>{t("common.email")}</span>
             <input
               type="email"
               value={profileForm.contactEmail}
@@ -197,54 +221,68 @@ export const SalonProfilePage = () => {
             />
           </label>
           <label className="field">
-            <span>Số điện thoại liên hệ</span>
+            <span>{t("common.phone")}</span>
             <input
               type="tel"
-              inputMode="numeric"
+              inputMode="tel"
+              placeholder="(212) 555-0100"
               value={profileForm.contactPhone}
               onChange={(event) =>
-                setProfileForm((prev) => ({ ...prev, contactPhone: event.target.value }))
+                setProfileForm((prev) => ({ ...prev, contactPhone: formatUsPhoneInput(event.target.value) }))
               }
             />
+            <small>{t("form.phoneHint")}</small>
           </label>
           <label className="field">
-            <span>Số hiện tại của tiệm</span>
+            <span>{t("profile.currentPhone")}</span>
             <input
               type="tel"
-              inputMode="numeric"
+              inputMode="tel"
+              placeholder="(212) 555-0100"
               value={profileForm.originalPhoneNumber}
               onChange={(event) =>
-                setProfileForm((prev) => ({ ...prev, originalPhoneNumber: event.target.value }))
+                setProfileForm((prev) => ({
+                  ...prev,
+                  originalPhoneNumber: formatUsPhoneInput(event.target.value)
+                }))
               }
             />
+            <small>{t("form.phoneHint")}</small>
           </label>
           <label className="field">
-            <span>Số khách gọi vào</span>
+            <span>{t("profile.incomingPhone")}</span>
             <input
               type="tel"
-              inputMode="numeric"
+              inputMode="tel"
+              placeholder="(212) 555-0100"
               value={profileForm.customerIncomingPhoneNumber}
               onChange={(event) =>
                 setProfileForm((prev) => ({
                   ...prev,
-                  customerIncomingPhoneNumber: event.target.value
+                  customerIncomingPhoneNumber: formatUsPhoneInput(event.target.value)
                 }))
               }
             />
+            <small>{t("form.phoneHint")}</small>
           </label>
           <label className="field">
-            <span>Số nhận thông báo khẩn</span>
+            <span>{t("profile.notificationPhone")}</span>
             <input
               type="tel"
-              inputMode="numeric"
+              inputMode="tel"
+              placeholder="(212) 555-0100"
               value={profileForm.notificationPhoneNumber}
               onChange={(event) =>
-                setProfileForm((prev) => ({ ...prev, notificationPhoneNumber: event.target.value }))
+                setProfileForm((prev) => ({
+                  ...prev,
+                  notificationPhoneNumber: formatUsPhoneInput(event.target.value)
+                }))
               }
             />
+            <small>{t("form.phoneHint")}</small>
           </label>
           <label className="field">
-            <span>Địa chỉ 1</span>
+            <span>{t("profile.address1")}</span>
             <input
               value={profileForm.addressLine1}
               onChange={(event) =>
@@ -253,7 +291,7 @@ export const SalonProfilePage = () => {
             />
           </label>
           <label className="field">
-            <span>Địa chỉ 2</span>
+            <span>{t("profile.address2")}</span>
             <input
               value={profileForm.addressLine2}
               onChange={(event) =>
@@ -262,21 +300,21 @@ export const SalonProfilePage = () => {
             />
           </label>
           <label className="field">
-            <span>Thành phố</span>
+            <span>{t("common.city")}</span>
             <input
               value={profileForm.city}
               onChange={(event) => setProfileForm((prev) => ({ ...prev, city: event.target.value }))}
             />
           </label>
           <label className="field">
-            <span>Bang</span>
+            <span>{t("common.state")}</span>
             <input
               value={profileForm.state}
               onChange={(event) => setProfileForm((prev) => ({ ...prev, state: event.target.value }))}
             />
           </label>
           <label className="field">
-            <span>Mã bưu điện</span>
+            <span>{t("common.postalCode")}</span>
             <input
               value={profileForm.postalCode}
               onChange={(event) =>
@@ -285,41 +323,59 @@ export const SalonProfilePage = () => {
             />
           </label>
           <label className="field">
-            <span>Quốc gia</span>
-            <input
+            <span>{t("common.country")}</span>
+            <select
               value={profileForm.country}
               onChange={(event) => setProfileForm((prev) => ({ ...prev, country: event.target.value }))}
-            />
+            >
+              {countryOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </label>
           <div className="form-actions">
             <button type="submit" className="button-primary">
-              Lưu hồ sơ
+              {t("profile.saveProfile")}
             </button>
           </div>
         </form>
       </section>
 
       <section className="card">
-        <h2>Cài đặt đặt lịch và cuộc gọi</h2>
+        <h2>{t("profile.settingsTitle")}</h2>
         <form className="form-grid two-columns" onSubmit={saveSettings}>
           <label className="field">
-            <span>Tiền tệ</span>
-            <input
+            <span>{t("profile.currency")}</span>
+            <select
               value={settingsForm.currency}
               onChange={(event) =>
                 setSettingsForm((prev) => ({ ...prev, currency: event.target.value }))
               }
-            />
+            >
+              {currencyOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </label>
           <label className="field">
-            <span>Locale</span>
-            <input
+            <span>{t("profile.locale")}</span>
+            <select
               value={settingsForm.locale}
               onChange={(event) => setSettingsForm((prev) => ({ ...prev, locale: event.target.value }))}
-            />
+            >
+              {localePreferenceOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </label>
           <label className="field">
-            <span>Đặt trước tối thiểu (phút)</span>
+            <span>{t("profile.leadTime")}</span>
             <input
               type="number"
               min={0}
@@ -333,7 +389,7 @@ export const SalonProfilePage = () => {
             />
           </label>
           <label className="field">
-            <span>Chính sách hủy lịch</span>
+            <span>{t("profile.cancelPolicy")}</span>
             <textarea
               rows={3}
               value={settingsForm.cancellationPolicy}
@@ -346,7 +402,7 @@ export const SalonProfilePage = () => {
             />
           </label>
           <label className="field checkbox-row">
-            <span>Bật AI nghe máy</span>
+            <span>{t("profile.aiForwarding")}</span>
             <input
               type="checkbox"
               checked={settingsForm.aiForwardingEnabled}
@@ -359,7 +415,7 @@ export const SalonProfilePage = () => {
             />
           </label>
           <label className="field">
-            <span>Số hồi chuông trước khi chuyển</span>
+            <span>{t("profile.ringCount")}</span>
             <input
               type="number"
               min={1}
@@ -374,21 +430,23 @@ export const SalonProfilePage = () => {
             />
           </label>
           <label className="field">
-            <span>Số tổng đài trực tiếp</span>
+            <span>{t("profile.routingNumber")}</span>
             <input
               type="tel"
-              inputMode="numeric"
+              inputMode="tel"
+              placeholder="(212) 555-0100"
               value={settingsForm.callCenterRoutingNumber}
               onChange={(event) =>
                 setSettingsForm((prev) => ({
                   ...prev,
-                  callCenterRoutingNumber: event.target.value
+                  callCenterRoutingNumber: formatUsPhoneInput(event.target.value)
                 }))
               }
             />
+            <small>{t("form.phoneHint")}</small>
           </label>
           <label className="field">
-            <span>Ghi chú tổng đài</span>
+            <span>{t("profile.routingNote")}</span>
             <textarea
               rows={3}
               value={settingsForm.callCenterRoutingNote}
@@ -402,7 +460,7 @@ export const SalonProfilePage = () => {
           </label>
           <div className="form-actions">
             <button type="submit" className="button-primary">
-              Lưu cài đặt
+              {t("profile.saveSettings")}
             </button>
           </div>
         </form>

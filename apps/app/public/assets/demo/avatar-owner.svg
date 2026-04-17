@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="Salon owner avatar">
+  <rect width="96" height="96" rx="18" fill="#e6f4ef"/>
+  <circle cx="48" cy="35" r="18" fill="#f3b6a6"/>
+  <path d="M23 82c3-17 13-26 25-26s22 9 25 26" fill="#0b6f5f"/>
+  <path d="M29 36c2-16 13-23 27-19 8 2 13 9 12 19-9-9-27-2-39 0Z" fill="#18322d"/>
+  <path d="M38 62h20l-10 12-10-12Z" fill="#ffffff"/>
+</svg>

@@ -6,6 +6,7 @@ import { useAuth } from "../auth/auth-context";
 import { formatDateTime } from "../lib/format";
 import type { Pagination } from "../types";
 import { toDateTimeLocalValue, useFormDialog } from "../components/form-dialog";
+import { statusLabelKey, useI18n } from "../lib/i18n";
 
 interface AppointmentItem {
   id: string;
@@ -71,17 +72,11 @@ interface StaffReminder {
   appointment: AppointmentItem;
 }
 
-const appointmentStatusOptions = [
-  { value: "SCHEDULED", label: "SCHEDULED" },
-  { value: "CONFIRMED", label: "CONFIRMED" },
-  { value: "CANCELED", label: "CANCELED" },
-  { value: "NO_SHOW", label: "NO_SHOW" }
-];
-
 export const AppointmentsPage = () => {
   const { session } = useAuth();
   const { notify } = useToast();
   const { openFormDialog, FormDialog } = useFormDialog();
+  const { t } = useI18n();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -102,6 +97,12 @@ export const AppointmentsPage = () => {
   });
 
   const isOwner = session?.user.role === "SALON_OWNER";
+  const appointmentStatusOptions = [
+    { value: "SCHEDULED", label: t("status.SCHEDULED") },
+    { value: "CONFIRMED", label: t("status.CONFIRMED") },
+    { value: "CANCELED", label: t("status.CANCELED") },
+    { value: "NO_SHOW", label: t("status.NO_SHOW") }
+  ];
 
   const load = async () => {
     setError("");
@@ -171,7 +172,7 @@ export const AppointmentsPage = () => {
         serviceId: "",
         startTime: ""
       });
-      notify("success", "Đã tạo lịch hẹn.");
+      notify("success", t("appointments.created"));
       await load();
     } catch (createError) {
       notify("error", extractErrorMessage(createError));
@@ -180,13 +181,13 @@ export const AppointmentsPage = () => {
 
   const cancelAppointment = async (appointment: AppointmentItem) => {
     const values = await openFormDialog({
-      title: "Hủy lịch hẹn",
+      title: t("appointments.cancel"),
       description: `${appointment.customer.firstName} ${appointment.customer.lastName}`,
-      fields: [{ name: "reason", label: "Lý do hủy", type: "textarea", rows: 3 }],
+      fields: [{ name: "reason", label: t("appointments.cancel"), type: "textarea", rows: 3 }],
       initialValues: {
-        reason: "Khách yêu cầu hủy"
+        reason: t("appointments.cancelReasonDefault")
       },
-      confirmLabel: "Hủy lịch"
+      confirmLabel: t("appointments.cancel")
     });
     if (!values) {
       return;
@@ -195,7 +196,7 @@ export const AppointmentsPage = () => {
       await apiPatch<unknown, { reason?: string }>(`/api/v1/appointments/${appointment.id}/cancel`, {
         reason: values.reason || undefined
       });
-      notify("success", "Đã hủy lịch hẹn.");
+      notify("success", t("appointments.cancel"));
       await load();
     } catch (cancelError) {
       notify("error", extractErrorMessage(cancelError));
@@ -204,13 +205,13 @@ export const AppointmentsPage = () => {
 
   const rescheduleAppointment = async (appointment: AppointmentItem) => {
     const values = await openFormDialog({
-      title: "Đổi giờ lịch hẹn",
+      title: t("appointments.reschedule"),
       description: `${appointment.customer.firstName} ${appointment.customer.lastName}`,
-      fields: [{ name: "startTime", label: "Giờ mới", type: "datetime-local", required: true }],
+      fields: [{ name: "startTime", label: t("appointments.start"), type: "datetime-local", required: true }],
       initialValues: {
         startTime: toDateTimeLocalValue(appointment.startTime)
       },
-      confirmLabel: "Đổi giờ"
+      confirmLabel: t("appointments.reschedule")
     });
     if (!values?.startTime) {
       return;
@@ -219,7 +220,7 @@ export const AppointmentsPage = () => {
       await apiPatch<unknown, { startTime: string }>(`/api/v1/appointments/${appointment.id}/reschedule`, {
         startTime: new Date(values.startTime).toISOString()
       });
-      notify("success", "Đã đổi giờ lịch hẹn.");
+      notify("success", t("appointments.reschedule"));
       await load();
     } catch (rescheduleError) {
       notify("error", extractErrorMessage(rescheduleError));
@@ -228,12 +229,11 @@ export const AppointmentsPage = () => {
 
   const updateStatus = async (appointment: AppointmentItem) => {
     const values = await openFormDialog({
-      title: "Cập nhật trạng thái",
-      description: "Dùng nút Bắt đầu / Xong cho quy trình làm việc.",
+      title: t("appointments.updateStatus"),
       fields: [
         {
           name: "status",
-          label: "Trạng thái",
+          label: t("common.status"),
           type: "select",
           required: true,
           options: appointmentStatusOptions
@@ -242,7 +242,7 @@ export const AppointmentsPage = () => {
       initialValues: {
         status: appointment.status
       },
-      confirmLabel: "Cập nhật"
+      confirmLabel: t("common.save")
     });
     if (!values?.status) {
       return;
@@ -251,7 +251,7 @@ export const AppointmentsPage = () => {
       await apiPatch<unknown, { status: string }>(`/api/v1/appointments/${appointment.id}`, {
         status: values.status
       });
-      notify("success", "Đã cập nhật trạng thái.");
+      notify("success", t("appointments.updateStatus"));
       await load();
     } catch (updateError) {
       notify("error", extractErrorMessage(updateError));
@@ -261,7 +261,7 @@ export const AppointmentsPage = () => {
   const startWork = async (appointmentId: string) => {
     try {
       await apiPost<unknown, Record<string, never>>(`/api/v1/appointments/${appointmentId}/start`, {});
-      notify("success", "Đã bắt đầu.");
+      notify("success", t("appointments.startWork"));
       await load();
     } catch (startError) {
       notify("error", extractErrorMessage(startError));
@@ -270,14 +270,14 @@ export const AppointmentsPage = () => {
 
   const extendWork = async (appointmentId: string) => {
     const values = await openFormDialog({
-      title: "Thêm thời gian",
+      title: t("appointments.extend"),
       fields: [
-        { name: "minutes", label: "Số phút thêm", type: "number", required: true, min: 1, max: 180 }
+        { name: "minutes", label: t("appointments.extend"), type: "number", required: true, min: 1, max: 180 }
       ],
       initialValues: {
         minutes: "10"
       },
-      confirmLabel: "Thêm"
+      confirmLabel: t("appointments.extend")
     });
     if (!values?.minutes) {
       return;
@@ -286,7 +286,7 @@ export const AppointmentsPage = () => {
       await apiPost<unknown, { minutes: number }>(`/api/v1/appointments/${appointmentId}/extend`, {
         minutes: Number(values.minutes)
       });
-      notify("success", "Đã thêm thời gian.");
+      notify("success", t("appointments.extend"));
       await load();
     } catch (extendError) {
       notify("error", extractErrorMessage(extendError));
@@ -295,11 +295,10 @@ export const AppointmentsPage = () => {
 
   const finishWork = async (appointmentId: string) => {
     const values = await openFormDialog({
-      title: "Hoàn thành dịch vụ",
-      description: "Xác nhận đã làm xong để gửi SMS đánh giá cho khách.",
+      title: t("appointments.done"),
       fields: [],
       initialValues: {},
-      confirmLabel: "Xác nhận xong"
+      confirmLabel: t("appointments.done")
     });
     if (!values) {
       return;
@@ -308,7 +307,7 @@ export const AppointmentsPage = () => {
       await apiPost<unknown, { confirm: boolean }>(`/api/v1/appointments/${appointmentId}/done`, {
         confirm: true
       });
-      notify("success", "Đã hoàn thành. Khách sẽ nhận SMS đánh giá.");
+      notify("success", t("appointments.done"));
       await load();
     } catch (doneError) {
       notify("error", extractErrorMessage(doneError));
@@ -350,16 +349,16 @@ export const AppointmentsPage = () => {
       <FormDialog />
       {isOwner ? (
         <section className="card">
-          <h2>Tạo lịch hẹn</h2>
+          <h2>{t("appointments.createTitle")}</h2>
           <form className="form-grid two-columns" onSubmit={createAppointment}>
             <label className="field">
-              <span>Khách</span>
+              <span>{t("appointments.customer")}</span>
               <select
                 value={form.customerId}
                 onChange={(event) => setForm((prev) => ({ ...prev, customerId: event.target.value }))}
                 required
               >
-                <option value="">Chọn khách</option>
+                <option value="">{t("appointments.selectCustomer")}</option>
                 {customers.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.firstName} {item.lastName}
@@ -368,13 +367,13 @@ export const AppointmentsPage = () => {
               </select>
             </label>
             <label className="field">
-              <span>Nhân viên</span>
+              <span>{t("appointments.staff")}</span>
               <select
                 value={form.staffId}
                 onChange={(event) => setForm((prev) => ({ ...prev, staffId: event.target.value }))}
                 required
               >
-                <option value="">Chọn nhân viên</option>
+                <option value="">{t("appointments.selectStaff")}</option>
                 {staff.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.fullName}
@@ -383,13 +382,13 @@ export const AppointmentsPage = () => {
               </select>
             </label>
             <label className="field">
-              <span>Dịch vụ</span>
+              <span>{t("appointments.service")}</span>
               <select
                 value={form.serviceId}
                 onChange={(event) => setForm((prev) => ({ ...prev, serviceId: event.target.value }))}
                 required
               >
-                <option value="">Chọn dịch vụ</option>
+                <option value="">{t("appointments.selectService")}</option>
                 {services.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.name}
@@ -398,7 +397,7 @@ export const AppointmentsPage = () => {
               </select>
             </label>
             <label className="field">
-              <span>Giờ bắt đầu</span>
+              <span>{t("appointments.start")}</span>
               <input
                 type="datetime-local"
                 value={form.startTime}
@@ -408,7 +407,7 @@ export const AppointmentsPage = () => {
             </label>
             <div className="form-actions">
               <button type="submit" className="button-primary">
-                Tạo lịch hẹn
+                {t("appointments.create")}
               </button>
             </div>
           </form>
@@ -417,7 +416,7 @@ export const AppointmentsPage = () => {
 
       {!isOwner ? (
         <section className="card">
-          <h2>Nhắc việc</h2>
+          <h2>{t("appointments.reminders")}</h2>
           {reminders.length ? (
             <div className="mobile-list">
               {reminders.slice(0, 6).map((reminder) => (
@@ -428,24 +427,24 @@ export const AppointmentsPage = () => {
               ))}
             </div>
           ) : (
-            <EmptyBlock message="Chưa có nhắc việc." />
+            <EmptyBlock message={t("appointments.noReminders")} />
           )}
         </section>
       ) : null}
 
       <section className="card">
         <div className="section-header">
-          <h2>{isOwner ? "Lịch hẹn" : "Lịch của tôi"}</h2>
+          <h2>{isOwner ? t("appointments.titleOwner") : t("appointments.titleStaff")}</h2>
           <label className="field compact">
-            <span>Trạng thái</span>
+            <span>{t("common.status")}</span>
             <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-              <option value="">Tất cả</option>
-              <option value="SCHEDULED">SCHEDULED</option>
-              <option value="CONFIRMED">CONFIRMED</option>
-              <option value="IN_PROGRESS">IN_PROGRESS</option>
-              <option value="COMPLETED">COMPLETED</option>
-              <option value="CANCELED">CANCELED</option>
-              <option value="NO_SHOW">NO_SHOW</option>
+              <option value="">{t("common.all")}</option>
+              <option value="SCHEDULED">{t("status.SCHEDULED")}</option>
+              <option value="CONFIRMED">{t("status.CONFIRMED")}</option>
+              <option value="IN_PROGRESS">{t("status.IN_PROGRESS")}</option>
+              <option value="COMPLETED">{t("status.COMPLETED")}</option>
+              <option value="CANCELED">{t("status.CANCELED")}</option>
+              <option value="NO_SHOW">{t("status.NO_SHOW")}</option>
             </select>
           </label>
         </div>
@@ -457,13 +456,13 @@ export const AppointmentsPage = () => {
                 <table>
                   <thead>
                     <tr>
-                      <th>Giờ</th>
-                      <th>Khách</th>
-                      <th>Nhân viên</th>
-                      <th>Dịch vụ</th>
-                      <th>Trạng thái</th>
-                      <th>Nguồn</th>
-                      <th>Thao tác</th>
+                      <th>{t("appointments.time")}</th>
+                      <th>{t("appointments.customer")}</th>
+                      <th>{t("appointments.staff")}</th>
+                      <th>{t("appointments.service")}</th>
+                      <th>{t("common.status")}</th>
+                      <th>{t("appointments.source")}</th>
+                      <th>{t("common.actions")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -476,7 +475,7 @@ export const AppointmentsPage = () => {
                         <td>{item.staff.fullName}</td>
                         <td>{item.service.name}</td>
                         <td>
-                          {item.status}
+                          {statusLabelKey(item.status) ? t(statusLabelKey(item.status)!) : item.status}
                           {countdownText(item) ? <div className="timer-pill">{countdownText(item)}</div> : null}
                         </td>
                         <td>{item.source}</td>
@@ -485,21 +484,21 @@ export const AppointmentsPage = () => {
                             {isOwner ? (
                               <>
                                 <button type="button" className="button-secondary" onClick={() => void updateStatus(item)}>
-                                  Trạng thái
+                                  {t("appointments.updateStatus")}
                                 </button>
                                 <button
                                   type="button"
                                   className="button-secondary"
                                   onClick={() => void rescheduleAppointment(item)}
                                 >
-                                  Đổi giờ
+                                  {t("appointments.reschedule")}
                                 </button>
                                 <button
                                   type="button"
                                   className="button-secondary"
                                   onClick={() => void cancelAppointment(item)}
                                 >
-                                  Hủy
+                                  {t("appointments.cancel")}
                                 </button>
                               </>
                             ) : (
@@ -508,16 +507,16 @@ export const AppointmentsPage = () => {
                                 item.status !== "COMPLETED" &&
                                 item.status !== "CANCELED" ? (
                                   <button type="button" className="button-primary" onClick={() => startWork(item.id)}>
-                                    Bắt đầu
+                                    {t("appointments.startWork")}
                                   </button>
                                 ) : null}
                                 {item.status === "IN_PROGRESS" ? (
                                   <>
                                     <button type="button" className="button-secondary" onClick={() => void extendWork(item.id)}>
-                                      Thêm giờ
+                                      {t("appointments.extend")}
                                     </button>
                                     <button type="button" className="button-primary" onClick={() => void finishWork(item.id)}>
-                                      Xong
+                                      {t("appointments.done")}
                                     </button>
                                   </>
                                 ) : null}
@@ -533,7 +532,7 @@ export const AppointmentsPage = () => {
             </div>
           ))
         ) : (
-          <EmptyBlock message={isOwner ? "Chưa có lịch hẹn." : "Bạn chưa có lịch hẹn."} />
+          <EmptyBlock message={isOwner ? t("appointments.noOwner") : t("appointments.noStaff")} />
         )}
       </section>
     </div>

@@ -1,13 +1,15 @@
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../auth/auth-context";
+import { useI18n } from "../lib/i18n";
 import { LoadingBlock } from "./states";
 import type { Role } from "../types";
 
 export const RequireAuth = ({ children }: { children: React.ReactNode }) => {
   const { session, isInitializing } = useAuth();
+  const { t } = useI18n();
 
   if (isInitializing) {
-    return <LoadingBlock message="Đang khởi tạo phiên..." />;
+    return <LoadingBlock message={t("common.initializing")} />;
   }
 
   if (!session) {

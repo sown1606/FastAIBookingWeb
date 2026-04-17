@@ -3,11 +3,14 @@ import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "./auth-context";
 import { extractErrorMessage } from "../lib/api";
 import { useToast } from "../components/toast";
+import { useI18n } from "../lib/i18n";
+import { AuthFrame } from "./auth-frame";
 
 export const ResetPasswordPage = () => {
   const location = useLocation();
   const { resetPassword } = useAuth();
   const { notify } = useToast();
+  const { t } = useI18n();
   const token = useMemo(() => new URLSearchParams(location.search).get("token") ?? "", [location.search]);
 
   const [newPassword, setNewPassword] = useState("");
@@ -18,7 +21,7 @@ export const ResetPasswordPage = () => {
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!token) {
-      setError("Thiếu mã đặt lại mật khẩu.");
+      setError(t("auth.reset.missingToken"));
       return;
     }
     setError("");
@@ -26,7 +29,7 @@ export const ResetPasswordPage = () => {
     try {
       await resetPassword(token, newPassword);
       setCompleted(true);
-      notify("success", "Đã đặt lại mật khẩu.");
+      notify("success", t("auth.reset.success"));
     } catch (submitError) {
       const message = extractErrorMessage(submitError);
       setError(message);
@@ -37,12 +40,13 @@ export const ResetPasswordPage = () => {
   };
 
   return (
-    <div className="auth-page">
-      <div className="auth-card">
-        <h1>Đặt lại mật khẩu</h1>
+    <AuthFrame>
+      <div className="auth-heading">
+        <h1>{t("auth.reset.title")}</h1>
+      </div>
         <form className="form-grid" onSubmit={onSubmit}>
           <label className="field">
-            <span>Mật khẩu mới</span>
+            <span>{t("auth.reset.newPassword")}</span>
             <input
               type="password"
               value={newPassword}
@@ -52,15 +56,14 @@ export const ResetPasswordPage = () => {
             />
           </label>
           {error ? <div className="form-error">{error}</div> : null}
-          {completed ? <div className="muted">Đã đổi mật khẩu thành công.</div> : null}
+          {completed ? <div className="muted">{t("auth.reset.completed")}</div> : null}
           <button type="submit" className="button-primary" disabled={submitting || completed}>
-            {submitting ? "Đang cập nhật..." : "Đặt lại mật khẩu"}
+            {submitting ? t("auth.reset.submitting") : t("auth.reset.submit")}
           </button>
         </form>
         <div className="auth-links">
-          <Link to="/login">Quay lại đăng nhập</Link>
+          <Link to="/login">{t("auth.login.back")}</Link>
         </div>
-      </div>
-    </div>
+    </AuthFrame>
   );
 };

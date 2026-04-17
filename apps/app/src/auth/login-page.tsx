@@ -3,11 +3,14 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "./auth-context";
 import { extractErrorMessage } from "../lib/api";
 import { useToast } from "../components/toast";
+import { useI18n } from "../lib/i18n";
+import { AuthFrame } from "./auth-frame";
 
 export const LoginPage = () => {
   const navigate = useNavigate();
   const { login } = useAuth();
   const { notify } = useToast();
+  const { t } = useI18n();
 
   const [mode, setMode] = useState<"owner" | "staff" | "call-center">("owner");
   const [email, setEmail] = useState("");
@@ -21,7 +24,7 @@ export const LoginPage = () => {
     setSubmitting(true);
     try {
       await login(email, password, mode);
-      notify("success", "Đăng nhập thành công.");
+      notify("success", t("auth.login.success"));
       navigate("/dashboard");
     } catch (submitError) {
       const message = extractErrorMessage(submitError);
@@ -33,24 +36,25 @@ export const LoginPage = () => {
   };
 
   return (
-    <div className="auth-page">
-      <div className="auth-card">
-        <h1>{import.meta.env.VITE_APP_NAME}</h1>
-        <p className="muted">Ứng dụng cho chủ tiệm, nhân viên và tổng đài</p>
-        <form className="form-grid" onSubmit={onSubmit}>
+    <AuthFrame>
+      <div className="auth-heading">
+        <h1>{t("auth.login.title")}</h1>
+        <p className="muted">{t("auth.login.helper")}</p>
+      </div>
+      <form className="form-grid" onSubmit={onSubmit}>
           <label className="field">
-            <span>Đăng nhập với vai trò</span>
+            <span>{t("auth.login.role")}</span>
             <select
               value={mode}
               onChange={(event) => setMode(event.target.value as "owner" | "staff" | "call-center")}
             >
-              <option value="owner">Chủ tiệm</option>
-              <option value="staff">Nhân viên</option>
-              <option value="call-center">Tổng đài</option>
+              <option value="owner">{t("auth.login.owner")}</option>
+              <option value="staff">{t("auth.login.staff")}</option>
+              <option value="call-center">{t("auth.login.operator")}</option>
             </select>
           </label>
           <label className="field">
-            <span>Email</span>
+            <span>{t("common.email")}</span>
             <input
               type="email"
               value={email}
@@ -60,7 +64,7 @@ export const LoginPage = () => {
             />
           </label>
           <label className="field">
-            <span>Mật khẩu</span>
+            <span>{t("auth.login.password")}</span>
             <input
               type="password"
               value={password}
@@ -71,14 +75,19 @@ export const LoginPage = () => {
           </label>
           {error ? <div className="form-error">{error}</div> : null}
           <button type="submit" className="button-primary" disabled={submitting}>
-            {submitting ? "Đang đăng nhập..." : "Đăng nhập"}
+            {submitting ? t("auth.login.submitting") : t("auth.login.submit")}
           </button>
-        </form>
-        <div className="auth-links">
-          <Link to="/register">Tạo tài khoản chủ tiệm</Link>
-          <Link to="/forgot-password">Quên mật khẩu</Link>
-        </div>
+      </form>
+      <div className="demo-account-card">
+        <strong>{t("auth.login.demoTitle")}</strong>
+        <span>{t("auth.login.ownerDemo")}</span>
+        <span>{t("auth.login.staffDemo")}</span>
+        <span>{t("auth.login.operatorDemo")}</span>
       </div>
-    </div>
+      <div className="auth-links">
+        <Link to="/register">{t("auth.login.createOwner")}</Link>
+        <Link to="/forgot-password">{t("auth.login.forgot")}</Link>
+      </div>
+    </AuthFrame>
   );
 };

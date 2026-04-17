@@ -3,11 +3,16 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "./auth-context";
 import { extractErrorMessage } from "../lib/api";
 import { useToast } from "../components/toast";
+import { countryOptions, timezoneOptions } from "../lib/form-options";
+import { formatUsPhoneInput, requiredLabel, validateOptionalUsPhone } from "../lib/phone";
+import { useI18n } from "../lib/i18n";
+import { AuthFrame } from "./auth-frame";
 
 export const RegisterPage = () => {
   const navigate = useNavigate();
   const { registerOwner } = useAuth();
   const { notify } = useToast();
+  const { t } = useI18n();
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -34,6 +39,10 @@ export const RegisterPage = () => {
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError("");
+    if (!validateOptionalUsPhone(form.phone) || !validateOptionalUsPhone(form.salonPhone)) {
+      setError(t("form.phoneInvalid"));
+      return;
+    }
     setSubmitting(true);
     try {
       await registerOwner({
@@ -52,7 +61,7 @@ export const RegisterPage = () => {
           country: form.country || undefined
         }
       });
-      notify("success", "Đã tạo tài khoản.");
+      notify("success", t("auth.register.success"));
       navigate("/dashboard");
     } catch (submitError) {
       const message = extractErrorMessage(submitError);
@@ -64,12 +73,17 @@ export const RegisterPage = () => {
   };
 
   return (
-    <div className="auth-page">
-      <div className="auth-card large">
-        <h1>Tạo tài khoản chủ tiệm</h1>
-        <form className="form-grid two-columns" onSubmit={onSubmit}>
+    <AuthFrame wide>
+      <div className="auth-heading">
+        <h1>{t("auth.register.title")}</h1>
+        <p className="muted">{t("auth.register.helper")}</p>
+      </div>
+      <form className="form-grid two-columns" onSubmit={onSubmit}>
+          <div className="form-section-title">
+            <strong>{t("auth.register.ownerInfo")}</strong>
+          </div>
           <label className="field">
-            <span>Họ tên chủ tiệm</span>
+            <span>{requiredLabel(t("auth.register.ownerName"))}</span>
             <input
               value={form.fullName}
               onChange={(event) => onChange("fullName", event.target.value)}
@@ -77,7 +91,7 @@ export const RegisterPage = () => {
             />
           </label>
           <label className="field">
-            <span>Email chủ tiệm</span>
+            <span>{requiredLabel(t("common.email"))}</span>
             <input
               type="email"
               value={form.email}
@@ -86,16 +100,19 @@ export const RegisterPage = () => {
             />
           </label>
           <label className="field">
-            <span>Số điện thoại chủ tiệm</span>
+            <span>{t("auth.register.ownerPhone")}</span>
             <input
               type="tel"
-              inputMode="numeric"
+              inputMode="tel"
+              placeholder="(212) 555-0100"
               value={form.phone}
-              onChange={(event) => onChange("phone", event.target.value)}
+              onChange={(event) => onChange("phone", formatUsPhoneInput(event.target.value))}
+              aria-describedby="owner-phone-hint"
             />
+            <small id="owner-phone-hint">{t("form.phoneHint")}</small>
           </label>
           <label className="field">
-            <span>Mật khẩu</span>
+            <span>{requiredLabel(t("auth.login.password"))}</span>
             <input
               type="password"
               minLength={8}
@@ -103,10 +120,14 @@ export const RegisterPage = () => {
               onChange={(event) => onChange("password", event.target.value)}
               required
             />
+            <small>{t("auth.register.passwordHint")}</small>
           </label>
 
+          <div className="form-section-title">
+            <strong>{t("auth.register.salonInfo")}</strong>
+          </div>
           <label className="field">
-            <span>Tên tiệm</span>
+            <span>{requiredLabel(t("auth.register.salonName"))}</span>
             <input
               value={form.salonName}
               onChange={(event) => onChange("salonName", event.target.value)}
@@ -114,7 +135,7 @@ export const RegisterPage = () => {
             />
           </label>
           <label className="field">
-            <span>Email tiệm</span>
+            <span>{t("auth.register.salonEmail")}</span>
             <input
               type="email"
               value={form.salonEmail}
@@ -122,52 +143,65 @@ export const RegisterPage = () => {
             />
           </label>
           <label className="field">
-            <span>Số điện thoại tiệm</span>
+            <span>{t("auth.register.salonPhone")}</span>
             <input
               type="tel"
-              inputMode="numeric"
+              inputMode="tel"
+              placeholder="(212) 555-0100"
               value={form.salonPhone}
-              onChange={(event) => onChange("salonPhone", event.target.value)}
+              onChange={(event) => onChange("salonPhone", formatUsPhoneInput(event.target.value))}
             />
+            <small>{t("form.phoneHint")}</small>
           </label>
           <label className="field">
-            <span>Múi giờ</span>
-            <input
+            <span>{requiredLabel(t("common.timezone"))}</span>
+            <select
               value={form.timezone}
               onChange={(event) => onChange("timezone", event.target.value)}
               required
-            />
+            >
+              {timezoneOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </label>
           <label className="field">
-            <span>Thành phố</span>
+            <span>{t("common.city")}</span>
             <input value={form.city} onChange={(event) => onChange("city", event.target.value)} />
           </label>
           <label className="field">
-            <span>Bang</span>
+            <span>{t("common.state")}</span>
             <input value={form.state} onChange={(event) => onChange("state", event.target.value)} />
           </label>
           <label className="field">
-            <span>Mã bưu điện</span>
+            <span>{t("common.postalCode")}</span>
             <input
               value={form.postalCode}
               onChange={(event) => onChange("postalCode", event.target.value)}
             />
           </label>
           <label className="field">
-            <span>Quốc gia</span>
-            <input value={form.country} onChange={(event) => onChange("country", event.target.value)} />
+            <span>{t("common.country")}</span>
+            <select value={form.country} onChange={(event) => onChange("country", event.target.value)}>
+              {countryOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </label>
           {error ? <div className="form-error">{error}</div> : null}
           <div className="form-actions">
             <button type="submit" className="button-primary" disabled={submitting}>
-              {submitting ? "Đang tạo..." : "Tạo tài khoản"}
+              {submitting ? t("auth.register.submitting") : t("auth.register.submit")}
             </button>
           </div>
         </form>
         <div className="auth-links">
-          <Link to="/login">Quay lại đăng nhập</Link>
+          <Link to="/login">{t("auth.login.back")}</Link>
         </div>
-      </div>
-    </div>
+    </AuthFrame>
   );
 };

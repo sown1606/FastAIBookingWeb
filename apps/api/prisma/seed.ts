@@ -59,7 +59,7 @@ const run = async (): Promise<void> => {
   const ownerUser = await prisma.user.upsert({
     where: { email: ownerEmail },
     update: {
-      fullName: "Demo Salon Owner",
+      fullName: "Linh Nguyen",
       role: Role.SALON_OWNER,
       passwordHash: ownerPasswordHash,
       phone: "+12125550100",
@@ -67,7 +67,7 @@ const run = async (): Promise<void> => {
     },
     create: {
       email: ownerEmail,
-      fullName: "Demo Salon Owner",
+      fullName: "Linh Nguyen",
       role: Role.SALON_OWNER,
       passwordHash: ownerPasswordHash,
       phone: "+12125550100",
@@ -78,7 +78,7 @@ const run = async (): Promise<void> => {
   const callCenterUser = await prisma.user.upsert({
     where: { email: callCenterEmail },
     update: {
-      fullName: "Demo Call Center Agent",
+      fullName: "Anna Vo",
       role: Role.CALL_CENTER_AGENT,
       passwordHash: callCenterPasswordHash,
       phone: "+12125550190",
@@ -86,7 +86,7 @@ const run = async (): Promise<void> => {
     },
     create: {
       email: callCenterEmail,
-      fullName: "Demo Call Center Agent",
+      fullName: "Anna Vo",
       role: Role.CALL_CENTER_AGENT,
       passwordHash: callCenterPasswordHash,
       phone: "+12125550190",
@@ -104,7 +104,7 @@ const run = async (): Promise<void> => {
     salon = await prisma.salon.create({
       data: {
         ownerId: ownerUser.id,
-        name: "Demo Nail Studio",
+        name: "Luxe Nails & Beauty",
         timezone: "America/New_York",
         status: SalonStatus.ACTIVE,
         subscriptionStatus: SubscriptionStatus.ACTIVE,
@@ -113,10 +113,10 @@ const run = async (): Promise<void> => {
         originalPhoneNumber: "+12125550100",
         customerIncomingPhoneNumber: "+12125550110",
         notificationPhoneNumber: "+12125550100",
-        addressLine1: "100 Main St",
+        addressLine1: "128 Spring Street",
         city: "New York",
         state: "NY",
-        postalCode: "10001",
+        postalCode: "10012",
         country: "US"
       }
     });
@@ -124,7 +124,7 @@ const run = async (): Promise<void> => {
     salon = await prisma.salon.update({
       where: { id: salon.id },
       data: {
-        name: "Demo Nail Studio",
+        name: "Luxe Nails & Beauty",
         timezone: "America/New_York",
         status: SalonStatus.ACTIVE,
         subscriptionStatus: SubscriptionStatus.ACTIVE,
@@ -133,10 +133,10 @@ const run = async (): Promise<void> => {
         originalPhoneNumber: "+12125550100",
         customerIncomingPhoneNumber: "+12125550110",
         notificationPhoneNumber: "+12125550100",
-        addressLine1: "100 Main St",
+        addressLine1: "128 Spring Street",
         city: "New York",
         state: "NY",
-        postalCode: "10001",
+        postalCode: "10012",
         country: "US"
       }
     });
@@ -252,15 +252,15 @@ const run = async (): Promise<void> => {
     data: [
       {
         salonId: salon.id,
-        fullName: "Emma Kim",
+        fullName: "Mai Tran",
         email: "emma.demo@fastaibooking.local",
         phone: "+12125550101",
-        title: "Senior Technician",
+        title: "Senior Nail Technician",
         status: StaffStatus.ACTIVE
       },
       {
         salonId: salon.id,
-        fullName: "Ava Park",
+        fullName: "Vy Pham",
         email: "ava.demo@fastaibooking.local",
         phone: "+12125550102",
         title: "Nail Technician",
@@ -271,7 +271,7 @@ const run = async (): Promise<void> => {
         fullName: "Olivia Chen",
         email: "olivia.demo@fastaibooking.local",
         phone: "+12125550103",
-        title: "Nail Technician",
+        title: "Pedicure Specialist",
         status: StaffStatus.ACTIVE
       },
       {
@@ -295,7 +295,7 @@ const run = async (): Promise<void> => {
         fullName: "Isabella Tran",
         email: "isabella.demo@fastaibooking.local",
         phone: "+12125550106",
-        title: "Part-time Technician",
+        title: "Nail Technician",
         status: StaffStatus.ACTIVE
       },
       {
@@ -303,7 +303,7 @@ const run = async (): Promise<void> => {
         fullName: "Charlotte Ng",
         email: "charlotte.demo@fastaibooking.local",
         phone: "+12125550107",
-        title: "Part-time Technician",
+        title: "Receptionist",
         status: StaffStatus.ACTIVE
       }
     ]
@@ -343,6 +343,7 @@ const run = async (): Promise<void> => {
       {
         salonId: salon.id,
         name: "Classic Manicure",
+        description: "Shape, cuticle care, massage, and regular polish.",
         durationMinutes: 45,
         priceCents: 3500,
         isActive: true
@@ -350,6 +351,7 @@ const run = async (): Promise<void> => {
       {
         salonId: salon.id,
         name: "Gel Manicure",
+        description: "Long-lasting gel color with cuticle care and hand massage.",
         durationMinutes: 60,
         priceCents: 5000,
         isActive: true
@@ -357,8 +359,25 @@ const run = async (): Promise<void> => {
       {
         salonId: salon.id,
         name: "Deluxe Pedicure",
+        description: "Soak, scrub, callus care, hot towel, massage, and polish.",
         durationMinutes: 75,
         priceCents: 7000,
+        isActive: true
+      },
+      {
+        salonId: salon.id,
+        name: "Acrylic Full Set",
+        description: "Full acrylic extension set with gel polish.",
+        durationMinutes: 95,
+        priceCents: 8500,
+        isActive: true
+      },
+      {
+        salonId: salon.id,
+        name: "Nail Art Add-on",
+        description: "Simple designs, chrome, gems, or accent nails.",
+        durationMinutes: 20,
+        priceCents: 2000,
         isActive: true
       }
     ]
@@ -385,10 +404,10 @@ const run = async (): Promise<void> => {
     data: [
       {
         salonId: salon.id,
-        firstName: "Lily",
-        lastName: "Johnson",
+        firstName: "Thao",
+        lastName: "Nguyen",
         phone: "+12125550201",
-        email: "lily.johnson@example.com"
+        email: "thao.nguyen@example.com"
       },
       {
         salonId: salon.id,
@@ -396,6 +415,27 @@ const run = async (): Promise<void> => {
         lastName: "Wilson",
         phone: "+12125550202",
         email: "chloe.wilson@example.com"
+      },
+      {
+        salonId: salon.id,
+        firstName: "Mia",
+        lastName: "Garcia",
+        phone: "+12125550203",
+        email: "mia.garcia@example.com"
+      },
+      {
+        salonId: salon.id,
+        firstName: "Sarah",
+        lastName: "Kim",
+        phone: "+12125550204",
+        email: "sarah.kim@example.com"
+      },
+      {
+        salonId: salon.id,
+        firstName: "Emily",
+        lastName: "Tran",
+        phone: "+12125550205",
+        email: "emily.tran@example.com"
       }
     ]
   });
@@ -409,6 +449,14 @@ const run = async (): Promise<void> => {
   appointmentStart2.setUTCHours(17, 0, 0, 0);
   const appointmentEnd2 = new Date(appointmentStart2.getTime() + services[1]!.durationMinutes * 60000);
 
+  const appointmentStart3 = new Date(now.getTime() + 1000 * 60 * 60 * 48);
+  appointmentStart3.setUTCHours(16, 30, 0, 0);
+  const appointmentEnd3 = new Date(appointmentStart3.getTime() + services[3]!.durationMinutes * 60000);
+
+  const appointmentStart4 = new Date(now.getTime() + 1000 * 60 * 60 * 72);
+  appointmentStart4.setUTCHours(18, 0, 0, 0);
+  const appointmentEnd4 = new Date(appointmentStart4.getTime() + services[2]!.durationMinutes * 60000);
+
   const appointments = await prisma.appointment.createManyAndReturn({
     data: [
       {
@@ -421,7 +469,7 @@ const run = async (): Promise<void> => {
         durationMinutes: services[0]!.durationMinutes,
         status: AppointmentStatus.SCHEDULED,
         source: AppointmentSource.DASHBOARD,
-        notes: "Seed appointment",
+        notes: "Regular client prefers neutral colors.",
         createdByUserId: ownerUser.id
       },
       {
@@ -434,7 +482,33 @@ const run = async (): Promise<void> => {
         durationMinutes: services[1]!.durationMinutes,
         status: AppointmentStatus.CONFIRMED,
         source: AppointmentSource.AI,
-        notes: "AI booked sample",
+        notes: "AI booked gel manicure after missed call.",
+        createdByUserId: ownerUser.id
+      },
+      {
+        salonId: salon.id,
+        customerId: customers[2]!.id,
+        staffId: staffMembers[2]!.id,
+        serviceId: services[3]!.id,
+        startTime: appointmentStart3,
+        endTime: appointmentEnd3,
+        durationMinutes: services[3]!.durationMinutes,
+        status: AppointmentStatus.SCHEDULED,
+        source: AppointmentSource.DASHBOARD,
+        notes: "First acrylic full set consultation.",
+        createdByUserId: ownerUser.id
+      },
+      {
+        salonId: salon.id,
+        customerId: customers[3]!.id,
+        staffId: staffMembers[3]!.id,
+        serviceId: services[2]!.id,
+        startTime: appointmentStart4,
+        endTime: appointmentEnd4,
+        durationMinutes: services[2]!.durationMinutes,
+        status: AppointmentStatus.CONFIRMED,
+        source: AppointmentSource.AI,
+        notes: "Customer asked for deluxe pedicure and hot towel.",
         createdByUserId: ownerUser.id
       }
     ]
@@ -465,6 +539,20 @@ const run = async (): Promise<void> => {
         serviceId: services[1]!.id,
         durationMinutes: services[1]!.durationMinutes,
         priceCents: services[1]!.priceCents
+      },
+      {
+        salonId: salon.id,
+        appointmentId: appointments[2]!.id,
+        serviceId: services[3]!.id,
+        durationMinutes: services[3]!.durationMinutes,
+        priceCents: services[3]!.priceCents
+      },
+      {
+        salonId: salon.id,
+        appointmentId: appointments[3]!.id,
+        serviceId: services[2]!.id,
+        durationMinutes: services[2]!.durationMinutes,
+        priceCents: services[2]!.priceCents
       }
     ],
     skipDuplicates: true

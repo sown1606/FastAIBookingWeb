@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { apiGet, extractErrorMessage } from "../lib/api";
 import { ErrorBlock, LoadingBlock } from "../components/states";
 import { formatCurrencyCents, formatDateTime } from "../lib/format";
+import { useI18n } from "../lib/i18n";
 
 interface BillingUsage {
   currentUsage: {
@@ -22,6 +23,7 @@ interface BillingUsage {
 }
 
 export const BillingPage = () => {
+  const { t } = useI18n();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [usage, setUsage] = useState<BillingUsage | null>(null);
@@ -52,48 +54,49 @@ export const BillingPage = () => {
   }
 
   if (!usage) {
-    return <ErrorBlock message="Chưa tải được dữ liệu chi phí." onRetry={load} />;
+    return <ErrorBlock message={t("billing.loadError")} onRetry={load} />;
   }
 
   return (
     <div className="stack">
       <section className="card">
-        <h2>Kỳ hiện tại</h2>
+        <h2>{t("billing.current")}</h2>
+        <p className="muted">{t("billing.rule")}</p>
         <div className="metrics-grid">
           <div>
-            <span className="muted">Nhân viên miễn phí</span>
+            <span className="muted">{t("billing.freeStaff")}</span>
             <strong>{usage.currentUsage.freeStaffLimit}</strong>
           </div>
           <div>
-            <span className="muted">Nhân viên hoạt động</span>
+            <span className="muted">{t("billing.activeStaff")}</span>
             <strong>{usage.currentUsage.activeStaffCount}</strong>
           </div>
           <div>
-            <span className="muted">Nhân viên tính phí thêm</span>
+            <span className="muted">{t("billing.billableStaff")}</span>
             <strong>{usage.currentUsage.billableExtraStaffCount}</strong>
           </div>
           <div>
-            <span className="muted">Đơn giá mỗi nhân viên thêm</span>
+            <span className="muted">{t("billing.unitPrice")}</span>
             <strong>{formatCurrencyCents(usage.currentUsage.extraStaffUnitPriceCents)}</strong>
           </div>
           <div>
-            <span className="muted">Chi phí thêm dự kiến</span>
+            <span className="muted">{t("billing.estimated")}</span>
             <strong>{formatCurrencyCents(usage.currentUsage.estimatedExtraCostCents)}</strong>
           </div>
         </div>
       </section>
 
       <section className="card">
-        <h2>Lịch sử sử dụng</h2>
+        <h2>{t("billing.history")}</h2>
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Bắt đầu kỳ</th>
-                <th>Kết thúc kỳ</th>
-                <th>Nhân viên hoạt động</th>
-                <th>Nhân viên thêm</th>
-                <th>Chi phí thêm dự kiến</th>
+                <th>{t("billing.periodStart")}</th>
+                <th>{t("billing.periodEnd")}</th>
+                <th>{t("billing.activeStaff")}</th>
+                <th>{t("billing.billableStaff")}</th>
+                <th>{t("billing.estimated")}</th>
               </tr>
             </thead>
             <tbody>

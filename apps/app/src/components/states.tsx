@@ -1,5 +1,13 @@
-export const LoadingBlock = ({ message = "Đang tải..." }: { message?: string }) => {
-  return <div className="state-block">{message}</div>;
+import { useI18n } from "../lib/i18n";
+
+export const LoadingBlock = ({ message }: { message?: string }) => {
+  const { t } = useI18n();
+  return (
+    <div className="state-block state-loading">
+      <span className="loading-spinner" aria-hidden="true" />
+      <span>{message ?? t("common.loading")}</span>
+    </div>
+  );
 };
 
 export const ErrorBlock = ({
@@ -9,12 +17,13 @@ export const ErrorBlock = ({
   message: string;
   onRetry?: () => void;
 }) => {
+  const { t } = useI18n();
   return (
     <div className="state-block state-error">
       <div>{message}</div>
       {onRetry ? (
         <button type="button" className="button-secondary" onClick={onRetry}>
-          Thử lại
+          {t("common.retry")}
         </button>
       ) : null}
     </div>

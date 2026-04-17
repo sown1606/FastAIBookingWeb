@@ -1,4 +1,5 @@
 import { FormEvent, useRef, useState } from "react";
+import { useI18n } from "../lib/i18n";
 
 type FieldType =
   | "text"
@@ -62,6 +63,7 @@ export const toDateTimeLocalValue = (value: string | Date | null | undefined): s
 };
 
 export const useFormDialog = () => {
+  const { t } = useI18n();
   const resolverRef = useRef<((result: Record<string, string> | null) => void) | null>(null);
   const [dialog, setDialog] = useState<ActiveDialog | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
@@ -80,8 +82,8 @@ export const useFormDialog = () => {
       title: config.title,
       description: config.description,
       fields: config.fields,
-      confirmLabel: config.confirmLabel ?? "Lưu",
-      cancelLabel: config.cancelLabel ?? "Đóng"
+      confirmLabel: config.confirmLabel ?? t("common.save"),
+      cancelLabel: config.cancelLabel ?? t("common.cancel")
     });
     setValues(config.initialValues);
 
@@ -129,7 +131,10 @@ export const useFormDialog = () => {
             if (field.type === "textarea") {
               return (
                 <label key={field.name} className="field">
-                  <span>{field.label}</span>
+                  <span>
+                    {field.label}
+                    {field.required ? <em>{t("common.required")}</em> : null}
+                  </span>
                   <textarea
                     value={value}
                     rows={field.rows ?? 3}
@@ -146,7 +151,10 @@ export const useFormDialog = () => {
             if (field.type === "select") {
               return (
                 <label key={field.name} className="field">
-                  <span>{field.label}</span>
+                  <span>
+                    {field.label}
+                    {field.required ? <em>{t("common.required")}</em> : null}
+                  </span>
                   <select
                     value={value}
                     required={field.required}
@@ -187,9 +195,13 @@ export const useFormDialog = () => {
 
             return (
               <label key={field.name} className="field">
-                <span>{field.label}</span>
+                <span>
+                  {field.label}
+                  {field.required ? <em>{t("common.required")}</em> : null}
+                </span>
                 <input
                   type={field.type ?? "text"}
+                  inputMode={field.type === "tel" ? "tel" : undefined}
                   value={value}
                   min={field.min}
                   max={field.max}

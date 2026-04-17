@@ -3,10 +3,13 @@ import { Link } from "react-router-dom";
 import { useAuth } from "./auth-context";
 import { extractErrorMessage } from "../lib/api";
 import { useToast } from "../components/toast";
+import { useI18n } from "../lib/i18n";
+import { AuthFrame } from "./auth-frame";
 
 export const ForgotPasswordPage = () => {
   const { forgotPassword } = useAuth();
   const { notify } = useToast();
+  const { t } = useI18n();
 
   const [email, setEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -20,7 +23,7 @@ export const ForgotPasswordPage = () => {
     try {
       await forgotPassword(email);
       setSent(true);
-      notify("success", "Đã gửi yêu cầu đặt lại mật khẩu.");
+      notify("success", t("auth.forgot.success"));
     } catch (submitError) {
       const message = extractErrorMessage(submitError);
       setError(message);
@@ -31,12 +34,14 @@ export const ForgotPasswordPage = () => {
   };
 
   return (
-    <div className="auth-page">
-      <div className="auth-card">
-        <h1>Quên mật khẩu</h1>
+    <AuthFrame>
+      <div className="auth-heading">
+        <h1>{t("auth.forgot.title")}</h1>
+        <p className="muted">{t("auth.forgot.helper")}</p>
+      </div>
         <form className="form-grid" onSubmit={onSubmit}>
           <label className="field">
-            <span>Email</span>
+            <span>{t("common.email")}</span>
             <input
               type="email"
               value={email}
@@ -47,17 +52,16 @@ export const ForgotPasswordPage = () => {
           {error ? <div className="form-error">{error}</div> : null}
           {sent ? (
             <div className="muted">
-              Nếu email tồn tại, hướng dẫn đặt lại mật khẩu đã được gửi. Vui lòng kiểm tra hộp thư và spam.
+              {t("auth.forgot.sent")}
             </div>
           ) : null}
           <button type="submit" className="button-primary" disabled={submitting}>
-            {submitting ? "Đang gửi..." : "Gửi link đặt lại"}
+            {submitting ? t("auth.forgot.submitting") : t("auth.forgot.submit")}
           </button>
         </form>
         <div className="auth-links">
-          <Link to="/login">Quay lại đăng nhập</Link>
+          <Link to="/login">{t("auth.login.back")}</Link>
         </div>
-      </div>
-    </div>
+    </AuthFrame>
   );
 };

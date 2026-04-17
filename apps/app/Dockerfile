@@ -9,6 +9,7 @@ COPY apps/app/tsconfig.json ./tsconfig.json
 COPY apps/app/tsconfig.node.json ./tsconfig.node.json
 COPY apps/app/vite.config.ts ./vite.config.ts
 COPY apps/app/index.html ./index.html
+COPY apps/app/public ./public
 COPY apps/app/src ./src
 
 ARG VITE_API_BASE_URL=https://api-new-nail.kendemo.com

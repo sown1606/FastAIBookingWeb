@@ -4,6 +4,10 @@ import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
 import { useToast } from "../components/toast";
 import { formatCurrencyCents } from "../lib/format";
 import { useFormDialog } from "../components/form-dialog";
+import { DemoAvatar } from "../components/avatar";
+import { staffTitleOptions } from "../lib/form-options";
+import { formatUsPhoneInput, requiredLabel, validateOptionalUsPhone } from "../lib/phone";
+import { statusLabelKey, useI18n } from "../lib/i18n";
 
 interface StaffItem {
   id: string;
@@ -33,6 +37,7 @@ interface BillingUsage {
 export const StaffPage = () => {
   const { notify } = useToast();
   const { openFormDialog, FormDialog } = useFormDialog();
+  const { t } = useI18n();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [staff, setStaff] = useState<StaffItem[]>([]);
@@ -69,6 +74,10 @@ export const StaffPage = () => {
 
   const createStaffMember = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!validateOptionalUsPhone(form.phone)) {
+      notify("error", t("form.phoneInvalid"));
+      return;
+    }
     try {
       await apiPost<unknown, unknown>("/api/v1/staff", {
         fullName: form.fullName,
@@ -85,7 +94,7 @@ export const StaffPage = () => {
         title: "",
         isBookable: true
       });
-      notify("success", "Đã tạo nhân viên.");
+      notify("success", t("staff.created"));
       await load();
     } catch (createError) {
       notify("error", extractErrorMessage(createError));
@@ -94,22 +103,26 @@ export const StaffPage = () => {
 
   const editStaffMember = async (item: StaffItem) => {
     const values = await openFormDialog({
-      title: "Sửa nhân viên",
+      title: t("staff.edit"),
       fields: [
-        { name: "fullName", label: "Họ tên", required: true },
-        { name: "email", label: "Email", type: "email", required: true },
-        { name: "phone", label: "Số điện thoại Mỹ", type: "tel", required: true },
-        { name: "title", label: "Vai trò" }
+        { name: "fullName", label: t("staff.fullName"), required: true },
+        { name: "email", label: t("common.email"), type: "email", required: true },
+        { name: "phone", label: t("common.phone"), type: "tel", required: true },
+        { name: "title", label: t("staff.title"), type: "select", options: staffTitleOptions }
       ],
       initialValues: {
         fullName: item.fullName,
         email: item.email ?? "",
-        phone: item.phone ?? "",
+        phone: formatUsPhoneInput(item.phone ?? ""),
         title: item.title ?? ""
       },
-      confirmLabel: "Lưu nhân viên"
+      confirmLabel: t("staff.save")
     });
     if (!values) {
+      return;
+    }
+    if (!validateOptionalUsPhone(values.phone)) {
+      notify("error", t("form.phoneInvalid"));
       return;
     }
     try {
@@ -119,7 +132,7 @@ export const StaffPage = () => {
         phone: values.phone,
         title: values.title
       });
-      notify("success", "Đã cập nhật nhân viên.");
+      notify("success", t("staff.updated"));
       await load();
     } catch (updateError) {
       notify("error", extractErrorMessage(updateError));
@@ -130,7 +143,7 @@ export const StaffPage = () => {
     const action = item.status === "ACTIVE" ? "deactivate" : "reactivate";
     try {
       await apiPost<unknown, Record<string, never>>(`/api/v1/staff/${item.id}/${action}`, {});
-      notify("success", item.status === "ACTIVE" ? "Đã tắt nhân viên." : "Đã bật lại nhân viên.");
+      notify("success", item.status === "ACTIVE" ? t("staff.deactivated") : t("staff.reactivated"));
       await load();
     } catch (toggleError) {
       notify("error", extractErrorMessage(toggleError));
@@ -139,12 +152,12 @@ export const StaffPage = () => {
 
   const resetAccess = async (item: StaffItem) => {
     const values = await openFormDialog({
-      title: "Đặt lại đăng nhập",
+      title: t("staff.resetAccess"),
       description: item.fullName,
       fields: [
         {
           name: "newPassword",
-          label: "Mật khẩu mới",
+          label: t("staff.newPassword"),
           type: "password",
           required: true,
           min: 8
@@ -153,7 +166,7 @@ export const StaffPage = () => {
       initialValues: {
         newPassword: ""
       },
-      confirmLabel: "Đặt lại"
+      confirmLabel: t("staff.reset")
     });
     if (!values?.newPassword) {
       return;
@@ -162,7 +175,7 @@ export const StaffPage = () => {
       await apiPost<unknown, { newPassword: string }>(`/api/v1/staff/${item.id}/reset-access`, {
         newPassword: values.newPassword
       });
-      notify("success", "Đã đặt lại đăng nhập.");
+      notify("success", t("staff.accessReset"));
       await load();
     } catch (resetError) {
       notify("error", extractErrorMessage(resetError));
@@ -181,32 +194,33 @@ export const StaffPage = () => {
     <div className="stack">
       <FormDialog />
       <section className="card">
-        <h2>Sử dụng nhân viên và chi phí</h2>
+        <h2>{t("staff.usageTitle")}</h2>
+        <p className="muted">{t("billing.rule")}</p>
         <div className="metrics-grid">
           <div>
-            <span className="muted">Nhân viên miễn phí</span>
+            <span className="muted">{t("billing.freeStaff")}</span>
             <strong>{billing?.currentUsage.freeStaffLimit ?? 0}</strong>
           </div>
           <div>
-            <span className="muted">Đang hoạt động</span>
+            <span className="muted">{t("billing.activeStaff")}</span>
             <strong>{billing?.currentUsage.activeStaffCount ?? 0}</strong>
           </div>
           <div>
-            <span className="muted">Tính phí thêm</span>
+            <span className="muted">{t("billing.billableStaff")}</span>
             <strong>{billing?.currentUsage.billableExtraStaffCount ?? 0}</strong>
           </div>
           <div>
-            <span className="muted">Chi phí thêm dự kiến</span>
+            <span className="muted">{t("billing.estimated")}</span>
             <strong>{formatCurrencyCents(billing?.currentUsage.estimatedExtraCostCents)}</strong>
           </div>
         </div>
       </section>
 
       <section className="card">
-        <h2>Thêm nhân viên</h2>
+        <h2>{t("staff.addTitle")}</h2>
         <form className="form-grid two-columns" onSubmit={createStaffMember}>
           <label className="field">
-            <span>Họ tên</span>
+            <span>{requiredLabel(t("staff.fullName"))}</span>
             <input
               value={form.fullName}
               onChange={(event) => setForm((prev) => ({ ...prev, fullName: event.target.value }))}
@@ -214,7 +228,7 @@ export const StaffPage = () => {
             />
           </label>
           <label className="field">
-            <span>Email</span>
+            <span>{requiredLabel(t("common.email"))}</span>
             <input
               type="email"
               value={form.email}
@@ -223,64 +237,78 @@ export const StaffPage = () => {
             />
           </label>
           <label className="field">
-            <span>Số điện thoại Mỹ</span>
+            <span>{requiredLabel(t("common.phone"))}</span>
             <input
               type="tel"
-              inputMode="numeric"
+              inputMode="tel"
+              placeholder="(212) 555-0100"
               value={form.phone}
-              onChange={(event) => setForm((prev) => ({ ...prev, phone: event.target.value }))}
+              onChange={(event) => setForm((prev) => ({ ...prev, phone: formatUsPhoneInput(event.target.value) }))}
               required
             />
+            <small>{t("form.phoneHint")}</small>
           </label>
           <label className="field">
-            <span>Vai trò</span>
-            <input
+            <span>{t("staff.title")}</span>
+            <select
               value={form.title}
               onChange={(event) => setForm((prev) => ({ ...prev, title: event.target.value }))}
-            />
+            >
+              <option value="">{t("common.optional")}</option>
+              {staffTitleOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </label>
           <div className="form-actions">
             <button type="submit" className="button-primary">
-              Gửi lời mời
+              {t("staff.invite")}
             </button>
           </div>
         </form>
       </section>
 
       <section className="card">
-        <h2>Danh sách nhân viên</h2>
+        <h2>{t("staff.listTitle")}</h2>
         {staff.length ? (
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Tên</th>
-                <th>Vai trò</th>
-                <th>Trạng thái</th>
-                <th>Đăng nhập</th>
-                <th>Thao tác</th>
+                <th>{t("staff.fullName")}</th>
+                <th>{t("staff.title")}</th>
+                <th>{t("common.status")}</th>
+                <th>{t("staff.login")}</th>
+                <th>{t("common.actions")}</th>
               </tr>
             </thead>
             <tbody>
               {staff.map((item) => (
                 <tr key={item.id}>
                   <td>
-                    {item.fullName}
-                    <div className="muted">{item.email ?? "-"}</div>
+                    <div className="person-cell">
+                      <DemoAvatar name={item.fullName} variant="staff" size="sm" />
+                      <span>
+                        {item.fullName}
+                        <span className="muted">{item.email ?? "-"}</span>
+                      </span>
+                    </div>
                   </td>
                   <td>{item.title ?? "-"}</td>
-                  <td>{item.status}</td>
-                  <td>{item.user ? (item.user.isActive ? "Đang bật" : "Đang tắt") : "Chưa tạo"}</td>
+                  <td>{statusLabelKey(item.status) ? t(statusLabelKey(item.status)!) : item.status}</td>
+                  <td>{item.user ? (item.user.isActive ? t("staff.on") : t("staff.off")) : t("staff.notCreated")}</td>
                   <td>
                     <div className="inline-actions">
                       <button type="button" className="button-secondary" onClick={() => editStaffMember(item)}>
-                        Sửa
+                        {t("staff.editAction")}
                       </button>
                       <button type="button" className="button-secondary" onClick={() => toggleStatus(item)}>
-                        {item.status === "ACTIVE" ? "Tắt" : "Bật lại"}
+                        {item.status === "ACTIVE" ? t("staff.disable") : t("staff.enable")}
                       </button>
                       <button type="button" className="button-secondary" onClick={() => resetAccess(item)}>
-                        Đặt lại
+                        {t("staff.reset")}
                       </button>
                     </div>
                   </td>
@@ -290,7 +318,7 @@ export const StaffPage = () => {
           </table>
         </div>
         ) : (
-          <EmptyBlock message="Chưa có nhân viên nào." />
+          <EmptyBlock message={t("staff.empty")} />
         )}
       </section>
     </div>

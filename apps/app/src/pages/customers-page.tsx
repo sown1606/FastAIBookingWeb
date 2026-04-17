@@ -4,6 +4,9 @@ import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
 import { useToast } from "../components/toast";
 import { formatDateTime } from "../lib/format";
 import type { Pagination } from "../types";
+import { DemoAvatar } from "../components/avatar";
+import { formatUsPhoneInput, requiredLabel, validateOptionalUsPhone } from "../lib/phone";
+import { statusLabelKey, useI18n } from "../lib/i18n";
 
 interface CustomerItem {
   id: string;
@@ -35,6 +38,7 @@ interface CustomerHistory {
 
 export const CustomersPage = () => {
   const { notify } = useToast();
+  const { t } = useI18n();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -79,6 +83,10 @@ export const CustomersPage = () => {
 
   const createCustomer = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!validateOptionalUsPhone(form.phone)) {
+      notify("error", t("form.phoneInvalid"));
+      return;
+    }
     try {
       await apiPost<unknown, unknown>("/api/v1/customers", {
         firstName: form.firstName,
@@ -92,7 +100,7 @@ export const CustomersPage = () => {
         email: "",
         phone: ""
       });
-      notify("success", "Đã tạo khách hàng.");
+      notify("success", t("customers.created"));
       await load();
     } catch (createError) {
       notify("error", extractErrorMessage(createError));
@@ -119,10 +127,10 @@ export const CustomersPage = () => {
   return (
     <div className="stack">
       <section className="card">
-        <h2>Tạo khách hàng</h2>
+        <h2>{t("customers.createTitle")}</h2>
         <form className="form-grid two-columns" onSubmit={createCustomer}>
           <label className="field">
-            <span>Tên</span>
+            <span>{requiredLabel(t("customers.firstName"))}</span>
             <input
               value={form.firstName}
               onChange={(event) => setForm((prev) => ({ ...prev, firstName: event.target.value }))}
@@ -130,7 +138,7 @@ export const CustomersPage = () => {
             />
           </label>
           <label className="field">
-            <span>Họ</span>
+            <span>{requiredLabel(t("customers.lastName"))}</span>
             <input
               value={form.lastName}
               onChange={(event) => setForm((prev) => ({ ...prev, lastName: event.target.value }))}
@@ -138,7 +146,7 @@ export const CustomersPage = () => {
             />
           </label>
           <label className="field">
-            <span>Email</span>
+            <span>{t("common.email")}</span>
             <input
               type="email"
               value={form.email}
@@ -146,52 +154,61 @@ export const CustomersPage = () => {
             />
           </label>
           <label className="field">
-            <span>Số điện thoại</span>
+            <span>{requiredLabel(t("common.phone"))}</span>
             <input
+              type="tel"
+              inputMode="tel"
+              placeholder="(212) 555-0100"
               value={form.phone}
-              onChange={(event) => setForm((prev) => ({ ...prev, phone: event.target.value }))}
+              onChange={(event) => setForm((prev) => ({ ...prev, phone: formatUsPhoneInput(event.target.value) }))}
               required
             />
+            <small>{t("form.phoneHint")}</small>
           </label>
           <div className="form-actions">
             <button type="submit" className="button-primary">
-              Thêm khách
+              {t("customers.add")}
             </button>
           </div>
         </form>
       </section>
 
       <section className="card">
-        <h2>Khách hàng</h2>
+        <h2>{t("customers.listTitle")}</h2>
         <label className="field compact">
-          <span>Tìm kiếm</span>
+          <span>{t("common.search")}</span>
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Tên, email, điện thoại"
+            placeholder={t("customers.searchPlaceholder")}
           />
         </label>
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Tên</th>
-                <th>Email</th>
-                <th>Số điện thoại</th>
-                <th>Lịch sử</th>
+                <th>{t("staff.fullName")}</th>
+                <th>{t("common.email")}</th>
+                <th>{t("common.phone")}</th>
+                <th>{t("customers.history")}</th>
               </tr>
             </thead>
             <tbody>
               {customers?.items.map((item) => (
                 <tr key={item.id}>
                   <td>
-                    {item.firstName} {item.lastName}
+                    <div className="person-cell">
+                      <DemoAvatar name={`${item.firstName} ${item.lastName}`} variant="customer" size="sm" />
+                      <span>
+                        {item.firstName} {item.lastName}
+                      </span>
+                    </div>
                   </td>
                   <td>{item.email ?? "-"}</td>
                   <td>{item.phone}</td>
                   <td>
                     <button type="button" className="button-secondary" onClick={() => selectCustomer(item.id)}>
-                      Xem lịch sử
+                      {t("customers.viewHistory")}
                     </button>
                   </td>
                 </tr>
@@ -202,16 +219,16 @@ export const CustomersPage = () => {
       </section>
 
       <section className="card">
-        <h2>Lịch sử lịch hẹn của khách</h2>
+        <h2>{t("customers.historyTitle")}</h2>
         {selected ? (
           <div className="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>Thời gian</th>
-                  <th>Dịch vụ</th>
-                  <th>Nhân viên</th>
-                  <th>Trạng thái</th>
+                  <th>{t("appointments.time")}</th>
+                  <th>{t("appointments.service")}</th>
+                  <th>{t("appointments.staff")}</th>
+                  <th>{t("common.status")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -220,14 +237,14 @@ export const CustomersPage = () => {
                     <td>{formatDateTime(appointment.startTime)}</td>
                     <td>{appointment.service.name}</td>
                     <td>{appointment.staff.fullName}</td>
-                    <td>{appointment.status}</td>
+                    <td>{statusLabelKey(appointment.status) ? t(statusLabelKey(appointment.status)!) : appointment.status}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         ) : (
-          <EmptyBlock message="Chọn một khách để xem lịch sử lịch hẹn." />
+          <EmptyBlock message={t("customers.pickForHistory")} />
         )}
       </section>
     </div>
