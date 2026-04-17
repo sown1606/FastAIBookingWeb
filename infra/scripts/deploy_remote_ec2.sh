@@ -21,6 +21,7 @@ rsync -az --delete -e "${RSYNC_RSH}" \
   --exclude ".idea" \
   --exclude ".env" \
   --exclude "fastAibooking.pem" \
+  --exclude "fastAIBooking.zip" \
   --exclude "node_modules" \
   --exclude "apps/*/node_modules" \
   --exclude "apps.zip" \

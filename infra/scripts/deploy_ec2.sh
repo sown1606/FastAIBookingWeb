@@ -26,6 +26,7 @@ fi
 
 "${COMPOSE[@]}" up -d --build --remove-orphans
 "${COMPOSE[@]}" exec -T api npm run prisma:migrate:deploy
+"${COMPOSE[@]}" exec -T nginx nginx -s reload
 
 if [[ "${RUN_SEED:-false}" == "true" ]]; then
   "${COMPOSE[@]}" exec -T api npm run prisma:seed
