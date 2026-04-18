@@ -81,6 +81,32 @@ enum BookingAttemptStatus {
   NO_AVAILABILITY
 }
 
+enum CallRoutingOutcome {
+  SALON_RING
+  AI_RECEPTION
+  CALL_CENTER_ESCALATION
+  QUEUED
+  VOICEMAIL
+  CALLBACK_REQUEST
+  SMS_FALLBACK
+}
+
+enum CallEscalationStatus {
+  PENDING
+  QUEUED
+  CONNECTED
+  VOICEMAIL_LEFT
+  CALLBACK_REQUESTED
+  SMS_SENT
+  CLOSED
+}
+
+enum CallLogVisibility {
+  OWNER_ONLY
+  OWNER_AND_STAFF
+  OWNER_STAFF_OPERATOR
+}
+
 model User {
   id                       String                      @id @default(uuid())
   email                    String                      @unique
@@ -151,6 +177,7 @@ model Salon {
   auditLogs                   AuditLog[]
   callCenterAssignments       CallCenterSalonAssignment[]
   alerts                      Alert[]
+  callEscalations             CallEscalation[]
   chatMessages                ChatMessage[]
   workSessions                StaffWorkSession[]
   staffReminders              StaffReminder[]
@@ -162,20 +189,28 @@ model Salon {
 }
 
 model SalonSetting {
-  id                      String   @id @default(uuid())
-  salonId                 String   @unique
-  salon                   Salon    @relation(fields: [salonId], references: [id], onDelete: Cascade)
-  currency                String   @default("USD")
-  locale                  String   @default("vi-VN")
-  bookingLeadTimeMinutes  Int      @default(0)
+  id                      String            @id @default(uuid())
+  salonId                 String            @unique
+  salon                   Salon             @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  currency                String            @default("USD")
+  locale                  String            @default("vi-VN")
+  bookingLeadTimeMinutes  Int               @default(0)
   cancellationPolicy      String?
-  aiForwardingEnabled     Boolean  @default(false)
-  aiTransferRingCount     Int      @default(3)
-  callCenterEnabled       Boolean  @default(false)
+  aiForwardingEnabled     Boolean           @default(false)
+  aiReceptionEnabled      Boolean           @default(false)
+  aiTransferRingCount     Int               @default(3)
+  callCenterEnabled       Boolean           @default(false)
+  voicemailEnabled        Boolean           @default(true)
+  callbackRequestEnabled  Boolean           @default(true)
+  smsFallbackEnabled      Boolean           @default(false)
+  aiGreetingPrompt        String?
+  callerLanguage          String            @default("en")
+  callLogVisibility       CallLogVisibility @default(OWNER_STAFF_OPERATOR)
+  notificationRecipients  Json?
   callCenterRoutingNumber String?
   callCenterRoutingNote   String?
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
+  createdAt               DateTime          @default(now())
+  updatedAt               DateTime          @updatedAt
 }
 
 model Subscription {
@@ -444,9 +479,9 @@ model CallCenterSalonAssignment {
 }
 
 model CallSession {
-  id                String             @id @default(uuid())
+  id                String              @id @default(uuid())
   salonId           String?
-  salon             Salon?             @relation(fields: [salonId], references: [id], onDelete: SetNull)
+  salon             Salon?              @relation(fields: [salonId], references: [id], onDelete: SetNull)
   provider          ExternalProvider
   providerCallId    String
   providerAccountId String?
@@ -456,24 +491,65 @@ model CallSession {
   trackingNumber    String?
   sourceName        String?
   campaignName      String?
-  status            CallSessionStatus  @default(RECEIVED)
+  status            CallSessionStatus   @default(RECEIVED)
   startedAt         DateTime?
   endedAt           DateTime?
   durationSeconds   Int?
+  recordingUrl      String?
   transcriptSummary String?
+  aiSummary         Json?
   bookingResult     Json?
+  routingOutcome    CallRoutingOutcome?
+  language          String?
   failureReason     String?
+  finalResolution   String?
   rawPayload        Json?
   events            CallEvent[]
   transcripts       CallTranscript[]
   bookingAttempts   BookingAttempt[]
   aiInteractions    AiInteractionLog[]
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
+  callEscalations   CallEscalation[]
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
 
   @@unique([provider, providerCallId])
   @@index([salonId, createdAt])
   @@index([provider, status])
+  @@index([routingOutcome, createdAt])
+}
+
+model CallEscalation {
+  id                     String               @id @default(uuid())
+  salonId                String
+  salon                  Salon                @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  callSessionId          String               @unique
+  callSession            CallSession          @relation(fields: [callSessionId], references: [id], onDelete: Cascade)
+  status                 CallEscalationStatus @default(PENDING)
+  routingOutcome         CallRoutingOutcome?
+  escalationReason       String?
+  requestedBy            String?
+  customerPhone          String?
+  queueId                String?
+  queueName              String?
+  amazonConnectContactId String?
+  assignedAgentUserId    String?
+  messageToCaller        String?
+  callbackPhone          String?
+  smsRecipientPhone      String?
+  voicemailRecordingUrl  String?
+  operatorNotes          String?
+  resolution             String?
+  qaNotes                String?
+  metadata               Json?
+  requestedAt            DateTime             @default(now())
+  queuedAt               DateTime?
+  connectedAt            DateTime?
+  closedAt               DateTime?
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+
+  @@index([salonId, status, requestedAt])
+  @@index([routingOutcome, createdAt])
 }
 
 model CallEvent {

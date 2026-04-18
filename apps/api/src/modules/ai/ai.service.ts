@@ -1,6 +1,7 @@
 import { DateTime } from "luxon";
 import {
   BookingAttemptStatus,
+  CallRoutingOutcome,
   ExternalProvider,
   Prisma,
   StaffStatus
@@ -10,9 +11,11 @@ import { createAuditLog } from "../../lib/audit";
 import { AppError } from "../../lib/errors";
 import { createAppointmentFromAI } from "../appointments/appointments.service";
 import { getAvailableSlots, validateAppointmentSlot } from "../availability/availability.service";
+import { createOrUpdateCallEscalation } from "../call-center/call-center.service";
 import {
   createTranscriptForSession,
-  markBookingAttemptResultOnCall
+  markBookingAttemptResultOnCall,
+  updateCallAIState
 } from "../calls/calls.service";
 import { normalizePhoneForMatching } from "../calls/providers/callrail.provider";
 import { createCustomer } from "../customers/customers.service";
@@ -22,7 +25,7 @@ import { VertexAIProvider } from "./providers/vertex-ai.provider";
 
 interface ParseBookingInput {
   salonId: string;
-  actorUserId: string;
+  actorUserId?: string;
   text: string;
   callSessionId?: string;
   transcriptId?: string;
@@ -290,7 +293,7 @@ const getSalonAIContext = async (salonId: string) => {
 
 const createAIInteractionLog = async (input: {
   salonId: string;
-  actorUserId: string;
+  actorUserId?: string;
   callSessionId?: string;
   transcriptId?: string;
   model: string;
@@ -591,6 +594,80 @@ const attachBookingAttemptToInteraction = async (
   });
 };
 
+const resolveActionActorUserId = async (
+  salonId: string,
+  actorUserId?: string
+): Promise<string> => {
+  if (actorUserId) {
+    return actorUserId;
+  }
+
+  const salon = await prisma.salon.findUnique({
+    where: {
+      id: salonId
+    },
+    select: {
+      ownerId: true
+    }
+  });
+
+  if (!salon?.ownerId) {
+    throw new AppError("Salon owner not found.", 404, "SALON_OWNER_NOT_FOUND");
+  }
+
+  return salon.ownerId;
+};
+
+const buildStructuredCallSummary = (input: {
+  transcriptId?: string;
+  parsed: BookingIntentResult;
+  bookingAttemptId?: string;
+  bookingStatus?: BookingAttemptStatus;
+  appointmentId?: string | null;
+  alternatives?: Array<{
+    staffId: string;
+    staffName: string;
+    startTime: string;
+    endTime: string;
+  }>;
+  escalation?: {
+    id: string;
+    status: string;
+    routingOutcome?: string | null;
+    messageToCaller?: string | null;
+  } | null;
+  resolution: string;
+}) => {
+  return {
+    sourceTranscriptId: input.transcriptId,
+    intentType: input.parsed.intentType,
+    confidence: input.parsed.confidence,
+    customer: input.parsed.customer,
+    requestedService: input.parsed.requestedService ?? null,
+    requestedStaff: input.parsed.requestedStaff ?? null,
+    requestedDateTime: input.parsed.requestedDateTime ?? null,
+    missingFields: input.parsed.missingFields,
+    bookingAttemptId: input.bookingAttemptId ?? null,
+    bookingStatus: input.bookingStatus ?? null,
+    appointmentId: input.appointmentId ?? null,
+    escalation: input.escalation
+      ? {
+          id: input.escalation.id,
+          status: input.escalation.status,
+          routingOutcome: input.escalation.routingOutcome ?? null,
+          messageToCaller: input.escalation.messageToCaller ?? null
+        }
+      : null,
+    alternatives: input.alternatives ?? [],
+    resolution: input.resolution,
+    summaryText:
+      input.parsed.intentType === "LIVE_PERSON_REQUEST"
+        ? input.escalation?.messageToCaller ?? "Please wait while I connect you."
+        : input.resolution,
+    updatedAt: new Date().toISOString()
+  };
+};
+
 export const parseBookingText = async (input: ParseBookingInput) => {
   const parsed = await parseBookingIntentInternal(input);
   return {
@@ -602,6 +679,7 @@ export const parseBookingText = async (input: ParseBookingInput) => {
 export const bookingFromText = async (input: BookingFromTextInput) => {
   const parsed = await parseBookingIntentInternal(input);
   const normalized = parsed.parsedIntent.normalizedBookingRequest;
+  const actionActorUserId = await resolveActionActorUserId(input.salonId, input.actorUserId);
 
   const bookingAttempt = await prisma.bookingAttempt.create({
     data: {
@@ -619,11 +697,70 @@ export const bookingFromText = async (input: BookingFromTextInput) => {
       rawInput: toJson({
         text: input.text
       }),
-      createdByUserId: input.actorUserId
+      createdByUserId: actionActorUserId
     }
   });
 
   await attachBookingAttemptToInteraction(parsed.interaction.id, bookingAttempt.id);
+
+  if (parsed.parsedIntent.intentType === "LIVE_PERSON_REQUEST" && input.callSessionId) {
+    const escalation = await createOrUpdateCallEscalation({
+      salonId: input.salonId,
+      callSessionId: input.callSessionId,
+      requestedBy: "AI_RECEPTION",
+      escalationReason: "Caller requested a human operator.",
+      customerPhone: normalized.customerPhone ?? parsed.parsedIntent.customer.phone ?? null,
+      messageToCaller: "Please wait while I connect you.",
+      metadata: {
+        transcriptId: input.transcriptId,
+        interactionId: parsed.interaction.id
+      }
+    });
+
+    const updated = await prisma.bookingAttempt.update({
+      where: {
+        id: bookingAttempt.id
+      },
+      data: {
+        status: BookingAttemptStatus.NEEDS_INPUT,
+        failureReason: "Caller requested a human operator."
+      }
+    });
+
+    await markBookingAttemptResultOnCall(input.callSessionId, updated.status, {
+      bookingAttemptId: updated.id,
+      failureReason: updated.failureReason ?? undefined
+    });
+
+    await updateCallAIState(input.callSessionId, {
+      aiSummary: buildStructuredCallSummary({
+        transcriptId: input.transcriptId,
+        parsed: parsed.parsedIntent,
+        bookingAttemptId: updated.id,
+        bookingStatus: updated.status,
+        escalation,
+        resolution: "Caller requested a human operator."
+      }),
+      routingOutcome:
+        escalation.routingOutcome === "QUEUED"
+          ? CallRoutingOutcome.QUEUED
+          : (escalation.routingOutcome as CallRoutingOutcome | null) ??
+            CallRoutingOutcome.CALL_CENTER_ESCALATION,
+      finalResolution:
+        escalation.routingOutcome === "QUEUED"
+          ? "Waiting in the human operator queue."
+          : "Caller requested a human operator.",
+      language: "en"
+    });
+
+    return {
+      bookingAttempt: updated,
+      parsed: parsed.parsedIntent,
+      appointment: null,
+      alternatives: [],
+      escalation
+    };
+  }
 
   if (!parsed.parsedIntent.isReadyToBook || parsed.parsedIntent.intentType !== "BOOK_APPOINTMENT") {
     const updated = await prisma.bookingAttempt.update({
@@ -643,6 +780,18 @@ export const bookingFromText = async (input: BookingFromTextInput) => {
       await markBookingAttemptResultOnCall(input.callSessionId, updated.status, {
         bookingAttemptId: updated.id,
         failureReason: updated.failureReason ?? undefined
+      });
+      await updateCallAIState(input.callSessionId, {
+        aiSummary: buildStructuredCallSummary({
+          transcriptId: input.transcriptId,
+          parsed: parsed.parsedIntent,
+          bookingAttemptId: updated.id,
+          bookingStatus: updated.status,
+          resolution: updated.failureReason ?? "Intent is not a booking request."
+        }),
+        routingOutcome: CallRoutingOutcome.AI_RECEPTION,
+        finalResolution: updated.failureReason ?? "Intent is not a booking request.",
+        language: "en"
       });
     }
 
@@ -671,6 +820,18 @@ export const bookingFromText = async (input: BookingFromTextInput) => {
       await markBookingAttemptResultOnCall(input.callSessionId, updated.status, {
         bookingAttemptId: updated.id,
         failureReason: updated.failureReason ?? undefined
+      });
+      await updateCallAIState(input.callSessionId, {
+        aiSummary: buildStructuredCallSummary({
+          transcriptId: input.transcriptId,
+          parsed: parsed.parsedIntent,
+          bookingAttemptId: updated.id,
+          bookingStatus: updated.status,
+          resolution: updated.failureReason ?? `Service not found: ${normalized.serviceName}`
+        }),
+        routingOutcome: CallRoutingOutcome.AI_RECEPTION,
+        finalResolution: updated.failureReason ?? `Service not found: ${normalized.serviceName}`,
+        language: "en"
       });
     }
     return {
@@ -715,6 +876,18 @@ export const bookingFromText = async (input: BookingFromTextInput) => {
       await markBookingAttemptResultOnCall(input.callSessionId, updated.status, {
         bookingAttemptId: updated.id,
         failureReason: updated.failureReason ?? undefined
+      });
+      await updateCallAIState(input.callSessionId, {
+        aiSummary: buildStructuredCallSummary({
+          transcriptId: input.transcriptId,
+          parsed: parsed.parsedIntent,
+          bookingAttemptId: updated.id,
+          bookingStatus: updated.status,
+          resolution: updated.failureReason ?? "No bookable staff found."
+        }),
+        routingOutcome: CallRoutingOutcome.AI_RECEPTION,
+        finalResolution: updated.failureReason ?? "No bookable staff found.",
+        language: "en"
       });
     }
     return {
@@ -774,6 +947,21 @@ export const bookingFromText = async (input: BookingFromTextInput) => {
         bookingAttemptId: updated.id,
         failureReason: updated.failureReason ?? undefined
       });
+      await updateCallAIState(input.callSessionId, {
+        aiSummary: buildStructuredCallSummary({
+          transcriptId: input.transcriptId,
+          parsed: parsed.parsedIntent,
+          bookingAttemptId: updated.id,
+          bookingStatus: updated.status,
+          alternatives,
+          resolution:
+            updated.failureReason ?? "Requested time unavailable. Suggested alternatives returned."
+        }),
+        routingOutcome: CallRoutingOutcome.AI_RECEPTION,
+        finalResolution:
+          updated.failureReason ?? "Requested time unavailable. Suggested alternatives returned.",
+        language: "en"
+      });
     }
     return {
       bookingAttempt: updated,
@@ -785,7 +973,7 @@ export const bookingFromText = async (input: BookingFromTextInput) => {
 
   const customer = await resolveCustomer({
     salonId: input.salonId,
-    actorUserId: input.actorUserId,
+    actorUserId: actionActorUserId,
     customerName: normalized.customerName,
     customerPhone: normalized.customerPhone,
     createCustomerIfMissing: input.createCustomerIfMissing
@@ -804,6 +992,18 @@ export const bookingFromText = async (input: BookingFromTextInput) => {
         bookingAttemptId: updated.id,
         failureReason: updated.failureReason ?? undefined
       });
+      await updateCallAIState(input.callSessionId, {
+        aiSummary: buildStructuredCallSummary({
+          transcriptId: input.transcriptId,
+          parsed: parsed.parsedIntent,
+          bookingAttemptId: updated.id,
+          bookingStatus: updated.status,
+          resolution: updated.failureReason ?? "Customer could not be resolved."
+        }),
+        routingOutcome: CallRoutingOutcome.AI_RECEPTION,
+        finalResolution: updated.failureReason ?? "Customer could not be resolved.",
+        language: "en"
+      });
     }
     return {
       bookingAttempt: updated,
@@ -813,7 +1013,7 @@ export const bookingFromText = async (input: BookingFromTextInput) => {
     };
   }
 
-  const appointment = await createAppointmentFromAI(input.salonId, input.actorUserId, {
+  const appointment = await createAppointmentFromAI(input.salonId, actionActorUserId, {
     customerId: customer.id,
     staffId: chosenStaff.id,
     serviceId: service.id,
@@ -834,7 +1034,7 @@ export const bookingFromText = async (input: BookingFromTextInput) => {
 
   await createAuditLog({
     salonId: input.salonId,
-    actorUserId: input.actorUserId,
+    actorUserId: actionActorUserId,
     action: "AI_BOOKING_ATTEMPT_SUCCESS",
     entityType: "BookingAttempt",
     entityId: updated.id,
@@ -848,19 +1048,33 @@ export const bookingFromText = async (input: BookingFromTextInput) => {
       bookingAttemptId: updated.id,
       appointmentId: appointment.id
     });
+    await updateCallAIState(input.callSessionId, {
+      aiSummary: buildStructuredCallSummary({
+        transcriptId: input.transcriptId,
+        parsed: parsed.parsedIntent,
+        bookingAttemptId: updated.id,
+        bookingStatus: updated.status,
+        appointmentId: appointment.id,
+        resolution: "Appointment created successfully."
+      }),
+      routingOutcome: CallRoutingOutcome.AI_RECEPTION,
+      finalResolution: "Appointment created successfully.",
+      language: "en"
+    });
   }
 
   return {
     bookingAttempt: updated,
     parsed: parsed.parsedIntent,
     appointment,
-    alternatives: []
+    alternatives: [],
+    escalation: null
   };
 };
 
 export const bookingFromTranscript = async (input: {
   salonId: string;
-  actorUserId: string;
+  actorUserId?: string;
   transcriptText: string;
   callSessionId?: string;
   transcriptSource: string;
@@ -939,7 +1153,8 @@ export const getAIInteractionById = async (salonId: string, interactionId: strin
     },
     include: {
       bookingAttempt: true,
-      transcript: true
+      transcript: true,
+      callSession: true
     }
   });
   if (!interaction) {
@@ -996,7 +1211,8 @@ export const getAIInteractionByIdForAdmin = async (interactionId: string) => {
         }
       },
       bookingAttempt: true,
-      transcript: true
+      transcript: true,
+      callSession: true
     }
   });
   if (!interaction) {
@@ -1030,7 +1246,8 @@ export const listAIInteractionsForAdmin = async (input: {
             name: true
           }
         },
-        bookingAttempt: true
+        bookingAttempt: true,
+        callSession: true
       }
     }),
     prisma.aiInteractionLog.count({ where })

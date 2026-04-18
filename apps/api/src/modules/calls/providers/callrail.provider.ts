@@ -229,6 +229,25 @@ const parseTranscriptText = (payload: Record<string, unknown>): string | undefin
   return undefined;
 };
 
+const parseRecordingUrl = (payload: Record<string, unknown>): string | undefined => {
+  const candidates = [
+    payload.recording_url,
+    payload.recordingUrl,
+    pullNested(payload, ["call", "recording_url"]),
+    pullNested(payload, ["call", "recordingUrl"]),
+    pullNested(payload, ["recording", "url"])
+  ];
+
+  for (const candidate of candidates) {
+    const value = asString(candidate);
+    if (value) {
+      return value;
+    }
+  }
+
+  return undefined;
+};
+
 export class CallRailProviderAdapter implements CallProviderAdapter {
   public readonly provider = ExternalProvider.CALLRAIL;
 
@@ -303,6 +322,7 @@ export class CallRailProviderAdapter implements CallProviderAdapter {
     }
 
     const transcriptText = parseTranscriptText(payloadRecord);
+    const recordingUrl = parseRecordingUrl(payloadRecord);
 
     return {
       signatureVerified,
@@ -355,6 +375,7 @@ export class CallRailProviderAdapter implements CallProviderAdapter {
           asNumber(payloadRecord.duration_seconds) ??
           asNumber(payloadRecord.duration) ??
           (callRecord ? asNumber(callRecord.duration_seconds) ?? asNumber(callRecord.duration) : undefined),
+        recordingUrl,
         transcriptText,
         transcriptSummary:
           asString(payloadRecord.transcript_summary) ??

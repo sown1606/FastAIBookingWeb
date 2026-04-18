@@ -42,9 +42,17 @@ const settingsUpdateSchema = z.object({
   locale: z.string().min(2).max(16).optional(),
   bookingLeadTimeMinutes: z.coerce.number().int().nonnegative().optional(),
   cancellationPolicy: z.string().max(1000).nullable().optional(),
+  aiReceptionEnabled: z.boolean().optional(),
   aiForwardingEnabled: z.boolean().optional(),
   aiTransferRingCount: z.coerce.number().int().min(1).max(10).optional(),
   callCenterEnabled: z.boolean().optional(),
+  voicemailEnabled: z.boolean().optional(),
+  callbackRequestEnabled: z.boolean().optional(),
+  smsFallbackEnabled: z.boolean().optional(),
+  aiGreetingPrompt: z.string().max(2000).nullable().optional(),
+  callerLanguage: z.string().min(2).max(16).optional(),
+  callLogVisibility: z.enum(["OWNER_ONLY", "OWNER_AND_STAFF", "OWNER_STAFF_OPERATOR"]).optional(),
+  notificationRecipients: z.array(z.string().min(3).max(160)).max(20).optional(),
   callCenterRoutingNumber: optionalUsPhoneSchema,
   callCenterRoutingNote: z.string().max(1000).nullable().optional()
 });
@@ -91,7 +99,10 @@ salonRouter.put(
   validate(settingsUpdateSchema),
   asyncHandler(async (req, res) => {
     const payload = req.body as z.infer<typeof settingsUpdateSchema>;
-    const settings = await updateSalonSettings(req.auth!.salonId!, req.auth!.userId, payload);
+    const settings = await updateSalonSettings(req.auth!.salonId!, req.auth!.userId, {
+      ...payload,
+      aiReceptionEnabled: payload.aiReceptionEnabled ?? payload.aiForwardingEnabled
+    });
     return sendSuccess(res, {
       message: "Salon settings updated.",
       data: settings

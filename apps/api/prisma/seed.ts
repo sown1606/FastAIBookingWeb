@@ -1,6 +1,11 @@
 import {
   AppointmentSource,
   AppointmentStatus,
+  BookingAttemptStatus,
+  CallEscalationStatus,
+  CallRoutingOutcome,
+  CallSessionStatus,
+  ExternalProvider,
   PrismaClient,
   Role,
   SalonStatus,
@@ -29,6 +34,8 @@ const run = async (): Promise<void> => {
   const adminPassword = "Admin123!";
   const ownerEmail = "owner.demo@fastaibooking.local";
   const ownerPassword = "Owner123!";
+  const callCenterOwnerEmail = "owner.callcenter.demo@fastaibooking.local";
+  const callCenterOwnerPassword = "Owner123!";
   const staffEmail = "staff.demo@fastaibooking.local";
   const staffPassword = "Staff123!";
   const callCenterEmail = "agent.demo@fastaibooking.local";
@@ -36,6 +43,7 @@ const run = async (): Promise<void> => {
 
   const adminPasswordHash = await hashPassword(adminPassword);
   const ownerPasswordHash = await hashPassword(ownerPassword);
+  const callCenterOwnerPasswordHash = await hashPassword(callCenterOwnerPassword);
   const staffPasswordHash = await hashPassword(staffPassword);
   const callCenterPasswordHash = await hashPassword(callCenterPassword);
 
@@ -90,6 +98,25 @@ const run = async (): Promise<void> => {
       role: Role.CALL_CENTER_AGENT,
       passwordHash: callCenterPasswordHash,
       phone: "+12125550190",
+      isActive: true
+    }
+  });
+
+  const callCenterOwnerUser = await prisma.user.upsert({
+    where: { email: callCenterOwnerEmail },
+    update: {
+      fullName: "Maya Tran",
+      role: Role.SALON_OWNER,
+      passwordHash: callCenterOwnerPasswordHash,
+      phone: "+12125550120",
+      isActive: true
+    },
+    create: {
+      email: callCenterOwnerEmail,
+      fullName: "Maya Tran",
+      role: Role.SALON_OWNER,
+      passwordHash: callCenterOwnerPasswordHash,
+      phone: "+12125550120",
       isActive: true
     }
   });
@@ -153,21 +180,39 @@ const run = async (): Promise<void> => {
     where: { salonId: salon.id },
     update: {
       currency: "USD",
-      locale: "vi-VN",
+      locale: "en-US",
       bookingLeadTimeMinutes: 30,
       aiForwardingEnabled: true,
+      aiReceptionEnabled: true,
       aiTransferRingCount: 3,
       callCenterEnabled: true,
+      voicemailEnabled: true,
+      callbackRequestEnabled: true,
+      smsFallbackEnabled: true,
+      aiGreetingPrompt:
+        "Thank you for calling Luxe Nails & Beauty. I can help with appointments or connect you to a human operator.",
+      callerLanguage: "en",
+      callLogVisibility: "OWNER_STAFF_OPERATOR",
+      notificationRecipients: [ownerEmail, "+12125550100"],
       callCenterRoutingNumber: "+12125550190"
     },
     create: {
       salonId: salon.id,
       currency: "USD",
-      locale: "vi-VN",
+      locale: "en-US",
       bookingLeadTimeMinutes: 30,
       aiForwardingEnabled: true,
+      aiReceptionEnabled: true,
       aiTransferRingCount: 3,
       callCenterEnabled: true,
+      voicemailEnabled: true,
+      callbackRequestEnabled: true,
+      smsFallbackEnabled: true,
+      aiGreetingPrompt:
+        "Thank you for calling Luxe Nails & Beauty. I can help with appointments or connect you to a human operator.",
+      callerLanguage: "en",
+      callLogVisibility: "OWNER_STAFF_OPERATOR",
+      notificationRecipients: [ownerEmail, "+12125550100"],
       callCenterRoutingNumber: "+12125550190"
     }
   });
@@ -188,6 +233,154 @@ const run = async (): Promise<void> => {
   });
 
   const { periodStart, periodEnd } = getCurrentBillingPeriod();
+
+  let callCenterOnlySalon = await prisma.salon.findUnique({
+    where: {
+      ownerId: callCenterOwnerUser.id
+    }
+  });
+
+  if (!callCenterOnlySalon) {
+    callCenterOnlySalon = await prisma.salon.create({
+      data: {
+        ownerId: callCenterOwnerUser.id,
+        name: "Concierge Nails Demo",
+        timezone: "America/Los_Angeles",
+        status: SalonStatus.ACTIVE,
+        subscriptionStatus: SubscriptionStatus.ACTIVE,
+        contactEmail: callCenterOwnerEmail,
+        contactPhone: "+12125550120",
+        originalPhoneNumber: "+12125550120",
+        customerIncomingPhoneNumber: "+12125550121",
+        notificationPhoneNumber: "+12125550120",
+        addressLine1: "510 Market Street",
+        city: "San Francisco",
+        state: "CA",
+        postalCode: "94105",
+        country: "US"
+      }
+    });
+  } else {
+    callCenterOnlySalon = await prisma.salon.update({
+      where: { id: callCenterOnlySalon.id },
+      data: {
+        name: "Concierge Nails Demo",
+        timezone: "America/Los_Angeles",
+        status: SalonStatus.ACTIVE,
+        subscriptionStatus: SubscriptionStatus.ACTIVE,
+        contactEmail: callCenterOwnerEmail,
+        contactPhone: "+12125550120",
+        originalPhoneNumber: "+12125550120",
+        customerIncomingPhoneNumber: "+12125550121",
+        notificationPhoneNumber: "+12125550120",
+        addressLine1: "510 Market Street",
+        city: "San Francisco",
+        state: "CA",
+        postalCode: "94105",
+        country: "US"
+      }
+    });
+  }
+
+  await prisma.user.update({
+    where: { id: callCenterOwnerUser.id },
+    data: {
+      salonId: callCenterOnlySalon.id
+    }
+  });
+
+  await prisma.salonSetting.upsert({
+    where: { salonId: callCenterOnlySalon.id },
+    update: {
+      currency: "USD",
+      locale: "en-US",
+      bookingLeadTimeMinutes: 15,
+      aiForwardingEnabled: false,
+      aiReceptionEnabled: false,
+      aiTransferRingCount: 2,
+      callCenterEnabled: true,
+      voicemailEnabled: false,
+      callbackRequestEnabled: true,
+      smsFallbackEnabled: true,
+      aiGreetingPrompt: "Please wait while I connect you to our operator team.",
+      callerLanguage: "en",
+      callLogVisibility: "OWNER_STAFF_OPERATOR",
+      notificationRecipients: [callCenterOwnerEmail, "+12125550120"],
+      callCenterRoutingNumber: "+12125550190",
+      callCenterRoutingNote: "Call center first routing demo."
+    },
+    create: {
+      salonId: callCenterOnlySalon.id,
+      currency: "USD",
+      locale: "en-US",
+      bookingLeadTimeMinutes: 15,
+      aiForwardingEnabled: false,
+      aiReceptionEnabled: false,
+      aiTransferRingCount: 2,
+      callCenterEnabled: true,
+      voicemailEnabled: false,
+      callbackRequestEnabled: true,
+      smsFallbackEnabled: true,
+      aiGreetingPrompt: "Please wait while I connect you to our operator team.",
+      callerLanguage: "en",
+      callLogVisibility: "OWNER_STAFF_OPERATOR",
+      notificationRecipients: [callCenterOwnerEmail, "+12125550120"],
+      callCenterRoutingNumber: "+12125550190",
+      callCenterRoutingNote: "Call center first routing demo."
+    }
+  });
+
+  await prisma.subscription.upsert({
+    where: { salonId: callCenterOnlySalon.id },
+    update: {
+      planCode: "starter",
+      status: SubscriptionStatus.ACTIVE,
+      basePriceCents: 9900,
+      currentPeriodStart: periodStart,
+      currentPeriodEnd: periodEnd
+    },
+    create: {
+      salonId: callCenterOnlySalon.id,
+      planCode: "starter",
+      status: SubscriptionStatus.ACTIVE,
+      basePriceCents: 9900,
+      currentPeriodStart: periodStart,
+      currentPeriodEnd: periodEnd
+    }
+  });
+
+  await prisma.businessHour.deleteMany({
+    where: {
+      salonId: callCenterOnlySalon.id
+    }
+  });
+
+  await prisma.businessHour.createMany({
+    data: [
+      { salonId: callCenterOnlySalon.id, dayOfWeek: 0, isOpen: false, openTime: null, closeTime: null },
+      { salonId: callCenterOnlySalon.id, dayOfWeek: 1, isOpen: true, openTime: "09:00", closeTime: "18:00" },
+      { salonId: callCenterOnlySalon.id, dayOfWeek: 2, isOpen: true, openTime: "09:00", closeTime: "18:00" },
+      { salonId: callCenterOnlySalon.id, dayOfWeek: 3, isOpen: true, openTime: "09:00", closeTime: "18:00" },
+      { salonId: callCenterOnlySalon.id, dayOfWeek: 4, isOpen: true, openTime: "09:00", closeTime: "18:00" },
+      { salonId: callCenterOnlySalon.id, dayOfWeek: 5, isOpen: true, openTime: "09:00", closeTime: "18:00" },
+      { salonId: callCenterOnlySalon.id, dayOfWeek: 6, isOpen: true, openTime: "09:00", closeTime: "16:00" }
+    ]
+  });
+
+  await prisma.callCenterSalonAssignment.upsert({
+    where: {
+      salonId_agentUserId: {
+        salonId: callCenterOnlySalon.id,
+        agentUserId: callCenterUser.id
+      }
+    },
+    update: {},
+    create: {
+      salonId: callCenterOnlySalon.id,
+      agentUserId: callCenterUser.id,
+      assignedByUserId: adminUser.id
+    }
+  });
 
   await prisma.subscription.upsert({
     where: { salonId: salon.id },
@@ -558,6 +751,277 @@ const run = async (): Promise<void> => {
       }
     ],
     skipDuplicates: true
+  });
+
+  await prisma.integrationConfig.deleteMany({
+    where: {
+      salonId: {
+        in: [salon.id, callCenterOnlySalon.id]
+      }
+    }
+  });
+
+  await prisma.integrationConfig.createMany({
+    data: [
+      {
+        salonId: salon.id,
+        provider: ExternalProvider.CALLRAIL,
+        configKey: "tracking_number",
+        configValue: "12125550110"
+      },
+      {
+        salonId: salon.id,
+        provider: ExternalProvider.VERTEX,
+        configKey: "project_id",
+        configValue: "demo-vertex-project"
+      },
+      {
+        salonId: salon.id,
+        provider: ExternalProvider.AMAZON_CONNECT,
+        configKey: "queue_id",
+        configValue: "demo-shared-queue"
+      },
+      {
+        salonId: callCenterOnlySalon.id,
+        provider: ExternalProvider.CALLRAIL,
+        configKey: "tracking_number",
+        configValue: "12125550121"
+      },
+      {
+        salonId: callCenterOnlySalon.id,
+        provider: ExternalProvider.AMAZON_CONNECT,
+        configKey: "queue_id",
+        configValue: "demo-shared-queue"
+      }
+    ]
+  });
+
+  await prisma.callEscalation.deleteMany({
+    where: {
+      salonId: salon.id
+    }
+  });
+  await prisma.aiInteractionLog.deleteMany({
+    where: {
+      salonId: salon.id
+    }
+  });
+  await prisma.bookingAttempt.deleteMany({
+    where: {
+      salonId: salon.id
+    }
+  });
+  await prisma.callTranscript.deleteMany({
+    where: {
+      salonId: salon.id
+    }
+  });
+  await prisma.callEvent.deleteMany({
+    where: {
+      salonId: salon.id
+    }
+  });
+  await prisma.callSession.deleteMany({
+    where: {
+      salonId: salon.id
+    }
+  });
+
+  const aiBookingCall = await prisma.callSession.create({
+    data: {
+      salonId: salon.id,
+      provider: ExternalProvider.CALLRAIL,
+      providerCallId: "demo-call-booking-1",
+      callerPhone: customers[4]!.phone,
+      dialedPhone: salon.customerIncomingPhoneNumber,
+      trackingNumber: salon.customerIncomingPhoneNumber,
+      status: CallSessionStatus.COMPLETED,
+      startedAt: new Date(now.getTime() - 1000 * 60 * 90),
+      endedAt: new Date(now.getTime() - 1000 * 60 * 86),
+      durationSeconds: 240,
+      recordingUrl: "https://example.com/recordings/demo-call-booking-1.mp3",
+      transcriptSummary: "Customer requested a gel manicure for tomorrow at 1 PM.",
+      routingOutcome: CallRoutingOutcome.AI_RECEPTION,
+      finalResolution: "Appointment created successfully.",
+      aiSummary: {
+        intentType: "BOOK_APPOINTMENT",
+        bookingStatus: "SUCCESS",
+        appointmentId: appointments[1]!.id,
+        sourceTranscriptId: "seed-demo-call-booking-1",
+        summaryText: "Customer booked a gel manicure through AI Reception."
+      }
+    }
+  });
+
+  const aiBookingTranscript = await prisma.callTranscript.create({
+    data: {
+      salonId: salon.id,
+      callSessionId: aiBookingCall.id,
+      transcriptSource: "callrail_webhook",
+      transcriptText:
+        "Hi, this is Emily Tran. I want to book a gel manicure tomorrow at 1 PM. My phone number is +1 212 555 0205.",
+      transcriptSummary: "Customer asked for a gel manicure tomorrow at 1 PM."
+    }
+  });
+
+  const aiBookingAttempt = await prisma.bookingAttempt.create({
+    data: {
+      salonId: salon.id,
+      callSessionId: aiBookingCall.id,
+      transcriptId: aiBookingTranscript.id,
+      appointmentId: appointments[1]!.id,
+      status: BookingAttemptStatus.SUCCESS,
+      source: "AI_TRANSCRIPT",
+      customerName: "Emily Tran",
+      customerPhone: customers[4]!.phone,
+      requestedService: services[1]!.name,
+      requestedStaff: staffMembers[1]!.fullName,
+      requestedDateTimeText: appointments[1]!.startTime.toISOString(),
+      normalizedRequest: {
+        customerName: "Emily Tran",
+        customerPhone: customers[4]!.phone,
+        serviceName: services[1]!.name,
+        staffName: staffMembers[1]!.fullName,
+        startTimeIso: appointments[1]!.startTime.toISOString(),
+        timezone: "America/New_York"
+      },
+      createdByUserId: ownerUser.id
+    }
+  });
+
+  await prisma.aiInteractionLog.create({
+    data: {
+      salonId: salon.id,
+      provider: ExternalProvider.VERTEX,
+      model: "gemini-1.5-flash-002",
+      taskType: "parse_booking",
+      requestText: aiBookingTranscript.transcriptText,
+      requestPayload: { source: "seed" },
+      responseText: JSON.stringify({
+        intentType: "BOOK_APPOINTMENT",
+        confidence: 0.94
+      }),
+      responsePayload: { source: "seed" },
+      parsedOutput: {
+        intentType: "BOOK_APPOINTMENT",
+        customer: {
+          name: "Emily Tran",
+          phone: customers[4]!.phone
+        },
+        requestedService: services[1]!.name
+      },
+      isValid: true,
+      confidence: 0.94,
+      callSessionId: aiBookingCall.id,
+      transcriptId: aiBookingTranscript.id,
+      bookingAttemptId: aiBookingAttempt.id,
+      createdByUserId: ownerUser.id
+    }
+  });
+
+  const escalationCall = await prisma.callSession.create({
+    data: {
+      salonId: salon.id,
+      provider: ExternalProvider.CALLRAIL,
+      providerCallId: "demo-call-escalation-1",
+      callerPhone: "+12125550301",
+      dialedPhone: salon.customerIncomingPhoneNumber,
+      trackingNumber: salon.customerIncomingPhoneNumber,
+      status: CallSessionStatus.COMPLETED,
+      startedAt: new Date(now.getTime() - 1000 * 60 * 60),
+      endedAt: new Date(now.getTime() - 1000 * 60 * 56),
+      durationSeconds: 260,
+      recordingUrl: "https://example.com/recordings/demo-call-escalation-1.mp3",
+      transcriptSummary: "Caller asked for a human after checking appointment availability.",
+      routingOutcome: CallRoutingOutcome.CALL_CENTER_ESCALATION,
+      finalResolution: "Connected to a human operator.",
+      aiSummary: {
+        intentType: "LIVE_PERSON_REQUEST",
+        bookingStatus: "NEEDS_INPUT",
+        summaryText: "Caller asked for a human operator."
+      }
+    }
+  });
+
+  await prisma.callTranscript.create({
+    data: {
+      salonId: salon.id,
+      callSessionId: escalationCall.id,
+      transcriptSource: "callrail_webhook",
+      transcriptText:
+        "I need a real person. Please wait while I connect you. I want to talk to someone about rescheduling.",
+      transcriptSummary: "Caller requested a human operator."
+    }
+  });
+
+  await prisma.callEscalation.create({
+    data: {
+      salonId: salon.id,
+      callSessionId: escalationCall.id,
+      status: CallEscalationStatus.CONNECTED,
+      routingOutcome: CallRoutingOutcome.CALL_CENTER_ESCALATION,
+      escalationReason: "Caller requested a human operator.",
+      requestedBy: "AI_RECEPTION",
+      customerPhone: "+12125550301",
+      queueId: "demo-shared-queue",
+      queueName: "Amazon Connect Shared Queue",
+      assignedAgentUserId: callCenterUser.id,
+      messageToCaller: "Please wait while I connect you.",
+      operatorNotes: "Handled as a reschedule inquiry.",
+      resolution: "Connected to a human operator.",
+      qaNotes: "Warm transfer completed.",
+      requestedAt: new Date(now.getTime() - 1000 * 60 * 59),
+      queuedAt: new Date(now.getTime() - 1000 * 60 * 58),
+      connectedAt: new Date(now.getTime() - 1000 * 60 * 57),
+      closedAt: new Date(now.getTime() - 1000 * 60 * 55)
+    }
+  });
+
+  await prisma.callEvent.createMany({
+    data: [
+      {
+        salonId: salon.id,
+        callSessionId: aiBookingCall.id,
+        provider: ExternalProvider.CALLRAIL,
+        providerEventId: "demo-booking-pre-call",
+        eventType: "pre-call",
+        statusAfter: CallSessionStatus.RINGING,
+        payload: { eventType: "pre-call" },
+        payloadHash: "demo-booking-pre-call-hash"
+      },
+      {
+        salonId: salon.id,
+        callSessionId: aiBookingCall.id,
+        provider: ExternalProvider.CALLRAIL,
+        providerEventId: "demo-booking-post-call",
+        eventType: "post-call",
+        statusBefore: CallSessionStatus.IN_PROGRESS,
+        statusAfter: CallSessionStatus.COMPLETED,
+        payload: { eventType: "post-call" },
+        payloadHash: "demo-booking-post-call-hash"
+      },
+      {
+        salonId: salon.id,
+        callSessionId: escalationCall.id,
+        provider: ExternalProvider.CALLRAIL,
+        providerEventId: "demo-escalation-routing-complete",
+        eventType: "call-routing-complete",
+        statusAfter: CallSessionStatus.IN_PROGRESS,
+        payload: { eventType: "call-routing-complete" },
+        payloadHash: "demo-escalation-routing-complete-hash"
+      },
+      {
+        salonId: salon.id,
+        callSessionId: escalationCall.id,
+        provider: ExternalProvider.CALLRAIL,
+        providerEventId: "demo-escalation-call-modified",
+        eventType: "call-modified",
+        statusBefore: CallSessionStatus.IN_PROGRESS,
+        statusAfter: CallSessionStatus.COMPLETED,
+        payload: { eventType: "call-modified" },
+        payloadHash: "demo-escalation-call-modified-hash"
+      }
+    ]
   });
 
   const freeStaffLimit = Number(process.env.FREE_STAFF_LIMIT ?? 5);

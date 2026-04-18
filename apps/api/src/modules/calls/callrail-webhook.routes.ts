@@ -3,6 +3,7 @@ import { z } from "zod";
 import { asyncHandler } from "../../middleware/async-handler";
 import { validate } from "../../middleware/validate";
 import { sendSuccess } from "../../utils/response";
+import { runCallAutomationForSession } from "./call-automation.service";
 import { buildCallRoutingPlan, processCallRailWebhook } from "./calls.service";
 
 const routingPlanSchema = z.object({
@@ -20,6 +21,9 @@ callrailWebhookRouter.post(
   asyncHandler(async (req, res) => {
     const rawBody = req.rawBody ?? JSON.stringify(req.body ?? {});
     const result = await processCallRailWebhook(req.body, rawBody, req.headers);
+    if (result.callSessionId && !result.isDuplicateEvent) {
+      await runCallAutomationForSession(result.callSessionId);
+    }
     return sendSuccess(res, {
       statusCode: 202,
       message: "CallRail webhook accepted.",

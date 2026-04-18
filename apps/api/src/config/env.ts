@@ -1,3 +1,4 @@
+import fs from "fs";
 import dotenv from "dotenv";
 import { z } from "zod";
 
@@ -17,6 +18,14 @@ const optionalPositiveInteger = z.preprocess((value) => {
   return Number(value);
 }, z.number().int().positive().optional());
 
+const asNonEmpty = (value: string | undefined): string | undefined => {
+  if (!value) {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+};
+
 const envSchema = z.object({
   APP_NAME: z.string().default("FastAIBooking API"),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -31,7 +40,6 @@ const envSchema = z.object({
   DATABASE_NAME: z.string().default("fastaibooking"),
   DATABASE_USER: z.string().default("postgres"),
   DATABASE_PASSWORD: z.string().default("postgres"),
-  DATABASE_SSL: z.string().optional(),
   JWT_SECRET: z.string().min(16),
   JWT_EXPIRES_IN: z.string().default("15m"),
   REFRESH_TOKEN_SECRET: z.string().min(16),
@@ -53,21 +61,19 @@ const envSchema = z.object({
   TWILIO_MESSAGING_SERVICE_SID: z.string().optional(),
   FREE_STAFF_LIMIT: z.coerce.number().int().nonnegative().default(5),
   EXTRA_STAFF_PRICE: z.coerce.number().nonnegative().default(0),
-  DOMAIN_API: z.string().default("api-new-nail.kendemo.com"),
-  DOMAIN_ADMIN: z.string().default("admin-new-nail.kendemo.com"),
-  DOMAIN_APP: z.string().default("app-new-nail.kendemo.com"),
-  SERVER_IP: z.string().default("32.194.150.135"),
-  CALLRAIL_API_KEY: z.string().optional(),
-  CALLRAIL_ACCOUNT_ID: z.string().optional(),
-  CALLRAIL_COMPANY_ID: z.string().optional(),
   CALLRAIL_WEBHOOK_SECRET: z.string().optional(),
-  CALLRAIL_BASE_URL: z.string().default("https://api.callrail.com"),
   CALLRAIL_TRACKING_NUMBER: z.string().optional(),
   CALLRAIL_TARGET_NUMBER: z.string().optional(),
   CALLRAIL_DEFAULT_SALON_ID: z.string().optional(),
   CALLRAIL_AI_FLOW_ID: z.string().optional(),
   CALLRAIL_LIVE_PERSON_FLOW_ID: z.string().optional(),
   CALL_CENTER_DEFAULT_PHONE: z.string().optional(),
+  AWS_REGION: z.string().optional(),
+  AMAZON_CONNECT_INSTANCE_ID: z.string().optional(),
+  AMAZON_CONNECT_INSTANCE_URL: z.string().optional(),
+  AMAZON_CONNECT_CCP_URL: z.string().optional(),
+  AMAZON_CONNECT_QUEUE_ID_DEFAULT: z.string().optional(),
+  AMAZON_CONNECT_ROUTING_PROFILE_ID: z.string().optional(),
   VERTEX_PROJECT_ID: z.string().optional(),
   VERTEX_LOCATION: z.string().default("us-central1"),
   VERTEX_MODEL: z.string().default("gemini-1.5-flash-002"),
@@ -77,8 +83,6 @@ const envSchema = z.object({
   VERTEX_PRIVATE_KEY: z.string().optional(),
   VERTEX_PRIVATE_KEY_ID: z.string().optional(),
   VERTEX_CLIENT_EMAIL: z.string().optional(),
-  VERTEX_CLIENT_ID: z.string().optional(),
-  VERTEX_CLIENT_CERT_URL: z.string().optional(),
   AI_PROVIDER: z.enum(["vertex"]).default("vertex"),
   CALL_PROVIDER: z.enum(["callrail"]).default("callrail")
 });
@@ -98,10 +102,68 @@ const databaseUrl =
   base.DATABASE_URL ??
   `postgresql://${encodeURIComponent(base.DATABASE_USER)}:${encodeURIComponent(base.DATABASE_PASSWORD)}@${base.DATABASE_HOST}:${base.DATABASE_PORT}/${base.DATABASE_NAME}`;
 
+const hasVertexCredentialFile = (() => {
+  const credentialsPath = asNonEmpty(base.GOOGLE_APPLICATION_CREDENTIALS);
+  if (!credentialsPath) {
+    return false;
+  }
+  return fs.existsSync(credentialsPath);
+})();
+
+const hasVertexCredentialEnv =
+  Boolean(asNonEmpty(base.VERTEX_CLIENT_EMAIL) ?? asNonEmpty(base.VERTEX_SERVICE_ACCOUNT_EMAIL)) &&
+  Boolean(asNonEmpty(base.VERTEX_PRIVATE_KEY));
+
+const integrationStatuses = {
+  callRail: {
+    configured: Boolean(
+      asNonEmpty(base.CALLRAIL_WEBHOOK_SECRET) &&
+        asNonEmpty(base.CALLRAIL_AI_FLOW_ID) &&
+        asNonEmpty(base.CALLRAIL_LIVE_PERSON_FLOW_ID)
+    ),
+    missing: [
+      !asNonEmpty(base.CALLRAIL_WEBHOOK_SECRET) ? "CALLRAIL_WEBHOOK_SECRET" : null,
+      !asNonEmpty(base.CALLRAIL_AI_FLOW_ID) ? "CALLRAIL_AI_FLOW_ID" : null,
+      !asNonEmpty(base.CALLRAIL_LIVE_PERSON_FLOW_ID) ? "CALLRAIL_LIVE_PERSON_FLOW_ID" : null
+    ].filter((value): value is string => Boolean(value))
+  },
+  vertex: {
+    configured: Boolean(asNonEmpty(base.VERTEX_PROJECT_ID) && (hasVertexCredentialFile || hasVertexCredentialEnv)),
+    missing: [
+      !asNonEmpty(base.VERTEX_PROJECT_ID) ? "VERTEX_PROJECT_ID" : null,
+      !hasVertexCredentialFile && !hasVertexCredentialEnv
+        ? "GOOGLE_APPLICATION_CREDENTIALS or VERTEX_CLIENT_EMAIL/VERTEX_PRIVATE_KEY"
+        : null
+    ].filter((value): value is string => Boolean(value))
+  },
+  amazonConnect: {
+    configured: Boolean(
+      asNonEmpty(base.AWS_REGION) &&
+        asNonEmpty(base.AMAZON_CONNECT_INSTANCE_ID) &&
+        asNonEmpty(base.AMAZON_CONNECT_INSTANCE_URL) &&
+        asNonEmpty(base.AMAZON_CONNECT_CCP_URL) &&
+        asNonEmpty(base.AMAZON_CONNECT_QUEUE_ID_DEFAULT) &&
+        asNonEmpty(base.AMAZON_CONNECT_ROUTING_PROFILE_ID)
+    ),
+    missing: [
+      !asNonEmpty(base.AWS_REGION) ? "AWS_REGION" : null,
+      !asNonEmpty(base.AMAZON_CONNECT_INSTANCE_ID) ? "AMAZON_CONNECT_INSTANCE_ID" : null,
+      !asNonEmpty(base.AMAZON_CONNECT_INSTANCE_URL) ? "AMAZON_CONNECT_INSTANCE_URL" : null,
+      !asNonEmpty(base.AMAZON_CONNECT_CCP_URL) ? "AMAZON_CONNECT_CCP_URL" : null,
+      !asNonEmpty(base.AMAZON_CONNECT_QUEUE_ID_DEFAULT)
+        ? "AMAZON_CONNECT_QUEUE_ID_DEFAULT"
+        : null,
+      !asNonEmpty(base.AMAZON_CONNECT_ROUTING_PROFILE_ID)
+        ? "AMAZON_CONNECT_ROUTING_PROFILE_ID"
+        : null
+    ].filter((value): value is string => Boolean(value))
+  }
+};
+
 export const env = {
   ...base,
   DATABASE_URL: databaseUrl,
-  DATABASE_SSL: toBoolean(base.DATABASE_SSL, false)
+  integrationStatuses
 };
 
 export type Env = typeof env;

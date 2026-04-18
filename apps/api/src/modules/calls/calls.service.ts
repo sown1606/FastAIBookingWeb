@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
 import {
   BookingAttemptStatus,
+  CallRoutingOutcome,
   CallSessionStatus,
   ExternalProvider,
   Prisma
@@ -9,6 +10,7 @@ import { env } from "../../config/env";
 import { prisma } from "../../db/prisma";
 import { createAuditLog } from "../../lib/audit";
 import { AppError } from "../../lib/errors";
+import { logger } from "../../lib/logger";
 import { createSalonAlert } from "../alerts/alerts.service";
 import { buildSalonRoutingSummary } from "../salon/routing-summary";
 import { CallRailProviderAdapter, normalizePhoneForMatching } from "./providers/callrail.provider";
@@ -45,6 +47,29 @@ const payloadHash = (value: unknown): string => {
 };
 
 const callrailAdapter = new CallRailProviderAdapter();
+
+const isAiReceptionEnabled = (settings: {
+  aiReceptionEnabled?: boolean | null;
+  aiForwardingEnabled?: boolean | null;
+} | null | undefined) => {
+  return settings?.aiReceptionEnabled ?? settings?.aiForwardingEnabled ?? false;
+};
+
+const inferRoutingOutcomeFromStatus = (
+  status: CallSessionStatus,
+  current?: CallRoutingOutcome | null
+): CallRoutingOutcome | undefined => {
+  if (status === CallSessionStatus.VOICEMAIL) {
+    return CallRoutingOutcome.VOICEMAIL;
+  }
+  if (status === CallSessionStatus.RINGING || status === CallSessionStatus.RECEIVED) {
+    return current ?? CallRoutingOutcome.SALON_RING;
+  }
+  if (status === CallSessionStatus.IN_PROGRESS) {
+    return current ?? undefined;
+  }
+  return current ?? undefined;
+};
 
 const resolveSalonIdForCallEvent = async (event: {
   salonIdHint?: string;
@@ -144,6 +169,9 @@ export const processCallRailWebhook = async (
     });
 
     const nextStatus = normalized.event.status ?? existingSession?.status ?? CallSessionStatus.RECEIVED;
+    const routingOutcome =
+      inferRoutingOutcomeFromStatus(nextStatus, existingSession?.routingOutcome) ??
+      existingSession?.routingOutcome;
 
     const callSession = await tx.callSession.upsert({
       where: {
@@ -166,10 +194,12 @@ export const processCallRailWebhook = async (
         startedAt: normalized.event.startedAt,
         endedAt: normalized.event.endedAt,
         durationSeconds: normalized.event.durationSeconds,
+        recordingUrl: normalized.event.recordingUrl,
         transcriptSummary: normalized.event.transcriptSummary,
         bookingResult: normalized.event.bookingResult
           ? toJson(normalized.event.bookingResult)
           : undefined,
+        routingOutcome,
         failureReason: normalized.event.failureReason,
         rawPayload: toJson(normalized.event.rawPayload),
         salonId
@@ -186,10 +216,12 @@ export const processCallRailWebhook = async (
         startedAt: normalized.event.startedAt ?? undefined,
         endedAt: normalized.event.endedAt ?? undefined,
         durationSeconds: normalized.event.durationSeconds ?? undefined,
+        recordingUrl: normalized.event.recordingUrl ?? undefined,
         transcriptSummary: normalized.event.transcriptSummary ?? undefined,
         bookingResult: normalized.event.bookingResult
           ? toJson(normalized.event.bookingResult)
           : undefined,
+        routingOutcome: routingOutcome ?? undefined,
         failureReason: normalized.event.failureReason ?? undefined,
         rawPayload: toJson(normalized.event.rawPayload),
         salonId: existingSession?.salonId ?? salonId
@@ -297,8 +329,8 @@ export const processCallRailWebhook = async (
     await createSalonAlert({
       salonId: result.callSession.salonId,
       alertType: "MISSED_CALL",
-      title: "Cuoc goi nho",
-      message: `Cuoc goi nho tu ${result.callSession.callerPhone ?? "khach hang"}.`,
+      title: "Missed call",
+      message: `Missed call from ${result.callSession.callerPhone ?? "unknown caller"}.`,
       metadata: {
         callSessionId: result.callSession.id,
         callerPhone: result.callSession.callerPhone
@@ -310,6 +342,7 @@ export const processCallRailWebhook = async (
   return {
     signatureVerified: normalized.signatureVerified,
     callSessionId: result.callSession.id,
+    salonId: result.callSession.salonId ?? null,
     providerCallId: result.callSession.providerCallId,
     status: result.callSession.status,
     isDuplicateEvent: result.isDuplicateEvent
@@ -409,6 +442,7 @@ export const buildCallRoutingPlan = async (input: {
   const settings = salon.settings;
   const livePersonRequested = isLivePersonRequest(input);
   const callCenterEnabled = settings?.callCenterEnabled ?? false;
+  const aiReceptionEnabled = isAiReceptionEnabled(settings);
   const routingSummary = buildSalonRoutingSummary(settings);
 
   if (livePersonRequested && callCenterEnabled) {
@@ -419,8 +453,8 @@ export const buildCallRoutingPlan = async (input: {
     await createSalonAlert({
       salonId: salon.id,
       alertType: "CALL_CENTER_ESCALATION",
-      title: "Khach muon gap nguoi that",
-      message: `Khach ${input.callerPhone ?? "khong ro so"} yeu cau gap nhan vien truc tiep.`,
+      title: "Caller requested a human operator",
+      message: `Caller ${input.callerPhone ?? "unknown"} requested a live agent.`,
       priority: "URGENT",
       metadata: {
         callerPhone: input.callerPhone,
@@ -432,7 +466,10 @@ export const buildCallRoutingPlan = async (input: {
 
     return {
       salonId: salon.id,
-      routeType: "CALL_CENTER",
+      routeType: "AMAZON_CONNECT_QUEUE",
+      routingOutcome: "CALL_CENTER_ESCALATION" as const,
+      queueId: env.AMAZON_CONNECT_QUEUE_ID_DEFAULT ?? null,
+      queueRoutingProfileId: env.AMAZON_CONNECT_ROUTING_PROFILE_ID ?? null,
       transferNumber,
       callRailFlowId: env.CALLRAIL_LIVE_PERSON_FLOW_ID ?? null,
       assignedAgent: assignedAgent?.agent ?? null,
@@ -445,20 +482,22 @@ export const buildCallRoutingPlan = async (input: {
     return {
       salonId: salon.id,
       routeType: "SALON_ORIGINAL_PHONE",
+      routingOutcome: "SALON_RING" as const,
       transferNumber: salon.originalPhoneNumber ?? salon.contactPhone ?? env.CALLRAIL_TARGET_NUMBER ?? null,
       reason: "LIVE_PERSON_REQUEST_CALL_CENTER_DISABLED",
       routingSummary
     };
   }
 
-  if (settings?.aiForwardingEnabled) {
+  if (aiReceptionEnabled) {
     return {
       salonId: salon.id,
       routeType: "CALLRAIL_AI",
-      transferAfterRings: settings.aiTransferRingCount,
+      routingOutcome: "AI_RECEPTION" as const,
+      transferAfterRings: settings?.aiTransferRingCount ?? 3,
       callRailFlowId: env.CALLRAIL_AI_FLOW_ID ?? null,
       trackingNumber: salon.customerIncomingPhoneNumber ?? env.CALLRAIL_TRACKING_NUMBER ?? null,
-      reason: "AI_FORWARDING_ON",
+      reason: "AI_RECEPTION_ENABLED",
       routingSummary
     };
   }
@@ -466,8 +505,9 @@ export const buildCallRoutingPlan = async (input: {
   return {
     salonId: salon.id,
     routeType: "SALON_ORIGINAL_PHONE",
+    routingOutcome: "SALON_RING" as const,
     transferNumber: salon.originalPhoneNumber ?? salon.contactPhone ?? env.CALLRAIL_TARGET_NUMBER ?? null,
-    reason: "AI_FORWARDING_OFF",
+    reason: "AI_RECEPTION_DISABLED",
     routingSummary
   };
 };
@@ -492,7 +532,8 @@ export const listCalls = async (salonId: string, input: ListCallsInput) => {
           select: {
             events: true,
             transcripts: true,
-            bookingAttempts: true
+            bookingAttempts: true,
+            callEscalations: true
           }
         }
       }
@@ -517,12 +558,37 @@ export const getCallById = async (salonId: string, callSessionId: string) => {
       salonId
     },
     include: {
-      _count: {
-        select: {
-          events: true,
-          transcripts: true,
-          bookingAttempts: true,
-          aiInteractions: true
+      events: {
+        orderBy: {
+          receivedAt: "asc"
+        }
+      },
+      transcripts: {
+        orderBy: {
+          createdAt: "asc"
+        }
+      },
+      bookingAttempts: {
+        orderBy: {
+          createdAt: "desc"
+        },
+        include: {
+          appointment: true,
+          aiInteractions: {
+            orderBy: {
+              createdAt: "desc"
+            }
+          }
+        }
+      },
+      aiInteractions: {
+        orderBy: {
+          createdAt: "desc"
+        }
+      },
+      callEscalations: {
+        orderBy: {
+          createdAt: "desc"
         }
       }
     }
@@ -661,7 +727,8 @@ export const listCallsForAdmin = async (input: ListAdminCallsInput) => {
           select: {
             events: true,
             transcripts: true,
-            bookingAttempts: true
+            bookingAttempts: true,
+            callEscalations: true
           }
         }
       }
@@ -706,6 +773,16 @@ export const getCallByIdForAdmin = async (callSessionId: string) => {
         include: {
           appointment: true
         }
+      },
+      aiInteractions: {
+        orderBy: {
+          createdAt: "desc"
+        }
+      },
+      callEscalations: {
+        orderBy: {
+          createdAt: "desc"
+        }
       }
     }
   });
@@ -743,6 +820,33 @@ export const markBookingAttemptResultOnCall = async (
         updatedAt: new Date().toISOString()
       }),
       failureReason: payload.failureReason ?? callSession.failureReason
+    }
+  });
+};
+
+export const updateCallAIState = async (
+  callSessionId: string,
+  input: {
+    aiSummary: unknown;
+    routingOutcome?: CallRoutingOutcome;
+    finalResolution?: string;
+    language?: string;
+  }
+) => {
+  const callSession = await prisma.callSession.findUnique({
+    where: { id: callSessionId }
+  });
+  if (!callSession) {
+    throw new AppError("Call session not found.", 404, "CALL_SESSION_NOT_FOUND");
+  }
+
+  await prisma.callSession.update({
+    where: { id: callSessionId },
+    data: {
+      aiSummary: toJson(input.aiSummary),
+      routingOutcome: input.routingOutcome ?? undefined,
+      finalResolution: input.finalResolution ?? undefined,
+      language: input.language ?? undefined
     }
   });
 };

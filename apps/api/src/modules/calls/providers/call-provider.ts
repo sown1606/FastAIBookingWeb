@@ -18,6 +18,7 @@ export interface NormalizedCallEvent {
   startedAt?: Date;
   endedAt?: Date;
   durationSeconds?: number;
+  recordingUrl?: string;
   transcriptText?: string;
   transcriptSummary?: string;
   failureReason?: string;

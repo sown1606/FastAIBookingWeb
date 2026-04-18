@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { AppointmentStatus } from "@prisma/client";
+import { AppointmentStatus, CallEscalationStatus } from "@prisma/client";
 import { z } from "zod";
 import { asyncHandler } from "../../middleware/async-handler";
 import { validate } from "../../middleware/validate";
@@ -7,15 +7,24 @@ import { sendSuccess } from "../../utils/response";
 import { isValidUsPhone } from "../../utils/phone";
 import {
   cancelAssignedSalonAppointment,
+  captureVoicemailForEscalation,
+  completeEscalation,
+  createCallbackRequestForEscalation,
   createAssignedSalonAppointment,
   createAssignedSalonCustomer,
+  getCallCenterRuntime,
   getAssignedSalonDetail,
+  getEscalationDetail,
+  listEscalationQueue,
   listAssignedSalonAppointments,
   listAssignedSalonCustomers,
   listAssignedSalonServices,
   listAssignedSalons,
   listAssignedSalonStaff,
   rescheduleAssignedSalonAppointment,
+  sendSmsFallbackForEscalation,
+  acceptEscalation,
+  updateEscalation,
   updateAssignedSalonAppointment
 } from "./call-center.service";
 
@@ -87,7 +96,171 @@ const cancelSchema = z.object({
   reason: z.string().max(500).optional()
 });
 
+const listQueueQuerySchema = z.object({
+  status: z.nativeEnum(CallEscalationStatus).optional(),
+  limit: z.coerce.number().int().positive().max(100).default(50)
+});
+
+const escalationIdSchema = z.object({
+  id: z.string().uuid()
+});
+
+const acceptEscalationSchema = z.object({
+  amazonConnectContactId: z.string().max(160).optional()
+});
+
+const updateEscalationSchema = z.object({
+  operatorNotes: z.string().max(4000).nullable().optional(),
+  qaNotes: z.string().max(4000).nullable().optional(),
+  resolution: z.string().max(4000).nullable().optional()
+});
+
+const completeEscalationSchema = z.object({
+  resolution: z.string().min(1).max(4000),
+  operatorNotes: z.string().max(4000).nullable().optional(),
+  qaNotes: z.string().max(4000).nullable().optional()
+});
+
+const callbackRequestSchema = z.object({
+  callbackPhone: usPhoneSchema.nullable().optional(),
+  notes: z.string().max(4000).nullable().optional()
+});
+
+const voicemailSchema = z.object({
+  voicemailRecordingUrl: z.string().url().nullable().optional(),
+  notes: z.string().max(4000).nullable().optional()
+});
+
+const smsFallbackSchema = z.object({
+  recipientPhone: usPhoneSchema.nullable().optional(),
+  message: z.string().min(1).max(1000)
+});
+
 export const callCenterRouter = Router();
+
+callCenterRouter.get(
+  "/runtime",
+  asyncHandler(async (req, res) => {
+    const runtime = await getCallCenterRuntime(req.auth!.userId);
+    return sendSuccess(res, {
+      data: runtime
+    });
+  })
+);
+
+callCenterRouter.get(
+  "/queue",
+  validate(listQueueQuerySchema, "query"),
+  asyncHandler(async (req, res) => {
+    const query = req.query as unknown as z.infer<typeof listQueueQuerySchema>;
+    const queue = await listEscalationQueue(req.auth!.userId, query);
+    return sendSuccess(res, {
+      data: queue
+    });
+  })
+);
+
+callCenterRouter.get(
+  "/queue/:id",
+  validate(escalationIdSchema, "params"),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params as z.infer<typeof escalationIdSchema>;
+    const escalation = await getEscalationDetail(req.auth!.userId, id);
+    return sendSuccess(res, {
+      data: escalation
+    });
+  })
+);
+
+callCenterRouter.post(
+  "/queue/:id/accept",
+  validate(escalationIdSchema, "params"),
+  validate(acceptEscalationSchema),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params as z.infer<typeof escalationIdSchema>;
+    const payload = req.body as z.infer<typeof acceptEscalationSchema>;
+    const escalation = await acceptEscalation(req.auth!.userId, id, payload);
+    return sendSuccess(res, {
+      message: "Escalation accepted.",
+      data: escalation
+    });
+  })
+);
+
+callCenterRouter.patch(
+  "/queue/:id",
+  validate(escalationIdSchema, "params"),
+  validate(updateEscalationSchema),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params as z.infer<typeof escalationIdSchema>;
+    const payload = req.body as z.infer<typeof updateEscalationSchema>;
+    const escalation = await updateEscalation(req.auth!.userId, id, payload);
+    return sendSuccess(res, {
+      message: "Escalation updated.",
+      data: escalation
+    });
+  })
+);
+
+callCenterRouter.post(
+  "/queue/:id/complete",
+  validate(escalationIdSchema, "params"),
+  validate(completeEscalationSchema),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params as z.infer<typeof escalationIdSchema>;
+    const payload = req.body as z.infer<typeof completeEscalationSchema>;
+    const escalation = await completeEscalation(req.auth!.userId, id, payload);
+    return sendSuccess(res, {
+      message: "Escalation completed.",
+      data: escalation
+    });
+  })
+);
+
+callCenterRouter.post(
+  "/queue/:id/callback-request",
+  validate(escalationIdSchema, "params"),
+  validate(callbackRequestSchema),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params as z.infer<typeof escalationIdSchema>;
+    const payload = req.body as z.infer<typeof callbackRequestSchema>;
+    const escalation = await createCallbackRequestForEscalation(req.auth!.userId, id, payload);
+    return sendSuccess(res, {
+      message: "Callback request created.",
+      data: escalation
+    });
+  })
+);
+
+callCenterRouter.post(
+  "/queue/:id/voicemail",
+  validate(escalationIdSchema, "params"),
+  validate(voicemailSchema),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params as z.infer<typeof escalationIdSchema>;
+    const payload = req.body as z.infer<typeof voicemailSchema>;
+    const escalation = await captureVoicemailForEscalation(req.auth!.userId, id, payload);
+    return sendSuccess(res, {
+      message: "Voicemail captured.",
+      data: escalation
+    });
+  })
+);
+
+callCenterRouter.post(
+  "/queue/:id/sms-fallback",
+  validate(escalationIdSchema, "params"),
+  validate(smsFallbackSchema),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params as z.infer<typeof escalationIdSchema>;
+    const payload = req.body as z.infer<typeof smsFallbackSchema>;
+    const escalation = await sendSmsFallbackForEscalation(req.auth!.userId, id, payload);
+    return sendSuccess(res, {
+      message: "SMS fallback sent.",
+      data: escalation
+    });
+  })
+);
 
 callCenterRouter.get(
   "/salons",

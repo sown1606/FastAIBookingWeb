@@ -25,9 +25,16 @@ interface UpdateSalonSettingsInput {
   locale?: string;
   bookingLeadTimeMinutes?: number;
   cancellationPolicy?: string | null;
-  aiForwardingEnabled?: boolean;
+  aiReceptionEnabled?: boolean;
   aiTransferRingCount?: number;
   callCenterEnabled?: boolean;
+  voicemailEnabled?: boolean;
+  callbackRequestEnabled?: boolean;
+  smsFallbackEnabled?: boolean;
+  aiGreetingPrompt?: string | null;
+  callerLanguage?: string;
+  callLogVisibility?: "OWNER_ONLY" | "OWNER_AND_STAFF" | "OWNER_STAFF_OPERATOR";
+  notificationRecipients?: string[];
   callCenterRoutingNumber?: string | null;
   callCenterRoutingNote?: string | null;
 }
@@ -43,6 +50,21 @@ const normalizeOptionalPhone = (
     return null;
   }
   return requireUsPhone(value, label);
+};
+
+const normalizeNotificationRecipients = (
+  value: string[] | undefined
+): string[] | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+  return Array.from(
+    new Set(
+      value
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0)
+    )
+  );
 };
 
 export const getSalonProfile = async (salonId: string) => {
@@ -123,6 +145,9 @@ export const updateSalonSettings = async (
 ) => {
   const data = {
     ...input,
+    aiForwardingEnabled: input.aiReceptionEnabled,
+    aiReceptionEnabled: input.aiReceptionEnabled,
+    notificationRecipients: normalizeNotificationRecipients(input.notificationRecipients),
     callCenterRoutingNumber: normalizeOptionalPhone(
       input.callCenterRoutingNumber,
       "Call center routing phone"
@@ -137,9 +162,17 @@ export const updateSalonSettings = async (
       locale: data.locale,
       bookingLeadTimeMinutes: data.bookingLeadTimeMinutes ?? 0,
       cancellationPolicy: data.cancellationPolicy,
-      aiForwardingEnabled: data.aiForwardingEnabled ?? false,
+      aiForwardingEnabled: data.aiReceptionEnabled ?? false,
+      aiReceptionEnabled: data.aiReceptionEnabled ?? false,
       aiTransferRingCount: data.aiTransferRingCount ?? 3,
       callCenterEnabled: data.callCenterEnabled ?? false,
+      voicemailEnabled: data.voicemailEnabled ?? true,
+      callbackRequestEnabled: data.callbackRequestEnabled ?? true,
+      smsFallbackEnabled: data.smsFallbackEnabled ?? false,
+      aiGreetingPrompt: data.aiGreetingPrompt,
+      callerLanguage: data.callerLanguage ?? "en",
+      callLogVisibility: data.callLogVisibility ?? "OWNER_STAFF_OPERATOR",
+      notificationRecipients: data.notificationRecipients,
       callCenterRoutingNumber: data.callCenterRoutingNumber,
       callCenterRoutingNote: data.callCenterRoutingNote
     },
