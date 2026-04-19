@@ -4,8 +4,7 @@ import { apiGet, apiPut, extractErrorMessage } from "../lib/api";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
 import { useAuth } from "../auth/auth-context";
 import { useToast } from "../components/toast";
-import { formatDateTime, formatCurrencyCents } from "../lib/format";
-import { statusLabelKey, useI18n } from "../lib/i18n";
+import { formatCurrencyCents, formatDateTime } from "../lib/format";
 
 interface AppointmentItem {
   id: string;
@@ -51,23 +50,40 @@ interface CustomerResponse {
 }
 
 interface SalonSettings {
-  aiForwardingEnabled: boolean;
+  aiReceptionEnabled: boolean;
   aiTransferRingCount: number;
   callCenterEnabled: boolean;
-  callCenterRoutingNumber: string | null;
+  voicemailEnabled: boolean;
+  callbackRequestEnabled: boolean;
+  smsFallbackEnabled: boolean;
   routingSummary: {
     mode:
       | "SALON_PHONE_ONLY"
-      | "AI_FORWARDING_ACTIVE"
-      | "CALL_CENTER_ENABLED"
-      | "AI_WITH_CALL_CENTER_ESCALATION";
+      | "AI_RECEPTION_ONLY"
+      | "CALL_CENTER_ONLY"
+      | "AI_RECEPTION_WITH_CALL_CENTER";
+    ringCountBeforeAi: number;
   };
 }
+
+const routingLabels: Record<SalonSettings["routingSummary"]["mode"], string> = {
+  SALON_PHONE_ONLY: "Salon phone only",
+  AI_RECEPTION_ONLY: "AI Reception only",
+  CALL_CENTER_ONLY: "Human Call Center only",
+  AI_RECEPTION_WITH_CALL_CENTER: "AI Reception with human escalation"
+};
+
+const routingDescriptions: Record<SalonSettings["routingSummary"]["mode"], string> = {
+  SALON_PHONE_ONLY: "Calls ring the salon first and stay on the salon line.",
+  AI_RECEPTION_ONLY: "AI Reception answers after the configured ring threshold and can create bookings.",
+  CALL_CENTER_ONLY: "Calls route directly into the human operator workflow.",
+  AI_RECEPTION_WITH_CALL_CENTER:
+    "Calls ring the salon first, AI Reception answers, and human requests move into the operator queue."
+};
 
 export const DashboardPage = () => {
   const { session } = useAuth();
   const { notify } = useToast();
-  const { t } = useI18n();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -84,12 +100,15 @@ export const DashboardPage = () => {
     try {
       if (session?.user.role === "CALL_CENTER_AGENT") {
         setAppointments([]);
+        setBilling(null);
+        setStaffCount(0);
+        setServiceCount(0);
+        setCustomerCount(0);
+        setSettings(null);
         return;
       }
 
-      const appointmentResult = await apiGet<AppointmentsResponse>(
-        "/api/v1/appointments?page=1&limit=20"
-      );
+      const appointmentResult = await apiGet<AppointmentsResponse>("/api/v1/appointments?page=1&limit=20");
       setAppointments(appointmentResult.items);
 
       if (session?.user.role === "SALON_OWNER") {
@@ -123,17 +142,17 @@ export const DashboardPage = () => {
     void load();
   }, [session?.user.role]);
 
-  const toggleAi = async () => {
+  const toggleAiReception = async () => {
     if (!settings) {
       return;
     }
     try {
       const updated = await apiPut<SalonSettings, Partial<SalonSettings>>("/api/v1/salon/settings", {
-        aiForwardingEnabled: !settings.aiForwardingEnabled,
+        aiReceptionEnabled: !settings.aiReceptionEnabled,
         aiTransferRingCount: settings.aiTransferRingCount
       });
       setSettings(updated);
-      notify("success", updated.aiForwardingEnabled ? t("dashboard.toggleAiOn") : t("dashboard.toggleAiOff"));
+      notify("success", updated.aiReceptionEnabled ? "AI Reception enabled." : "AI Reception disabled.");
     } catch (toggleError) {
       notify("error", extractErrorMessage(toggleError));
     }
@@ -147,24 +166,6 @@ export const DashboardPage = () => {
       .slice(0, 8);
   }, [appointments]);
 
-  const routingMode = settings?.routingSummary.mode ?? "SALON_PHONE_ONLY";
-  const routingTitle = {
-    SALON_PHONE_ONLY: t("dashboard.routingSalonOnly"),
-    AI_FORWARDING_ACTIVE: t("dashboard.routingAiOnly"),
-    CALL_CENTER_ENABLED: t("dashboard.routingCallCenter"),
-    AI_WITH_CALL_CENTER_ESCALATION: t("dashboard.routingMixed")
-  }[routingMode];
-  const routingDescription = {
-    SALON_PHONE_ONLY: t("dashboard.routingSalonOnlyHint"),
-    AI_FORWARDING_ACTIVE: t("dashboard.routingAiOnlyHint", {
-      count: settings?.aiTransferRingCount ?? 3
-    }),
-    CALL_CENTER_ENABLED: t("dashboard.routingCallCenterHint"),
-    AI_WITH_CALL_CENTER_ESCALATION: t("dashboard.routingMixedHint", {
-      count: settings?.aiTransferRingCount ?? 3
-    })
-  }[routingMode];
-
   if (loading) {
     return <LoadingBlock />;
   }
@@ -177,124 +178,134 @@ export const DashboardPage = () => {
     return (
       <div className="stack">
         <section className="mobile-hero">
-          <p className="eyebrow">{t("nav.callCenter")}</p>
-          <h2>{t("dashboard.operatorTitle")}</h2>
+          <p className="eyebrow">Human Call Center</p>
+          <h2>Operator workspace</h2>
+          <p className="muted">Open the browser softphone, review queued escalations, and complete customer requests.</p>
           <Link to="/call-center" className="button-primary">
-            {t("dashboard.openOperator")}
+            Open operator dashboard
           </Link>
         </section>
       </div>
     );
   }
 
+  const routingMode = settings?.routingSummary.mode ?? "SALON_PHONE_ONLY";
+
   return (
     <div className="stack">
       {session?.user.role === "SALON_OWNER" ? (
         <>
-        <section className="dashboard-hero">
-          <div className="dashboard-hero-copy">
-            <p className="eyebrow">{t("app.name")}</p>
-            <h2>
-              {routingTitle}
-            </h2>
-            <p className="muted">
-              {routingDescription}
-            </p>
-            <div className="inline-actions">
-              <button type="button" className="button-primary" onClick={toggleAi}>
-                {settings?.aiForwardingEnabled ? t("dashboard.toggleAiOff") : t("dashboard.toggleAiOn")}
-              </button>
+          <section className="dashboard-hero">
+            <div className="dashboard-hero-copy">
+              <p className="eyebrow">Call handling</p>
+              <h2>{routingLabels[routingMode]}</h2>
+              <p className="muted">{routingDescriptions[routingMode]}</p>
+              <div className="inline-actions">
+                <button type="button" className="button-primary" onClick={toggleAiReception}>
+                  {settings?.aiReceptionEnabled ? "Turn AI Reception off" : "Turn AI Reception on"}
+                </button>
+                <Link to="/salon-profile" className="button-secondary">
+                  Manage settings
+                </Link>
+              </div>
+            </div>
+          </section>
+
+          <section className="card routing-status-card">
+            <div className="section-header">
+              <div>
+                <p className="eyebrow">Routing summary</p>
+                <h2>{routingLabels[routingMode]}</h2>
+              </div>
               <Link to="/salon-profile" className="button-secondary">
-                {t("dashboard.manageRouting")}
+                Open owner settings
               </Link>
             </div>
-          </div>
-        </section>
-        <section className="card routing-status-card">
-          <div className="section-header">
-            <div>
-              <p className="eyebrow">{t("dashboard.routingStatus")}</p>
-              <h2>{routingTitle}</h2>
+            <div className="metrics-grid">
+              <div>
+                <span className="muted">AI Reception</span>
+                <strong>{settings?.aiReceptionEnabled ? "ON" : "OFF"}</strong>
+              </div>
+              <div>
+                <span className="muted">Ring count before AI</span>
+                <strong>{settings?.routingSummary.ringCountBeforeAi ?? 3}</strong>
+              </div>
+              <div>
+                <span className="muted">Human Call Center</span>
+                <strong>{settings?.callCenterEnabled ? "ON" : "OFF"}</strong>
+              </div>
+              <div>
+                <span className="muted">Voicemail fallback</span>
+                <strong>{settings?.voicemailEnabled ? "ON" : "OFF"}</strong>
+              </div>
+              <div>
+                <span className="muted">Callback request</span>
+                <strong>{settings?.callbackRequestEnabled ? "ON" : "OFF"}</strong>
+              </div>
+              <div>
+                <span className="muted">SMS fallback</span>
+                <strong>{settings?.smsFallbackEnabled ? "ON" : "OFF"}</strong>
+              </div>
             </div>
-            <Link to="/salon-profile" className="button-secondary">
-              {t("profile.saveSettings")}
-            </Link>
-          </div>
-          <div className="metrics-grid">
-            <div>
-              <span className="muted">{t("profile.aiForwarding")}</span>
-              <strong>{settings?.aiForwardingEnabled ? t("common.statusOn") : t("common.statusOff")}</strong>
-            </div>
-            <div>
-              <span className="muted">{t("profile.ringCount")}</span>
-              <strong>{settings?.aiTransferRingCount ?? 3}</strong>
-            </div>
-            <div>
-              <span className="muted">{t("profile.callCenterEnabled")}</span>
-              <strong>{settings?.callCenterEnabled ? t("common.statusOn") : t("common.statusOff")}</strong>
-            </div>
-            <div>
-              <span className="muted">{t("profile.routingNumber")}</span>
-              <strong>{settings?.callCenterRoutingNumber ?? t("common.none")}</strong>
-            </div>
-          </div>
-        </section>
-        <section className="card-grid">
-          <article className="card stat-card">
-            <h3>{t("dashboard.staff")}</h3>
-            <strong>{staffCount}</strong>
-          </article>
-          <article className="card stat-card">
-            <h3>{t("dashboard.services")}</h3>
-            <strong>{serviceCount}</strong>
-          </article>
-          <article className="card stat-card">
-            <h3>{t("dashboard.customers")}</h3>
-            <strong>{customerCount}</strong>
-          </article>
-          <article className="card stat-card">
-            <h3>{t("dashboard.extraCost")}</h3>
-            <strong>{formatCurrencyCents(billing?.currentUsage.estimatedExtraCostCents)}</strong>
-          </article>
-        </section>
-        <section className="quick-actions">
-          <Link to="/appointments">{t("nav.appointments")}</Link>
-          <Link to="/customers">{t("nav.customers")}</Link>
-          <Link to="/services">{t("nav.services")}</Link>
-          <Link to="/staff">{t("nav.staff")}</Link>
-          <Link to="/availability">{t("nav.availability")}</Link>
-          <Link to="/business-hours">{t("nav.businessHours")}</Link>
-          <Link to="/calls">{t("nav.calls")}</Link>
-          <Link to="/alerts">{t("nav.alerts")}</Link>
-          <Link to="/billing">{t("nav.billing")}</Link>
-          <Link to="/ai-logs">{t("nav.aiLogs")}</Link>
-        </section>
+          </section>
+
+          <section className="card-grid">
+            <article className="card stat-card">
+              <h3>Staff</h3>
+              <strong>{staffCount}</strong>
+            </article>
+            <article className="card stat-card">
+              <h3>Services</h3>
+              <strong>{serviceCount}</strong>
+            </article>
+            <article className="card stat-card">
+              <h3>Customers</h3>
+              <strong>{customerCount}</strong>
+            </article>
+            <article className="card stat-card">
+              <h3>Estimated extra cost</h3>
+              <strong>{formatCurrencyCents(billing?.currentUsage.estimatedExtraCostCents)}</strong>
+            </article>
+          </section>
+
+          <section className="quick-actions">
+            <Link to="/appointments">Appointments</Link>
+            <Link to="/customers">Customers</Link>
+            <Link to="/services">Services</Link>
+            <Link to="/staff">Staff</Link>
+            <Link to="/availability">Availability</Link>
+            <Link to="/business-hours">Business hours</Link>
+            <Link to="/calls">Calls</Link>
+            <Link to="/alerts">Alerts</Link>
+            <Link to="/billing">Billing</Link>
+            <Link to="/ai-logs">AI logs</Link>
+          </section>
         </>
       ) : (
         <section className="card-grid">
           <article className="card stat-card">
-            <h3>{t("dashboard.upcoming")}</h3>
+            <h3>Upcoming appointments</h3>
             <strong>{upcoming.length}</strong>
           </article>
           <article className="card stat-card">
-            <h3>{t("common.status")}</h3>
-            <strong>{t("nav.staff")}</strong>
+            <h3>Workspace</h3>
+            <strong>Staff</strong>
           </article>
         </section>
       )}
 
       <section className="card">
-        <h2>{t("dashboard.upcoming")}</h2>
+        <h2>Upcoming appointments</h2>
         {upcoming.length ? (
           <div className="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>{t("appointments.time")}</th>
-                  <th>{t("appointments.customer")}</th>
-                  <th>{t("appointments.service")}</th>
-                  <th>{t("appointments.staff")}</th>
-                  <th>{t("common.status")}</th>
+                  <th>Time</th>
+                  <th>Customer</th>
+                  <th>Service</th>
+                  <th>Staff</th>
+                  <th>Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -306,14 +317,14 @@ export const DashboardPage = () => {
                     </td>
                     <td>{item.service.name}</td>
                     <td>{item.staff.fullName}</td>
-                    <td>{statusLabelKey(item.status) ? t(statusLabelKey(item.status)!) : item.status}</td>
+                    <td>{item.status}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         ) : (
-          <EmptyBlock message={t("dashboard.noUpcoming")} />
+          <EmptyBlock message="No upcoming appointments." />
         )}
       </section>
     </div>

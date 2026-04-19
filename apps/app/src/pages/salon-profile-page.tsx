@@ -2,9 +2,13 @@ import { FormEvent, useEffect, useState } from "react";
 import { apiGet, apiPut, extractErrorMessage } from "../lib/api";
 import { ErrorBlock, LoadingBlock } from "../components/states";
 import { useToast } from "../components/toast";
-import { countryOptions, currencyOptions, localePreferenceOptions, timezoneOptions } from "../lib/form-options";
-import { formatUsPhoneInput, requiredLabel, validateOptionalUsPhone } from "../lib/phone";
-import { useI18n } from "../lib/i18n";
+import {
+  countryOptions,
+  currencyOptions,
+  localePreferenceOptions,
+  timezoneOptions
+} from "../lib/form-options";
+import { formatUsPhoneInput, validateOptionalUsPhone } from "../lib/phone";
 
 interface SalonProfile {
   id: string;
@@ -28,21 +32,41 @@ interface SalonSettings {
   locale: string;
   bookingLeadTimeMinutes: number;
   cancellationPolicy: string | null;
-  aiForwardingEnabled: boolean;
+  aiReceptionEnabled: boolean;
   aiTransferRingCount: number;
   callCenterEnabled: boolean;
+  voicemailEnabled: boolean;
+  callbackRequestEnabled: boolean;
+  smsFallbackEnabled: boolean;
+  aiGreetingPrompt: string | null;
+  callerLanguage: string;
+  callLogVisibility: "OWNER_ONLY" | "OWNER_AND_STAFF" | "OWNER_STAFF_OPERATOR";
+  notificationRecipients: string[];
   callCenterRoutingNumber: string | null;
   callCenterRoutingNote: string | null;
+  routingSummary: {
+    mode:
+      | "SALON_PHONE_ONLY"
+      | "AI_RECEPTION_ONLY"
+      | "CALL_CENTER_ONLY"
+      | "AI_RECEPTION_WITH_CALL_CENTER";
+    ringCountBeforeAi: number;
+  };
 }
+
+const callLogVisibilityOptions: Array<{
+  value: SalonSettings["callLogVisibility"];
+  label: string;
+}> = [
+  { value: "OWNER_ONLY", label: "Owner only" },
+  { value: "OWNER_AND_STAFF", label: "Owner and staff" },
+  { value: "OWNER_STAFF_OPERATOR", label: "Owner, staff, and operator" }
+];
 
 export const SalonProfilePage = () => {
   const { notify } = useToast();
-  const { t } = useI18n();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-
-  const [profile, setProfile] = useState<SalonProfile | null>(null);
-  const [settings, setSettings] = useState<SalonSettings | null>(null);
 
   const [profileForm, setProfileForm] = useState({
     name: "",
@@ -62,12 +86,19 @@ export const SalonProfilePage = () => {
 
   const [settingsForm, setSettingsForm] = useState({
     currency: "USD",
-    locale: "vi-VN",
+    locale: "en-US",
     bookingLeadTimeMinutes: "0",
     cancellationPolicy: "",
-    aiForwardingEnabled: false,
+    aiReceptionEnabled: false,
     aiTransferRingCount: "3",
     callCenterEnabled: false,
+    voicemailEnabled: true,
+    callbackRequestEnabled: true,
+    smsFallbackEnabled: false,
+    aiGreetingPrompt: "",
+    callerLanguage: "en",
+    callLogVisibility: "OWNER_STAFF_OPERATOR" as SalonSettings["callLogVisibility"],
+    notificationRecipientsText: "",
     callCenterRoutingNumber: "",
     callCenterRoutingNote: ""
   });
@@ -80,14 +111,15 @@ export const SalonProfilePage = () => {
         apiGet<SalonProfile>("/api/v1/salon/profile"),
         apiGet<SalonSettings>("/api/v1/salon/settings")
       ]);
-      setProfile(profileResult);
-      setSettings(settingsResult);
+
       setProfileForm({
         name: profileResult.name,
         contactEmail: profileResult.contactEmail ?? "",
         contactPhone: formatUsPhoneInput(profileResult.contactPhone ?? ""),
         originalPhoneNumber: formatUsPhoneInput(profileResult.originalPhoneNumber ?? ""),
-        customerIncomingPhoneNumber: formatUsPhoneInput(profileResult.customerIncomingPhoneNumber ?? ""),
+        customerIncomingPhoneNumber: formatUsPhoneInput(
+          profileResult.customerIncomingPhoneNumber ?? ""
+        ),
         notificationPhoneNumber: formatUsPhoneInput(profileResult.notificationPhoneNumber ?? ""),
         timezone: profileResult.timezone,
         addressLine1: profileResult.addressLine1 ?? "",
@@ -97,14 +129,22 @@ export const SalonProfilePage = () => {
         postalCode: profileResult.postalCode ?? "",
         country: profileResult.country
       });
+
       setSettingsForm({
         currency: settingsResult.currency,
         locale: settingsResult.locale,
         bookingLeadTimeMinutes: String(settingsResult.bookingLeadTimeMinutes),
         cancellationPolicy: settingsResult.cancellationPolicy ?? "",
-        aiForwardingEnabled: settingsResult.aiForwardingEnabled,
+        aiReceptionEnabled: settingsResult.aiReceptionEnabled,
         aiTransferRingCount: String(settingsResult.aiTransferRingCount),
         callCenterEnabled: settingsResult.callCenterEnabled,
+        voicemailEnabled: settingsResult.voicemailEnabled,
+        callbackRequestEnabled: settingsResult.callbackRequestEnabled,
+        smsFallbackEnabled: settingsResult.smsFallbackEnabled,
+        aiGreetingPrompt: settingsResult.aiGreetingPrompt ?? "",
+        callerLanguage: settingsResult.callerLanguage,
+        callLogVisibility: settingsResult.callLogVisibility,
+        notificationRecipientsText: settingsResult.notificationRecipients.join("\n"),
         callCenterRoutingNumber: formatUsPhoneInput(settingsResult.callCenterRoutingNumber ?? ""),
         callCenterRoutingNote: settingsResult.callCenterRoutingNote ?? ""
       });
@@ -121,18 +161,21 @@ export const SalonProfilePage = () => {
 
   const saveProfile = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+
     const phoneValues = [
       profileForm.contactPhone,
       profileForm.originalPhoneNumber,
       profileForm.customerIncomingPhoneNumber,
       profileForm.notificationPhoneNumber
     ];
+
     if (!phoneValues.every(validateOptionalUsPhone)) {
-      notify("error", t("form.phoneInvalid"));
+      notify("error", "Please enter valid US phone numbers.");
       return;
     }
+
     try {
-      const updated = await apiPut<SalonProfile, unknown>("/api/v1/salon/profile", {
+      await apiPut<SalonProfile, unknown>("/api/v1/salon/profile", {
         name: profileForm.name,
         contactEmail: profileForm.contactEmail || null,
         contactPhone: profileForm.contactPhone || null,
@@ -147,8 +190,7 @@ export const SalonProfilePage = () => {
         postalCode: profileForm.postalCode || null,
         country: profileForm.country
       });
-      setProfile(updated);
-      notify("success", t("profile.saved"));
+      notify("success", "Salon profile updated.");
     } catch (saveError) {
       notify("error", extractErrorMessage(saveError));
     }
@@ -156,24 +198,35 @@ export const SalonProfilePage = () => {
 
   const saveSettings = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+
     if (!validateOptionalUsPhone(settingsForm.callCenterRoutingNumber)) {
-      notify("error", t("form.phoneInvalid"));
+      notify("error", "Please enter a valid US call center phone number.");
       return;
     }
+
     try {
-      const updated = await apiPut<SalonSettings, unknown>("/api/v1/salon/settings", {
+      await apiPut<SalonSettings, unknown>("/api/v1/salon/settings", {
         currency: settingsForm.currency,
         locale: settingsForm.locale,
         bookingLeadTimeMinutes: Number(settingsForm.bookingLeadTimeMinutes),
         cancellationPolicy: settingsForm.cancellationPolicy || null,
-        aiForwardingEnabled: settingsForm.aiForwardingEnabled,
+        aiReceptionEnabled: settingsForm.aiReceptionEnabled,
         aiTransferRingCount: Number(settingsForm.aiTransferRingCount),
         callCenterEnabled: settingsForm.callCenterEnabled,
+        voicemailEnabled: settingsForm.voicemailEnabled,
+        callbackRequestEnabled: settingsForm.callbackRequestEnabled,
+        smsFallbackEnabled: settingsForm.smsFallbackEnabled,
+        aiGreetingPrompt: settingsForm.aiGreetingPrompt || null,
+        callerLanguage: settingsForm.callerLanguage,
+        callLogVisibility: settingsForm.callLogVisibility,
+        notificationRecipients: settingsForm.notificationRecipientsText
+          .split(/\n|,/)
+          .map((item) => item.trim())
+          .filter((item) => item.length > 0),
         callCenterRoutingNumber: settingsForm.callCenterRoutingNumber || null,
         callCenterRoutingNote: settingsForm.callCenterRoutingNote || null
       });
-      setSettings(updated);
-      notify("success", t("profile.settingsSaved"));
+      notify("success", "Salon settings updated.");
     } catch (saveError) {
       notify("error", extractErrorMessage(saveError));
     }
@@ -190,10 +243,10 @@ export const SalonProfilePage = () => {
   return (
     <div className="stack">
       <section className="card">
-        <h2>{t("profile.title")}</h2>
+        <h2>Salon profile</h2>
         <form className="form-grid two-columns" onSubmit={saveProfile}>
           <label className="field">
-            <span>{requiredLabel(t("auth.register.salonName"))}</span>
+            <span>Salon name</span>
             <input
               value={profileForm.name}
               onChange={(event) => setProfileForm((prev) => ({ ...prev, name: event.target.value }))}
@@ -201,7 +254,7 @@ export const SalonProfilePage = () => {
             />
           </label>
           <label className="field">
-            <span>{requiredLabel(t("common.timezone"))}</span>
+            <span>Timezone</span>
             <select
               value={profileForm.timezone}
               onChange={(event) => setProfileForm((prev) => ({ ...prev, timezone: event.target.value }))}
@@ -215,7 +268,7 @@ export const SalonProfilePage = () => {
             </select>
           </label>
           <label className="field">
-            <span>{t("common.email")}</span>
+            <span>Contact email</span>
             <input
               type="email"
               value={profileForm.contactEmail}
@@ -225,20 +278,23 @@ export const SalonProfilePage = () => {
             />
           </label>
           <label className="field">
-            <span>{t("common.phone")}</span>
+            <span>Contact phone</span>
             <input
               type="tel"
               inputMode="tel"
               placeholder="(212) 555-0100"
               value={profileForm.contactPhone}
               onChange={(event) =>
-                setProfileForm((prev) => ({ ...prev, contactPhone: formatUsPhoneInput(event.target.value) }))
+                setProfileForm((prev) => ({
+                  ...prev,
+                  contactPhone: formatUsPhoneInput(event.target.value)
+                }))
               }
             />
-            <small>{t("form.phoneHint")}</small>
+            <small>US format, for example (212) 555-0100</small>
           </label>
           <label className="field">
-            <span>{t("profile.currentPhone")}</span>
+            <span>Salon phone number</span>
             <input
               type="tel"
               inputMode="tel"
@@ -251,10 +307,10 @@ export const SalonProfilePage = () => {
                 }))
               }
             />
-            <small>{t("form.phoneHint")}</small>
+            <small>Customers still dial the salon&apos;s original business number.</small>
           </label>
           <label className="field">
-            <span>{t("profile.incomingPhone")}</span>
+            <span>Customer incoming number</span>
             <input
               type="tel"
               inputMode="tel"
@@ -267,10 +323,10 @@ export const SalonProfilePage = () => {
                 }))
               }
             />
-            <small>{t("form.phoneHint")}</small>
+            <small>Use the routed number that CallRail sends inbound calls through.</small>
           </label>
           <label className="field">
-            <span>{t("profile.notificationPhone")}</span>
+            <span>Urgent notification number</span>
             <input
               type="tel"
               inputMode="tel"
@@ -283,10 +339,9 @@ export const SalonProfilePage = () => {
                 }))
               }
             />
-            <small>{t("form.phoneHint")}</small>
           </label>
           <label className="field">
-            <span>{t("profile.address1")}</span>
+            <span>Address line 1</span>
             <input
               value={profileForm.addressLine1}
               onChange={(event) =>
@@ -295,7 +350,7 @@ export const SalonProfilePage = () => {
             />
           </label>
           <label className="field">
-            <span>{t("profile.address2")}</span>
+            <span>Address line 2</span>
             <input
               value={profileForm.addressLine2}
               onChange={(event) =>
@@ -304,21 +359,21 @@ export const SalonProfilePage = () => {
             />
           </label>
           <label className="field">
-            <span>{t("common.city")}</span>
+            <span>City</span>
             <input
               value={profileForm.city}
               onChange={(event) => setProfileForm((prev) => ({ ...prev, city: event.target.value }))}
             />
           </label>
           <label className="field">
-            <span>{t("common.state")}</span>
+            <span>State</span>
             <input
               value={profileForm.state}
               onChange={(event) => setProfileForm((prev) => ({ ...prev, state: event.target.value }))}
             />
           </label>
           <label className="field">
-            <span>{t("common.postalCode")}</span>
+            <span>Postal code</span>
             <input
               value={profileForm.postalCode}
               onChange={(event) =>
@@ -327,7 +382,7 @@ export const SalonProfilePage = () => {
             />
           </label>
           <label className="field">
-            <span>{t("common.country")}</span>
+            <span>Country</span>
             <select
               value={profileForm.country}
               onChange={(event) => setProfileForm((prev) => ({ ...prev, country: event.target.value }))}
@@ -341,166 +396,258 @@ export const SalonProfilePage = () => {
           </label>
           <div className="form-actions">
             <button type="submit" className="button-primary">
-              {t("profile.saveProfile")}
+              Save profile
             </button>
           </div>
         </form>
       </section>
 
       <section className="card">
-        <h2>{t("profile.settingsTitle")}</h2>
+        <h2>Call handling settings</h2>
         <form className="form-grid two-columns" onSubmit={saveSettings}>
           <div className="settings-panel">
             <div>
-              <h3>{t("profile.businessSettings")}</h3>
-              <p className="muted">{t("profile.businessSettingsHint")}</p>
+              <h3>Business defaults</h3>
+              <p className="muted">Shared defaults for booking, AI reception, and operator workflows.</p>
             </div>
-          <label className="field">
-            <span>{t("profile.currency")}</span>
-            <select
-              value={settingsForm.currency}
-              onChange={(event) =>
-                setSettingsForm((prev) => ({ ...prev, currency: event.target.value }))
-              }
-            >
-              {currencyOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span>{t("profile.locale")}</span>
-            <select
-              value={settingsForm.locale}
-              onChange={(event) => setSettingsForm((prev) => ({ ...prev, locale: event.target.value }))}
-            >
-              {localePreferenceOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span>{t("profile.leadTime")}</span>
-            <input
-              type="number"
-              min={0}
-              value={settingsForm.bookingLeadTimeMinutes}
-              onChange={(event) =>
-                setSettingsForm((prev) => ({
-                  ...prev,
-                  bookingLeadTimeMinutes: event.target.value
-                }))
-              }
-            />
-          </label>
-          <label className="field">
-            <span>{t("profile.cancelPolicy")}</span>
-            <textarea
-              rows={3}
-              value={settingsForm.cancellationPolicy}
-              onChange={(event) =>
-                setSettingsForm((prev) => ({
-                  ...prev,
-                  cancellationPolicy: event.target.value
-                }))
-              }
-            />
-          </label>
+            <label className="field">
+              <span>Currency</span>
+              <select
+                value={settingsForm.currency}
+                onChange={(event) => setSettingsForm((prev) => ({ ...prev, currency: event.target.value }))}
+              >
+                {currencyOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span>Default locale</span>
+              <select
+                value={settingsForm.locale}
+                onChange={(event) => setSettingsForm((prev) => ({ ...prev, locale: event.target.value }))}
+              >
+                {localePreferenceOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span>Minimum booking lead time (minutes)</span>
+              <input
+                type="number"
+                min={0}
+                value={settingsForm.bookingLeadTimeMinutes}
+                onChange={(event) =>
+                  setSettingsForm((prev) => ({
+                    ...prev,
+                    bookingLeadTimeMinutes: event.target.value
+                  }))
+                }
+              />
+            </label>
+            <label className="field">
+              <span>Cancellation policy</span>
+              <textarea
+                rows={4}
+                value={settingsForm.cancellationPolicy}
+                onChange={(event) =>
+                  setSettingsForm((prev) => ({ ...prev, cancellationPolicy: event.target.value }))
+                }
+              />
+            </label>
           </div>
 
           <div className="settings-panel">
             <div>
-              <h3>{t("profile.aiSettings")}</h3>
-              <p className="muted">{t("profile.aiSettingsHint")}</p>
+              <h3>AI Reception</h3>
+              <p className="muted">AI reception answers based on routing and can create real bookings.</p>
             </div>
-          <label className="field checkbox-row">
-            <span>{t("profile.aiForwarding")}</span>
-            <input
-              type="checkbox"
-              checked={settingsForm.aiForwardingEnabled}
-              onChange={(event) =>
-                setSettingsForm((prev) => ({
-                  ...prev,
-                  aiForwardingEnabled: event.target.checked
-                }))
-              }
-            />
-            <small>{t("profile.aiForwardingHint")}</small>
-          </label>
-          <label className="field">
-            <span>{t("profile.ringCount")}</span>
-            <input
-              type="number"
-              min={1}
-              max={10}
-              value={settingsForm.aiTransferRingCount}
-              onChange={(event) =>
-                setSettingsForm((prev) => ({
-                  ...prev,
-                  aiTransferRingCount: event.target.value
-                }))
-              }
-            />
-            <small>{t("profile.ringCountHint")}</small>
-          </label>
+            <label className="field checkbox-row">
+              <span>AI Reception ON</span>
+              <input
+                type="checkbox"
+                checked={settingsForm.aiReceptionEnabled}
+                onChange={(event) =>
+                  setSettingsForm((prev) => ({
+                    ...prev,
+                    aiReceptionEnabled: event.target.checked
+                  }))
+                }
+              />
+            </label>
+            <label className="field">
+              <span>Ring count before AI</span>
+              <input
+                type="number"
+                min={1}
+                max={10}
+                value={settingsForm.aiTransferRingCount}
+                onChange={(event) =>
+                  setSettingsForm((prev) => ({
+                    ...prev,
+                    aiTransferRingCount: event.target.value
+                  }))
+                }
+              />
+            </label>
+            <label className="field">
+              <span>AI greeting prompt</span>
+              <textarea
+                rows={5}
+                value={settingsForm.aiGreetingPrompt}
+                onChange={(event) =>
+                  setSettingsForm((prev) => ({ ...prev, aiGreetingPrompt: event.target.value }))
+                }
+              />
+            </label>
+            <label className="field">
+              <span>Caller language</span>
+              <select
+                value={settingsForm.callerLanguage}
+                onChange={(event) =>
+                  setSettingsForm((prev) => ({ ...prev, callerLanguage: event.target.value }))
+                }
+              >
+                <option value="en">English</option>
+              </select>
+            </label>
           </div>
 
           <div className="settings-panel">
             <div>
-              <h3>{t("profile.callCenterSettings")}</h3>
-              <p className="muted">{t("profile.callCenterSettingsHint")}</p>
+              <h3>Human Call Center and fallback</h3>
+              <p className="muted">Shared 24/7 operator queue, voicemail, callback, and SMS fallback behavior.</p>
             </div>
-          <label className="field checkbox-row">
-            <span>{t("profile.callCenterEnabled")}</span>
-            <input
-              type="checkbox"
-              checked={settingsForm.callCenterEnabled}
-              onChange={(event) =>
-                setSettingsForm((prev) => ({
-                  ...prev,
-                  callCenterEnabled: event.target.checked
-                }))
-              }
-            />
-            <small>{t("profile.callCenterEnabledHint")}</small>
-          </label>
-          <label className="field">
-            <span>{t("profile.routingNumber")}</span>
-            <input
-              type="tel"
-              inputMode="tel"
-              placeholder="(212) 555-0100"
-              value={settingsForm.callCenterRoutingNumber}
-              onChange={(event) =>
-                setSettingsForm((prev) => ({
-                  ...prev,
-                  callCenterRoutingNumber: formatUsPhoneInput(event.target.value)
-                }))
-              }
-            />
-            <small>{t("form.phoneHint")}</small>
-          </label>
-          <label className="field">
-            <span>{t("profile.routingNote")}</span>
-            <textarea
-              rows={3}
-              value={settingsForm.callCenterRoutingNote}
-              onChange={(event) =>
-                setSettingsForm((prev) => ({
-                  ...prev,
-                  callCenterRoutingNote: event.target.value
-                }))
-              }
-            />
-          </label>
+            <label className="field checkbox-row">
+              <span>Human Call Center ON</span>
+              <input
+                type="checkbox"
+                checked={settingsForm.callCenterEnabled}
+                onChange={(event) =>
+                  setSettingsForm((prev) => ({
+                    ...prev,
+                    callCenterEnabled: event.target.checked
+                  }))
+                }
+              />
+            </label>
+            <label className="field checkbox-row">
+              <span>Voicemail fallback ON</span>
+              <input
+                type="checkbox"
+                checked={settingsForm.voicemailEnabled}
+                onChange={(event) =>
+                  setSettingsForm((prev) => ({
+                    ...prev,
+                    voicemailEnabled: event.target.checked
+                  }))
+                }
+              />
+            </label>
+            <label className="field checkbox-row">
+              <span>Callback request ON</span>
+              <input
+                type="checkbox"
+                checked={settingsForm.callbackRequestEnabled}
+                onChange={(event) =>
+                  setSettingsForm((prev) => ({
+                    ...prev,
+                    callbackRequestEnabled: event.target.checked
+                  }))
+                }
+              />
+            </label>
+            <label className="field checkbox-row">
+              <span>SMS fallback ON</span>
+              <input
+                type="checkbox"
+                checked={settingsForm.smsFallbackEnabled}
+                onChange={(event) =>
+                  setSettingsForm((prev) => ({
+                    ...prev,
+                    smsFallbackEnabled: event.target.checked
+                  }))
+                }
+              />
+            </label>
+            <label className="field">
+              <span>Direct call center number</span>
+              <input
+                type="tel"
+                inputMode="tel"
+                placeholder="(212) 555-0100"
+                value={settingsForm.callCenterRoutingNumber}
+                onChange={(event) =>
+                  setSettingsForm((prev) => ({
+                    ...prev,
+                    callCenterRoutingNumber: formatUsPhoneInput(event.target.value)
+                  }))
+                }
+              />
+            </label>
+            <label className="field">
+              <span>Call center routing note</span>
+              <textarea
+                rows={3}
+                value={settingsForm.callCenterRoutingNote}
+                onChange={(event) =>
+                  setSettingsForm((prev) => ({
+                    ...prev,
+                    callCenterRoutingNote: event.target.value
+                  }))
+                }
+              />
+            </label>
           </div>
+
+          <div className="settings-panel">
+            <div>
+              <h3>Notifications and visibility</h3>
+              <p className="muted">Decide who receives call notifications and who can view call records.</p>
+            </div>
+            <label className="field">
+              <span>Notification recipients</span>
+              <textarea
+                rows={4}
+                value={settingsForm.notificationRecipientsText}
+                onChange={(event) =>
+                  setSettingsForm((prev) => ({
+                    ...prev,
+                    notificationRecipientsText: event.target.value
+                  }))
+                }
+                placeholder={"ops@salon.com\n+12125550100"}
+              />
+              <small>Enter one email or phone number per line.</small>
+            </label>
+            <label className="field">
+              <span>Call log, transcript, and summary visibility</span>
+              <select
+                value={settingsForm.callLogVisibility}
+                onChange={(event) =>
+                  setSettingsForm((prev) => ({
+                    ...prev,
+                    callLogVisibility: event.target.value as SalonSettings["callLogVisibility"]
+                  }))
+                }
+              >
+                {callLogVisibilityOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
           <div className="form-actions">
             <button type="submit" className="button-primary">
-              {t("profile.saveSettings")}
+              Save settings
             </button>
           </div>
         </form>
