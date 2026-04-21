@@ -9,8 +9,9 @@ interface CallItem {
   id: string;
   provider: string;
   status: string;
+  routingOutcome: string | null;
+  finalResolution: string | null;
   callerPhone: string | null;
-  dialedPhone: string | null;
   salon: {
     id: string;
     name: string;
@@ -20,6 +21,7 @@ interface CallItem {
     events: number;
     transcripts: number;
     bookingAttempts: number;
+    callEscalations: number;
   };
 }
 
@@ -78,43 +80,47 @@ export const CallsPage = () => {
 
   return (
     <section className="card">
-      <h2>Nhật ký cuộc gọi</h2>
+      <h2>Calls</h2>
       <form className="filters" onSubmit={onFilter}>
         <label className="field compact">
           <span>Status</span>
           <select value={status} onChange={(event) => setStatus(event.target.value)}>
-            <option value="">Tất cả</option>
+            <option value="">All</option>
             <option value="RECEIVED">RECEIVED</option>
             <option value="IN_PROGRESS">IN_PROGRESS</option>
             <option value="COMPLETED">COMPLETED</option>
             <option value="FAILED">FAILED</option>
             <option value="MISSED">MISSED</option>
+            <option value="VOICEMAIL">VOICEMAIL</option>
           </select>
         </label>
         <label className="field compact">
-          <span>ID tiệm</span>
+          <span>Salon ID</span>
           <input
             value={querySalon}
             onChange={(event) => setQuerySalon(event.target.value)}
-            placeholder="UUID tiệm nếu cần lọc"
+            placeholder="Filter by salon UUID"
           />
         </label>
         <button type="submit" className="button-secondary">
-          Lọc
+          Filter
         </button>
       </form>
+
       {data?.items.length ? (
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Thời điểm</th>
-                <th>Tiệm</th>
-                <th>Nguồn</th>
-                <th>Trạng thái</th>
-                <th>Người gọi</th>
-                <th>Transcript</th>
-                <th>Chi tiết</th>
+                <th>Created</th>
+                <th>Salon</th>
+                <th>Provider</th>
+                <th>Status</th>
+                <th>Routing</th>
+                <th>Caller</th>
+                <th>Escalations</th>
+                <th>Resolution</th>
+                <th>Detail</th>
               </tr>
             </thead>
             <tbody>
@@ -124,10 +130,12 @@ export const CallsPage = () => {
                   <td>{item.salon?.name ?? "-"}</td>
                   <td>{item.provider}</td>
                   <td>{item.status}</td>
+                  <td>{item.routingOutcome ?? "-"}</td>
                   <td>{item.callerPhone ?? "-"}</td>
-                  <td>{item._count.transcripts}</td>
+                  <td>{item._count.callEscalations}</td>
+                  <td>{item.finalResolution ?? "-"}</td>
                   <td>
-                    <Link to={`/calls/${item.id}`}>Mở</Link>
+                    <Link to={`/calls/${item.id}`}>Open</Link>
                   </td>
                 </tr>
               ))}
@@ -135,7 +143,7 @@ export const CallsPage = () => {
           </table>
         </div>
       ) : (
-        <EmptyBlock message="Chưa có cuộc gọi phù hợp." />
+        <EmptyBlock message="No calls matched the current filter." />
       )}
     </section>
   );

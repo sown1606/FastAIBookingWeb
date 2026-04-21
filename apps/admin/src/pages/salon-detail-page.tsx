@@ -20,17 +20,25 @@ interface SalonSettings {
   locale: string;
   bookingLeadTimeMinutes: number;
   cancellationPolicy: string | null;
-  aiForwardingEnabled: boolean;
+  aiReceptionEnabled: boolean;
   aiTransferRingCount: number;
   callCenterEnabled: boolean;
+  voicemailEnabled: boolean;
+  callbackRequestEnabled: boolean;
+  smsFallbackEnabled: boolean;
+  aiGreetingPrompt: string | null;
+  callerLanguage: string;
+  callLogVisibility: "OWNER_ONLY" | "OWNER_AND_STAFF" | "OWNER_STAFF_OPERATOR";
+  notificationRecipients: string[];
   callCenterRoutingNumber: string | null;
   callCenterRoutingNote: string | null;
   routingSummary: {
     mode:
       | "SALON_PHONE_ONLY"
-      | "AI_FORWARDING_ACTIVE"
-      | "CALL_CENTER_ENABLED"
-      | "AI_WITH_CALL_CENTER_ESCALATION";
+      | "AI_RECEPTION_ONLY"
+      | "CALL_CENTER_ONLY"
+      | "AI_RECEPTION_WITH_CALL_CENTER";
+    ringCountBeforeAi: number;
   };
 }
 
@@ -78,6 +86,48 @@ interface SalonDetail {
     extraStaffUnitPriceCents: number;
     estimatedExtraCostCents: number;
   };
+  integrationStatuses: {
+    callRail: {
+      configured: boolean;
+      missing: string[];
+      activeConfigCount: number;
+    };
+    vertex: {
+      configured: boolean;
+      missing: string[];
+      activeConfigCount: number;
+    };
+    amazonConnect: {
+      configured: boolean;
+      missing: string[];
+      activeConfigCount: number;
+    };
+  };
+  callCenterAssignmentStatus: {
+    assignedAgentCount: number;
+    hasAssignedAgents: boolean;
+  };
+  recentEscalations: Array<{
+    id: string;
+    status: string;
+    routingOutcome: string | null;
+    requestedAt: string;
+    resolution: string | null;
+    callSession: {
+      id: string;
+      callerPhone: string | null;
+      routingOutcome: string | null;
+    };
+  }>;
+  recentCallFailures: Array<{
+    id: string;
+    providerCallId: string;
+    status: string;
+    routingOutcome: string | null;
+    finalResolution: string | null;
+    callerPhone: string | null;
+    createdAt: string;
+  }>;
 }
 
 interface IntegrationConfig {
@@ -212,9 +262,9 @@ const appointmentStatusOptions = [
 
 const routingModeLabels: Record<SalonSettings["routingSummary"]["mode"], string> = {
   SALON_PHONE_ONLY: "Salon phone only",
-  AI_FORWARDING_ACTIVE: "AI forwarding active",
-  CALL_CENTER_ENABLED: "Call center enabled",
-  AI_WITH_CALL_CENTER_ESCALATION: "AI with call center escalation"
+  AI_RECEPTION_ONLY: "AI Reception only",
+  CALL_CENTER_ONLY: "Human Call Center only",
+  AI_RECEPTION_WITH_CALL_CENTER: "AI Reception with human escalation"
 };
 
 const createDefaultHours = (): BusinessHour[] => [
@@ -255,12 +305,19 @@ export const SalonDetailPage = () => {
   });
   const [settingsForm, setSettingsForm] = useState({
     currency: "USD",
-    locale: "vi-VN",
+    locale: "en-US",
     bookingLeadTimeMinutes: "0",
     cancellationPolicy: "",
-    aiForwardingEnabled: false,
+    aiReceptionEnabled: false,
     aiTransferRingCount: "3",
     callCenterEnabled: false,
+    voicemailEnabled: true,
+    callbackRequestEnabled: true,
+    smsFallbackEnabled: false,
+    aiGreetingPrompt: "",
+    callerLanguage: "en",
+    callLogVisibility: "OWNER_STAFF_OPERATOR" as SalonSettings["callLogVisibility"],
+    notificationRecipientsText: "",
     callCenterRoutingNumber: "",
     callCenterRoutingNote: ""
   });
@@ -366,12 +423,19 @@ export const SalonDetailPage = () => {
       });
       setSettingsForm({
         currency: salonDetail.settings?.currency ?? "USD",
-        locale: salonDetail.settings?.locale ?? "vi-VN",
+        locale: salonDetail.settings?.locale ?? "en-US",
         bookingLeadTimeMinutes: String(salonDetail.settings?.bookingLeadTimeMinutes ?? 0),
         cancellationPolicy: salonDetail.settings?.cancellationPolicy ?? "",
-        aiForwardingEnabled: salonDetail.settings?.aiForwardingEnabled ?? false,
+        aiReceptionEnabled: salonDetail.settings?.aiReceptionEnabled ?? false,
         aiTransferRingCount: String(salonDetail.settings?.aiTransferRingCount ?? 3),
         callCenterEnabled: salonDetail.settings?.callCenterEnabled ?? false,
+        voicemailEnabled: salonDetail.settings?.voicemailEnabled ?? true,
+        callbackRequestEnabled: salonDetail.settings?.callbackRequestEnabled ?? true,
+        smsFallbackEnabled: salonDetail.settings?.smsFallbackEnabled ?? false,
+        aiGreetingPrompt: salonDetail.settings?.aiGreetingPrompt ?? "",
+        callerLanguage: salonDetail.settings?.callerLanguage ?? "en",
+        callLogVisibility: salonDetail.settings?.callLogVisibility ?? "OWNER_STAFF_OPERATOR",
+        notificationRecipientsText: salonDetail.settings?.notificationRecipients.join("\n") ?? "",
         callCenterRoutingNumber: formatUsPhoneInput(salonDetail.settings?.callCenterRoutingNumber ?? ""),
         callCenterRoutingNote: salonDetail.settings?.callCenterRoutingNote ?? ""
       });
@@ -454,9 +518,19 @@ export const SalonDetailPage = () => {
         locale: settingsForm.locale,
         bookingLeadTimeMinutes: Number(settingsForm.bookingLeadTimeMinutes),
         cancellationPolicy: settingsForm.cancellationPolicy || null,
-        aiForwardingEnabled: settingsForm.aiForwardingEnabled,
+        aiReceptionEnabled: settingsForm.aiReceptionEnabled,
         aiTransferRingCount: Number(settingsForm.aiTransferRingCount),
         callCenterEnabled: settingsForm.callCenterEnabled,
+        voicemailEnabled: settingsForm.voicemailEnabled,
+        callbackRequestEnabled: settingsForm.callbackRequestEnabled,
+        smsFallbackEnabled: settingsForm.smsFallbackEnabled,
+        aiGreetingPrompt: settingsForm.aiGreetingPrompt || null,
+        callerLanguage: settingsForm.callerLanguage,
+        callLogVisibility: settingsForm.callLogVisibility,
+        notificationRecipients: settingsForm.notificationRecipientsText
+          .split(/\n|,/)
+          .map((item) => item.trim())
+          .filter((item) => item.length > 0),
         callCenterRoutingNumber: settingsForm.callCenterRoutingNumber || null,
         callCenterRoutingNote: settingsForm.callCenterRoutingNote || null
       });
@@ -1120,6 +1194,108 @@ export const SalonDetailPage = () => {
         </form>
       </section>
 
+      <section className="card-grid">
+        <article className="card">
+          <h3>Integration status</h3>
+          <div className="mobile-list">
+            <article className="mobile-item">
+              <strong>CallRail</strong>
+              <span>{salon.integrationStatuses.callRail.configured ? "Configured" : "Attention required"}</span>
+              <small>
+                Active configs: {salon.integrationStatuses.callRail.activeConfigCount}
+                {salon.integrationStatuses.callRail.missing.length
+                  ? ` · Missing: ${salon.integrationStatuses.callRail.missing.join(", ")}`
+                  : ""}
+              </small>
+            </article>
+            <article className="mobile-item">
+              <strong>Vertex AI</strong>
+              <span>{salon.integrationStatuses.vertex.configured ? "Configured" : "Attention required"}</span>
+              <small>
+                Active configs: {salon.integrationStatuses.vertex.activeConfigCount}
+                {salon.integrationStatuses.vertex.missing.length
+                  ? ` · Missing: ${salon.integrationStatuses.vertex.missing.join(", ")}`
+                  : ""}
+              </small>
+            </article>
+            <article className="mobile-item">
+              <strong>Amazon Connect</strong>
+              <span>
+                {salon.integrationStatuses.amazonConnect.configured ? "Configured" : "Attention required"}
+              </span>
+              <small>
+                Active configs: {salon.integrationStatuses.amazonConnect.activeConfigCount}
+                {salon.integrationStatuses.amazonConnect.missing.length
+                  ? ` · Missing: ${salon.integrationStatuses.amazonConnect.missing.join(", ")}`
+                  : ""}
+              </small>
+            </article>
+          </div>
+        </article>
+
+        <article className="card">
+          <h3>Call center assignment status</h3>
+          <div className="metrics-grid">
+            <div>
+              <span className="muted">Assigned agents</span>
+              <strong>{salon.callCenterAssignmentStatus.assignedAgentCount}</strong>
+            </div>
+            <div>
+              <span className="muted">Queue ready</span>
+              <strong>{salon.callCenterAssignmentStatus.hasAssignedAgents ? "YES" : "NO"}</strong>
+            </div>
+            <div>
+              <span className="muted">Routing summary</span>
+              <strong>{salon.settings?.routingSummary.mode ? routingModeLabels[salon.settings.routingSummary.mode] : "-"}</strong>
+            </div>
+            <div>
+              <span className="muted">Ring count before AI</span>
+              <strong>{salon.settings?.routingSummary.ringCountBeforeAi ?? 3}</strong>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <section className="card-grid">
+        <article className="card">
+          <h3>Recent escalations</h3>
+          {salon.recentEscalations.length ? (
+            <div className="mobile-list">
+              {salon.recentEscalations.map((item) => (
+                <article key={item.id} className="mobile-item">
+                  <strong>{item.status}</strong>
+                  <span>{item.callSession.callerPhone ?? "-"}</span>
+                  <small>
+                    {formatDateTime(item.requestedAt)} · {item.routingOutcome ?? item.callSession.routingOutcome ?? "-"}
+                  </small>
+                  <small>{item.resolution ?? "No resolution yet"}</small>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <EmptyBlock message="No recent escalations." />
+          )}
+        </article>
+
+        <article className="card">
+          <h3>Failures and fallback states</h3>
+          {salon.recentCallFailures.length ? (
+            <div className="mobile-list">
+              {salon.recentCallFailures.map((item) => (
+                <article key={item.id} className="mobile-item">
+                  <strong>{item.status}</strong>
+                  <span>{item.routingOutcome ?? "-"}</span>
+                  <small>{item.callerPhone ?? "-"}</small>
+                  <small>{item.finalResolution ?? "No final resolution"}</small>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <EmptyBlock message="No recent failures or fallback calls." />
+          )}
+        </article>
+      </section>
+
       <section className="card">
         <div className="section-header">
           <div>
@@ -1194,21 +1370,21 @@ export const SalonDetailPage = () => {
 
           <div className="form-panel">
             <div>
-              <h4>AI and call center</h4>
-              <p className="muted">Business-facing controls for how calls are routed.</p>
+              <h4>AI Reception and fallback</h4>
+              <p className="muted">Business-facing controls for AI Reception, human escalation, and fallback routing.</p>
             </div>
             <label className="field checkbox-row">
-              <span>AI forwarding enabled</span>
+              <span>AI Reception ON</span>
               <input
                 type="checkbox"
-                checked={settingsForm.aiForwardingEnabled}
+                checked={settingsForm.aiReceptionEnabled}
                 onChange={(event) =>
-                  setSettingsForm((prev) => ({ ...prev, aiForwardingEnabled: event.target.checked }))
+                  setSettingsForm((prev) => ({ ...prev, aiReceptionEnabled: event.target.checked }))
                 }
               />
             </label>
             <label className="field">
-              <span>AI transfer ring count</span>
+              <span>Ring count before AI</span>
               <input
                 type="number"
                 min={1}
@@ -1220,7 +1396,7 @@ export const SalonDetailPage = () => {
               />
             </label>
             <label className="field checkbox-row">
-              <span>Call center enabled</span>
+              <span>Human Call Center ON</span>
               <input
                 type="checkbox"
                 checked={settingsForm.callCenterEnabled}
@@ -1228,6 +1404,57 @@ export const SalonDetailPage = () => {
                   setSettingsForm((prev) => ({ ...prev, callCenterEnabled: event.target.checked }))
                 }
               />
+            </label>
+            <label className="field checkbox-row">
+              <span>Voicemail fallback ON</span>
+              <input
+                type="checkbox"
+                checked={settingsForm.voicemailEnabled}
+                onChange={(event) =>
+                  setSettingsForm((prev) => ({ ...prev, voicemailEnabled: event.target.checked }))
+                }
+              />
+            </label>
+            <label className="field checkbox-row">
+              <span>Callback request ON</span>
+              <input
+                type="checkbox"
+                checked={settingsForm.callbackRequestEnabled}
+                onChange={(event) =>
+                  setSettingsForm((prev) => ({ ...prev, callbackRequestEnabled: event.target.checked }))
+                }
+              />
+            </label>
+            <label className="field checkbox-row">
+              <span>SMS fallback ON</span>
+              <input
+                type="checkbox"
+                checked={settingsForm.smsFallbackEnabled}
+                onChange={(event) =>
+                  setSettingsForm((prev) => ({ ...prev, smsFallbackEnabled: event.target.checked }))
+                }
+              />
+            </label>
+            <label className="field">
+              <span>AI greeting prompt</span>
+              <textarea
+                rows={4}
+                value={settingsForm.aiGreetingPrompt}
+                onChange={(event) =>
+                  setSettingsForm((prev) => ({ ...prev, aiGreetingPrompt: event.target.value }))
+                }
+              />
+            </label>
+            <label className="field">
+              <span>Caller language</span>
+              <select
+                value={settingsForm.callerLanguage}
+                onChange={(event) =>
+                  setSettingsForm((prev) => ({ ...prev, callerLanguage: event.target.value }))
+                }
+              >
+                <option value="en">English</option>
+              </select>
             </label>
             <label className="field">
               <span>Call center routing number</span>
@@ -1254,6 +1481,36 @@ export const SalonDetailPage = () => {
                   setSettingsForm((prev) => ({ ...prev, callCenterRoutingNote: event.target.value }))
                 }
               />
+            </label>
+            <label className="field">
+              <span>Notification recipients</span>
+              <textarea
+                rows={3}
+                value={settingsForm.notificationRecipientsText}
+                onChange={(event) =>
+                  setSettingsForm((prev) => ({
+                    ...prev,
+                    notificationRecipientsText: event.target.value
+                  }))
+                }
+                placeholder={"ops@salon.com\n+12125550100"}
+              />
+            </label>
+            <label className="field">
+              <span>Call log visibility</span>
+              <select
+                value={settingsForm.callLogVisibility}
+                onChange={(event) =>
+                  setSettingsForm((prev) => ({
+                    ...prev,
+                    callLogVisibility: event.target.value as SalonSettings["callLogVisibility"]
+                  }))
+                }
+              >
+                <option value="OWNER_ONLY">Owner only</option>
+                <option value="OWNER_AND_STAFF">Owner and staff</option>
+                <option value="OWNER_STAFF_OPERATOR">Owner, staff, and operator</option>
+              </select>
             </label>
           </div>
           <div className="form-actions">

@@ -1,4 +1,6 @@
 import {
+  CallSessionStatus,
+  CallRoutingOutcome,
   ExternalProvider,
   Prisma,
   Role,
@@ -72,9 +74,16 @@ interface UpdateSalonSettingsInputForAdmin {
   locale?: string;
   bookingLeadTimeMinutes?: number;
   cancellationPolicy?: string | null;
-  aiForwardingEnabled?: boolean;
+  aiReceptionEnabled?: boolean;
   aiTransferRingCount?: number;
   callCenterEnabled?: boolean;
+  voicemailEnabled?: boolean;
+  callbackRequestEnabled?: boolean;
+  smsFallbackEnabled?: boolean;
+  aiGreetingPrompt?: string | null;
+  callerLanguage?: string;
+  callLogVisibility?: "OWNER_ONLY" | "OWNER_AND_STAFF" | "OWNER_STAFF_OPERATOR";
+  notificationRecipients?: string[];
   callCenterRoutingNumber?: string | null;
   callCenterRoutingNote?: string | null;
 }
@@ -105,6 +114,21 @@ const normalizeOptionalPhone = (
     return null;
   }
   return requireUsPhone(value, label);
+};
+
+const normalizeNotificationRecipients = (
+  value: string[] | undefined
+): string[] | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+  return Array.from(
+    new Set(
+      value
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0)
+    )
+  );
 };
 
 export const listSalonsForAdmin = async (input: ListSalonsInput) => {
@@ -196,7 +220,12 @@ export const getSalonDetailForAdmin = async (salonId: string) => {
         }
       },
       settings: true,
-      subscription: true
+      subscription: true,
+      callCenterAssignments: {
+        select: {
+          id: true
+        }
+      }
     }
   });
 
@@ -204,7 +233,16 @@ export const getSalonDetailForAdmin = async (salonId: string) => {
     throw new AppError("Salon not found.", 404, "SALON_NOT_FOUND");
   }
 
-  const [staffCount, serviceCount, customerCount, appointmentCount, billingUsage] = await Promise.all([
+  const [
+    staffCount,
+    serviceCount,
+    customerCount,
+    appointmentCount,
+    billingUsage,
+    integrations,
+    recentEscalations,
+    recentCallFailures
+  ] = await Promise.all([
     prisma.staff.count({
       where: {
         salonId,
@@ -219,8 +257,72 @@ export const getSalonDetailForAdmin = async (salonId: string) => {
     }),
     prisma.customer.count({ where: { salonId } }),
     prisma.appointment.count({ where: { salonId } }),
-    refreshBillingUsageForSalon(salonId)
+    refreshBillingUsageForSalon(salonId),
+    prisma.integrationConfig.findMany({
+      where: { salonId, isActive: true },
+      orderBy: [{ provider: "asc" }, { configKey: "asc" }]
+    }),
+    prisma.callEscalation.findMany({
+      where: { salonId },
+      orderBy: {
+        requestedAt: "desc"
+      },
+      take: 8,
+      include: {
+        callSession: {
+          select: {
+            id: true,
+            callerPhone: true,
+            routingOutcome: true
+          }
+        }
+      }
+    }),
+    prisma.callSession.findMany({
+      where: {
+        salonId,
+        OR: [
+          {
+            status: {
+              in: [
+                CallSessionStatus.FAILED,
+                CallSessionStatus.MISSED,
+                CallSessionStatus.VOICEMAIL
+              ]
+            }
+          },
+          {
+            routingOutcome: {
+              in: [
+                CallRoutingOutcome.VOICEMAIL,
+                CallRoutingOutcome.CALLBACK_REQUEST,
+                CallRoutingOutcome.SMS_FALLBACK
+              ]
+            }
+          }
+        ]
+      },
+      orderBy: {
+        createdAt: "desc"
+      },
+      take: 8,
+      select: {
+        id: true,
+        providerCallId: true,
+        status: true,
+        routingOutcome: true,
+        finalResolution: true,
+        callerPhone: true,
+        createdAt: true
+      }
+    })
   ]);
+
+  const activeCallRailConfigs = integrations.filter((item) => item.provider === ExternalProvider.CALLRAIL);
+  const activeVertexConfigs = integrations.filter((item) => item.provider === ExternalProvider.VERTEX);
+  const activeAmazonConnectConfigs = integrations.filter(
+    (item) => item.provider === ExternalProvider.AMAZON_CONNECT
+  );
 
   return {
     ...salon,
@@ -236,7 +338,39 @@ export const getSalonDetailForAdmin = async (salonId: string) => {
       customerCount,
       appointmentCount
     },
-    staffUsage: billingUsage
+    staffUsage: billingUsage,
+    integrationStatuses: {
+      callRail: {
+        configured: env.integrationStatuses.callRail.configured && activeCallRailConfigs.length > 0,
+        missing: [
+          ...env.integrationStatuses.callRail.missing,
+          activeCallRailConfigs.length === 0 ? "Active CALLRAIL IntegrationConfig" : null
+        ].filter((value): value is string => Boolean(value)),
+        activeConfigCount: activeCallRailConfigs.length
+      },
+      vertex: {
+        configured: env.integrationStatuses.vertex.configured,
+        missing: env.integrationStatuses.vertex.missing,
+        activeConfigCount: activeVertexConfigs.length
+      },
+      amazonConnect: {
+        configured:
+          env.integrationStatuses.amazonConnect.configured && activeAmazonConnectConfigs.length > 0,
+        missing: [
+          ...env.integrationStatuses.amazonConnect.missing,
+          activeAmazonConnectConfigs.length === 0
+            ? "Active AMAZON_CONNECT IntegrationConfig"
+            : null
+        ].filter((value): value is string => Boolean(value)),
+        activeConfigCount: activeAmazonConnectConfigs.length
+      }
+    },
+    callCenterAssignmentStatus: {
+      assignedAgentCount: salon.callCenterAssignments.length,
+      hasAssignedAgents: salon.callCenterAssignments.length > 0
+    },
+    recentEscalations,
+    recentCallFailures
   };
 };
 
@@ -518,6 +652,9 @@ export const updateSalonSettingsForAdmin = async (
 
   const data = {
     ...input,
+    aiForwardingEnabled: input.aiReceptionEnabled,
+    aiReceptionEnabled: input.aiReceptionEnabled,
+    notificationRecipients: normalizeNotificationRecipients(input.notificationRecipients),
     callCenterRoutingNumber: normalizeOptionalPhone(
       input.callCenterRoutingNumber,
       "Call center routing phone"
@@ -532,9 +669,17 @@ export const updateSalonSettingsForAdmin = async (
       locale: data.locale,
       bookingLeadTimeMinutes: data.bookingLeadTimeMinutes ?? 0,
       cancellationPolicy: data.cancellationPolicy,
-      aiForwardingEnabled: data.aiForwardingEnabled ?? false,
+      aiForwardingEnabled: data.aiReceptionEnabled ?? false,
+      aiReceptionEnabled: data.aiReceptionEnabled ?? false,
       aiTransferRingCount: data.aiTransferRingCount ?? 3,
       callCenterEnabled: data.callCenterEnabled ?? false,
+      voicemailEnabled: data.voicemailEnabled ?? true,
+      callbackRequestEnabled: data.callbackRequestEnabled ?? true,
+      smsFallbackEnabled: data.smsFallbackEnabled ?? false,
+      aiGreetingPrompt: data.aiGreetingPrompt,
+      callerLanguage: data.callerLanguage ?? "en",
+      callLogVisibility: data.callLogVisibility ?? "OWNER_STAFF_OPERATOR",
+      notificationRecipients: data.notificationRecipients,
       callCenterRoutingNumber: data.callCenterRoutingNumber,
       callCenterRoutingNote: data.callCenterRoutingNote
     },

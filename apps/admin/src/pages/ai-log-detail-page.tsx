@@ -11,6 +11,8 @@ interface AiLogDetail {
   taskType: string;
   requestText: string | null;
   responseText: string | null;
+  requestPayload: unknown;
+  responsePayload: unknown;
   parsedOutput: unknown;
   isValid: boolean;
   validationErrors: unknown;
@@ -19,6 +21,12 @@ interface AiLogDetail {
   salon: {
     id: string;
     name: string;
+  } | null;
+  callSession: {
+    id: string;
+    status: string;
+    routingOutcome: string | null;
+    finalResolution: string | null;
   } | null;
   bookingAttempt: {
     id: string;
@@ -99,6 +107,28 @@ export const AiLogDetailPage = () => {
       </section>
 
       <section className="card">
+        <h3>Linked records</h3>
+        <div className="metrics-grid">
+          <div>
+            <span className="muted">Salon</span>
+            <strong>{log.salon?.name ?? "-"}</strong>
+          </div>
+          <div>
+            <span className="muted">Call session</span>
+            <strong>{log.callSession?.id ?? "-"}</strong>
+          </div>
+          <div>
+            <span className="muted">Call outcome</span>
+            <strong>{log.callSession?.routingOutcome ?? "-"}</strong>
+          </div>
+          <div>
+            <span className="muted">Booking attempt</span>
+            <strong>{log.bookingAttempt?.status ?? "-"}</strong>
+          </div>
+        </div>
+      </section>
+
+      <section className="card">
         <h3>Request text</h3>
         <pre>{log.requestText ?? "-"}</pre>
       </section>
@@ -108,14 +138,26 @@ export const AiLogDetailPage = () => {
         <pre>{log.responseText ?? "-"}</pre>
       </section>
 
-      <section className="card">
-        <h3>Parsed output</h3>
-        <pre>{JSON.stringify(log.parsedOutput, null, 2)}</pre>
+      <section className="card-grid">
+        <article className="card">
+          <h3>Parsed output</h3>
+          <pre>{JSON.stringify(log.parsedOutput, null, 2)}</pre>
+        </article>
+        <article className="card">
+          <h3>Validation errors</h3>
+          <pre>{JSON.stringify(log.validationErrors, null, 2)}</pre>
+        </article>
       </section>
 
-      <section className="card">
-        <h3>Validation errors</h3>
-        <pre>{JSON.stringify(log.validationErrors, null, 2)}</pre>
+      <section className="card-grid">
+        <article className="card">
+          <h3>Request payload</h3>
+          <pre>{JSON.stringify(log.requestPayload, null, 2)}</pre>
+        </article>
+        <article className="card">
+          <h3>Response payload</h3>
+          <pre>{JSON.stringify(log.responsePayload, null, 2)}</pre>
+        </article>
       </section>
     </div>
   );

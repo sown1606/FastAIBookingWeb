@@ -49,14 +49,14 @@ export const CallCenterAgentsPage = () => {
   const createAgent = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     try {
-      await apiPost<unknown, unknown>("/api/v1/admin/call-center/agents", {
+      await apiPost("/api/v1/admin/call-center/agents", {
         fullName: form.fullName,
         email: form.email,
         phone: form.phone,
         password: form.password || undefined
       });
       setForm({ fullName: "", email: "", phone: "", password: "" });
-      notify("success", "Đã tạo tài khoản tổng đài.");
+      notify("success", "Call center agent created.");
       await load();
     } catch (createError) {
       notify("error", extractErrorMessage(createError));
@@ -74,10 +74,11 @@ export const CallCenterAgentsPage = () => {
   return (
     <div className="stack">
       <section className="card">
-        <h2>Nhân sự tổng đài</h2>
+        <h2>Human Call Center agents</h2>
+        <p className="muted">Operators use the shared Amazon Connect browser softphone and can be assigned to multiple salons.</p>
         <form className="form-grid two-columns" onSubmit={createAgent}>
           <label className="field">
-            <span>Họ tên</span>
+            <span>Full name</span>
             <input
               value={form.fullName}
               onChange={(event) => setForm((prev) => ({ ...prev, fullName: event.target.value }))}
@@ -94,17 +95,17 @@ export const CallCenterAgentsPage = () => {
             />
           </label>
           <label className="field">
-            <span>Số điện thoại Mỹ</span>
+            <span>US phone number</span>
             <input
               type="tel"
-              inputMode="numeric"
+              inputMode="tel"
               value={form.phone}
               onChange={(event) => setForm((prev) => ({ ...prev, phone: event.target.value }))}
               required
             />
           </label>
           <label className="field">
-            <span>Mật khẩu</span>
+            <span>Password</span>
             <input
               type="password"
               minLength={8}
@@ -113,29 +114,40 @@ export const CallCenterAgentsPage = () => {
             />
           </label>
           <button type="submit" className="button-primary">
-            Tạo tài khoản
+            Create agent
           </button>
         </form>
       </section>
 
       <section className="card">
-        <h2>Tài khoản tổng đài</h2>
+        <h2>Assigned operators</h2>
         {agents.length ? (
-          <div className="mobile-list">
-            {agents.map((agent) => (
-              <article key={agent.id} className="mobile-item">
-                <strong>{agent.fullName}</strong>
-                <span>{agent.email}</span>
-                <span>{agent.phone ?? "-"}</span>
-                <small>
-                  Tiệm được phân công:{" "}
-                  {agent.callCenterAssignments.map((item) => item.salon.name).join(", ") || "-"}
-                </small>
-              </article>
-            ))}
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Email</th>
+                  <th>Phone</th>
+                  <th>Status</th>
+                  <th>Assigned salons</th>
+                </tr>
+              </thead>
+              <tbody>
+                {agents.map((agent) => (
+                  <tr key={agent.id}>
+                    <td>{agent.fullName}</td>
+                    <td>{agent.email}</td>
+                    <td>{agent.phone ?? "-"}</td>
+                    <td>{agent.isActive ? "ACTIVE" : "INACTIVE"}</td>
+                    <td>{agent.callCenterAssignments.map((item) => item.salon.name).join(", ") || "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         ) : (
-          <EmptyBlock message="Chưa có tài khoản tổng đài." />
+          <EmptyBlock message="No call center agents have been created yet." />
         )}
       </section>
     </div>
