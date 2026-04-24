@@ -245,6 +245,81 @@ interface CallCenterAssignment {
   agent: CallCenterAgent;
 }
 
+interface AiReceptionConfig {
+  id: string | null;
+  salonId: string;
+  provider: "callrail";
+  carrier: "tmobile";
+  carrierLabel: string;
+  originalPhoneNumber: string | null;
+  originalPhoneNumberFormatted: string | null;
+  forwardToNumber: string;
+  forwardToNumberFormatted: string | null;
+  forwardingPhoneNumber: string;
+  forwardingPhoneNumberFormatted: string | null;
+  forwardingType: "no_answer";
+  activationCode: string;
+  activationCodeWithoutDelay: string;
+  deactivationCode: string;
+  statusCheckCode: string;
+  status: "not_configured" | "pending" | "active" | "failed";
+  lastTestedAt: string | null;
+  lastVerifiedAt: string | null;
+  webhookVerificationEnabled: boolean;
+  setupInstructions: string[];
+}
+
+interface AiReceptionCallLog {
+  id: string;
+  provider: "callrail";
+  providerCallId: string;
+  trackingNumber: string | null;
+  trackingNumberFormatted: string;
+  originalPhoneNumber: string | null;
+  originalPhoneNumberFormatted: string;
+  callerNumber: string | null;
+  callerNumberFormatted: string;
+  direction: string;
+  status: string;
+  durationSeconds: number | null;
+  startedAt: string | null;
+  answeredAt: string | null;
+  completedAt: string | null;
+  recordingUrl: string | null;
+  summary: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface AiReceptionCallLogsResponse {
+  items: AiReceptionCallLog[];
+}
+
+interface CallRailHealthStatus {
+  provider: "callrail";
+  status: string;
+  configured: boolean;
+  missing: string[];
+  webhookEndpoint: string;
+  webhookVerificationEnabled: boolean;
+  webhookSecretConfigured: boolean;
+  apiKeyConfigured: boolean;
+  accountIdConfigured: boolean;
+  companyIdConfigured: boolean;
+  accountCompanyConfigured: boolean;
+  trackingNumberConfigured: boolean;
+  trackingNumberIdConfigured: boolean;
+  defaultSalonIdConfigured: boolean;
+  aiFlowIdConfigured: boolean;
+  livePersonFlowIdConfigured: boolean;
+  livePersonFlowOptional: boolean;
+  trackingNumber: string;
+  trackingNumberFormatted: string | null;
+  activeAiReceptionSetupCount: number;
+  lastWebhookReceivedAt: string | null;
+  lastMappedCallAt: string | null;
+}
+
 const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const integrationProviderOptions: Array<IntegrationConfig["provider"]> = [
@@ -265,6 +340,33 @@ const routingModeLabels: Record<SalonSettings["routingSummary"]["mode"], string>
   AI_RECEPTION_ONLY: "AI Reception only",
   CALL_CENTER_ONLY: "Human Call Center only",
   AI_RECEPTION_WITH_CALL_CENTER: "AI Reception with human escalation"
+};
+
+const aiReceptionStatusLabels: Record<AiReceptionConfig["status"], string> = {
+  not_configured: "Not configured",
+  pending: "Pending",
+  active: "Active",
+  failed: "Failed"
+};
+
+const aiReceptionStatusClasses: Record<AiReceptionConfig["status"], string> = {
+  not_configured: "status-pill warning",
+  pending: "status-pill info",
+  active: "status-pill success",
+  failed: "status-pill danger"
+};
+
+const formatDuration = (value: number | null) => {
+  if (value === null || value === undefined) {
+    return "-";
+  }
+
+  const minutes = Math.floor(value / 60);
+  const seconds = value % 60;
+  if (minutes === 0) {
+    return `${seconds}s`;
+  }
+  return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
 };
 
 const createDefaultHours = (): BusinessHour[] => [
@@ -328,9 +430,16 @@ export const SalonDetailPage = () => {
   const [customers, setCustomers] = useState<CustomerItem[]>([]);
   const [appointments, setAppointments] = useState<AppointmentItem[]>([]);
   const [billing, setBilling] = useState<BillingUsageResponse | null>(null);
+  const [aiReception, setAiReception] = useState<AiReceptionConfig | null>(null);
+  const [aiReceptionCallLogs, setAiReceptionCallLogs] = useState<AiReceptionCallLog[]>([]);
+  const [callRailHealth, setCallRailHealth] = useState<CallRailHealthStatus | null>(null);
   const [selectedAppointment, setSelectedAppointment] = useState<AppointmentItem | null>(null);
   const [callCenterAgents, setCallCenterAgents] = useState<CallCenterAgent[]>([]);
   const [assignedAgentIds, setAssignedAgentIds] = useState<string[]>([]);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [savingIntegrations, setSavingIntegrations] = useState(false);
+  const [savingAssignments, setSavingAssignments] = useState(false);
 
   const [creatingStaff, setCreatingStaff] = useState(false);
   const [staffForm, setStaffForm] = useState({
@@ -367,6 +476,10 @@ export const SalonDetailPage = () => {
     () => staff.filter((item) => item.status === "ACTIVE"),
     [staff]
   );
+  const assignedAgents = useMemo(
+    () => callCenterAgents.filter((agent) => assignedAgentIds.includes(agent.id)),
+    [assignedAgentIds, callCenterAgents]
+  );
 
   const load = async () => {
     if (!salonId) {
@@ -388,6 +501,9 @@ export const SalonDetailPage = () => {
         customerResult,
         appointmentResult,
         usage,
+        aiReceptionConfig,
+        aiReceptionCallLogResult,
+        callRailHealthResult,
         agents,
         assignments
       ] = await Promise.all([
@@ -399,6 +515,9 @@ export const SalonDetailPage = () => {
         apiGet<CustomersResponse>(`/api/v1/admin/salons/${salonId}/customers?page=1&limit=30`),
         apiGet<AppointmentsResponse>(`/api/v1/admin/salons/${salonId}/appointments?page=1&limit=30`),
         apiGet<BillingUsageResponse>(`/api/v1/admin/salons/${salonId}/billing/usage?historyLimit=6`),
+        apiGet<AiReceptionConfig>(`/api/v1/admin/salons/${salonId}/ai-reception`),
+        apiGet<AiReceptionCallLogsResponse>(`/api/v1/admin/salons/${salonId}/call-logs?page=1&limit=10`),
+        apiGet<CallRailHealthStatus>("/api/v1/integrations/callrail/health"),
         apiGet<CallCenterAgent[]>("/api/v1/admin/call-center/agents"),
         apiGet<CallCenterAssignment[]>(`/api/v1/admin/salons/${salonId}/call-center-assignments`)
       ]);
@@ -450,6 +569,9 @@ export const SalonDetailPage = () => {
       setCustomers(customerResult.items);
       setAppointments(appointmentResult.items);
       setBilling(usage);
+      setAiReception(aiReceptionConfig);
+      setAiReceptionCallLogs(aiReceptionCallLogResult.items);
+      setCallRailHealth(callRailHealthResult);
       setCallCenterAgents(agents);
       setAssignedAgentIds(assignments.map((assignment) => assignment.agent.id));
     } catch (loadError) {
@@ -478,6 +600,7 @@ export const SalonDetailPage = () => {
       notify("error", "Please enter valid US phone numbers.");
       return;
     }
+    setSavingProfile(true);
     try {
       const updated = await apiPatch<SalonDetail, unknown>(`/api/v1/admin/salons/${salonId}`, {
         name: profileForm.name,
@@ -500,6 +623,8 @@ export const SalonDetailPage = () => {
       notify("success", "Salon profile updated.");
     } catch (saveError) {
       notify("error", extractErrorMessage(saveError));
+    } finally {
+      setSavingProfile(false);
     }
   };
 
@@ -512,6 +637,7 @@ export const SalonDetailPage = () => {
       notify("error", "Please enter a valid US call center phone number.");
       return;
     }
+    setSavingSettings(true);
     try {
       const updated = await apiPut<SalonSettings, unknown>(`/api/v1/admin/salons/${salonId}/settings`, {
         currency: settingsForm.currency,
@@ -538,6 +664,8 @@ export const SalonDetailPage = () => {
       notify("success", "Salon settings updated.");
     } catch (saveError) {
       notify("error", extractErrorMessage(saveError));
+    } finally {
+      setSavingSettings(false);
     }
   };
 
@@ -561,6 +689,7 @@ export const SalonDetailPage = () => {
     const validItems = integrations.filter(
       (item) => item.configKey.trim().length > 0 && item.configValue.trim().length > 0
     );
+    setSavingIntegrations(true);
     try {
       const result = await apiPut<IntegrationConfig[], { items: IntegrationConfig[] }>(
         `/api/v1/admin/salons/${salonId}/integrations`,
@@ -572,6 +701,8 @@ export const SalonDetailPage = () => {
       notify("success", "Integration settings saved.");
     } catch (saveError) {
       notify("error", extractErrorMessage(saveError));
+    } finally {
+      setSavingIntegrations(false);
     }
   };
 
@@ -579,6 +710,7 @@ export const SalonDetailPage = () => {
     if (!salonId) {
       return;
     }
+    setSavingAssignments(true);
     try {
       const assignments = await apiPut<CallCenterAssignment[], { agentUserIds: string[] }>(
         `/api/v1/admin/salons/${salonId}/call-center-assignments`,
@@ -590,6 +722,8 @@ export const SalonDetailPage = () => {
       notify("success", "Call center assignments saved.");
     } catch (saveError) {
       notify("error", extractErrorMessage(saveError));
+    } finally {
+      setSavingAssignments(false);
     }
   };
 
@@ -985,7 +1119,31 @@ export const SalonDetailPage = () => {
     <div className="stack">
       <FormDialog />
       <section className="card">
-        <h2>{salon.name}</h2>
+        <div className="section-header">
+          <div>
+            <p className="eyebrow">Salon Control Center</p>
+            <h2>{salon.name}</h2>
+            <p className="muted">
+              Trang demo chính để cấu hình AI Reception, tổng đài và mức sẵn sàng tích hợp cho tiệm.
+            </p>
+          </div>
+          <div className="summary-badges">
+            <span className={profileForm.status === "ACTIVE" ? "status-pill success" : "status-pill warning"}>
+              {profileForm.status}
+            </span>
+            <span
+              className={
+                profileForm.subscriptionStatus === "ACTIVE"
+                  ? "status-pill info"
+                  : profileForm.subscriptionStatus === "PAST_DUE"
+                    ? "status-pill warning"
+                    : "status-pill"
+              }
+            >
+              {profileForm.subscriptionStatus}
+            </span>
+          </div>
+        </div>
         <div className="metrics-grid">
           <div>
             <span className="muted">Owner</span>
@@ -1004,10 +1162,90 @@ export const SalonDetailPage = () => {
             <strong>{salon.staffUsage.billableExtraStaffCount}</strong>
           </div>
         </div>
+        <div className="summary-badges">
+          <span className={settingsForm.aiReceptionEnabled ? "status-pill success" : "status-pill warning"}>
+            AI Reception {settingsForm.aiReceptionEnabled ? "ON" : "OFF"}
+          </span>
+          <span className={settingsForm.callCenterEnabled ? "status-pill success" : "status-pill warning"}>
+            Call Center {settingsForm.callCenterEnabled ? "ON" : "OFF"}
+          </span>
+          <span className={settingsForm.voicemailEnabled ? "status-pill info" : "status-pill"}>
+            Voicemail {settingsForm.voicemailEnabled ? "ON" : "OFF"}
+          </span>
+          <span className={settingsForm.smsFallbackEnabled ? "status-pill info" : "status-pill"}>
+            SMS fallback {settingsForm.smsFallbackEnabled ? "ON" : "OFF"}
+          </span>
+        </div>
+      </section>
+
+      <section className="control-center-grid">
+        <article className="control-tile">
+          <div className="section-header">
+            <strong>AI Reception</strong>
+            <span className={settingsForm.aiReceptionEnabled ? "status-pill success" : "status-pill warning"}>
+              {settingsForm.aiReceptionEnabled ? "Enabled" : "Disabled"}
+            </span>
+          </div>
+          <span className="muted">Ring count trước AI: {settingsForm.aiTransferRingCount}</span>
+          <span className="muted">
+            Greeting: {settingsForm.aiGreetingPrompt?.trim() ? "Đã cấu hình lời chào" : "Chưa có lời chào"}
+          </span>
+        </article>
+        <article className="control-tile">
+          <div className="section-header">
+            <strong>Human Call Center</strong>
+            <span className={settingsForm.callCenterEnabled ? "status-pill success" : "status-pill warning"}>
+              {settingsForm.callCenterEnabled ? "Enabled" : "Disabled"}
+            </span>
+          </div>
+          <span className="muted">Agent được gán: {assignedAgents.length}</span>
+          <span className="muted">
+            Routing number: {settingsForm.callCenterRoutingNumber || "Chưa cấu hình"}
+          </span>
+        </article>
+        <article className="control-tile">
+          <div className="section-header">
+            <strong>Fallback stack</strong>
+            <span className="status-pill info">Demo ready</span>
+          </div>
+          <span className="muted">Voicemail: {settingsForm.voicemailEnabled ? "ON" : "OFF"}</span>
+          <span className="muted">Callback request: {settingsForm.callbackRequestEnabled ? "ON" : "OFF"}</span>
+          <span className="muted">SMS fallback: {settingsForm.smsFallbackEnabled ? "ON" : "OFF"}</span>
+        </article>
+        <article className="control-tile">
+          <div className="section-header">
+            <strong>Integration readiness</strong>
+            <span
+              className={
+                salon.integrationStatuses.amazonConnect.configured &&
+                salon.integrationStatuses.callRail.configured &&
+                salon.integrationStatuses.vertex.configured
+                  ? "status-pill success"
+                  : "status-pill warning"
+              }
+            >
+              {salon.integrationStatuses.amazonConnect.configured &&
+              salon.integrationStatuses.callRail.configured &&
+              salon.integrationStatuses.vertex.configured
+                ? "Ready"
+                : "Pending"}
+            </span>
+          </div>
+          <span className="muted">CallRail active: {salon.integrationStatuses.callRail.activeConfigCount}</span>
+          <span className="muted">Vertex active: {salon.integrationStatuses.vertex.activeConfigCount}</span>
+          <span className="muted">
+            Amazon Connect active: {salon.integrationStatuses.amazonConnect.activeConfigCount}
+          </span>
+        </article>
       </section>
 
       <section className="card">
-        <h3>Salon profile</h3>
+        <div className="section-header">
+          <h3>Salon profile</h3>
+          <span className={savingProfile ? "status-pill info" : "status-pill"}>
+            {savingProfile ? "Đang lưu..." : "Sẵn sàng"}
+          </span>
+        </div>
         <form className="form-grid two-columns" onSubmit={saveProfile}>
           <label className="field">
             <span>Name</span>
@@ -1187,8 +1425,8 @@ export const SalonDetailPage = () => {
             </select>
           </label>
           <div className="form-actions">
-            <button type="submit" className="button-primary">
-              Save profile
+            <button type="submit" className="button-primary" disabled={savingProfile}>
+              {savingProfile ? "Saving profile..." : "Save profile"}
             </button>
           </div>
         </form>
@@ -1294,6 +1532,153 @@ export const SalonDetailPage = () => {
             <EmptyBlock message="No recent failures or fallback calls." />
           )}
         </article>
+      </section>
+
+      <section className="card">
+        <div className="section-header">
+          <div>
+            <h3>AI Reception forwarding MVP</h3>
+            <p className="muted">
+              Read-only view of the salon forwarding setup, recent CallRail webhook traffic, and
+              webhook health.
+            </p>
+          </div>
+          <span className={aiReception ? aiReceptionStatusClasses[aiReception.status] : "status-pill warning"}>
+            {aiReception ? aiReceptionStatusLabels[aiReception.status] : "Not configured"}
+          </span>
+        </div>
+
+        <div className="metrics-grid">
+          <div>
+            <span className="muted">Original phone number</span>
+            <strong>{aiReception?.originalPhoneNumberFormatted ?? "-"}</strong>
+          </div>
+          <div>
+            <span className="muted">Forwarding number</span>
+            <strong>{aiReception?.forwardToNumberFormatted ?? "-"}</strong>
+          </div>
+          <div>
+            <span className="muted">Carrier</span>
+            <strong>{aiReception?.carrierLabel ?? "T-Mobile"}</strong>
+          </div>
+          <div>
+            <span className="muted">Last tested</span>
+            <strong>{aiReception?.lastTestedAt ? formatDateTime(aiReception.lastTestedAt) : "-"}</strong>
+          </div>
+          <div>
+            <span className="muted">Last verified</span>
+            <strong>{aiReception?.lastVerifiedAt ? formatDateTime(aiReception.lastVerifiedAt) : "-"}</strong>
+          </div>
+          <div>
+            <span className="muted">Webhook health</span>
+            <strong>{callRailHealth?.status?.toUpperCase() ?? "UNKNOWN"}</strong>
+          </div>
+        </div>
+
+        <article className="inspection-box">
+          <h4>CallRail webhook health</h4>
+          <div className="metrics-grid">
+            <div>
+              <span className="muted">Integration ready</span>
+              <strong>{callRailHealth?.configured ? "YES" : "NO"}</strong>
+            </div>
+            <div>
+              <span className="muted">Verification enabled</span>
+              <strong>{callRailHealth?.webhookVerificationEnabled ? "YES" : "NO"}</strong>
+            </div>
+            <div>
+              <span className="muted">Webhook secret configured</span>
+              <strong>{callRailHealth?.webhookSecretConfigured ? "YES" : "NO"}</strong>
+            </div>
+            <div>
+              <span className="muted">API key configured</span>
+              <strong>{callRailHealth?.apiKeyConfigured ? "YES" : "NO"}</strong>
+            </div>
+            <div>
+              <span className="muted">Account + company configured</span>
+              <strong>{callRailHealth?.accountCompanyConfigured ? "YES" : "NO"}</strong>
+            </div>
+            <div>
+              <span className="muted">Tracking number configured</span>
+              <strong>{callRailHealth?.trackingNumberConfigured ? "YES" : "NO"}</strong>
+            </div>
+            <div>
+              <span className="muted">Tracking number ID configured</span>
+              <strong>{callRailHealth?.trackingNumberIdConfigured ? "YES" : "NO"}</strong>
+            </div>
+            <div>
+              <span className="muted">Default salon ID configured</span>
+              <strong>{callRailHealth?.defaultSalonIdConfigured ? "YES" : "NO"}</strong>
+            </div>
+            <div>
+              <span className="muted">AI flow ID configured</span>
+              <strong>{callRailHealth?.aiFlowIdConfigured ? "YES" : "NO"}</strong>
+            </div>
+            <div>
+              <span className="muted">Live person flow ID</span>
+              <strong>{callRailHealth?.livePersonFlowIdConfigured ? "CONFIGURED" : "OPTIONAL"}</strong>
+            </div>
+            <div>
+              <span className="muted">Tracking number</span>
+              <strong>
+                {callRailHealth?.trackingNumberFormatted ?? callRailHealth?.trackingNumber ?? "-"}
+              </strong>
+            </div>
+            <div>
+              <span className="muted">Last webhook received</span>
+              <strong>
+                {callRailHealth?.lastWebhookReceivedAt
+                  ? formatDateTime(callRailHealth.lastWebhookReceivedAt)
+                  : "-"}
+              </strong>
+            </div>
+          </div>
+          <p className="muted">
+            {callRailHealth?.missing?.length
+              ? `Missing: ${callRailHealth.missing.join(", ")}`
+              : "No required CallRail config is missing at the system level."}
+          </p>
+        </article>
+
+        <div className="stack">
+          <h4>Recent CallRail logs</h4>
+          {aiReceptionCallLogs.length ? (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Started</th>
+                    <th>Caller</th>
+                    <th>Status</th>
+                    <th>Duration</th>
+                    <th>Recording</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {aiReceptionCallLogs.map((item) => (
+                    <tr key={item.id}>
+                      <td>{item.startedAt ? formatDateTime(item.startedAt) : "-"}</td>
+                      <td>{item.callerNumberFormatted || item.callerNumber || "-"}</td>
+                      <td>{item.status}</td>
+                      <td>{formatDuration(item.durationSeconds)}</td>
+                      <td>
+                        {item.recordingUrl ? (
+                          <a href={item.recordingUrl} target="_blank" rel="noreferrer">
+                            Open
+                          </a>
+                        ) : (
+                          "-"
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <EmptyBlock message="No CallRail webhook logs are available for this salon." />
+          )}
+        </div>
       </section>
 
       <section className="card">
@@ -1514,8 +1899,8 @@ export const SalonDetailPage = () => {
             </label>
           </div>
           <div className="form-actions">
-            <button type="submit" className="button-primary">
-              Save salon settings
+            <button type="submit" className="button-primary" disabled={savingSettings}>
+              {savingSettings ? "Saving settings..." : "Save salon settings"}
             </button>
           </div>
         </form>
@@ -1528,8 +1913,13 @@ export const SalonDetailPage = () => {
             <button type="button" className="button-secondary" onClick={addIntegration}>
               Add row
             </button>
-            <button type="button" className="button-primary" onClick={saveIntegrations}>
-              Save integrations
+            <button
+              type="button"
+              className="button-primary"
+              onClick={saveIntegrations}
+              disabled={savingIntegrations}
+            >
+              {savingIntegrations ? "Saving..." : "Save integrations"}
             </button>
           </div>
         </div>
@@ -1625,9 +2015,20 @@ export const SalonDetailPage = () => {
       <section className="card">
         <div className="section-header">
           <h3>Call center assignment</h3>
-          <button type="button" className="button-primary" onClick={saveCallCenterAssignments}>
-            Save assignments
+          <button
+            type="button"
+            className="button-primary"
+            onClick={saveCallCenterAssignments}
+            disabled={savingAssignments}
+          >
+            {savingAssignments ? "Saving..." : "Save assignments"}
           </button>
+        </div>
+        <div className="summary-badges">
+          <span className="summary-badge">Assigned agents: {assignedAgents.length}</span>
+          <span className="summary-badge">
+            Queue ready: {assignedAgents.length > 0 && settingsForm.callCenterEnabled ? "YES" : "NO"}
+          </span>
         </div>
         <div className="mobile-list">
           {callCenterAgents.map((agent) => (

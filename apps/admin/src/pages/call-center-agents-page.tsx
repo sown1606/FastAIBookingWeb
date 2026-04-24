@@ -74,11 +74,16 @@ export const CallCenterAgentsPage = () => {
   return (
     <div className="stack">
       <section className="card">
-        <h2>Human Call Center agents</h2>
-        <p className="muted">Operators use the shared Amazon Connect browser softphone and can be assigned to multiple salons.</p>
+        <div className="section-header">
+          <div>
+            <h2>Agent tổng đài</h2>
+            <p className="muted">Operator dùng softphone chung trên trình duyệt và có thể được gán cho nhiều tiệm.</p>
+          </div>
+          <span className="status-pill info">{agents.length} agent</span>
+        </div>
         <form className="form-grid two-columns" onSubmit={createAgent}>
           <label className="field">
-            <span>Full name</span>
+            <span>Họ tên</span>
             <input
               value={form.fullName}
               onChange={(event) => setForm((prev) => ({ ...prev, fullName: event.target.value }))}
@@ -95,7 +100,7 @@ export const CallCenterAgentsPage = () => {
             />
           </label>
           <label className="field">
-            <span>US phone number</span>
+            <span>Số điện thoại Mỹ</span>
             <input
               type="tel"
               inputMode="tel"
@@ -105,7 +110,7 @@ export const CallCenterAgentsPage = () => {
             />
           </label>
           <label className="field">
-            <span>Password</span>
+            <span>Mật khẩu</span>
             <input
               type="password"
               minLength={8}
@@ -114,40 +119,53 @@ export const CallCenterAgentsPage = () => {
             />
           </label>
           <button type="submit" className="button-primary">
-            Create agent
+            Tạo agent
           </button>
         </form>
       </section>
 
       <section className="card">
-        <h2>Assigned operators</h2>
+        <div className="section-header">
+          <h2>Danh sách operator</h2>
+          <div className="summary-badges">
+            <span className="summary-badge">
+              Đang hoạt động: {agents.filter((agent) => agent.isActive).length}
+            </span>
+            <span className="summary-badge">
+              Được gán ít nhất 1 tiệm: {agents.filter((agent) => agent.callCenterAssignments.length > 0).length}
+            </span>
+          </div>
+        </div>
         {agents.length ? (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Email</th>
-                  <th>Phone</th>
-                  <th>Status</th>
-                  <th>Assigned salons</th>
-                </tr>
-              </thead>
-              <tbody>
-                {agents.map((agent) => (
-                  <tr key={agent.id}>
-                    <td>{agent.fullName}</td>
-                    <td>{agent.email}</td>
-                    <td>{agent.phone ?? "-"}</td>
-                    <td>{agent.isActive ? "ACTIVE" : "INACTIVE"}</td>
-                    <td>{agent.callCenterAssignments.map((item) => item.salon.name).join(", ") || "-"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="control-center-grid">
+            {agents.map((agent) => (
+              <article key={agent.id} className="control-tile">
+                <div className="section-header">
+                  <strong>{agent.fullName}</strong>
+                  <span className={agent.isActive ? "status-pill success" : "status-pill warning"}>
+                    {agent.isActive ? "ACTIVE" : "INACTIVE"}
+                  </span>
+                </div>
+                <div className="table-meta">
+                  <span>{agent.email}</span>
+                  <span>{agent.phone ?? "Chưa có số điện thoại"}</span>
+                </div>
+                <div className="summary-badges">
+                  {agent.callCenterAssignments.length ? (
+                    agent.callCenterAssignments.map((item) => (
+                      <span key={item.salon.id} className="summary-badge">
+                        {item.salon.name}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="summary-badge">Chưa gán tiệm</span>
+                  )}
+                </div>
+              </article>
+            ))}
           </div>
         ) : (
-          <EmptyBlock message="No call center agents have been created yet." />
+          <EmptyBlock message="Chưa có agent tổng đài nào." />
         )}
       </section>
     </div>

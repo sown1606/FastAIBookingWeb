@@ -95,10 +95,16 @@ export const SalonsPage = () => {
     <div className="stack">
       <section className="card">
         <div className="section-header">
-          <h2>Quản lý tiệm nail</h2>
-          <Link to="/salons/new" className="button-primary">
-            Tạo tiệm
-          </Link>
+          <div>
+            <h2>Quản lý tiệm nail</h2>
+            <p className="muted">Tìm nhanh owner, trạng thái vận hành, số nhân viên và đi thẳng vào control center của từng tiệm.</p>
+          </div>
+          <div className="inline-actions">
+            <span className="status-pill info">{filteredItems.length} kết quả</span>
+            <Link to="/salons/new" className="button-primary">
+              Tạo tiệm
+            </Link>
+          </div>
         </div>
         <div className="filters">
           <label className="field compact">
@@ -110,7 +116,7 @@ export const SalonsPage = () => {
             />
           </label>
           <label className="field compact">
-            <span>Status</span>
+            <span>Trạng thái</span>
             <select value={status} onChange={(event) => setStatus(event.target.value)}>
               <option value="">Tất cả</option>
               <option value="PENDING">PENDING</option>
@@ -149,13 +155,37 @@ export const SalonsPage = () => {
                 {filteredItems.map((salon) => (
                   <tr key={salon.id}>
                     <td>
-                      <Link to={`/salons/${salon.id}`}>{salon.name}</Link>
+                      <div className="table-meta">
+                        <Link to={`/salons/${salon.id}`}>
+                          <strong>{salon.name}</strong>
+                        </Link>
+                        <span>{salon.contactPhone ?? "Chưa có số hotline"}</span>
+                      </div>
                     </td>
                     <td>
-                      {salon.owner.fullName}
-                      <div className="muted">{salon.owner.email}</div>
+                      <div className="table-meta">
+                        <strong>{salon.owner.fullName}</strong>
+                        <span>{salon.owner.email}</span>
+                      </div>
                     </td>
-                    <td>{salon.status}</td>
+                    <td>
+                      <div className="summary-badges">
+                        <span className={salon.status === "ACTIVE" ? "status-pill success" : "status-pill warning"}>
+                          {salon.status}
+                        </span>
+                        <span
+                          className={
+                            salon.subscriptionStatus === "ACTIVE"
+                              ? "status-pill info"
+                              : salon.subscriptionStatus === "PAST_DUE"
+                                ? "status-pill warning"
+                                : "status-pill"
+                          }
+                        >
+                          {salon.subscriptionStatus}
+                        </span>
+                      </div>
+                    </td>
                     <td>{salon.timezone}</td>
                     <td>{salon.staffUsage.activeStaffCount}</td>
                     <td>{salon.staffUsage.billableExtraStaffCount}</td>

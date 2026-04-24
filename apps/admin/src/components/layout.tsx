@@ -40,8 +40,13 @@ export const AdminLayout = ({
     <div className="app-shell">
       <aside className="sidebar">
         <Link to="/dashboard" className="brand">
-          FastAIBooking Admin
+          <img className="brand-logo" src="/assets/brand/fastaibooking-logo.svg" alt="FastAIBooking" />
+          <div className="brand-copy">
+            <strong>FastAIBooking</strong>
+            <span>Platform Admin</span>
+          </div>
         </Link>
+        <p className="sidebar-note">Quản lý tiệm nail, AI Reception và tổng đài con người trong cùng một bảng điều khiển.</p>
         <nav className="nav-links">
           {navItems.map((item) => (
             <NavLink key={item.to} to={item.to} className="nav-item">
@@ -52,12 +57,13 @@ export const AdminLayout = ({
       </aside>
       <div className="main-shell">
         <header className="topbar">
-          <div>
+          <div className="topbar-copy">
+            <p className="eyebrow">FastAIBooking Admin</p>
             <h1>{title}</h1>
-            <p className="muted">Quản trị nền tảng, tiệm nail và vận hành tổng đài</p>
+            <p className="page-lead">Quản trị nền tảng, tiệm nail và vận hành tổng đài.</p>
           </div>
           <div className="topbar-actions">
-            <span className="muted">{userName}</span>
+            <span className="topbar-user">{userName}</span>
             <button type="button" className="button-secondary" onClick={onLogout}>
               Thoát
             </button>

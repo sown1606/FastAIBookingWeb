@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">FastAIBooking mark</title>
+  <rect width="64" height="64" rx="14" fill="#0b6f5f"/>
+  <path d="M18 38c0-10.5 8.5-19 19-19h9v9h-9c-5.5 0-10 4.5-10 10v8h-9v-8Z" fill="#ffffff"/>
+  <path d="M34 38c0-4.4 3.6-8 8-8h4v9h-4c-.6 0-1 .4-1 1v6h-7v-8Z" fill="#f06f61"/>
+  <circle cx="23" cy="23" r="5" fill="#8bd8c3"/>
+</svg>
