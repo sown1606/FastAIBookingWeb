@@ -1,6 +1,8 @@
 import { FormEvent, useEffect, useState } from "react";
-import { apiGet, apiPut, extractErrorMessage } from "../lib/api";
-import { ErrorBlock, LoadingBlock } from "../components/states";
+import { Link } from "react-router-dom";
+import { useAuth } from "../auth/auth-context";
+import { apiGet, apiPost, apiPut, extractErrorMessage } from "../lib/api";
+import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
 import { useToast } from "../components/toast";
 import {
   countryOptions,
@@ -8,6 +10,7 @@ import {
   localePreferenceOptions,
   timezoneOptions
 } from "../lib/form-options";
+import { formatDateTime } from "../lib/format";
 import { formatUsPhoneInput, validateOptionalUsPhone } from "../lib/phone";
 
 interface SalonProfile {
@@ -63,10 +66,93 @@ const callLogVisibilityOptions: Array<{
   { value: "OWNER_STAFF_OPERATOR", label: "Owner, staff, and operator" }
 ];
 
+interface AiReceptionConfig {
+  id: string | null;
+  salonId: string;
+  provider: "callrail";
+  carrier: "tmobile";
+  carrierLabel: string;
+  originalPhoneNumber: string | null;
+  originalPhoneNumberFormatted: string | null;
+  forwardToNumber: string;
+  forwardToNumberFormatted: string | null;
+  forwardingPhoneNumber: string;
+  forwardingPhoneNumberFormatted: string | null;
+  forwardingType: "no_answer";
+  activationCode: string;
+  activationCodeWithoutDelay: string;
+  deactivationCode: string;
+  statusCheckCode: string;
+  status: "not_configured" | "pending" | "active" | "failed";
+  lastTestedAt: string | null;
+  lastVerifiedAt: string | null;
+  webhookVerificationEnabled: boolean;
+  setupInstructions: string[];
+}
+
+interface AiReceptionCallLog {
+  id: string;
+  provider: "callrail";
+  providerCallId: string;
+  trackingNumber: string | null;
+  trackingNumberFormatted: string;
+  originalPhoneNumber: string | null;
+  originalPhoneNumberFormatted: string;
+  callerNumber: string | null;
+  callerNumberFormatted: string;
+  direction: string;
+  status: string;
+  durationSeconds: number | null;
+  startedAt: string | null;
+  answeredAt: string | null;
+  completedAt: string | null;
+  recordingUrl: string | null;
+  summary: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface AiReceptionCallLogsResponse {
+  items: AiReceptionCallLog[];
+}
+
+const aiReceptionStatusLabels: Record<AiReceptionConfig["status"], string> = {
+  not_configured: "Not configured",
+  pending: "Pending",
+  active: "Active",
+  failed: "Failed"
+};
+
+const aiReceptionStatusClasses: Record<AiReceptionConfig["status"], string> = {
+  not_configured: "status-pill warning",
+  pending: "status-pill info",
+  active: "status-pill success",
+  failed: "status-pill warning"
+};
+
+const encodeDialerCode = (value: string) => value.replace(/\*/g, "%2A").replace(/#/g, "%23");
+
+const formatDuration = (value: number | null) => {
+  if (value === null || value === undefined) {
+    return "-";
+  }
+
+  const minutes = Math.floor(value / 60);
+  const seconds = value % 60;
+  if (minutes === 0) {
+    return `${seconds}s`;
+  }
+  return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
+};
+
 export const SalonProfilePage = () => {
+  const { session } = useAuth();
   const { notify } = useToast();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [aiReception, setAiReception] = useState<AiReceptionConfig | null>(null);
+  const [aiReceptionCallLogs, setAiReceptionCallLogs] = useState<AiReceptionCallLog[]>([]);
+  const [aiReceptionSubmitting, setAiReceptionSubmitting] = useState(false);
 
   const [profileForm, setProfileForm] = useState({
     name: "",
@@ -103,7 +189,25 @@ export const SalonProfilePage = () => {
     callCenterRoutingNote: ""
   });
 
+  const salonId = session?.user.salonId ?? null;
+
+  const loadAiReception = async (targetSalonId: string) => {
+    const [configResult, callLogResult] = await Promise.all([
+      apiGet<AiReceptionConfig>(`/api/v1/owner/salons/${targetSalonId}/ai-reception`),
+      apiGet<AiReceptionCallLogsResponse>(`/api/v1/owner/salons/${targetSalonId}/call-logs?page=1&limit=10`)
+    ]);
+
+    setAiReception(configResult);
+    setAiReceptionCallLogs(callLogResult.items);
+  };
+
   const load = async () => {
+    if (!salonId) {
+      setError("Salon context is not available for this account.");
+      setLoading(false);
+      return;
+    }
+
     setError("");
     setLoading(true);
     try {
@@ -148,6 +252,8 @@ export const SalonProfilePage = () => {
         callCenterRoutingNumber: formatUsPhoneInput(settingsResult.callCenterRoutingNumber ?? ""),
         callCenterRoutingNote: settingsResult.callCenterRoutingNote ?? ""
       });
+
+      await loadAiReception(salonId);
     } catch (loadError) {
       setError(extractErrorMessage(loadError));
     } finally {
@@ -157,7 +263,7 @@ export const SalonProfilePage = () => {
 
   useEffect(() => {
     void load();
-  }, []);
+  }, [salonId]);
 
   const saveProfile = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -229,6 +335,62 @@ export const SalonProfilePage = () => {
       notify("success", "Salon settings updated.");
     } catch (saveError) {
       notify("error", extractErrorMessage(saveError));
+    }
+  };
+
+  const handleGenerateSetupCode = async () => {
+    if (!salonId) {
+      notify("error", "Salon context is not available for this account.");
+      return;
+    }
+
+    setAiReceptionSubmitting(true);
+    try {
+      const result = await apiPost<AiReceptionConfig>(`/api/v1/owner/salons/${salonId}/ai-reception/generate-forwarding-code`, {});
+      setAiReception(result);
+      notify("success", "AI Reception forwarding code generated.");
+    } catch (actionError) {
+      notify("error", extractErrorMessage(actionError));
+    } finally {
+      setAiReceptionSubmitting(false);
+    }
+  };
+
+  const handleOpenDialer = () => {
+    if (!aiReception?.activationCode) {
+      notify("error", "Generate the setup code first.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Open your phone dialer with this T-Mobile code?\n\n${aiReception.activationCode}`
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    window.location.href = `tel:${encodeDialerCode(aiReception.activationCode)}`;
+  };
+
+  const handleMarkTestCompleted = async () => {
+    if (!salonId) {
+      notify("error", "Salon context is not available for this account.");
+      return;
+    }
+
+    setAiReceptionSubmitting(true);
+    try {
+      const result = await apiPost<AiReceptionConfig>(
+        `/api/v1/owner/salons/${salonId}/ai-reception/mark-forwarding-tested`,
+        {}
+      );
+      setAiReception(result);
+      await loadAiReception(salonId);
+      notify("success", "AI Reception forwarding test recorded.");
+    } catch (actionError) {
+      notify("error", extractErrorMessage(actionError));
+    } finally {
+      setAiReceptionSubmitting(false);
     }
   };
 
@@ -651,6 +813,152 @@ export const SalonProfilePage = () => {
             </button>
           </div>
         </form>
+      </section>
+
+      <section className="card">
+        <div className="section-header">
+          <div>
+            <h2>AI Reception Setup</h2>
+            <p className="muted">
+              Use this setup only on the phone line that owns the salon number. The phone will ring
+              first. If unanswered, T-Mobile will forward the call to the AI booking line.
+            </p>
+          </div>
+          <span className={aiReception ? aiReceptionStatusClasses[aiReception.status] : "status-pill warning"}>
+            {aiReception ? aiReceptionStatusLabels[aiReception.status] : "Not configured"}
+          </span>
+        </div>
+
+        <div className="metrics-grid">
+          <div>
+            <span className="muted">Original salon phone number</span>
+            <strong>{aiReception?.originalPhoneNumberFormatted ?? "Add the salon phone number first"}</strong>
+          </div>
+          <div>
+            <span className="muted">Forward-to AI number</span>
+            <strong>{aiReception?.forwardToNumberFormatted ?? "-"}</strong>
+          </div>
+          <div>
+            <span className="muted">Carrier</span>
+            <strong>{aiReception?.carrierLabel ?? "T-Mobile"}</strong>
+          </div>
+          <div>
+            <span className="muted">Last tested</span>
+            <strong>{aiReception?.lastTestedAt ? formatDateTime(aiReception.lastTestedAt) : "-"}</strong>
+          </div>
+          <div>
+            <span className="muted">Last verified</span>
+            <strong>{aiReception?.lastVerifiedAt ? formatDateTime(aiReception.lastVerifiedAt) : "-"}</strong>
+          </div>
+          <div>
+            <span className="muted">Webhook verification</span>
+            <strong>{aiReception?.webhookVerificationEnabled ? "Enabled" : "Disabled"}</strong>
+          </div>
+        </div>
+
+        <div className="form-grid two-columns">
+          <label className="field">
+            <span>Activation code</span>
+            <input value={aiReception?.activationCode ?? ""} readOnly />
+            <small>Primary T-Mobile no-answer forwarding code.</small>
+          </label>
+          <label className="field">
+            <span>Fallback activation code</span>
+            <input value={aiReception?.activationCodeWithoutDelay ?? ""} readOnly />
+            <small>Use this if the device does not accept the delayed code.</small>
+          </label>
+          <label className="field">
+            <span>Deactivation code</span>
+            <input value={aiReception?.deactivationCode ?? ""} readOnly />
+          </label>
+          <label className="field">
+            <span>Status check code</span>
+            <input value={aiReception?.statusCheckCode ?? ""} readOnly />
+          </label>
+        </div>
+
+        <article className="inspection-box">
+          <h3>Setup instructions</h3>
+          {aiReception?.setupInstructions?.length ? (
+            <div className="stack">
+              {aiReception.setupInstructions.map((instruction) => (
+                <p key={instruction}>{instruction}</p>
+              ))}
+            </div>
+          ) : (
+            <p>No setup instructions are available yet.</p>
+          )}
+        </article>
+
+        <div className="inline-actions">
+          <button
+            type="button"
+            className="button-primary"
+            onClick={() => void handleGenerateSetupCode()}
+            disabled={aiReceptionSubmitting}
+          >
+            Generate Setup Code
+          </button>
+          <button
+            type="button"
+            className="button-secondary"
+            onClick={handleOpenDialer}
+            disabled={aiReceptionSubmitting || !aiReception?.activationCode}
+          >
+            Open Dialer
+          </button>
+          <button
+            type="button"
+            className="button-secondary"
+            onClick={() => void handleMarkTestCompleted()}
+            disabled={aiReceptionSubmitting}
+          >
+            Mark Test Completed
+          </button>
+          <Link to="/calls" className="button-secondary">
+            View Call Logs
+          </Link>
+        </div>
+
+        <div className="stack">
+          <h3>Recent CallRail logs</h3>
+          {aiReceptionCallLogs.length ? (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Started</th>
+                    <th>Caller</th>
+                    <th>Status</th>
+                    <th>Duration</th>
+                    <th>Recording</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {aiReceptionCallLogs.map((item) => (
+                    <tr key={item.id}>
+                      <td>{item.startedAt ? formatDateTime(item.startedAt) : "-"}</td>
+                      <td>{item.callerNumberFormatted || item.callerNumber || "-"}</td>
+                      <td>{item.status}</td>
+                      <td>{formatDuration(item.durationSeconds)}</td>
+                      <td>
+                        {item.recordingUrl ? (
+                          <a href={item.recordingUrl} target="_blank" rel="noreferrer">
+                            Open
+                          </a>
+                        ) : (
+                          "-"
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <EmptyBlock message="No CallRail webhook logs are available yet." />
+          )}
+        </div>
       </section>
     </div>
   );

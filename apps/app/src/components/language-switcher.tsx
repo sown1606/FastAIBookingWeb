@@ -5,8 +5,11 @@ export const LanguageSwitcher = ({ compact = false }: { compact?: boolean }) => 
 
   return (
     <label className={compact ? "language-switcher compact" : "language-switcher"}>
-      <span>{t("language.label")}</span>
-      <select value={locale} onChange={(event) => setLocale(event.target.value as "vi" | "en")}>
+      <select
+        aria-label={t("language.label")}
+        value={locale}
+        onChange={(event) => setLocale(event.target.value as "vi" | "en")}
+      >
         <option value="vi">{t("language.vi")}</option>
         <option value="en">{t("language.en")}</option>
       </select>

@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 export type Locale = "vi" | "en";
 
 const STORAGE_KEY = "fastaibooking.locale";
-const DEFAULT_LOCALE: Locale = "en";
+const DEFAULT_LOCALE: Locale = "vi";
 
 const translations = {
   vi: {

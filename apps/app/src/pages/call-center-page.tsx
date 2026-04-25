@@ -4,6 +4,7 @@ import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
 import { useToast } from "../components/toast";
 import { formatDateTime } from "../lib/format";
 import { toDateTimeLocalValue, useFormDialog } from "../components/form-dialog";
+import { formatUsPhoneInput, validateOptionalUsPhone } from "../lib/phone";
 
 interface RuntimeResponse {
   assignedSalonCount: number;
@@ -407,6 +408,10 @@ export const CallCenterPage = () => {
       notify("error", "Select a salon first.");
       return;
     }
+    if (!validateOptionalUsPhone(customerForm.phone)) {
+      notify("error", "Please enter a valid US phone number.");
+      return;
+    }
 
     try {
       await apiPost(`/api/v1/call-center/salons/${selectedSalonId}/customers`, customerForm);
@@ -713,6 +718,11 @@ export const CallCenterPage = () => {
 
   const openRequests = queue.filter((item) => item.status !== "CLOSED").length;
   const availableStaffCount = staff.filter((member) => member.currentWorkStatus === "AVAILABLE").length;
+  const amazonConnectReady = Boolean(runtime?.amazonConnect.configured && runtime.amazonConnect.ccpUrl);
+  const missingAmazonConnectItems = runtime?.amazonConnect.missing ?? [];
+  const selectedSalonName =
+    selectedEscalation?.salon.name ?? salons.find((item) => item.id === selectedSalonId)?.name ?? "-";
+  const hasSelectedSalon = Boolean(selectedSalonId);
 
   const visibleAppointments = useMemo(() => {
     return appointments.slice().sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
@@ -733,18 +743,62 @@ export const CallCenterPage = () => {
       <section className="card">
         <div className="section-header">
           <div>
-            <h2>Human Call Center</h2>
-            <p className="muted">Browser softphone, shared queue, and operator booking tools.</p>
+            <h2>Tổng đài con người</h2>
+            <p className="muted">Softphone trên trình duyệt, hàng chờ escalation và công cụ đặt lịch cho operator.</p>
           </div>
-          <span className={runtime?.amazonConnect.configured ? "status-pill success" : "status-pill"}>
-            Amazon Connect {runtime?.amazonConnect.configured ? "ready" : "not configured"}
+          <span className={amazonConnectReady ? "status-pill success" : "status-pill warning"}>
+            Amazon Connect {amazonConnectReady ? "sẵn sàng" : "chưa hoàn tất"}
           </span>
         </div>
-        {!runtime?.amazonConnect.configured ? (
-          <div className="form-error">
-            Amazon Connect is missing: {runtime?.amazonConnect.missing.join(", ") || "unknown configuration"}
-          </div>
-        ) : null}
+        <div className="card-grid integration-grid">
+          <article className="integration-card">
+            <div className="section-header">
+              <h3>Trạng thái tích hợp</h3>
+              <span className={amazonConnectReady ? "status-pill success" : "status-pill warning"}>
+                {amazonConnectReady ? "Có thể test live" : "Đang chờ config"}
+              </span>
+            </div>
+            <p className="muted">
+              {amazonConnectReady
+                ? "CCP có thể được nhúng trực tiếp. Queue, context và booking tools hoạt động cùng một màn hình."
+                : "Operator vẫn có thể xem queue, lịch sử cuộc gọi và hỗ trợ đặt lịch. Softphone sẽ hiển thị ở chế độ chờ cho đến khi đủ biến môi trường."}
+            </p>
+            {missingAmazonConnectItems.length ? (
+              <ul className="config-checklist">
+                {missingAmazonConnectItems.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            ) : (
+              <div className="summary-badges">
+                <span className="summary-badge">AWS region: {runtime?.amazonConnect.region ?? "-"}</span>
+                <span className="summary-badge">Queue mặc định: {runtime?.amazonConnect.queueIdDefault ?? "-"}</span>
+              </div>
+            )}
+          </article>
+
+          <article className="integration-card">
+            <h3>Ngữ cảnh vận hành</h3>
+            <div className="staff-meta-grid">
+              <div>
+                <span className="muted">Salon được gán</span>
+                <strong>{runtime?.assignedSalonCount ?? 0}</strong>
+              </div>
+              <div>
+                <span className="muted">Salon đang xem</span>
+                <strong>{selectedSalonName}</strong>
+              </div>
+              <div>
+                <span className="muted">Yêu cầu đang mở</span>
+                <strong>{openRequests}</strong>
+              </div>
+              <div>
+                <span className="muted">Nhân viên sẵn sàng</span>
+                <strong>{availableStaffCount}</strong>
+              </div>
+            </div>
+          </article>
+        </div>
         {salons.length ? (
           <div className="quick-actions">
             {salons.map((salon) => (
@@ -777,20 +831,41 @@ export const CallCenterPage = () => {
           <strong>{agentState}</strong>
         </article>
         <article className="card stat-card">
-          <h3>Active contact</h3>
+          <h3>Liên hệ hiện tại</h3>
           <strong>{activeCallerPhone ?? contactState}</strong>
         </article>
       </section>
 
       <section className="card-grid">
         <article className="card">
-          <h3>Browser softphone</h3>
+          <div className="section-header">
+            <h3>Browser softphone</h3>
+            <span className={amazonConnectReady ? "status-pill success" : "status-pill warning"}>
+              {amazonConnectReady ? "Live CCP" : "Disabled"}
+            </span>
+          </div>
           {ccpError ? <div className="form-error">{ccpError}</div> : null}
-          <div ref={ccpContainerRef} style={{ minHeight: 560 }} />
+          {amazonConnectReady ? (
+            <div ref={ccpContainerRef} style={{ minHeight: 560 }} />
+          ) : (
+            <div className="softphone-placeholder">
+              <strong>Amazon Connect chưa sẵn sàng trên môi trường demo này.</strong>
+              <p className="muted">
+                Khu vực softphone được giữ nguyên để có thể bật live test ngay khi đủ biến môi trường và cấu hình instance.
+              </p>
+              <ul className="config-checklist compact">
+                {missingAmazonConnectItems.length ? (
+                  missingAmazonConnectItems.map((item) => <li key={item}>{item}</li>)
+                ) : (
+                  <li>Thiếu URL CCP hợp lệ hoặc thông tin runtime.</li>
+                )}
+              </ul>
+            </div>
+          )}
         </article>
 
         <article className="card">
-          <h3>Active operator context</h3>
+          <h3>Ngữ cảnh operator</h3>
           <div className="mobile-list">
             <article className="mobile-item">
               <strong>Contact state</strong>
@@ -802,7 +877,7 @@ export const CallCenterPage = () => {
             </article>
             <article className="mobile-item">
               <strong>Assigned salon</strong>
-              <span>{selectedEscalation?.salon.name ?? salons.find((item) => item.id === selectedSalonId)?.name ?? "-"}</span>
+              <span>{selectedSalonName}</span>
             </article>
             <article className="mobile-item">
               <strong>Queue status</strong>
@@ -1054,6 +1129,7 @@ export const CallCenterPage = () => {
             <label className="field">
               <span>First name</span>
               <input
+                disabled={!hasSelectedSalon}
                 value={customerForm.firstName}
                 onChange={(event) => setCustomerForm((prev) => ({ ...prev, firstName: event.target.value }))}
                 required
@@ -1062,6 +1138,7 @@ export const CallCenterPage = () => {
             <label className="field">
               <span>Last name</span>
               <input
+                disabled={!hasSelectedSalon}
                 value={customerForm.lastName}
                 onChange={(event) => setCustomerForm((prev) => ({ ...prev, lastName: event.target.value }))}
                 required
@@ -1072,12 +1149,18 @@ export const CallCenterPage = () => {
               <input
                 type="tel"
                 inputMode="tel"
+                disabled={!hasSelectedSalon}
                 value={customerForm.phone}
-                onChange={(event) => setCustomerForm((prev) => ({ ...prev, phone: event.target.value }))}
+                onChange={(event) =>
+                  setCustomerForm((prev) => ({
+                    ...prev,
+                    phone: formatUsPhoneInput(event.target.value)
+                  }))
+                }
                 required
               />
             </label>
-            <button type="submit" className="button-primary">
+            <button type="submit" className="button-primary" disabled={!hasSelectedSalon}>
               Create customer
             </button>
           </form>
@@ -1089,6 +1172,7 @@ export const CallCenterPage = () => {
             <label className="field">
               <span>Customer</span>
               <select
+                disabled={!hasSelectedSalon}
                 value={bookingForm.customerId}
                 onChange={(event) => setBookingForm((prev) => ({ ...prev, customerId: event.target.value }))}
                 required
@@ -1104,6 +1188,7 @@ export const CallCenterPage = () => {
             <label className="field">
               <span>Staff</span>
               <select
+                disabled={!hasSelectedSalon}
                 value={bookingForm.staffId}
                 onChange={(event) => setBookingForm((prev) => ({ ...prev, staffId: event.target.value }))}
                 required
@@ -1119,6 +1204,7 @@ export const CallCenterPage = () => {
             <label className="field">
               <span>Service</span>
               <select
+                disabled={!hasSelectedSalon}
                 value={bookingForm.serviceId}
                 onChange={(event) => setBookingForm((prev) => ({ ...prev, serviceId: event.target.value }))}
                 required
@@ -1135,12 +1221,13 @@ export const CallCenterPage = () => {
               <span>Start time</span>
               <input
                 type="datetime-local"
+                disabled={!hasSelectedSalon}
                 value={bookingForm.startTime}
                 onChange={(event) => setBookingForm((prev) => ({ ...prev, startTime: event.target.value }))}
                 required
               />
             </label>
-            <button type="submit" className="button-primary">
+            <button type="submit" className="button-primary" disabled={!hasSelectedSalon}>
               Create booking
             </button>
           </form>

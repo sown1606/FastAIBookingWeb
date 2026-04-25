@@ -69,6 +69,12 @@ export const AppLayout = ({
       : user.role === "CALL_CENTER_AGENT"
         ? callCenterNav
         : staffNav;
+  const roleLabel =
+    user.role === "SALON_OWNER"
+      ? t("layout.ownerSpace")
+      : user.role === "CALL_CENTER_AGENT"
+        ? t("layout.operatorSpace")
+        : t("layout.staffSpace");
 
   return (
     <div className="app-shell">
@@ -86,15 +92,12 @@ export const AppLayout = ({
       </aside>
       <div className="main-shell">
         <header className="topbar">
-          <div>
+          <div className="topbar-copy">
             <h1>{t(resolveTitleKey(location.pathname))}</h1>
-            <p className="muted">
-              {user.role === "SALON_OWNER"
-                ? t("layout.ownerSpace")
-                : user.role === "CALL_CENTER_AGENT"
-                  ? t("layout.operatorSpace")
-                  : t("layout.staffSpace")}
-            </p>
+            <div className="topbar-meta">
+              <p className="muted">{roleLabel}</p>
+              <span className="role-chip">{user.email}</span>
+            </div>
           </div>
           <div className="topbar-actions">
             <LanguageSwitcher compact />

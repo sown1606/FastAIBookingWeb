@@ -182,6 +182,11 @@ export const StaffPage = () => {
     }
   };
 
+  const activeStaffCount = staff.filter((item) => item.status === "ACTIVE").length;
+  const inactiveStaffCount = staff.length - activeStaffCount;
+  const loginReadyCount = staff.filter((item) => item.user?.isActive).length;
+  const bookableStaffCount = staff.filter((item) => item.isBookable && item.status === "ACTIVE").length;
+
   if (loading) {
     return <LoadingBlock />;
   }
@@ -213,6 +218,12 @@ export const StaffPage = () => {
             <span className="muted">{t("billing.estimated")}</span>
             <strong>{formatCurrencyCents(billing?.currentUsage.estimatedExtraCostCents)}</strong>
           </div>
+        </div>
+        <div className="summary-badges">
+          <span className="summary-badge">Đang hoạt động: {activeStaffCount}</span>
+          <span className="summary-badge">Tạm tắt: {inactiveStaffCount}</span>
+          <span className="summary-badge">Có đăng nhập: {loginReadyCount}</span>
+          <span className="summary-badge">Nhận lịch: {bookableStaffCount}</span>
         </div>
       </section>
 
@@ -271,52 +282,74 @@ export const StaffPage = () => {
       </section>
 
       <section className="card">
-        <h2>{t("staff.listTitle")}</h2>
+        <div className="section-header">
+          <div>
+            <h2>{t("staff.listTitle")}</h2>
+            <p className="muted">Hiển thị toàn bộ nhân viên, trạng thái hoạt động, truy cập và thông tin liên hệ.</p>
+          </div>
+          <span className="status-pill info">{staff.length} nhân viên</span>
+        </div>
         {staff.length ? (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>{t("staff.fullName")}</th>
-                <th>{t("staff.title")}</th>
-                <th>{t("common.status")}</th>
-                <th>{t("staff.login")}</th>
-                <th>{t("common.actions")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {staff.map((item) => (
-                <tr key={item.id}>
-                  <td>
+          <div className="staff-grid">
+            {staff.map((item) => {
+              const loginLabel = item.user
+                ? item.user.isActive
+                  ? t("staff.on")
+                  : t("staff.off")
+                : t("staff.notCreated");
+
+              return (
+                <article
+                  key={item.id}
+                  className={item.status === "ACTIVE" ? "staff-card" : "staff-card staff-card-inactive"}
+                >
+                  <div className="staff-card-header">
                     <div className="person-cell">
-                      <DemoAvatar name={item.fullName} variant="staff" size="sm" />
+                      <DemoAvatar name={item.fullName} variant="staff" size="md" />
                       <span>
-                        {item.fullName}
-                        <span className="muted">{item.email ?? "-"}</span>
+                        <strong>{item.fullName}</strong>
+                        <span className="muted">{item.email ?? "Chưa có email"}</span>
                       </span>
                     </div>
-                  </td>
-                  <td>{item.title ?? "-"}</td>
-                  <td>{statusLabelKey(item.status) ? t(statusLabelKey(item.status)!) : item.status}</td>
-                  <td>{item.user ? (item.user.isActive ? t("staff.on") : t("staff.off")) : t("staff.notCreated")}</td>
-                  <td>
-                    <div className="inline-actions">
-                      <button type="button" className="button-secondary" onClick={() => editStaffMember(item)}>
-                        {t("staff.editAction")}
-                      </button>
-                      <button type="button" className="button-secondary" onClick={() => toggleStatus(item)}>
-                        {item.status === "ACTIVE" ? t("staff.disable") : t("staff.enable")}
-                      </button>
-                      <button type="button" className="button-secondary" onClick={() => resetAccess(item)}>
-                        {t("staff.reset")}
-                      </button>
+                    <span className={item.status === "ACTIVE" ? "status-pill success" : "status-pill warning"}>
+                      {statusLabelKey(item.status) ? t(statusLabelKey(item.status)!) : item.status}
+                    </span>
+                  </div>
+
+                  <div className="staff-meta-grid">
+                    <div>
+                      <span className="muted">{t("staff.title")}</span>
+                      <strong>{item.title ?? "Chưa đặt vai trò"}</strong>
                     </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                    <div>
+                      <span className="muted">{t("common.phone")}</span>
+                      <strong>{item.phone ?? "Chưa có số điện thoại"}</strong>
+                    </div>
+                    <div>
+                      <span className="muted">{t("staff.login")}</span>
+                      <strong>{loginLabel}</strong>
+                    </div>
+                    <div>
+                      <span className="muted">Nhận lịch</span>
+                      <strong>{item.isBookable ? t("common.statusOn") : t("common.statusOff")}</strong>
+                    </div>
+                  </div>
+
+                  <div className="inline-actions">
+                    <button type="button" className="button-secondary" onClick={() => void editStaffMember(item)}>
+                      {t("staff.editAction")}
+                    </button>
+                    <button type="button" className="button-secondary" onClick={() => void toggleStatus(item)}>
+                      {item.status === "ACTIVE" ? t("staff.disable") : t("staff.enable")}
+                    </button>
+                    <button type="button" className="button-secondary" onClick={() => void resetAccess(item)}>
+                      {t("staff.reset")}
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
         ) : (
           <EmptyBlock message={t("staff.empty")} />
         )}
