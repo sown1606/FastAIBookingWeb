@@ -107,6 +107,17 @@ enum CallLogVisibility {
   OWNER_STAFF_OPERATOR
 }
 
+enum AiReceptionSetupStatus {
+  NOT_CONFIGURED
+  PENDING
+  ACTIVE
+  FAILED
+}
+
+enum AiReceptionForwardingType {
+  NO_ANSWER
+}
+
 model User {
   id                       String                      @id @default(uuid())
   email                    String                      @unique
@@ -173,6 +184,7 @@ model Salon {
   bookingAttempts             BookingAttempt[]
   aiInteractionLogs           AiInteractionLog[]
   integrationConfigs          IntegrationConfig[]
+  aiReceptionSetup            SalonAiReceptionSetup?
   billingUsage                BillingUsage[]
   auditLogs                   AuditLog[]
   callCenterAssignments       CallCenterSalonAssignment[]
@@ -487,12 +499,15 @@ model CallSession {
   providerAccountId String?
   providerCompanyId String?
   callerPhone       String?
+  originalPhoneNumber String?
   dialedPhone       String?
   trackingNumber    String?
+  direction         String?
   sourceName        String?
   campaignName      String?
   status            CallSessionStatus   @default(RECEIVED)
   startedAt         DateTime?
+  answeredAt        DateTime?
   endedAt           DateTime?
   durationSeconds   Int?
   recordingUrl      String?
@@ -675,6 +690,26 @@ model IntegrationConfig {
   @@unique([provider, salonId, configKey, configValue])
   @@index([provider, configKey, configValue])
   @@index([salonId, provider, isActive])
+}
+
+model SalonAiReceptionSetup {
+  id                   String                    @id @default(uuid())
+  salonId              String                    @unique
+  salon                Salon                     @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  provider             ExternalProvider          @default(CALLRAIL)
+  carrier              String                    @default("tmobile")
+  originalPhoneNumber  String?
+  forwardingPhoneNumber String
+  forwardingType       AiReceptionForwardingType @default(NO_ANSWER)
+  activationCode       String?
+  deactivationCode     String?
+  status               AiReceptionSetupStatus    @default(NOT_CONFIGURED)
+  lastTestedAt         DateTime?
+  lastVerifiedAt       DateTime?
+  createdAt            DateTime                  @default(now())
+  updatedAt            DateTime                  @updatedAt
+
+  @@index([status, updatedAt])
 }
 
 model BillingUsage {

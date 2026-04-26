@@ -18,6 +18,17 @@ const optionalPositiveInteger = z.preprocess((value) => {
   return Number(value);
 }, z.number().int().positive().optional());
 
+const nonEmptyStringOrUndefined = z.preprocess((value) => {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value !== "string") {
+    return value;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}, z.string().optional());
+
 const asNonEmpty = (value: string | undefined): string | undefined => {
   if (!value) {
     return undefined;
@@ -61,13 +72,17 @@ const envSchema = z.object({
   TWILIO_MESSAGING_SERVICE_SID: z.string().optional(),
   FREE_STAFF_LIMIT: z.coerce.number().int().nonnegative().default(5),
   EXTRA_STAFF_PRICE: z.coerce.number().nonnegative().default(0),
-  CALLRAIL_WEBHOOK_SECRET: z.string().optional(),
-  CALLRAIL_TRACKING_NUMBER: z.string().optional(),
-  CALLRAIL_TARGET_NUMBER: z.string().optional(),
-  CALLRAIL_DEFAULT_SALON_ID: z.string().optional(),
-  CALLRAIL_AI_FLOW_ID: z.string().optional(),
-  CALLRAIL_LIVE_PERSON_FLOW_ID: z.string().optional(),
-  CALL_CENTER_DEFAULT_PHONE: z.string().optional(),
+  CALLRAIL_WEBHOOK_SECRET: nonEmptyStringOrUndefined,
+  CALLRAIL_API_KEY: nonEmptyStringOrUndefined,
+  CALLRAIL_ACCOUNT_ID: nonEmptyStringOrUndefined,
+  CALLRAIL_COMPANY_ID: nonEmptyStringOrUndefined,
+  CALLRAIL_TRACKING_NUMBER_ID: nonEmptyStringOrUndefined,
+  CALLRAIL_TRACKING_NUMBER: nonEmptyStringOrUndefined,
+  CALLRAIL_TARGET_NUMBER: nonEmptyStringOrUndefined,
+  CALLRAIL_DEFAULT_SALON_ID: nonEmptyStringOrUndefined,
+  CALLRAIL_AI_FLOW_ID: nonEmptyStringOrUndefined,
+  CALLRAIL_LIVE_PERSON_FLOW_ID: nonEmptyStringOrUndefined,
+  CALL_CENTER_DEFAULT_PHONE: nonEmptyStringOrUndefined,
   AWS_REGION: z.string().optional(),
   AMAZON_CONNECT_INSTANCE_ID: z.string().optional(),
   AMAZON_CONNECT_INSTANCE_URL: z.string().optional(),
@@ -114,18 +129,32 @@ const hasVertexCredentialEnv =
   Boolean(asNonEmpty(base.VERTEX_CLIENT_EMAIL) ?? asNonEmpty(base.VERTEX_SERVICE_ACCOUNT_EMAIL)) &&
   Boolean(asNonEmpty(base.VERTEX_PRIVATE_KEY));
 
+const callRailRequiredKeys = [
+  "CALLRAIL_WEBHOOK_SECRET",
+  "CALLRAIL_API_KEY",
+  "CALLRAIL_ACCOUNT_ID",
+  "CALLRAIL_COMPANY_ID",
+  "CALLRAIL_TRACKING_NUMBER_ID",
+  "CALLRAIL_TRACKING_NUMBER",
+  "CALLRAIL_DEFAULT_SALON_ID",
+  "CALLRAIL_AI_FLOW_ID"
+] as const;
+
+const callRailValueByKey: Record<(typeof callRailRequiredKeys)[number], string | undefined> = {
+  CALLRAIL_WEBHOOK_SECRET: asNonEmpty(base.CALLRAIL_WEBHOOK_SECRET),
+  CALLRAIL_API_KEY: asNonEmpty(base.CALLRAIL_API_KEY),
+  CALLRAIL_ACCOUNT_ID: asNonEmpty(base.CALLRAIL_ACCOUNT_ID),
+  CALLRAIL_COMPANY_ID: asNonEmpty(base.CALLRAIL_COMPANY_ID),
+  CALLRAIL_TRACKING_NUMBER_ID: asNonEmpty(base.CALLRAIL_TRACKING_NUMBER_ID),
+  CALLRAIL_TRACKING_NUMBER: asNonEmpty(base.CALLRAIL_TRACKING_NUMBER),
+  CALLRAIL_DEFAULT_SALON_ID: asNonEmpty(base.CALLRAIL_DEFAULT_SALON_ID),
+  CALLRAIL_AI_FLOW_ID: asNonEmpty(base.CALLRAIL_AI_FLOW_ID)
+};
+
 const integrationStatuses = {
   callRail: {
-    configured: Boolean(
-      asNonEmpty(base.CALLRAIL_WEBHOOK_SECRET) &&
-        asNonEmpty(base.CALLRAIL_AI_FLOW_ID) &&
-        asNonEmpty(base.CALLRAIL_LIVE_PERSON_FLOW_ID)
-    ),
-    missing: [
-      !asNonEmpty(base.CALLRAIL_WEBHOOK_SECRET) ? "CALLRAIL_WEBHOOK_SECRET" : null,
-      !asNonEmpty(base.CALLRAIL_AI_FLOW_ID) ? "CALLRAIL_AI_FLOW_ID" : null,
-      !asNonEmpty(base.CALLRAIL_LIVE_PERSON_FLOW_ID) ? "CALLRAIL_LIVE_PERSON_FLOW_ID" : null
-    ].filter((value): value is string => Boolean(value))
+    configured: callRailRequiredKeys.every((key) => Boolean(callRailValueByKey[key])),
+    missing: callRailRequiredKeys.filter((key) => !callRailValueByKey[key])
   },
   vertex: {
     configured: Boolean(asNonEmpty(base.VERTEX_PROJECT_ID) && (hasVertexCredentialFile || hasVertexCredentialEnv)),
@@ -162,6 +191,17 @@ const integrationStatuses = {
 
 export const env = {
   ...base,
+  CALLRAIL_WEBHOOK_SECRET: asNonEmpty(base.CALLRAIL_WEBHOOK_SECRET),
+  CALLRAIL_API_KEY: asNonEmpty(base.CALLRAIL_API_KEY),
+  CALLRAIL_ACCOUNT_ID: asNonEmpty(base.CALLRAIL_ACCOUNT_ID),
+  CALLRAIL_COMPANY_ID: asNonEmpty(base.CALLRAIL_COMPANY_ID),
+  CALLRAIL_TRACKING_NUMBER_ID: asNonEmpty(base.CALLRAIL_TRACKING_NUMBER_ID),
+  CALLRAIL_TRACKING_NUMBER: asNonEmpty(base.CALLRAIL_TRACKING_NUMBER),
+  CALLRAIL_TARGET_NUMBER: asNonEmpty(base.CALLRAIL_TARGET_NUMBER),
+  CALLRAIL_DEFAULT_SALON_ID: asNonEmpty(base.CALLRAIL_DEFAULT_SALON_ID),
+  CALLRAIL_AI_FLOW_ID: asNonEmpty(base.CALLRAIL_AI_FLOW_ID),
+  CALLRAIL_LIVE_PERSON_FLOW_ID: asNonEmpty(base.CALLRAIL_LIVE_PERSON_FLOW_ID),
+  CALL_CENTER_DEFAULT_PHONE: asNonEmpty(base.CALL_CENTER_DEFAULT_PHONE),
   DATABASE_URL: databaseUrl,
   integrationStatuses
 };

@@ -8,3 +8,4 @@ coverage
 apps/api/generated
 fastAibooking.pem
 apps.zip
+.vercel

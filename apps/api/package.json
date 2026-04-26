@@ -8,6 +8,8 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
+    "simulate:callrail-booking": "tsx scripts/simulate-callrail-booking.ts",
+    "simulate:callrail-escalation": "tsx scripts/simulate-callrail-escalation.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
