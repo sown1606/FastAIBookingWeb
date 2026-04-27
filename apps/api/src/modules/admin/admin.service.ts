@@ -1,4 +1,5 @@
 import {
+  CallEscalationStatus,
   CallSessionStatus,
   CallRoutingOutcome,
   ExternalProvider,
@@ -397,13 +398,54 @@ export const getOwnerDetailForAdmin = async (ownerId: string) => {
 };
 
 export const getAdminOverviewMetrics = async () => {
-  const [totalSalons, activeSalons, suspendedSalons, totalOwners, totalAppointments] = await Promise.all([
+  const [
+    totalSalons,
+    activeSalons,
+    suspendedSalons,
+    totalOwners,
+    totalAppointments,
+    callCenterAgentCount,
+    openEscalationCount,
+    activeIntegrationCounts
+  ] = await Promise.all([
     prisma.salon.count(),
     prisma.salon.count({ where: { status: SalonStatus.ACTIVE } }),
     prisma.salon.count({ where: { status: SalonStatus.SUSPENDED } }),
     prisma.user.count({ where: { role: Role.SALON_OWNER } }),
-    prisma.appointment.count()
+    prisma.appointment.count(),
+    prisma.user.count({
+      where: {
+        role: Role.CALL_CENTER_AGENT,
+        isActive: true
+      }
+    }),
+    prisma.callEscalation.count({
+      where: {
+        status: {
+          not: CallEscalationStatus.CLOSED
+        }
+      }
+    }),
+    prisma.integrationConfig.groupBy({
+      by: ["provider"],
+      where: {
+        isActive: true
+      },
+      _count: {
+        _all: true
+      }
+    })
   ]);
+
+  const activeConfigCountByProvider = new Map<ExternalProvider, number>();
+  activeIntegrationCounts.forEach((item) => {
+    activeConfigCountByProvider.set(item.provider, item._count._all);
+  });
+
+  const activeCallRailConfigCount = activeConfigCountByProvider.get(ExternalProvider.CALLRAIL) ?? 0;
+  const activeVertexConfigCount = activeConfigCountByProvider.get(ExternalProvider.VERTEX) ?? 0;
+  const activeAmazonConnectConfigCount =
+    activeConfigCountByProvider.get(ExternalProvider.AMAZON_CONNECT) ?? 0;
 
   return {
     totalSalons,
@@ -411,6 +453,32 @@ export const getAdminOverviewMetrics = async () => {
     suspendedSalons,
     totalOwners,
     totalAppointments,
+    callCenterAgentCount,
+    openEscalationCount,
+    integrationSummary: {
+      callRail: {
+        configured: env.integrationStatuses.callRail.configured && activeCallRailConfigCount > 0,
+        missing: [
+          ...env.integrationStatuses.callRail.missing,
+          activeCallRailConfigCount === 0 ? "Active CALLRAIL IntegrationConfig" : null
+        ].filter((value): value is string => Boolean(value)),
+        activeConfigCount: activeCallRailConfigCount
+      },
+      vertex: {
+        configured: env.integrationStatuses.vertex.configured,
+        missing: env.integrationStatuses.vertex.missing,
+        activeConfigCount: activeVertexConfigCount
+      },
+      amazonConnect: {
+        configured:
+          env.integrationStatuses.amazonConnect.configured && activeAmazonConnectConfigCount > 0,
+        missing: [
+          ...env.integrationStatuses.amazonConnect.missing,
+          activeAmazonConnectConfigCount === 0 ? "Active AMAZON_CONNECT IntegrationConfig" : null
+        ].filter((value): value is string => Boolean(value)),
+        activeConfigCount: activeAmazonConnectConfigCount
+      }
+    },
     generatedAt: new Date().toISOString()
   };
 };

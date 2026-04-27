@@ -135,10 +135,17 @@ const inferFallbackIntent = (input: {
   );
   const matchedStaff = input.staffNames.find((staff) => lower.includes(staff.toLowerCase()));
 
-  const phoneMatch = input.text.match(/(\+?\d[\d\s\-()]{7,}\d)/);
-  const phone = normalizePhoneForMatching(phoneMatch?.[1]);
+  const explicitPhoneMatch = input.text.match(
+    /(?:phone number is|phone is|call me at|reach me at)\s*(\+?1?[\s\-()]*[2-9]\d{2}[\s\-()]*[2-9]\d{2}[\s\-()]?\d{4})/i
+  );
+  const fallbackPhoneMatch = input.text.match(
+    /(\+?1?[\s\-()]*[2-9]\d{2}[\s\-()]*[2-9]\d{2}[\s\-()]?\d{4})/
+  );
+  const phone = normalizePhoneForMatching(explicitPhoneMatch?.[1] ?? fallbackPhoneMatch?.[1]);
 
-  const nameMatch = input.text.match(/(?:name is|this is|i am|i'm)\s+([a-zA-Z][a-zA-Z\s.'-]{1,80})/i);
+  const nameMatch = input.text.match(
+    /(?:name is|this is|i am|i'm)\s+([a-zA-Z][a-zA-Z.'-]*(?:\s+[a-zA-Z][a-zA-Z.'-]*){0,4})/i
+  );
   const customerName = nameMatch?.[1]?.trim();
   const startTimeIso = parseDateTimeFromText(input.text, input.timezone);
 

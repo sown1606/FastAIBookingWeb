@@ -25,6 +25,7 @@ import { customersRouter } from "./modules/customers/customers.routes";
 import { feedbackRouter } from "./modules/feedback/feedback.routes";
 import { healthRouter } from "./modules/health/health.routes";
 import { messagesRouter } from "./modules/messages/messages.routes";
+import { ownerRouter } from "./modules/owner/owner.routes";
 import { salonRouter } from "./modules/salon/salon.routes";
 import { servicesRouter } from "./modules/services/services.routes";
 import { staffRouter } from "./modules/staff/staff.routes";
@@ -88,6 +89,7 @@ app.use(
 );
 
 app.use(authenticate, requireRoles(Role.SALON_OWNER, Role.STAFF), requireSalonAccess);
+app.use(`${PUBLIC_API_PREFIX}/owner`, ownerRouter);
 app.use(`${PUBLIC_API_PREFIX}/salon`, salonRouter);
 app.use(`${PUBLIC_API_PREFIX}/staff`, staffRouter);
 app.use(`${PUBLIC_API_PREFIX}/alerts`, alertsRouter);

@@ -12,8 +12,12 @@ import { z } from "zod";
 import { asyncHandler } from "../../middleware/async-handler";
 import { authenticate, requireRoles } from "../../middleware/auth";
 import { validate } from "../../middleware/validate";
-import { sendSuccess } from "../../utils/response";
 import { isValidUsPhone } from "../../utils/phone";
+import { sendSuccess } from "../../utils/response";
+import {
+  getAiReceptionConfigForSalon,
+  listAiReceptionCallLogsForSalon
+} from "../ai-reception/ai-reception.service";
 import {
   getAIInteractionByIdForAdmin,
   listAIInteractionsForAdmin
@@ -363,6 +367,11 @@ const adminAiQuerySchema = z.object({
   taskType: z.string().max(80).optional()
 });
 
+const adminAiReceptionCallLogsQuerySchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(20)
+});
+
 const createCallCenterAgentSchema = z.object({
   fullName: z.string().min(2).max(120),
   email: z.string().email(),
@@ -528,6 +537,32 @@ adminRouter.put(
     return sendSuccess(res, {
       message: "Salon settings updated.",
       data: settings
+    });
+  })
+);
+
+adminRouter.get(
+  "/salons/:salonId/ai-reception",
+  validate(salonIdSchema, "params"),
+  asyncHandler(async (req, res) => {
+    const { salonId } = req.params as z.infer<typeof salonIdSchema>;
+    const config = await getAiReceptionConfigForSalon(salonId);
+    return sendSuccess(res, {
+      data: config
+    });
+  })
+);
+
+adminRouter.get(
+  "/salons/:salonId/call-logs",
+  validate(salonIdSchema, "params"),
+  validate(adminAiReceptionCallLogsQuerySchema, "query"),
+  asyncHandler(async (req, res) => {
+    const { salonId } = req.params as z.infer<typeof salonIdSchema>;
+    const query = req.query as unknown as z.infer<typeof adminAiReceptionCallLogsQuerySchema>;
+    const result = await listAiReceptionCallLogsForSalon(salonId, query);
+    return sendSuccess(res, {
+      data: result
     });
   })
 );
