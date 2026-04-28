@@ -11,11 +11,14 @@ export interface NormalizedCallEvent {
   eventTimestamp?: Date;
   status?: CallSessionStatus;
   callerPhone?: string;
+  originalPhoneNumber?: string;
   dialedPhone?: string;
   trackingNumber?: string;
+  direction?: string;
   sourceName?: string;
   campaignName?: string;
   startedAt?: Date;
+  answeredAt?: Date;
   endedAt?: Date;
   durationSeconds?: number;
   recordingUrl?: string;

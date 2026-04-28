@@ -33,6 +33,26 @@ const asNumber = (value: unknown): number | undefined => {
   return undefined;
 };
 
+const asBoolean = (value: unknown): boolean | undefined => {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  const text = asString(value)?.toLowerCase();
+  if (!text) {
+    return undefined;
+  }
+
+  if (["true", "yes", "y", "1"].includes(text)) {
+    return true;
+  }
+  if (["false", "no", "n", "0"].includes(text)) {
+    return false;
+  }
+
+  return undefined;
+};
+
 const asDate = (value: unknown): Date | undefined => {
   const asDateValue = value instanceof Date ? value : undefined;
   if (asDateValue) {
@@ -131,6 +151,26 @@ const findWebhookSignature = (
   return undefined;
 };
 
+const findWebhookSharedSecret = (
+  headers: Record<string, string | string[] | undefined>
+): string | undefined => {
+  const candidates = [
+    "x-callrail-webhook-secret",
+    "x-webhook-secret",
+    "x-callrail-secret",
+    "x-integration-secret"
+  ];
+
+  for (const header of candidates) {
+    const value = pickHeaderValue(headers, header);
+    if (value) {
+      return value;
+    }
+  }
+
+  return undefined;
+};
+
 const secureCompare = (valueA: string, valueB: string): boolean => {
   const a = Buffer.from(valueA);
   const b = Buffer.from(valueB);
@@ -147,6 +187,11 @@ const verifyWebhookSignature = (
   const secret = env.CALLRAIL_WEBHOOK_SECRET?.trim();
   if (!secret) {
     return true;
+  }
+
+  const sharedSecret = findWebhookSharedSecret(headers);
+  if (sharedSecret) {
+    return secureCompare(sharedSecret, secret);
   }
 
   const signature = findWebhookSignature(headers);
@@ -166,12 +211,20 @@ const verifyWebhookSignature = (
   );
 };
 
-const mapStatus = (statusInput?: string, eventTypeInput?: string): CallSessionStatus | undefined => {
-  const status = statusInput?.toLowerCase();
-  const eventType = eventTypeInput?.toLowerCase();
+const mapStatus = (input: {
+  statusInput?: string;
+  eventTypeInput?: string;
+  answered?: boolean;
+  wentToVoicemail?: boolean;
+  durationSeconds?: number;
+  endedAt?: Date;
+  failureReason?: string;
+}): CallSessionStatus | undefined => {
+  const status = input.statusInput?.toLowerCase();
+  const eventType = input.eventTypeInput?.toLowerCase();
   const combined = `${status ?? ""} ${eventType ?? ""}`.trim();
 
-  if (!combined) {
+  if (!combined && input.answered === undefined && !input.wentToVoicemail && !input.endedAt) {
     return undefined;
   }
   if (combined.includes("ring")) {
@@ -203,7 +256,35 @@ const mapStatus = (statusInput?: string, eventTypeInput?: string): CallSessionSt
   if (combined.includes("start") || combined.includes("receive")) {
     return CallSessionStatus.RECEIVED;
   }
-  return CallSessionStatus.UNKNOWN;
+
+  if (input.wentToVoicemail) {
+    return CallSessionStatus.VOICEMAIL;
+  }
+  if (input.failureReason) {
+    return CallSessionStatus.FAILED;
+  }
+
+  switch (eventType) {
+    case "pre-call":
+      return CallSessionStatus.RECEIVED;
+    case "call-routing-complete":
+      return input.answered === false ? CallSessionStatus.RINGING : CallSessionStatus.IN_PROGRESS;
+    case "post-call":
+      if (input.answered === false && !input.durationSeconds) {
+        return CallSessionStatus.MISSED;
+      }
+      return CallSessionStatus.COMPLETED;
+    case "call-modified":
+      if (input.answered === false && !input.durationSeconds && !input.endedAt) {
+        return CallSessionStatus.MISSED;
+      }
+      if (input.endedAt || input.durationSeconds !== undefined || input.answered === true) {
+        return CallSessionStatus.COMPLETED;
+      }
+      return undefined;
+    default:
+      return combined ? CallSessionStatus.UNKNOWN : undefined;
+  }
 };
 
 const parseTranscriptText = (payload: Record<string, unknown>): string | undefined => {
@@ -229,6 +310,24 @@ const parseTranscriptText = (payload: Record<string, unknown>): string | undefin
   return undefined;
 };
 
+const parseDirection = (payload: Record<string, unknown>): string | undefined => {
+  const candidates = [
+    payload.direction,
+    payload.call_direction,
+    pullNested(payload, ["call", "direction"]),
+    pullNested(payload, ["call", "call_direction"])
+  ];
+
+  for (const candidate of candidates) {
+    const value = asString(candidate);
+    if (value) {
+      return value.toLowerCase();
+    }
+  }
+
+  return undefined;
+};
+
 const parseRecordingUrl = (payload: Record<string, unknown>): string | undefined => {
   const candidates = [
     payload.recording_url,
@@ -236,6 +335,26 @@ const parseRecordingUrl = (payload: Record<string, unknown>): string | undefined
     pullNested(payload, ["call", "recording_url"]),
     pullNested(payload, ["call", "recordingUrl"]),
     pullNested(payload, ["recording", "url"])
+  ];
+
+  for (const candidate of candidates) {
+    const value = asString(candidate);
+    if (value) {
+      return value;
+    }
+  }
+
+  return undefined;
+};
+
+const parseTranscriptSummary = (payload: Record<string, unknown>): string | undefined => {
+  const candidates = [
+    payload.transcript_summary,
+    payload.call_summary,
+    payload.summary,
+    pullNested(payload, ["call", "transcript_summary"]),
+    pullNested(payload, ["call", "call_summary"]),
+    pullNested(payload, ["transcription", "summary"])
   ];
 
   for (const candidate of candidates) {
@@ -308,13 +427,59 @@ export class CallRailProviderAdapter implements CallProviderAdapter {
           ? asString(callRecord.tracking_number) ?? asString(callRecord.tracking_phone_number)
           : undefined)
     );
+    const originalPhoneNumber = normalizePhoneForMatching(
+      asString(payloadRecord.original_phone_number) ??
+        asString(payloadRecord.business_phone_number) ??
+        asString(payloadRecord.business_number) ??
+        (callRecord
+          ? asString(callRecord.original_phone_number) ??
+            asString(callRecord.business_phone_number) ??
+            asString(callRecord.business_number)
+          : undefined)
+    );
+    const answered =
+      asBoolean(payloadRecord.answered) ??
+      asBoolean(payloadRecord.was_answered) ??
+      asBoolean(payloadRecord.connected) ??
+      (callRecord
+        ? asBoolean(callRecord.answered) ??
+          asBoolean(callRecord.was_answered) ??
+          asBoolean(callRecord.connected)
+        : undefined);
+    const wentToVoicemail =
+      asBoolean(payloadRecord.voicemail) ??
+      asBoolean(payloadRecord.went_to_voicemail) ??
+      asBoolean(payloadRecord.left_voicemail) ??
+      (callRecord
+        ? asBoolean(callRecord.voicemail) ??
+          asBoolean(callRecord.went_to_voicemail) ??
+          asBoolean(callRecord.left_voicemail)
+        : undefined);
+    const endedAt =
+      asDate(payloadRecord.ended_at) ??
+      asDate(payloadRecord.end_time) ??
+      (callRecord ? asDate(callRecord.ended_at) ?? asDate(callRecord.end_time) : undefined);
+    const durationSeconds =
+      asNumber(payloadRecord.duration_seconds) ??
+      asNumber(payloadRecord.duration) ??
+      (callRecord ? asNumber(callRecord.duration_seconds) ?? asNumber(callRecord.duration) : undefined);
+    const failureReason =
+      asString(payloadRecord.failure_reason) ??
+      asString(payloadRecord.error_message) ??
+      (callRecord ? asString(callRecord.failure_reason) ?? asString(callRecord.error_message) : undefined);
 
-    const status = mapStatus(
-      asString(payloadRecord.status) ??
+    const status = mapStatus({
+      statusInput:
+        asString(payloadRecord.status) ??
         asString(payloadRecord.call_status) ??
         (callRecord ? asString(callRecord.status) ?? asString(callRecord.call_status) : undefined),
-      eventType
-    );
+      eventTypeInput: eventType,
+      answered,
+      wentToVoicemail,
+      durationSeconds,
+      endedAt,
+      failureReason
+    });
 
     const signatureVerified = verifyWebhookSignature(rawBody, headers);
     if (env.CALLRAIL_WEBHOOK_SECRET?.trim() && !signatureVerified) {
@@ -353,8 +518,10 @@ export class CallRailProviderAdapter implements CallProviderAdapter {
             : undefined),
         status,
         callerPhone,
+        originalPhoneNumber,
         dialedPhone,
         trackingNumber,
+        direction: parseDirection(payloadRecord) ?? "inbound",
         sourceName:
           asString(payloadRecord.source) ??
           asString(payloadRecord.source_name) ??
@@ -367,24 +534,22 @@ export class CallRailProviderAdapter implements CallProviderAdapter {
           asDate(payloadRecord.started_at) ??
           asDate(payloadRecord.start_time) ??
           (callRecord ? asDate(callRecord.started_at) ?? asDate(callRecord.start_time) : undefined),
-        endedAt:
-          asDate(payloadRecord.ended_at) ??
-          asDate(payloadRecord.end_time) ??
-          (callRecord ? asDate(callRecord.ended_at) ?? asDate(callRecord.end_time) : undefined),
-        durationSeconds:
-          asNumber(payloadRecord.duration_seconds) ??
-          asNumber(payloadRecord.duration) ??
-          (callRecord ? asNumber(callRecord.duration_seconds) ?? asNumber(callRecord.duration) : undefined),
+        answeredAt:
+          asDate(payloadRecord.answered_at) ??
+          asDate(payloadRecord.answer_time) ??
+          (callRecord ? asDate(callRecord.answered_at) ?? asDate(callRecord.answer_time) : undefined),
+        endedAt,
+        durationSeconds,
         recordingUrl,
         transcriptText,
         transcriptSummary:
-          asString(payloadRecord.transcript_summary) ??
-          (callRecord ? asString(callRecord.transcript_summary) : undefined),
-        failureReason:
-          asString(payloadRecord.failure_reason) ??
-          asString(payloadRecord.error_message) ??
-          (callRecord ? asString(callRecord.failure_reason) : undefined),
-        bookingResult: payloadRecord.booking_result,
+          parseTranscriptSummary(payloadRecord) ??
+          (callRecord ? parseTranscriptSummary(callRecord) : undefined),
+        failureReason,
+        bookingResult:
+          payloadRecord.booking_result ??
+          pullNested(payloadRecord, ["call", "booking_result"]) ??
+          undefined,
         rawPayload: payloadRecord
       }
     };

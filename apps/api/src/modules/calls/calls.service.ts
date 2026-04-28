@@ -11,6 +11,7 @@ import { prisma } from "../../db/prisma";
 import { createAuditLog } from "../../lib/audit";
 import { AppError } from "../../lib/errors";
 import { logger } from "../../lib/logger";
+import { markAiReceptionWebhookVerifiedForSalon } from "../ai-reception/ai-reception.service";
 import { createSalonAlert } from "../alerts/alerts.service";
 import { buildSalonRoutingSummary } from "../salon/routing-summary";
 import { CallRailProviderAdapter, normalizePhoneForMatching } from "./providers/callrail.provider";
@@ -47,6 +48,37 @@ const payloadHash = (value: unknown): string => {
 };
 
 const callrailAdapter = new CallRailProviderAdapter();
+
+const normalizePhoneDigits = (value: string | undefined): string | undefined => {
+  if (!value) {
+    return undefined;
+  }
+
+  const digits = value.replace(/\D/g, "");
+  if (!digits) {
+    return undefined;
+  }
+
+  if (digits.length === 10) {
+    return `1${digits}`;
+  }
+
+  if (digits.length === 11 && digits.startsWith("1")) {
+    return digits;
+  }
+
+  return digits;
+};
+
+const buildPhoneLookupValues = (value: string | undefined): string[] => {
+  return Array.from(
+    new Set(
+      [normalizePhoneForMatching(value), normalizePhoneDigits(value)].filter(
+        (candidate): candidate is string => Boolean(candidate)
+      )
+    )
+  );
+};
 
 const isAiReceptionEnabled = (settings: {
   aiReceptionEnabled?: boolean | null;
@@ -87,23 +119,49 @@ const resolveSalonIdForCallEvent = async (event: {
     }
   }
 
-  const lookupCandidates: Array<{ configKey: string; configValue: string | undefined }> = [
+  const forwardingPhoneCandidates = Array.from(
+    new Set(
+      [normalizePhoneDigits(event.trackingNumber), normalizePhoneDigits(event.dialedPhone)].filter(
+        (value): value is string => Boolean(value)
+      )
+    )
+  );
+
+  if (forwardingPhoneCandidates.length > 0) {
+    const setup = await prisma.salonAiReceptionSetup.findFirst({
+      where: {
+        provider: ExternalProvider.CALLRAIL,
+        forwardingPhoneNumber: {
+          in: forwardingPhoneCandidates
+        }
+      },
+      select: {
+        salonId: true
+      }
+    });
+
+    if (setup?.salonId) {
+      return setup.salonId;
+    }
+  }
+
+  const lookupCandidates: Array<{ configKey: string; configValues: string[] }> = [
     {
       configKey: "tracking_number",
-      configValue: normalizePhoneForMatching(event.trackingNumber)
+      configValues: buildPhoneLookupValues(event.trackingNumber)
     },
     {
       configKey: "dialed_number",
-      configValue: normalizePhoneForMatching(event.dialedPhone)
+      configValues: buildPhoneLookupValues(event.dialedPhone)
     },
     {
       configKey: "company_id",
-      configValue: event.providerCompanyId?.trim()
+      configValues: event.providerCompanyId?.trim() ? [event.providerCompanyId.trim()] : []
     }
   ];
 
   for (const candidate of lookupCandidates) {
-    if (!candidate.configValue) {
+    if (!candidate.configValues.length) {
       continue;
     }
 
@@ -111,7 +169,9 @@ const resolveSalonIdForCallEvent = async (event: {
       where: {
         provider: ExternalProvider.CALLRAIL,
         configKey: candidate.configKey,
-        configValue: candidate.configValue,
+        configValue: {
+          in: candidate.configValues
+        },
         isActive: true
       },
       select: {
@@ -186,12 +246,15 @@ export const processCallRailWebhook = async (
         providerAccountId: normalized.event.providerAccountId,
         providerCompanyId: normalized.event.providerCompanyId,
         callerPhone: normalized.event.callerPhone,
+        originalPhoneNumber: normalized.event.originalPhoneNumber,
         dialedPhone: normalized.event.dialedPhone,
         trackingNumber: normalized.event.trackingNumber,
+        direction: normalized.event.direction,
         sourceName: normalized.event.sourceName,
         campaignName: normalized.event.campaignName,
         status: nextStatus,
         startedAt: normalized.event.startedAt,
+        answeredAt: normalized.event.answeredAt,
         endedAt: normalized.event.endedAt,
         durationSeconds: normalized.event.durationSeconds,
         recordingUrl: normalized.event.recordingUrl,
@@ -208,12 +271,15 @@ export const processCallRailWebhook = async (
         providerAccountId: normalized.event.providerAccountId ?? undefined,
         providerCompanyId: normalized.event.providerCompanyId ?? undefined,
         callerPhone: normalized.event.callerPhone ?? undefined,
+        originalPhoneNumber: normalized.event.originalPhoneNumber ?? undefined,
         dialedPhone: normalized.event.dialedPhone ?? undefined,
         trackingNumber: normalized.event.trackingNumber ?? undefined,
+        direction: normalized.event.direction ?? undefined,
         sourceName: normalized.event.sourceName ?? undefined,
         campaignName: normalized.event.campaignName ?? undefined,
         status: nextStatus,
         startedAt: normalized.event.startedAt ?? undefined,
+        answeredAt: normalized.event.answeredAt ?? undefined,
         endedAt: normalized.event.endedAt ?? undefined,
         durationSeconds: normalized.event.durationSeconds ?? undefined,
         recordingUrl: normalized.event.recordingUrl ?? undefined,
@@ -320,6 +386,29 @@ export const processCallRailWebhook = async (
       isDuplicateEvent
     };
   });
+
+  if (!result.callSession.salonId) {
+    logger.warn(
+      {
+        providerCallId: normalized.event.providerCallId,
+        trackingNumber: normalized.event.trackingNumber,
+        dialedPhone: normalized.event.dialedPhone,
+        providerCompanyId: normalized.event.providerCompanyId
+      },
+      "Unmapped CallRail webhook call received"
+    );
+  }
+
+  if (result.callSession.salonId) {
+    await markAiReceptionWebhookVerifiedForSalon(
+      result.callSession.salonId,
+      normalized.event.answeredAt ??
+        normalized.event.endedAt ??
+        normalized.event.startedAt ??
+        normalized.event.eventTimestamp ??
+        new Date()
+    );
+  }
 
   if (
     result.callSession.salonId &&
