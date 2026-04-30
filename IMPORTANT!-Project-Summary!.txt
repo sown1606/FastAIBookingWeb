@@ -1,0 +1,246 @@
+FastAIBooking là một nền tảng SaaS dành cho các business như tiệm nail, nhà hàng và có thể mở rộng cho nhiều mô hình kinh doanh khác. Hiện tại trọng tâm thực tế vẫn là nail salon, nhưng hệ thống đang được mở rộng dần thành một nền tảng vận hành business có thêm module Call Center live.
+
+Hệ thống hiện có 3 phần chính:
+
+apps/api: Backend API
+apps/admin: Web dành cho Platform Admin
+apps/app: Web/App dùng cho business side như Owner, Staff, Operator
+
+Hạ tầng hiện tại đang chạy theo hướng monorepo, backend dùng Node.js, TypeScript, Express, Prisma, PostgreSQL và deploy lên EC2. Các domain hiện tại đang dùng là API, Admin và App riêng biệt.
+
+1. Định hướng ngôn ngữ sản phẩm
+
+Từ bây giờ, sản phẩm cần được hiểu theo hướng:
+
+Tiếng Việt là ngôn ngữ chính
+Tiếng Anh là ngôn ngữ phụ
+UI cần hỗ trợ song ngữ khi cần
+Mặc định hiển thị nên là tiếng Việt
+Vì nhóm người dùng chính đang hướng tới cộng đồng người Việt
+
+Lưu ý:
+
+Phần user-facing labels/content nên ưu tiên tiếng Việt
+Các phần technical như code, biến, comment, docs kỹ thuật nội bộ vẫn nên giữ chuẩn, rõ ràng và nhất quán
+2. Có cả web và app, nhưng ưu tiên web trước
+
+Dự án không chỉ có app mà có cả web và app.
+
+Trong giai đoạn hiện tại:
+
+Ưu tiên hoàn thiện web trước
+Web cần đủ tốt để:
+demo với sếp
+kiểm tra đầy đủ flow business
+chạy thử nhanh
+dễ chỉnh sửa hơn app
+Sau khi web ổn, mới tiếp tục polish hoặc đồng bộ thêm cho app/mobile
+
+Nói ngắn gọn:
+
+Web là ưu tiên số 1
+App/mobile đi sau theo cùng logic và API
+3. Các role chính
+
+Hệ thống hiện cần hỗ trợ rõ các role sau:
+
+Platform Admin
+
+Dùng trong apps/admin
+
+Cần làm được:
+
+đăng nhập admin
+xem dashboard tổng quan
+quản lý salon/business
+xem settings
+xem staff, services, business hours, customers, appointments
+xem billing usage
+xem call logs / AI logs / integration status nếu API có support
+Salon Owner
+
+Dùng trong apps/app
+
+Cần làm được:
+
+đăng ký
+đăng nhập
+quên mật khẩu / reset password
+xem dashboard
+chỉnh salon profile
+chỉnh số điện thoại
+quản lý staff
+quản lý services
+quản lý business hours
+quản lý customers
+quản lý appointments
+xem availability
+xem billing usage
+Staff
+
+Dùng trong apps/app
+
+Cần làm được:
+
+đăng nhập
+xem dashboard đơn giản
+xem lịch làm việc / lịch hẹn của mình
+xem chi tiết appointment phù hợp
+cập nhật trạng thái lịch hẹn nếu được cấp quyền
+
+Staff không được vào:
+
+salon settings
+billing
+owner-only pages
+admin pages
+Call Center Agent / Operator
+
+Dùng trong apps/app hoặc web operator flow
+
+Cần làm được:
+
+nhận cuộc gọi / request
+xem thông tin khách
+tạo booking
+cập nhật booking
+dời lịch
+hủy lịch
+ghi chú nội dung làm việc
+đồng bộ lại cho business dashboard
+4. Business features cốt lõi
+
+Core business hiện tại cần hỗ trợ tốt cho nail salon trước:
+
+tạo và quản lý salon/business
+owner register / login / forgot password / reset password
+staff login
+quản lý staff
+quản lý services
+quản lý business hours
+quản lý customers
+quản lý appointments
+availability
+billing usage
+
+Billing logic cần hiển thị rõ:
+
+5 staff active đầu tiên miễn phí
+staff active thứ 6 trở đi tính phí thêm
+5. Hướng triển khai frontend
+apps/admin
+
+Chỉ dành cho Platform Admin
+
+apps/app
+
+Dùng chung cho:
+
+Owner
+Staff
+Call Center Agent / Operator
+
+Cần có:
+
+auth guard
+role guard
+menu khác nhau
+quyền khác nhau
+không lộ sai dữ liệu
+không làm UI giả
+mọi màn hình phải nối API thật
+6. Tính năng mới quan trọng: Live Call Center
+
+Đây là phần mở rộng trọng tâm của hệ thống.
+
+Mục tiêu là khi khách cần hỗ trợ:
+
+khách vào web/app hoặc giao diện liên quan
+khách bấm vào Call Center
+khách nhập số điện thoại
+hệ thống verify số điện thoại
+cuộc gọi hoặc request đi vào luồng tổng đài
+nhân viên tại Việt Nam tiếp nhận
+operator nhập booking / update / cancel
+kết quả được đồng bộ lại cho business dashboard
+khách nhận thông báo khi trạng thái thay đổi
+7. Hướng công nghệ cho Call Center
+CallRail
+
+CallRail dùng cho phần:
+
+cửa hàng bên Mỹ
+số business tại Mỹ
+call tracking / call logs / routing liên quan tới business number phía Mỹ
+AWS Amazon Connect
+
+Amazon Connect là hướng phù hợp cho phần:
+
+Call Center phía Việt Nam
+agent/operator workspace
+inbound/outbound handling
+flow/routing
+customer input
+contact events
+recording / transcript nếu cần về sau
+
+Tức là định hướng mới nên hiểu như sau:
+
+CallRail phục vụ phía store/business tại Mỹ
+Amazon Connect phục vụ tổng đài / operator / luồng call center chuyển về Việt Nam
+8. Hai giao diện chính của module Call Center
+1. Giao diện cho operator tại Việt Nam
+
+Cần có khả năng:
+
+nhận call / request
+xem thông tin khách
+xác định business liên quan
+tạo booking / update / cancel / reschedule
+nhập ghi chú
+đồng bộ dữ liệu về dashboard business
+2. Giao diện cho khách hàng
+
+Cần có khả năng:
+
+vào Call Center
+nhập số điện thoại
+verify số điện thoại
+theo dõi trạng thái booking / order
+nhận thông báo xác nhận / hủy / cập nhật
+9. Hướng mở rộng về sau
+
+Sau khi nail salon flow chạy ổn, hệ thống có thể mở rộng cho:
+
+nhà hàng
+các business dịch vụ khác
+
+Nhưng hiện tại vẫn nên:
+
+chốt thật chắc flow nail salon
+chốt web trước
+chốt Call Center operator flow trước
+rồi mới generic hóa tiếp
+10. Ưu tiên hiện tại
+
+Ưu tiên triển khai bây giờ nên là:
+
+hoàn thiện apps/admin trên web
+hoàn thiện apps/app trên web cho Owner + Staff + Operator
+nối toàn bộ vào API thật
+hoàn thiện role guard và permission
+hoàn thiện web demo flow trước
+setup CallRail cho phía Mỹ
+chuẩn bị Amazon Connect cho Call Center phía Việt Nam
+smoke test toàn bộ
+tạo demo account / demo data rõ ràng
+11. Quy tắc khi làm tiếp dự án này
+không refactor linh tinh
+tận dụng code sẵn có
+thay đổi tối thiểu nhưng phải chạy được
+không để flow dở dang
+không thiếu import
+không dùng biến chưa khai báo
+không làm màn hình fake
+mọi màn hình phải có logic thật
+với Codex, hiểu rằng nó có thể truy cập toàn bộ FE, BE, Dashboard, không chỉ phần app zip
