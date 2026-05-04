@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "./auth-context";
 import { extractErrorMessage } from "../lib/api";
 import { useToast } from "../components/toast";
-import { countryOptions, timezoneOptions } from "../lib/form-options";
+import { getCountryOptions, getTimezoneOptions } from "../lib/form-options";
 import { formatUsPhoneInput, requiredLabel, validateOptionalUsPhone } from "../lib/phone";
 import { useI18n } from "../lib/i18n";
 import { AuthFrame } from "./auth-frame";
@@ -13,6 +13,8 @@ export const RegisterPage = () => {
   const { registerOwner } = useAuth();
   const { notify } = useToast();
   const { t } = useI18n();
+  const timezoneOptions = getTimezoneOptions(t);
+  const countryOptions = getCountryOptions(t);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");

@@ -5,6 +5,7 @@ import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
 import { useAuth } from "../auth/auth-context";
 import { useToast } from "../components/toast";
 import { formatCurrencyCents, formatDateTime } from "../lib/format";
+import { statusLabelKey, useI18n } from "../lib/i18n";
 
 interface AppointmentItem {
   id: string;
@@ -66,24 +67,24 @@ interface SalonSettings {
   };
 }
 
-const routingLabels: Record<SalonSettings["routingSummary"]["mode"], string> = {
-  SALON_PHONE_ONLY: "Salon phone only",
-  AI_RECEPTION_ONLY: "AI Reception only",
-  CALL_CENTER_ONLY: "Human Call Center only",
-  AI_RECEPTION_WITH_CALL_CENTER: "AI Reception with human escalation"
-};
+interface SalonProfileSummary {
+  id: string;
+  name: string;
+}
 
-const routingDescriptions: Record<SalonSettings["routingSummary"]["mode"], string> = {
-  SALON_PHONE_ONLY: "Calls ring the salon first and stay on the salon line.",
-  AI_RECEPTION_ONLY: "AI Reception answers after the configured ring threshold and can create bookings.",
-  CALL_CENTER_ONLY: "Calls route directly into the human operator workflow.",
-  AI_RECEPTION_WITH_CALL_CENTER:
-    "Calls ring the salon first, AI Reception answers, and human requests move into the operator queue."
+const isSameLocalDay = (value: string, reference: Date) => {
+  const date = new Date(value);
+  return (
+    date.getFullYear() === reference.getFullYear() &&
+    date.getMonth() === reference.getMonth() &&
+    date.getDate() === reference.getDate()
+  );
 };
 
 export const DashboardPage = () => {
   const { session } = useAuth();
   const { notify } = useToast();
+  const { t } = useI18n();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -93,6 +94,7 @@ export const DashboardPage = () => {
   const [serviceCount, setServiceCount] = useState(0);
   const [customerCount, setCustomerCount] = useState(0);
   const [settings, setSettings] = useState<SalonSettings | null>(null);
+  const [salonProfile, setSalonProfile] = useState<SalonProfileSummary | null>(null);
 
   const load = async () => {
     setError("");
@@ -105,6 +107,7 @@ export const DashboardPage = () => {
         setServiceCount(0);
         setCustomerCount(0);
         setSettings(null);
+        setSalonProfile(null);
         return;
       }
 
@@ -112,24 +115,27 @@ export const DashboardPage = () => {
       setAppointments(appointmentResult.items);
 
       if (session?.user.role === "SALON_OWNER") {
-        const [billingUsage, staff, services, customers, salonSettings] = await Promise.all([
+        const [billingUsage, staff, services, customers, salonSettings, profile] = await Promise.all([
           apiGet<BillingUsageResponse>("/api/v1/billing/usage?historyLimit=3"),
           apiGet<StaffItem[]>("/api/v1/staff?includeInactive=false"),
           apiGet<ServiceItem[]>("/api/v1/services"),
           apiGet<CustomerResponse>("/api/v1/customers?page=1&limit=1"),
-          apiGet<SalonSettings>("/api/v1/salon/settings")
+          apiGet<SalonSettings>("/api/v1/salon/settings"),
+          apiGet<SalonProfileSummary>("/api/v1/salon/profile")
         ]);
         setBilling(billingUsage);
         setStaffCount(staff.length);
         setServiceCount(services.length);
         setCustomerCount(customers.pagination.total);
         setSettings(salonSettings);
+        setSalonProfile(profile);
       } else {
         setBilling(null);
         setStaffCount(0);
         setServiceCount(0);
         setCustomerCount(0);
         setSettings(null);
+        setSalonProfile(null);
       }
     } catch (loadError) {
       setError(extractErrorMessage(loadError));
@@ -152,7 +158,7 @@ export const DashboardPage = () => {
         aiTransferRingCount: settings.aiTransferRingCount
       });
       setSettings(updated);
-      notify("success", updated.aiReceptionEnabled ? "AI Reception enabled." : "AI Reception disabled.");
+      notify("success", updated.aiReceptionEnabled ? t("dashboard.aiEnabled") : t("dashboard.aiDisabled"));
     } catch (toggleError) {
       notify("error", extractErrorMessage(toggleError));
     }
@@ -166,6 +172,21 @@ export const DashboardPage = () => {
       .slice(0, 8);
   }, [appointments]);
 
+  const now = new Date();
+  const todayAppointments = useMemo(
+    () => appointments.filter((item) => isSameLocalDay(item.startTime, now)),
+    [appointments, now]
+  );
+  const completedToday = useMemo(
+    () => todayAppointments.filter((item) => item.status === "COMPLETED"),
+    [todayAppointments]
+  );
+  const inProgressToday = useMemo(
+    () => todayAppointments.filter((item) => item.status === "IN_PROGRESS"),
+    [todayAppointments]
+  );
+  const nextAppointment = upcoming[0] ?? null;
+
   if (loading) {
     return <LoadingBlock />;
   }
@@ -178,11 +199,11 @@ export const DashboardPage = () => {
     return (
       <div className="stack">
         <section className="mobile-hero">
-          <p className="eyebrow">Human Call Center</p>
-          <h2>Operator workspace</h2>
-          <p className="muted">Open the browser softphone, review queued escalations, and complete customer requests.</p>
+          <p className="eyebrow">{t("nav.callCenter")}</p>
+          <h2>{t("dashboard.operatorTitle")}</h2>
+          <p className="muted">{t("dashboard.operatorHint")}</p>
           <Link to="/call-center" className="button-primary">
-            Open operator dashboard
+            {t("dashboard.openOperator")}
           </Link>
         </section>
       </div>
@@ -190,6 +211,25 @@ export const DashboardPage = () => {
   }
 
   const routingMode = settings?.routingSummary.mode ?? "SALON_PHONE_ONLY";
+  const routingLabelKeyByMode: Record<SalonSettings["routingSummary"]["mode"], Parameters<typeof t>[0]> = {
+    SALON_PHONE_ONLY: "dashboard.routingSalonOnly",
+    AI_RECEPTION_ONLY: "dashboard.routingAiOnly",
+    CALL_CENTER_ONLY: "dashboard.routingCallCenter",
+    AI_RECEPTION_WITH_CALL_CENTER: "dashboard.routingMixed"
+  };
+  const routingDescriptionKeyByMode: Record<
+    SalonSettings["routingSummary"]["mode"],
+    Parameters<typeof t>[0]
+  > = {
+    SALON_PHONE_ONLY: "dashboard.routingSalonOnlyHint",
+    AI_RECEPTION_ONLY: "dashboard.routingAiOnlyHint",
+    CALL_CENTER_ONLY: "dashboard.routingCallCenterHint",
+    AI_RECEPTION_WITH_CALL_CENTER: "dashboard.routingMixedHint"
+  };
+  const routingLabel = t(routingLabelKeyByMode[routingMode]);
+  const routingDescription = t(routingDescriptionKeyByMode[routingMode], {
+    count: settings?.routingSummary.ringCountBeforeAi ?? 3
+  });
 
   return (
     <div className="stack">
@@ -197,115 +237,184 @@ export const DashboardPage = () => {
         <>
           <section className="dashboard-hero">
             <div className="dashboard-hero-copy">
-              <p className="eyebrow">Call handling</p>
-              <h2>{routingLabels[routingMode]}</h2>
-              <p className="muted">{routingDescriptions[routingMode]}</p>
+              <p className="eyebrow">{t("dashboard.commandCenterTitle")}</p>
+              <h2>{salonProfile?.name ?? t("nav.dashboard")}</h2>
+              <p className="muted">{t("dashboard.commandCenterHint")}</p>
+              <div className="summary-badges">
+                <span className={settings?.aiReceptionEnabled ? "status-pill success" : "status-pill warning"}>
+                  {t("dashboard.aiReceptionStatus")}: {settings?.aiReceptionEnabled ? t("dashboard.ready") : t("dashboard.needsSetup")}
+                </span>
+                <span className={settings?.callCenterEnabled ? "status-pill success" : "status-pill warning"}>
+                  {t("dashboard.callCenterStatus")}: {settings?.callCenterEnabled ? t("dashboard.ready") : t("dashboard.needsSetup")}
+                </span>
+                <span className="status-pill info">
+                  {t("dashboard.todayStatus")}: {todayAppointments.length ? t("dashboard.todayOpenStatus") : t("dashboard.todayQuietStatus")}
+                </span>
+              </div>
+              <div className="hero-stats">
+                <article className="hero-stat-card">
+                  <span>{t("dashboard.todayAppointments")}</span>
+                  <strong>{todayAppointments.length}</strong>
+                </article>
+                <article className="hero-stat-card">
+                  <span>{t("dashboard.completedToday")}</span>
+                  <strong>{completedToday.length}</strong>
+                </article>
+                <article className="hero-stat-card">
+                  <span>{t("dashboard.nextAppointment")}</span>
+                  <strong>{nextAppointment ? formatDateTime(nextAppointment.startTime) : t("dashboard.noNextAppointment")}</strong>
+                </article>
+                <article className="hero-stat-card">
+                  <span>{t("dashboard.staff")}</span>
+                  <strong>{staffCount}</strong>
+                </article>
+              </div>
               <div className="inline-actions">
                 <button type="button" className="button-primary" onClick={toggleAiReception}>
-                  {settings?.aiReceptionEnabled ? "Turn AI Reception off" : "Turn AI Reception on"}
+                  {settings?.aiReceptionEnabled ? t("dashboard.toggleAiOff") : t("dashboard.toggleAiOn")}
                 </button>
                 <Link to="/salon-profile" className="button-secondary">
-                  Manage settings
+                  {t("dashboard.openDetails")}
                 </Link>
-              </div>
-            </div>
-          </section>
-
-          <section className="card routing-status-card">
-            <div className="section-header">
-              <div>
-                <p className="eyebrow">Routing summary</p>
-                <h2>{routingLabels[routingMode]}</h2>
-              </div>
-              <Link to="/salon-profile" className="button-secondary">
-                Open owner settings
-              </Link>
-            </div>
-            <div className="metrics-grid">
-              <div>
-                <span className="muted">AI Reception</span>
-                <strong>{settings?.aiReceptionEnabled ? "ON" : "OFF"}</strong>
-              </div>
-              <div>
-                <span className="muted">Ring count before AI</span>
-                <strong>{settings?.routingSummary.ringCountBeforeAi ?? 3}</strong>
-              </div>
-              <div>
-                <span className="muted">Human Call Center</span>
-                <strong>{settings?.callCenterEnabled ? "ON" : "OFF"}</strong>
-              </div>
-              <div>
-                <span className="muted">Voicemail fallback</span>
-                <strong>{settings?.voicemailEnabled ? "ON" : "OFF"}</strong>
-              </div>
-              <div>
-                <span className="muted">Callback request</span>
-                <strong>{settings?.callbackRequestEnabled ? "ON" : "OFF"}</strong>
-              </div>
-              <div>
-                <span className="muted">SMS fallback</span>
-                <strong>{settings?.smsFallbackEnabled ? "ON" : "OFF"}</strong>
               </div>
             </div>
           </section>
 
           <section className="card-grid">
             <article className="card stat-card">
-              <h3>Staff</h3>
+              <h3>{t("dashboard.todayAppointments")}</h3>
+              <strong>{todayAppointments.length}</strong>
+              <span className="muted">{nextAppointment ? formatDateTime(nextAppointment.startTime) : t("dashboard.noNextAppointment")}</span>
+            </article>
+            <article className="card stat-card">
+              <h3>{t("dashboard.staff")}</h3>
               <strong>{staffCount}</strong>
+              <span className="muted">{t("billing.activeStaff")}</span>
             </article>
             <article className="card stat-card">
-              <h3>Services</h3>
+              <h3>{t("dashboard.services")}</h3>
               <strong>{serviceCount}</strong>
+              <span className="muted">{t("nav.services")}</span>
             </article>
             <article className="card stat-card">
-              <h3>Customers</h3>
+              <h3>{t("dashboard.customers")}</h3>
               <strong>{customerCount}</strong>
+              <span className="muted">{t("nav.customers")}</span>
             </article>
             <article className="card stat-card">
-              <h3>Estimated extra cost</h3>
+              <h3>{t("dashboard.extraCost")}</h3>
               <strong>{formatCurrencyCents(billing?.currentUsage.estimatedExtraCostCents)}</strong>
+              <span className="muted">{t("billing.billableStaff")}: {billing?.currentUsage.billableExtraStaffCount ?? 0}</span>
+            </article>
+            <article className="card stat-card">
+              <h3>{t("dashboard.aiReceptionStatus")}</h3>
+              <strong>{settings?.aiReceptionEnabled ? t("dashboard.ready") : t("dashboard.needsSetup")}</strong>
+              <span className="muted">{routingLabel}</span>
+            </article>
+            <article className="card stat-card">
+              <h3>{t("dashboard.callCenterStatus")}</h3>
+              <strong>{settings?.callCenterEnabled ? t("dashboard.ready") : t("dashboard.needsSetup")}</strong>
+              <span className="muted">{routingDescription}</span>
             </article>
           </section>
 
           <section className="quick-actions">
-            <Link to="/appointments">Appointments</Link>
-            <Link to="/customers">Customers</Link>
-            <Link to="/services">Services</Link>
-            <Link to="/staff">Staff</Link>
-            <Link to="/availability">Availability</Link>
-            <Link to="/business-hours">Business hours</Link>
-            <Link to="/calls">Calls</Link>
-            <Link to="/alerts">Alerts</Link>
-            <Link to="/billing">Billing</Link>
-            <Link to="/ai-logs">AI logs</Link>
+            <Link to="/appointments">{t("nav.appointments")}</Link>
+            <Link to="/customers">{t("nav.customers")}</Link>
+            <Link to="/services">{t("nav.services")}</Link>
+            <Link to="/staff">{t("nav.staff")}</Link>
+            <Link to="/availability">{t("nav.availability")}</Link>
+            <Link to="/business-hours">{t("nav.businessHours")}</Link>
+            <Link to="/calls">{t("nav.calls")}</Link>
+            <Link to="/alerts">{t("nav.alerts")}</Link>
+            <Link to="/billing">{t("nav.billing")}</Link>
+            <Link to="/ai-logs">{t("nav.aiLogs")}</Link>
           </section>
         </>
       ) : (
-        <section className="card-grid">
-          <article className="card stat-card">
-            <h3>Upcoming appointments</h3>
-            <strong>{upcoming.length}</strong>
-          </article>
-          <article className="card stat-card">
-            <h3>Workspace</h3>
-            <strong>Staff</strong>
-          </article>
-        </section>
+        <>
+          <section className="dashboard-hero">
+            <div className="dashboard-hero-copy">
+              <p className="eyebrow">{t("dashboard.todayWorkTitle")}</p>
+              <h2>{t("layout.staffSpace")}</h2>
+              <p className="muted">{t("dashboard.todayWorkHint")}</p>
+              <div className="hero-stats">
+                <article className="hero-stat-card">
+                  <span>{t("appointments.todayCount")}</span>
+                  <strong>{todayAppointments.length}</strong>
+                </article>
+                <article className="hero-stat-card">
+                  <span>{t("appointments.completedCount")}</span>
+                  <strong>{completedToday.length}</strong>
+                </article>
+                <article className="hero-stat-card">
+                  <span>{t("appointments.inProgressCount")}</span>
+                  <strong>{inProgressToday.length}</strong>
+                </article>
+                <article className="hero-stat-card">
+                  <span>{t("dashboard.nextAppointment")}</span>
+                  <strong>{nextAppointment ? formatDateTime(nextAppointment.startTime) : t("dashboard.noNextAppointment")}</strong>
+                </article>
+              </div>
+            </div>
+          </section>
+          <section className="card">
+            <div className="section-header">
+              <div>
+                <h2>{t("dashboard.upcomingSchedule")}</h2>
+                <p className="muted">{t("appointments.staffHint")}</p>
+              </div>
+              <Link to="/appointments" className="button-secondary">
+                {t("dashboard.openDetails")}
+              </Link>
+            </div>
+            {todayAppointments.length ? (
+              <div className="entity-grid">
+                {todayAppointments.map((item) => (
+                  <article key={item.id} className="appointment-card">
+                    <div className="appointment-card-header">
+                      <div className="appointment-card-copy">
+                        <strong>
+                          {item.customer.firstName} {item.customer.lastName}
+                        </strong>
+                        <span className="muted">{item.service.name}</span>
+                      </div>
+                      <span className="status-pill info">
+                        {statusLabelKey(item.status) ? t(statusLabelKey(item.status)!) : item.status}
+                      </span>
+                    </div>
+                    <div className="appointment-card-meta">
+                      <div>
+                        <span className="muted">{t("appointments.time")}</span>
+                        <strong>{formatDateTime(item.startTime)}</strong>
+                      </div>
+                      <div>
+                        <span className="muted">{t("appointments.staff")}</span>
+                        <strong>{item.staff.fullName}</strong>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <EmptyBlock message={t("dashboard.noTodayAppointments")} />
+            )}
+          </section>
+        </>
       )}
 
       <section className="card">
-        <h2>Upcoming appointments</h2>
+        <h2>{t("dashboard.upcoming")}</h2>
         {upcoming.length ? (
           <div className="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>Time</th>
-                  <th>Customer</th>
-                  <th>Service</th>
-                  <th>Staff</th>
-                  <th>Status</th>
+                  <th>{t("appointments.time")}</th>
+                  <th>{t("appointments.customer")}</th>
+                  <th>{t("appointments.service")}</th>
+                  <th>{t("appointments.staff")}</th>
+                  <th>{t("common.status")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -317,14 +426,14 @@ export const DashboardPage = () => {
                     </td>
                     <td>{item.service.name}</td>
                     <td>{item.staff.fullName}</td>
-                    <td>{item.status}</td>
+                    <td>{statusLabelKey(item.status) ? t(statusLabelKey(item.status)!) : item.status}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         ) : (
-          <EmptyBlock message="No upcoming appointments." />
+          <EmptyBlock message={t("dashboard.noUpcoming")} />
         )}
       </section>
     </div>

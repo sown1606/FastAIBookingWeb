@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { apiGet, extractErrorMessage } from "../lib/api";
 import { ErrorBlock, LoadingBlock } from "../components/states";
 import { formatDateTime } from "../lib/format";
+import { useI18n } from "../lib/i18n";
 
 interface HealthStatus {
   status: string;
@@ -31,6 +32,7 @@ interface OverviewMetrics {
 }
 
 export const HealthPage = () => {
+  const { t } = useI18n();
   const [liveness, setLiveness] = useState<HealthStatus | null>(null);
   const [readiness, setReadiness] = useState<HealthStatus | null>(null);
   const [overview, setOverview] = useState<OverviewMetrics | null>(null);
@@ -70,47 +72,55 @@ export const HealthPage = () => {
 
   return (
     <div className="stack">
-      <section className="card">
+      <section className="card page-hero">
         <div className="section-header">
           <div>
-            <h2>Sức khỏe hệ thống</h2>
-            <p className="muted">Kiểm tra liveness, readiness và mức sẵn sàng của các tích hợp live demo.</p>
+            <p className="eyebrow">{t("nav.health")}</p>
+            <h2>{t("health.title")}</h2>
+            <p className="muted">{t("health.hint")}</p>
           </div>
           <button type="button" className="button-secondary" onClick={load}>
-            Refresh
+            {t("common.refresh")}
           </button>
         </div>
         <div className="metrics-grid">
           <div>
-            <span className="muted">Liveness</span>
+            <span className="muted">{t("health.liveness")}</span>
             <strong>{liveness?.status ?? "-"}</strong>
             <div className="muted">{formatDateTime(liveness?.timestamp)}</div>
           </div>
           <div>
-            <span className="muted">Readiness</span>
+            <span className="muted">{t("health.readiness")}</span>
             <strong>{readiness?.status ?? "-"}</strong>
             <div className="muted">{formatDateTime(readiness?.timestamp)}</div>
           </div>
           <div>
-            <span className="muted">Agent tổng đài</span>
+            <span className="muted">{t("health.callCenterAgents")}</span>
             <strong>{overview?.callCenterAgentCount ?? 0}</strong>
           </div>
           <div>
-            <span className="muted">Escalation đang mở</span>
+            <span className="muted">{t("health.openEscalations")}</span>
             <strong>{overview?.openEscalationCount ?? 0}</strong>
           </div>
         </div>
       </section>
 
       {overview ? (
-        <section className="integration-grid">
+        <section className="card">
+          <div className="section-header">
+            <div>
+              <h3>{t("dashboard.integrationStatus")}</h3>
+              <p className="muted">{t("health.integrationHint")}</p>
+            </div>
+          </div>
+          <div className="integration-grid">
           {[
             {
               label: "CallRail",
               value:
                 overview.integrationSummary?.callRail ?? {
                   configured: false,
-                  missing: ["Backend chưa trả integration summary"],
+                  missing: [t("health.missingSummary")],
                   activeConfigCount: 0
                 }
             },
@@ -119,7 +129,7 @@ export const HealthPage = () => {
               value:
                 overview.integrationSummary?.vertex ?? {
                   configured: false,
-                  missing: ["Backend chưa trả integration summary"],
+                  missing: [t("health.missingSummary")],
                   activeConfigCount: 0
                 }
             },
@@ -128,7 +138,7 @@ export const HealthPage = () => {
               value:
                 overview.integrationSummary?.amazonConnect ?? {
                   configured: false,
-                  missing: ["Backend chưa trả integration summary"],
+                  missing: [t("health.missingSummary")],
                   activeConfigCount: 0
                 }
             }
@@ -141,26 +151,27 @@ export const HealthPage = () => {
                     integration.value.configured ? "status-pill success" : "status-pill warning"
                   }
                 >
-                  {integration.value.configured ? "Sẵn sàng" : "Thiếu config"}
+                  {integration.value.configured ? t("status.READY") : t("status.NEEDS_SETUP")}
                 </span>
               </div>
               <div className="key-value-grid">
                 <div>
-                  <span className="muted">Active config</span>
+                  <span className="muted">{t("health.activeConfig")}</span>
                   <strong>{integration.value.activeConfigCount}</strong>
                 </div>
                 <div>
-                  <span className="muted">Checklist còn thiếu</span>
+                  <span className="muted">{t("health.checklistMissing")}</span>
                   <strong>{integration.value.missing.length}</strong>
                 </div>
               </div>
               <p className="muted">
                 {integration.value.missing.length
                   ? integration.value.missing.join(", ")
-                  : "Không còn thiếu cấu hình ở mức hệ thống."}
+                  : t("health.noMissing")}
               </p>
             </article>
           ))}
+          </div>
         </section>
       ) : null}
     </div>

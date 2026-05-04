@@ -5,13 +5,14 @@ import { apiGet, apiPost, apiPut, extractErrorMessage } from "../lib/api";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
 import { useToast } from "../components/toast";
 import {
-  countryOptions,
-  currencyOptions,
-  localePreferenceOptions,
-  timezoneOptions
+  getCountryOptions,
+  getCurrencyOptions,
+  getLocalePreferenceOptions,
+  getTimezoneOptions
 } from "../lib/form-options";
 import { formatDateTime } from "../lib/format";
 import { formatUsPhoneInput, validateOptionalUsPhone } from "../lib/phone";
+import { useI18n } from "../lib/i18n";
 
 interface SalonProfile {
   id: string;
@@ -56,15 +57,6 @@ interface SalonSettings {
     ringCountBeforeAi: number;
   };
 }
-
-const callLogVisibilityOptions: Array<{
-  value: SalonSettings["callLogVisibility"];
-  label: string;
-}> = [
-  { value: "OWNER_ONLY", label: "Owner only" },
-  { value: "OWNER_AND_STAFF", label: "Owner and staff" },
-  { value: "OWNER_STAFF_OPERATOR", label: "Owner, staff, and operator" }
-];
 
 interface AiReceptionConfig {
   id: string | null;
@@ -116,13 +108,6 @@ interface AiReceptionCallLogsResponse {
   items: AiReceptionCallLog[];
 }
 
-const aiReceptionStatusLabels: Record<AiReceptionConfig["status"], string> = {
-  not_configured: "Not configured",
-  pending: "Pending",
-  active: "Active",
-  failed: "Failed"
-};
-
 const aiReceptionStatusClasses: Record<AiReceptionConfig["status"], string> = {
   not_configured: "status-pill warning",
   pending: "status-pill info",
@@ -148,6 +133,7 @@ const formatDuration = (value: number | null) => {
 export const SalonProfilePage = () => {
   const { session } = useAuth();
   const { notify } = useToast();
+  const { t } = useI18n();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [aiReception, setAiReception] = useState<AiReceptionConfig | null>(null);
@@ -190,6 +176,24 @@ export const SalonProfilePage = () => {
   });
 
   const salonId = session?.user.salonId ?? null;
+  const timezoneOptions = getTimezoneOptions(t);
+  const countryOptions = getCountryOptions(t);
+  const currencyOptions = getCurrencyOptions(t);
+  const localePreferenceOptions = getLocalePreferenceOptions(t);
+  const callLogVisibilityOptions: Array<{
+    value: SalonSettings["callLogVisibility"];
+    label: string;
+  }> = [
+    { value: "OWNER_ONLY", label: t("profile.visibilityOwnerOnly") },
+    { value: "OWNER_AND_STAFF", label: t("profile.visibilityOwnerAndStaff") },
+    { value: "OWNER_STAFF_OPERATOR", label: t("profile.visibilityOwnerStaffOperator") }
+  ];
+  const aiReceptionStatusLabels: Record<AiReceptionConfig["status"], string> = {
+    not_configured: t("profile.aiStatusNotConfigured"),
+    pending: t("profile.aiStatusPending"),
+    active: t("profile.aiStatusActive"),
+    failed: t("profile.aiStatusFailed")
+  };
 
   const loadAiReception = async (targetSalonId: string) => {
     const [configResult, callLogResult] = await Promise.all([
@@ -203,7 +207,7 @@ export const SalonProfilePage = () => {
 
   const load = async () => {
     if (!salonId) {
-      setError("Salon context is not available for this account.");
+      setError(t("profile.missingSalonContext"));
       setLoading(false);
       return;
     }
@@ -276,7 +280,7 @@ export const SalonProfilePage = () => {
     ];
 
     if (!phoneValues.every(validateOptionalUsPhone)) {
-      notify("error", "Please enter valid US phone numbers.");
+      notify("error", t("profile.phoneValidation"));
       return;
     }
 
@@ -296,7 +300,7 @@ export const SalonProfilePage = () => {
         postalCode: profileForm.postalCode || null,
         country: profileForm.country
       });
-      notify("success", "Salon profile updated.");
+      notify("success", t("profile.saved"));
     } catch (saveError) {
       notify("error", extractErrorMessage(saveError));
     }
@@ -306,7 +310,7 @@ export const SalonProfilePage = () => {
     event.preventDefault();
 
     if (!validateOptionalUsPhone(settingsForm.callCenterRoutingNumber)) {
-      notify("error", "Please enter a valid US call center phone number.");
+      notify("error", t("profile.callCenterPhoneValidation"));
       return;
     }
 
@@ -332,7 +336,7 @@ export const SalonProfilePage = () => {
         callCenterRoutingNumber: settingsForm.callCenterRoutingNumber || null,
         callCenterRoutingNote: settingsForm.callCenterRoutingNote || null
       });
-      notify("success", "Salon settings updated.");
+      notify("success", t("profile.settingsSaved"));
     } catch (saveError) {
       notify("error", extractErrorMessage(saveError));
     }
@@ -340,7 +344,7 @@ export const SalonProfilePage = () => {
 
   const handleGenerateSetupCode = async () => {
     if (!salonId) {
-      notify("error", "Salon context is not available for this account.");
+      notify("error", t("profile.missingSalonContext"));
       return;
     }
 
@@ -348,7 +352,7 @@ export const SalonProfilePage = () => {
     try {
       const result = await apiPost<AiReceptionConfig>(`/api/v1/owner/salons/${salonId}/ai-reception/generate-forwarding-code`, {});
       setAiReception(result);
-      notify("success", "AI Reception forwarding code generated.");
+      notify("success", t("profile.aiReceptionCodeGenerated"));
     } catch (actionError) {
       notify("error", extractErrorMessage(actionError));
     } finally {
@@ -358,13 +362,11 @@ export const SalonProfilePage = () => {
 
   const handleOpenDialer = () => {
     if (!aiReception?.activationCode) {
-      notify("error", "Generate the setup code first.");
+      notify("error", t("profile.generateCodeFirst"));
       return;
     }
 
-    const confirmed = window.confirm(
-      `Open your phone dialer with this T-Mobile code?\n\n${aiReception.activationCode}`
-    );
+    const confirmed = window.confirm(t("profile.dialerConfirm", { code: aiReception.activationCode }));
     if (!confirmed) {
       return;
     }
@@ -374,7 +376,7 @@ export const SalonProfilePage = () => {
 
   const handleMarkTestCompleted = async () => {
     if (!salonId) {
-      notify("error", "Salon context is not available for this account.");
+      notify("error", t("profile.missingSalonContext"));
       return;
     }
 
@@ -386,7 +388,7 @@ export const SalonProfilePage = () => {
       );
       setAiReception(result);
       await loadAiReception(salonId);
-      notify("success", "AI Reception forwarding test recorded.");
+      notify("success", t("profile.aiReceptionTestRecorded"));
     } catch (actionError) {
       notify("error", extractErrorMessage(actionError));
     } finally {
@@ -405,10 +407,10 @@ export const SalonProfilePage = () => {
   return (
     <div className="stack">
       <section className="card">
-        <h2>Salon profile</h2>
+        <h2>{t("profile.title")}</h2>
         <form className="form-grid two-columns" onSubmit={saveProfile}>
           <label className="field">
-            <span>Salon name</span>
+            <span>{t("profile.salonName")}</span>
             <input
               value={profileForm.name}
               onChange={(event) => setProfileForm((prev) => ({ ...prev, name: event.target.value }))}
@@ -416,7 +418,7 @@ export const SalonProfilePage = () => {
             />
           </label>
           <label className="field">
-            <span>Timezone</span>
+            <span>{t("common.timezone")}</span>
             <select
               value={profileForm.timezone}
               onChange={(event) => setProfileForm((prev) => ({ ...prev, timezone: event.target.value }))}
@@ -430,7 +432,7 @@ export const SalonProfilePage = () => {
             </select>
           </label>
           <label className="field">
-            <span>Contact email</span>
+            <span>{t("profile.contactEmail")}</span>
             <input
               type="email"
               value={profileForm.contactEmail}
@@ -440,7 +442,7 @@ export const SalonProfilePage = () => {
             />
           </label>
           <label className="field">
-            <span>Contact phone</span>
+            <span>{t("profile.contactPhone")}</span>
             <input
               type="tel"
               inputMode="tel"
@@ -453,10 +455,10 @@ export const SalonProfilePage = () => {
                 }))
               }
             />
-            <small>US format, for example (212) 555-0100</small>
+            <small>{t("form.phoneHint")}</small>
           </label>
           <label className="field">
-            <span>Salon phone number</span>
+            <span>{t("profile.salonPhone")}</span>
             <input
               type="tel"
               inputMode="tel"
@@ -469,10 +471,10 @@ export const SalonProfilePage = () => {
                 }))
               }
             />
-            <small>Customers still dial the salon&apos;s original business number.</small>
+            <small>{t("profile.currentPhoneHint")}</small>
           </label>
           <label className="field">
-            <span>Customer incoming number</span>
+            <span>{t("profile.incomingPhone")}</span>
             <input
               type="tel"
               inputMode="tel"
@@ -485,10 +487,10 @@ export const SalonProfilePage = () => {
                 }))
               }
             />
-            <small>Use the routed number that CallRail sends inbound calls through.</small>
+            <small>{t("profile.incomingPhoneHint")}</small>
           </label>
           <label className="field">
-            <span>Urgent notification number</span>
+            <span>{t("profile.notificationPhone")}</span>
             <input
               type="tel"
               inputMode="tel"
@@ -501,9 +503,10 @@ export const SalonProfilePage = () => {
                 }))
               }
             />
+            <small>{t("profile.notificationPhoneHint")}</small>
           </label>
           <label className="field">
-            <span>Address line 1</span>
+            <span>{t("profile.address1")}</span>
             <input
               value={profileForm.addressLine1}
               onChange={(event) =>
@@ -512,7 +515,7 @@ export const SalonProfilePage = () => {
             />
           </label>
           <label className="field">
-            <span>Address line 2</span>
+            <span>{t("profile.address2")}</span>
             <input
               value={profileForm.addressLine2}
               onChange={(event) =>
@@ -521,21 +524,21 @@ export const SalonProfilePage = () => {
             />
           </label>
           <label className="field">
-            <span>City</span>
+            <span>{t("common.city")}</span>
             <input
               value={profileForm.city}
               onChange={(event) => setProfileForm((prev) => ({ ...prev, city: event.target.value }))}
             />
           </label>
           <label className="field">
-            <span>State</span>
+            <span>{t("common.state")}</span>
             <input
               value={profileForm.state}
               onChange={(event) => setProfileForm((prev) => ({ ...prev, state: event.target.value }))}
             />
           </label>
           <label className="field">
-            <span>Postal code</span>
+            <span>{t("common.postalCode")}</span>
             <input
               value={profileForm.postalCode}
               onChange={(event) =>
@@ -544,7 +547,7 @@ export const SalonProfilePage = () => {
             />
           </label>
           <label className="field">
-            <span>Country</span>
+            <span>{t("common.country")}</span>
             <select
               value={profileForm.country}
               onChange={(event) => setProfileForm((prev) => ({ ...prev, country: event.target.value }))}
@@ -558,22 +561,22 @@ export const SalonProfilePage = () => {
           </label>
           <div className="form-actions">
             <button type="submit" className="button-primary">
-              Save profile
+              {t("profile.saveProfile")}
             </button>
           </div>
         </form>
       </section>
 
       <section className="card">
-        <h2>Call handling settings</h2>
+        <h2>{t("profile.settingsTitle")}</h2>
         <form className="form-grid two-columns" onSubmit={saveSettings}>
           <div className="settings-panel">
             <div>
-              <h3>Business defaults</h3>
-              <p className="muted">Shared defaults for booking, AI reception, and operator workflows.</p>
+              <h3>{t("profile.businessDefaults")}</h3>
+              <p className="muted">{t("profile.businessDefaultsHint")}</p>
             </div>
             <label className="field">
-              <span>Currency</span>
+              <span>{t("profile.currency")}</span>
               <select
                 value={settingsForm.currency}
                 onChange={(event) => setSettingsForm((prev) => ({ ...prev, currency: event.target.value }))}
@@ -586,7 +589,7 @@ export const SalonProfilePage = () => {
               </select>
             </label>
             <label className="field">
-              <span>Default locale</span>
+              <span>{t("profile.locale")}</span>
               <select
                 value={settingsForm.locale}
                 onChange={(event) => setSettingsForm((prev) => ({ ...prev, locale: event.target.value }))}
@@ -599,7 +602,7 @@ export const SalonProfilePage = () => {
               </select>
             </label>
             <label className="field">
-              <span>Minimum booking lead time (minutes)</span>
+              <span>{t("profile.leadTime")}</span>
               <input
                 type="number"
                 min={0}
@@ -613,7 +616,7 @@ export const SalonProfilePage = () => {
               />
             </label>
             <label className="field">
-              <span>Cancellation policy</span>
+              <span>{t("profile.cancelPolicy")}</span>
               <textarea
                 rows={4}
                 value={settingsForm.cancellationPolicy}
@@ -626,11 +629,11 @@ export const SalonProfilePage = () => {
 
           <div className="settings-panel">
             <div>
-              <h3>AI Reception</h3>
-              <p className="muted">AI reception answers based on routing and can create real bookings.</p>
+              <h3>{t("profile.aiReceptionTitle")}</h3>
+              <p className="muted">{t("profile.aiReceptionTitleHint")}</p>
             </div>
             <label className="field checkbox-row">
-              <span>AI Reception ON</span>
+              <span>{t("profile.aiForwarding")}</span>
               <input
                 type="checkbox"
                 checked={settingsForm.aiReceptionEnabled}
@@ -643,7 +646,7 @@ export const SalonProfilePage = () => {
               />
             </label>
             <label className="field">
-              <span>Ring count before AI</span>
+              <span>{t("profile.ringCount")}</span>
               <input
                 type="number"
                 min={1}
@@ -658,7 +661,7 @@ export const SalonProfilePage = () => {
               />
             </label>
             <label className="field">
-              <span>AI greeting prompt</span>
+              <span>{t("profile.aiGreetingPrompt")}</span>
               <textarea
                 rows={5}
                 value={settingsForm.aiGreetingPrompt}
@@ -668,25 +671,25 @@ export const SalonProfilePage = () => {
               />
             </label>
             <label className="field">
-              <span>Caller language</span>
+              <span>{t("profile.callerLanguage")}</span>
               <select
                 value={settingsForm.callerLanguage}
                 onChange={(event) =>
                   setSettingsForm((prev) => ({ ...prev, callerLanguage: event.target.value }))
                 }
               >
-                <option value="en">English</option>
+                <option value="en">{t("profile.callerLanguageEnglish")}</option>
               </select>
             </label>
           </div>
 
           <div className="settings-panel">
             <div>
-              <h3>Human Call Center and fallback</h3>
-              <p className="muted">Shared 24/7 operator queue, voicemail, callback, and SMS fallback behavior.</p>
+              <h3>{t("profile.callCenterFallbackTitle")}</h3>
+              <p className="muted">{t("profile.callCenterFallbackHint")}</p>
             </div>
             <label className="field checkbox-row">
-              <span>Human Call Center ON</span>
+              <span>{t("profile.callCenterEnabled")}</span>
               <input
                 type="checkbox"
                 checked={settingsForm.callCenterEnabled}
@@ -699,7 +702,7 @@ export const SalonProfilePage = () => {
               />
             </label>
             <label className="field checkbox-row">
-              <span>Voicemail fallback ON</span>
+              <span>{t("profile.voicemailFallback")}</span>
               <input
                 type="checkbox"
                 checked={settingsForm.voicemailEnabled}
@@ -712,7 +715,7 @@ export const SalonProfilePage = () => {
               />
             </label>
             <label className="field checkbox-row">
-              <span>Callback request ON</span>
+              <span>{t("profile.callbackRequest")}</span>
               <input
                 type="checkbox"
                 checked={settingsForm.callbackRequestEnabled}
@@ -725,7 +728,7 @@ export const SalonProfilePage = () => {
               />
             </label>
             <label className="field checkbox-row">
-              <span>SMS fallback ON</span>
+              <span>{t("profile.smsFallback")}</span>
               <input
                 type="checkbox"
                 checked={settingsForm.smsFallbackEnabled}
@@ -738,7 +741,7 @@ export const SalonProfilePage = () => {
               />
             </label>
             <label className="field">
-              <span>Direct call center number</span>
+              <span>{t("profile.routingNumber")}</span>
               <input
                 type="tel"
                 inputMode="tel"
@@ -751,9 +754,10 @@ export const SalonProfilePage = () => {
                   }))
                 }
               />
+              <small>{t("profile.routingNumberHint")}</small>
             </label>
             <label className="field">
-              <span>Call center routing note</span>
+              <span>{t("profile.routingNote")}</span>
               <textarea
                 rows={3}
                 value={settingsForm.callCenterRoutingNote}
@@ -769,11 +773,11 @@ export const SalonProfilePage = () => {
 
           <div className="settings-panel">
             <div>
-              <h3>Notifications and visibility</h3>
-              <p className="muted">Decide who receives call notifications and who can view call records.</p>
+              <h3>{t("profile.notificationsTitle")}</h3>
+              <p className="muted">{t("profile.notificationsHint")}</p>
             </div>
             <label className="field">
-              <span>Notification recipients</span>
+              <span>{t("profile.notificationRecipients")}</span>
               <textarea
                 rows={4}
                 value={settingsForm.notificationRecipientsText}
@@ -785,10 +789,10 @@ export const SalonProfilePage = () => {
                 }
                 placeholder={"ops@salon.com\n+12125550100"}
               />
-              <small>Enter one email or phone number per line.</small>
+              <small>{t("profile.notificationRecipientsHint")}</small>
             </label>
             <label className="field">
-              <span>Call log, transcript, and summary visibility</span>
+              <span>{t("profile.callLogVisibility")}</span>
               <select
                 value={settingsForm.callLogVisibility}
                 onChange={(event) =>
@@ -809,7 +813,7 @@ export const SalonProfilePage = () => {
 
           <div className="form-actions">
             <button type="submit" className="button-primary">
-              Save settings
+              {t("profile.saveSettings")}
             </button>
           </div>
         </form>
@@ -818,67 +822,64 @@ export const SalonProfilePage = () => {
       <section className="card">
         <div className="section-header">
           <div>
-            <h2>AI Reception Setup</h2>
-            <p className="muted">
-              Use this setup only on the phone line that owns the salon number. The phone will ring
-              first. If unanswered, T-Mobile will forward the call to the AI booking line.
-            </p>
+            <h2>{t("profile.aiSetupTitle")}</h2>
+            <p className="muted">{t("profile.aiSetupHint")}</p>
           </div>
           <span className={aiReception ? aiReceptionStatusClasses[aiReception.status] : "status-pill warning"}>
-            {aiReception ? aiReceptionStatusLabels[aiReception.status] : "Not configured"}
+            {aiReception ? aiReceptionStatusLabels[aiReception.status] : t("profile.aiStatusNotConfigured")}
           </span>
         </div>
 
         <div className="metrics-grid">
           <div>
-            <span className="muted">Original salon phone number</span>
-            <strong>{aiReception?.originalPhoneNumberFormatted ?? "Add the salon phone number first"}</strong>
+            <span className="muted">{t("profile.originalPhoneNumber")}</span>
+            <strong>{aiReception?.originalPhoneNumberFormatted ?? t("profile.addSalonPhoneFirst")}</strong>
           </div>
           <div>
-            <span className="muted">Forward-to AI number</span>
+            <span className="muted">{t("profile.forwardToNumber")}</span>
             <strong>{aiReception?.forwardToNumberFormatted ?? "-"}</strong>
           </div>
           <div>
-            <span className="muted">Carrier</span>
+            <span className="muted">{t("profile.carrier")}</span>
             <strong>{aiReception?.carrierLabel ?? "T-Mobile"}</strong>
           </div>
           <div>
-            <span className="muted">Last tested</span>
+            <span className="muted">{t("profile.lastTested")}</span>
             <strong>{aiReception?.lastTestedAt ? formatDateTime(aiReception.lastTestedAt) : "-"}</strong>
           </div>
           <div>
-            <span className="muted">Last verified</span>
+            <span className="muted">{t("profile.lastVerified")}</span>
             <strong>{aiReception?.lastVerifiedAt ? formatDateTime(aiReception.lastVerifiedAt) : "-"}</strong>
           </div>
           <div>
-            <span className="muted">Webhook verification</span>
-            <strong>{aiReception?.webhookVerificationEnabled ? "Enabled" : "Disabled"}</strong>
+            <span className="muted">{t("profile.webhookVerification")}</span>
+            <strong>{aiReception?.webhookVerificationEnabled ? t("common.enabled") : t("common.disabled")}</strong>
           </div>
         </div>
 
         <div className="form-grid two-columns">
           <label className="field">
-            <span>Activation code</span>
+            <span>{t("profile.activationCode")}</span>
             <input value={aiReception?.activationCode ?? ""} readOnly />
-            <small>Primary T-Mobile no-answer forwarding code.</small>
+            <small>{t("profile.activationCodeHint")}</small>
           </label>
           <label className="field">
-            <span>Fallback activation code</span>
+            <span>{t("profile.fallbackActivationCode")}</span>
             <input value={aiReception?.activationCodeWithoutDelay ?? ""} readOnly />
-            <small>Use this if the device does not accept the delayed code.</small>
+            <small>{t("profile.fallbackActivationCodeHint")}</small>
           </label>
           <label className="field">
-            <span>Deactivation code</span>
+            <span>{t("profile.deactivationCode")}</span>
             <input value={aiReception?.deactivationCode ?? ""} readOnly />
           </label>
           <label className="field">
-            <span>Status check code</span>
+            <span>{t("profile.statusCheckCode")}</span>
             <input value={aiReception?.statusCheckCode ?? ""} readOnly />
           </label>
         </div>
 
         <article className="inspection-box">
-          <h3>Setup instructions</h3>
+          <h3>{t("profile.aiSetupInstructions")}</h3>
           {aiReception?.setupInstructions?.length ? (
             <div className="stack">
               {aiReception.setupInstructions.map((instruction) => (
@@ -886,7 +887,7 @@ export const SalonProfilePage = () => {
               ))}
             </div>
           ) : (
-            <p>No setup instructions are available yet.</p>
+            <p>{t("profile.aiSetupEmpty")}</p>
           )}
         </article>
 
@@ -897,7 +898,7 @@ export const SalonProfilePage = () => {
             onClick={() => void handleGenerateSetupCode()}
             disabled={aiReceptionSubmitting}
           >
-            Generate Setup Code
+            {t("profile.generateCode")}
           </button>
           <button
             type="button"
@@ -905,7 +906,7 @@ export const SalonProfilePage = () => {
             onClick={handleOpenDialer}
             disabled={aiReceptionSubmitting || !aiReception?.activationCode}
           >
-            Open Dialer
+            {t("profile.openDialer")}
           </button>
           <button
             type="button"
@@ -913,25 +914,25 @@ export const SalonProfilePage = () => {
             onClick={() => void handleMarkTestCompleted()}
             disabled={aiReceptionSubmitting}
           >
-            Mark Test Completed
+            {t("profile.markTestCompleted")}
           </button>
           <Link to="/calls" className="button-secondary">
-            View Call Logs
+            {t("profile.viewCallLogs")}
           </Link>
         </div>
 
         <div className="stack">
-          <h3>Recent CallRail logs</h3>
+          <h3>{t("profile.recentCallrailLogs")}</h3>
           {aiReceptionCallLogs.length ? (
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>Started</th>
-                    <th>Caller</th>
-                    <th>Status</th>
-                    <th>Duration</th>
-                    <th>Recording</th>
+                    <th>{t("profile.started")}</th>
+                    <th>{t("profile.caller")}</th>
+                    <th>{t("common.status")}</th>
+                    <th>{t("profile.duration")}</th>
+                    <th>{t("profile.recording")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -944,7 +945,7 @@ export const SalonProfilePage = () => {
                       <td>
                         {item.recordingUrl ? (
                           <a href={item.recordingUrl} target="_blank" rel="noreferrer">
-                            Open
+                            {t("profile.openRecording")}
                           </a>
                         ) : (
                           "-"
@@ -956,7 +957,7 @@ export const SalonProfilePage = () => {
               </table>
             </div>
           ) : (
-            <EmptyBlock message="No CallRail webhook logs are available yet." />
+            <EmptyBlock message={t("profile.noCallrailLogs")} />
           )}
         </div>
       </section>

@@ -66,80 +66,95 @@ export const BusinessHoursPage = () => {
   }
 
   return (
-    <section className="card">
-      <div className="section-header">
-        <h2>{t("hours.title")}</h2>
-        <button type="button" className="button-primary" onClick={save}>
-          {t("hours.save")}
-        </button>
-      </div>
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>{t("hours.day")}</th>
-              <th>{t("hours.isOpen")}</th>
-              <th>{t("hours.openTime")}</th>
-              <th>{t("hours.closeTime")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {hours.map((item, index) => (
-              <tr key={item.dayOfWeek}>
-                <td>{t(`weekday.${item.dayOfWeek}` as TranslationKey)}</td>
-                <td>
-                  <input
-                    type="checkbox"
-                    checked={item.isOpen}
-                    onChange={(event) =>
-                      setHours((prev) =>
-                        prev.map((row, rowIndex) =>
-                          rowIndex === index
-                            ? {
-                                ...row,
-                                isOpen: event.target.checked,
-                                openTime: event.target.checked ? row.openTime ?? "09:00" : null,
-                                closeTime: event.target.checked ? row.closeTime ?? "18:00" : null
-                              }
-                            : row
-                        )
+    <div className="stack">
+      <section className="card">
+        <div className="section-header">
+          <div>
+            <h2>{t("hours.title")}</h2>
+            <p className="muted">{t("hours.overviewHint")}</p>
+          </div>
+          <button type="button" className="button-primary" onClick={save}>
+            {t("hours.save")}
+          </button>
+        </div>
+        <div className="summary-badges">
+          <span className="summary-badge">
+            {t("hours.openDays")}: {hours.filter((item) => item.isOpen).length}
+          </span>
+          <span className="summary-badge">
+            {t("hours.closedDays")}: {hours.filter((item) => !item.isOpen).length}
+          </span>
+          <span className="summary-badge">
+            {t("hours.weekendHours")}: {hours[6]?.openTime ?? "-"} - {hours[6]?.closeTime ?? "-"}
+          </span>
+        </div>
+      </section>
+
+      <section className="hours-grid">
+        {hours.map((item, index) => (
+          <article key={item.dayOfWeek} className="hours-card">
+            <div className="hours-card-header">
+              <div>
+                <strong>{t(`weekday.${item.dayOfWeek}` as TranslationKey)}</strong>
+                <div className="muted">{item.isOpen ? t("hours.open") : t("hours.closed")}</div>
+              </div>
+              <label className="field checkbox-row">
+                <span>{t("hours.isOpen")}</span>
+                <input
+                  type="checkbox"
+                  checked={item.isOpen}
+                  onChange={(event) =>
+                    setHours((prev) =>
+                      prev.map((row, rowIndex) =>
+                        rowIndex === index
+                          ? {
+                              ...row,
+                              isOpen: event.target.checked,
+                              openTime: event.target.checked ? row.openTime ?? "09:00" : null,
+                              closeTime: event.target.checked ? row.closeTime ?? "18:00" : null
+                            }
+                          : row
                       )
-                    }
-                  />
-                </td>
-                <td>
-                  <input
-                    type="time"
-                    value={item.openTime ?? ""}
-                    disabled={!item.isOpen}
-                    onChange={(event) =>
-                      setHours((prev) =>
-                        prev.map((row, rowIndex) =>
-                          rowIndex === index ? { ...row, openTime: event.target.value } : row
-                        )
+                    )
+                  }
+                />
+              </label>
+            </div>
+            <div className="hours-time-grid">
+              <label className="field">
+                <span>{t("hours.openTime")}</span>
+                <input
+                  type="time"
+                  value={item.openTime ?? ""}
+                  disabled={!item.isOpen}
+                  onChange={(event) =>
+                    setHours((prev) =>
+                      prev.map((row, rowIndex) =>
+                        rowIndex === index ? { ...row, openTime: event.target.value } : row
                       )
-                    }
-                  />
-                </td>
-                <td>
-                  <input
-                    type="time"
-                    value={item.closeTime ?? ""}
-                    disabled={!item.isOpen}
-                    onChange={(event) =>
-                      setHours((prev) =>
-                        prev.map((row, rowIndex) =>
-                          rowIndex === index ? { ...row, closeTime: event.target.value } : row
-                        )
+                    )
+                  }
+                />
+              </label>
+              <label className="field">
+                <span>{t("hours.closeTime")}</span>
+                <input
+                  type="time"
+                  value={item.closeTime ?? ""}
+                  disabled={!item.isOpen}
+                  onChange={(event) =>
+                    setHours((prev) =>
+                      prev.map((row, rowIndex) =>
+                        rowIndex === index ? { ...row, closeTime: event.target.value } : row
                       )
-                    }
-                  />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
+                    )
+                  }
+                />
+              </label>
+            </div>
+          </article>
+        ))}
+      </section>
+    </div>
   );
 };

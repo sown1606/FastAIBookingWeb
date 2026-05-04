@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { apiGet, apiPost, extractErrorMessage } from "../lib/api";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
 import { useToast } from "../components/toast";
+import { useI18n } from "../lib/i18n";
 
 interface AgentItem {
   id: string;
@@ -19,6 +20,7 @@ interface AgentItem {
 
 export const CallCenterAgentsPage = () => {
   const { notify } = useToast();
+  const { t } = useI18n();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [agents, setAgents] = useState<AgentItem[]>([]);
@@ -56,7 +58,7 @@ export const CallCenterAgentsPage = () => {
         password: form.password || undefined
       });
       setForm({ fullName: "", email: "", phone: "", password: "" });
-      notify("success", "Call center agent created.");
+      notify("success", t("agents.created"));
       await load();
     } catch (createError) {
       notify("error", extractErrorMessage(createError));
@@ -73,17 +75,35 @@ export const CallCenterAgentsPage = () => {
 
   return (
     <div className="stack">
-      <section className="card">
+      <section className="card page-hero">
         <div className="section-header">
           <div>
-            <h2>Agent tổng đài</h2>
-            <p className="muted">Operator dùng softphone chung trên trình duyệt và có thể được gán cho nhiều tiệm.</p>
+            <p className="eyebrow">{t("nav.callCenterAgents")}</p>
+            <h2>{t("agents.title")}</h2>
+            <p className="muted">{t("agents.hint")}</p>
           </div>
           <span className="status-pill info">{agents.length} agent</span>
         </div>
+        <div className="hero-stats">
+          <article className="hero-stat-card">
+            <span>{t("agents.active")}</span>
+            <strong>{agents.filter((agent) => agent.isActive).length}</strong>
+          </article>
+          <article className="hero-stat-card">
+            <span>{t("agents.assignedSalonCount")}</span>
+            <strong>{agents.filter((agent) => agent.callCenterAssignments.length > 0).length}</strong>
+          </article>
+        </div>
+      </section>
+
+      <section className="card">
+        <div>
+          <h3>{t("agents.createTitle")}</h3>
+          <p className="muted">{t("agents.createHint")}</p>
+        </div>
         <form className="form-grid two-columns" onSubmit={createAgent}>
           <label className="field">
-            <span>Họ tên</span>
+            <span>{t("salonCreate.ownerName")}</span>
             <input
               value={form.fullName}
               onChange={(event) => setForm((prev) => ({ ...prev, fullName: event.target.value }))}
@@ -91,7 +111,7 @@ export const CallCenterAgentsPage = () => {
             />
           </label>
           <label className="field">
-            <span>Email</span>
+            <span>{t("common.email")}</span>
             <input
               type="email"
               value={form.email}
@@ -100,7 +120,7 @@ export const CallCenterAgentsPage = () => {
             />
           </label>
           <label className="field">
-            <span>Số điện thoại Mỹ</span>
+            <span>{t("common.phone")}</span>
             <input
               type="tel"
               inputMode="tel"
@@ -110,7 +130,7 @@ export const CallCenterAgentsPage = () => {
             />
           </label>
           <label className="field">
-            <span>Mật khẩu</span>
+            <span>{t("agents.password")}</span>
             <input
               type="password"
               minLength={8}
@@ -119,20 +139,20 @@ export const CallCenterAgentsPage = () => {
             />
           </label>
           <button type="submit" className="button-primary">
-            Tạo agent
+            {t("common.create")}
           </button>
         </form>
       </section>
 
       <section className="card">
         <div className="section-header">
-          <h2>Danh sách operator</h2>
+          <h2>{t("agents.listTitle")}</h2>
           <div className="summary-badges">
             <span className="summary-badge">
-              Đang hoạt động: {agents.filter((agent) => agent.isActive).length}
+              {t("agents.active")}: {agents.filter((agent) => agent.isActive).length}
             </span>
             <span className="summary-badge">
-              Được gán ít nhất 1 tiệm: {agents.filter((agent) => agent.callCenterAssignments.length > 0).length}
+              {t("agents.assignedSalonCount")}: {agents.filter((agent) => agent.callCenterAssignments.length > 0).length}
             </span>
           </div>
         </div>
@@ -143,12 +163,22 @@ export const CallCenterAgentsPage = () => {
                 <div className="section-header">
                   <strong>{agent.fullName}</strong>
                   <span className={agent.isActive ? "status-pill success" : "status-pill warning"}>
-                    {agent.isActive ? "ACTIVE" : "INACTIVE"}
+                    {agent.isActive ? t("agents.active") : t("agents.inactive")}
                   </span>
                 </div>
                 <div className="table-meta">
                   <span>{agent.email}</span>
-                  <span>{agent.phone ?? "Chưa có số điện thoại"}</span>
+                  <span>{agent.phone ?? t("common.none")}</span>
+                </div>
+                <div className="meta-grid">
+                  <div>
+                    <span className="muted">{t("agents.assignedSalonCount")}</span>
+                    <strong>{agent.callCenterAssignments.length}</strong>
+                  </div>
+                  <div>
+                    <span className="muted">{t("agents.lastUpdated")}</span>
+                    <strong>{t("common.notAvailable")}</strong>
+                  </div>
                 </div>
                 <div className="summary-badges">
                   {agent.callCenterAssignments.length ? (
@@ -158,14 +188,14 @@ export const CallCenterAgentsPage = () => {
                       </span>
                     ))
                   ) : (
-                    <span className="summary-badge">Chưa gán tiệm</span>
+                    <span className="summary-badge">{t("agents.unassigned")}</span>
                   )}
                 </div>
               </article>
             ))}
           </div>
         ) : (
-          <EmptyBlock message="Chưa có agent tổng đài nào." />
+          <EmptyBlock message={t("agents.none")} />
         )}
       </section>
     </div>

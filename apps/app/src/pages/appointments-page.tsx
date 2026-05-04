@@ -347,6 +347,38 @@ export const AppointmentsPage = () => {
   return (
     <div className="stack">
       <FormDialog />
+      <section className="card">
+        <div className="section-header">
+          <div>
+            <h2>{isOwner ? t("appointments.titleOwner") : t("appointments.titleStaff")}</h2>
+            <p className="muted">{isOwner ? t("appointments.ownerHint") : t("appointments.staffHint")}</p>
+          </div>
+          <label className="field compact">
+            <span>{t("common.status")}</span>
+            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+              <option value="">{t("common.all")}</option>
+              <option value="SCHEDULED">{t("status.SCHEDULED")}</option>
+              <option value="CONFIRMED">{t("status.CONFIRMED")}</option>
+              <option value="IN_PROGRESS">{t("status.IN_PROGRESS")}</option>
+              <option value="COMPLETED">{t("status.COMPLETED")}</option>
+              <option value="CANCELED">{t("status.CANCELED")}</option>
+              <option value="NO_SHOW">{t("status.NO_SHOW")}</option>
+            </select>
+          </label>
+        </div>
+        <div className="summary-badges">
+          <span className="summary-badge">
+            {t("appointments.todayCount")}: {appointments.filter((item) => new Date(item.startTime).toDateString() === new Date().toDateString()).length}
+          </span>
+          <span className="summary-badge">
+            {t("appointments.completedCount")}: {appointments.filter((item) => item.status === "COMPLETED").length}
+          </span>
+          <span className="summary-badge">
+            {t("appointments.inProgressCount")}: {appointments.filter((item) => item.status === "IN_PROGRESS").length}
+          </span>
+        </div>
+      </section>
+
       {isOwner ? (
         <section className="card">
           <h2>{t("appointments.createTitle")}</h2>
@@ -433,101 +465,78 @@ export const AppointmentsPage = () => {
       ) : null}
 
       <section className="card">
-        <div className="section-header">
-          <h2>{isOwner ? t("appointments.titleOwner") : t("appointments.titleStaff")}</h2>
-          <label className="field compact">
-            <span>{t("common.status")}</span>
-            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-              <option value="">{t("common.all")}</option>
-              <option value="SCHEDULED">{t("status.SCHEDULED")}</option>
-              <option value="CONFIRMED">{t("status.CONFIRMED")}</option>
-              <option value="IN_PROGRESS">{t("status.IN_PROGRESS")}</option>
-              <option value="COMPLETED">{t("status.COMPLETED")}</option>
-              <option value="CANCELED">{t("status.CANCELED")}</option>
-              <option value="NO_SHOW">{t("status.NO_SHOW")}</option>
-            </select>
-          </label>
-        </div>
         {groupedByDay.length ? (
           groupedByDay.map(([day, items]) => (
-            <div key={day} className="stack">
+            <div key={day} className="day-section">
               <h3>{day}</h3>
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>{t("appointments.time")}</th>
-                      <th>{t("appointments.customer")}</th>
-                      <th>{t("appointments.staff")}</th>
-                      <th>{t("appointments.service")}</th>
-                      <th>{t("common.status")}</th>
-                      <th>{t("appointments.source")}</th>
-                      <th>{t("common.actions")}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {items.map((item) => (
-                      <tr key={item.id}>
-                        <td>{formatDateTime(item.startTime)}</td>
-                        <td>
+              <div className="entity-grid">
+                {items.map((item) => (
+                  <article key={item.id} className="appointment-card">
+                    <div className="appointment-card-header">
+                      <div className="appointment-card-copy">
+                        <strong>
                           {item.customer.firstName} {item.customer.lastName}
-                        </td>
-                        <td>{item.staff.fullName}</td>
-                        <td>{item.service.name}</td>
-                        <td>
-                          {statusLabelKey(item.status) ? t(statusLabelKey(item.status)!) : item.status}
-                          {countdownText(item) ? <div className="timer-pill">{countdownText(item)}</div> : null}
-                        </td>
-                        <td>{item.source}</td>
-                        <td>
-                          <div className="inline-actions">
-                            {isOwner ? (
-                              <>
-                                <button type="button" className="button-secondary" onClick={() => void updateStatus(item)}>
-                                  {t("appointments.updateStatus")}
-                                </button>
-                                <button
-                                  type="button"
-                                  className="button-secondary"
-                                  onClick={() => void rescheduleAppointment(item)}
-                                >
-                                  {t("appointments.reschedule")}
-                                </button>
-                                <button
-                                  type="button"
-                                  className="button-secondary"
-                                  onClick={() => void cancelAppointment(item)}
-                                >
-                                  {t("appointments.cancel")}
-                                </button>
-                              </>
-                            ) : (
-                              <>
-                                {item.status !== "IN_PROGRESS" &&
-                                item.status !== "COMPLETED" &&
-                                item.status !== "CANCELED" ? (
-                                  <button type="button" className="button-primary" onClick={() => startWork(item.id)}>
-                                    {t("appointments.startWork")}
-                                  </button>
-                                ) : null}
-                                {item.status === "IN_PROGRESS" ? (
-                                  <>
-                                    <button type="button" className="button-secondary" onClick={() => void extendWork(item.id)}>
-                                      {t("appointments.extend")}
-                                    </button>
-                                    <button type="button" className="button-primary" onClick={() => void finishWork(item.id)}>
-                                      {t("appointments.done")}
-                                    </button>
-                                  </>
-                                ) : null}
-                              </>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                        </strong>
+                        <span className="muted">{item.service.name}</span>
+                      </div>
+                      <span className={item.status === "COMPLETED" ? "status-pill success" : item.status === "IN_PROGRESS" ? "status-pill info" : "status-pill"}>
+                        {statusLabelKey(item.status) ? t(statusLabelKey(item.status)!) : item.status}
+                      </span>
+                    </div>
+                    <div className="appointment-card-meta">
+                      <div>
+                        <span className="muted">{t("appointments.time")}</span>
+                        <strong>{formatDateTime(item.startTime)}</strong>
+                      </div>
+                      <div>
+                        <span className="muted">{t("appointments.staff")}</span>
+                        <strong>{item.staff.fullName}</strong>
+                      </div>
+                      <div>
+                        <span className="muted">{t("appointments.source")}</span>
+                        <strong>{item.source}</strong>
+                      </div>
+                    </div>
+                    <div className="summary-badges">
+                      {countdownText(item) ? <span className="summary-badge">{countdownText(item)}</span> : null}
+                      {item.notes ? <span className="summary-badge">{t("appointments.notes")}</span> : null}
+                    </div>
+                    {item.notes ? <p className="muted">{item.notes}</p> : <p className="muted">{t("appointments.noNotes")}</p>}
+                    <div className="inline-actions">
+                      {isOwner ? (
+                        <>
+                          <button type="button" className="button-secondary" onClick={() => void updateStatus(item)}>
+                            {t("appointments.updateStatus")}
+                          </button>
+                          <button type="button" className="button-secondary" onClick={() => void rescheduleAppointment(item)}>
+                            {t("appointments.reschedule")}
+                          </button>
+                          <button type="button" className="button-secondary" onClick={() => void cancelAppointment(item)}>
+                            {t("appointments.cancel")}
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          {item.status !== "IN_PROGRESS" && item.status !== "COMPLETED" && item.status !== "CANCELED" ? (
+                            <button type="button" className="button-primary" onClick={() => startWork(item.id)}>
+                              {t("appointments.startWork")}
+                            </button>
+                          ) : null}
+                          {item.status === "IN_PROGRESS" ? (
+                            <>
+                              <button type="button" className="button-secondary" onClick={() => void extendWork(item.id)}>
+                                {t("appointments.extend")}
+                              </button>
+                              <button type="button" className="button-primary" onClick={() => void finishWork(item.id)}>
+                                {t("appointments.done")}
+                              </button>
+                            </>
+                          ) : null}
+                        </>
+                      )}
+                    </div>
+                  </article>
+                ))}
               </div>
             </div>
           ))

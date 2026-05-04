@@ -1,27 +1,29 @@
 import { Link, NavLink, useLocation } from "react-router-dom";
+import { LanguageSwitcher } from "./language-switcher";
+import { useI18n, type TranslationKey } from "../lib/i18n";
 
-const navItems = [
-  { to: "/dashboard", label: "Tổng quan" },
-  { to: "/salons", label: "Tiệm nail" },
-  { to: "/salons/new", label: "Tạo tiệm" },
-  { to: "/call-center-agents", label: "Tổng đài VN" },
-  { to: "/calls", label: "Nhật ký gọi" },
-  { to: "/ai-logs", label: "Nhật ký AI" },
-  { to: "/health", label: "Sức khỏe hệ thống" }
+const navItems: Array<{ to: string; labelKey: TranslationKey }> = [
+  { to: "/dashboard", labelKey: "nav.dashboard" },
+  { to: "/salons", labelKey: "nav.salons" },
+  { to: "/salons/new", labelKey: "nav.createSalon" },
+  { to: "/call-center-agents", labelKey: "nav.callCenterAgents" },
+  { to: "/calls", labelKey: "nav.calls" },
+  { to: "/ai-logs", labelKey: "nav.aiLogs" },
+  { to: "/health", labelKey: "nav.health" }
 ];
 
-const toTitle = (pathname: string): string => {
-  if (pathname === "/dashboard") return "Tổng quan";
-  if (pathname.startsWith("/salons/new")) return "Tạo tiệm nail";
-  if (pathname.startsWith("/salons/")) return "Chi tiết tiệm";
-  if (pathname.startsWith("/salons")) return "Tiệm nail";
-  if (pathname.startsWith("/call-center-agents")) return "Tổng đài VN";
-  if (pathname.startsWith("/calls/")) return "Chi tiết cuộc gọi";
-  if (pathname.startsWith("/calls")) return "Nhật ký cuộc gọi";
-  if (pathname.startsWith("/ai-logs/")) return "Chi tiết AI";
-  if (pathname.startsWith("/ai-logs")) return "Nhật ký AI";
-  if (pathname.startsWith("/health")) return "Sức khỏe hệ thống";
-  return "Quản trị";
+const toTitleKey = (pathname: string): TranslationKey => {
+  if (pathname === "/dashboard") return "nav.dashboard";
+  if (pathname.startsWith("/salons/new")) return "nav.createSalon";
+  if (pathname.startsWith("/salons/")) return "nav.salons";
+  if (pathname.startsWith("/salons")) return "nav.salons";
+  if (pathname.startsWith("/call-center-agents")) return "nav.callCenterAgents";
+  if (pathname.startsWith("/calls/")) return "nav.calls";
+  if (pathname.startsWith("/calls")) return "nav.calls";
+  if (pathname.startsWith("/ai-logs/")) return "nav.aiLogs";
+  if (pathname.startsWith("/ai-logs")) return "nav.aiLogs";
+  if (pathname.startsWith("/health")) return "nav.health";
+  return "layout.platform";
 };
 
 export const AdminLayout = ({
@@ -34,23 +36,24 @@ export const AdminLayout = ({
   children: React.ReactNode;
 }) => {
   const location = useLocation();
-  const title = toTitle(location.pathname);
+  const { t } = useI18n();
+  const title = t(toTitleKey(location.pathname));
 
   return (
     <div className="app-shell">
       <aside className="sidebar">
         <Link to="/dashboard" className="brand">
-          <img className="brand-logo" src="/assets/brand/fastaibooking-logo.svg" alt="FastAIBooking" />
+          <img className="brand-logo" src="/assets/brand/fastaibooking-logo.svg" alt={t("app.name")} />
           <div className="brand-copy">
-            <strong>FastAIBooking</strong>
-            <span>Platform Admin</span>
+            <strong>{t("app.name")}</strong>
+            <span>{t("layout.platform")}</span>
           </div>
         </Link>
-        <p className="sidebar-note">Quản lý tiệm nail, AI Reception và tổng đài con người trong cùng một bảng điều khiển.</p>
+        <p className="sidebar-note">{t("layout.sidebarNote")}</p>
         <nav className="nav-links">
           {navItems.map((item) => (
             <NavLink key={item.to} to={item.to} className="nav-item">
-              {item.label}
+              {t(item.labelKey)}
             </NavLink>
           ))}
         </nav>
@@ -58,14 +61,15 @@ export const AdminLayout = ({
       <div className="main-shell">
         <header className="topbar">
           <div className="topbar-copy">
-            <p className="eyebrow">FastAIBooking Admin</p>
+            <p className="eyebrow">{t("layout.platform")}</p>
             <h1>{title}</h1>
-            <p className="page-lead">Quản trị nền tảng, tiệm nail và vận hành tổng đài.</p>
+            <p className="page-lead">{t("layout.subtitle")}</p>
           </div>
           <div className="topbar-actions">
+            <LanguageSwitcher />
             <span className="topbar-user">{userName}</span>
             <button type="button" className="button-secondary" onClick={onLogout}>
-              Thoát
+              {t("layout.logout")}
             </button>
           </div>
         </header>

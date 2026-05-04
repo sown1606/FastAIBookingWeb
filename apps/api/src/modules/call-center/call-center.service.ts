@@ -3,6 +3,7 @@ import {
   AppointmentStatus,
   CallEscalationStatus,
   CallRoutingOutcome,
+  ExternalProvider,
   Prisma
 } from "@prisma/client";
 import { env } from "../../config/env";
@@ -391,14 +392,30 @@ export const createOrUpdateCallEscalation = async (input: {
 };
 
 export const getCallCenterRuntime = async (agentUserId: string) => {
-  const assignmentCount = await prisma.callCenterSalonAssignment.count({
-    where: {
-      agentUserId
-    }
-  });
+  const [assignmentCount, activeAmazonConnectConfigCount] = await Promise.all([
+    prisma.callCenterSalonAssignment.count({
+      where: {
+        agentUserId
+      }
+    }),
+    prisma.integrationConfig.count({
+      where: {
+        provider: ExternalProvider.AMAZON_CONNECT,
+        isActive: true
+      }
+    })
+  ]);
+
+  const adminMissing = [
+    ...env.integrationStatuses.amazonConnect.missing,
+    activeAmazonConnectConfigCount === 0 ? "Active AMAZON_CONNECT IntegrationConfig" : null
+  ].filter((value): value is string => Boolean(value));
 
   return {
     assignedSalonCount: assignmentCount,
+    runtimeEnv: {
+      ...env.runtimeEnv
+    },
     amazonConnect: {
       region: env.AWS_REGION ?? null,
       instanceId: env.AMAZON_CONNECT_INSTANCE_ID ?? null,
@@ -407,7 +424,11 @@ export const getCallCenterRuntime = async (agentUserId: string) => {
       queueIdDefault: env.AMAZON_CONNECT_QUEUE_ID_DEFAULT ?? null,
       routingProfileId: env.AMAZON_CONNECT_ROUTING_PROFILE_ID ?? null,
       configured: env.integrationStatuses.amazonConnect.configured,
-      missing: env.integrationStatuses.amazonConnect.missing
+      missing: env.integrationStatuses.amazonConnect.missing,
+      adminConfigured:
+        env.integrationStatuses.amazonConnect.configured && activeAmazonConnectConfigCount > 0,
+      adminMissing,
+      activeIntegrationConfigCount: activeAmazonConnectConfigCount
     }
   };
 };

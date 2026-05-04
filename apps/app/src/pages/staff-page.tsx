@@ -5,7 +5,7 @@ import { useToast } from "../components/toast";
 import { formatCurrencyCents } from "../lib/format";
 import { useFormDialog } from "../components/form-dialog";
 import { DemoAvatar } from "../components/avatar";
-import { staffTitleOptions } from "../lib/form-options";
+import { getStaffTitleLabel, getStaffTitleOptions } from "../lib/form-options";
 import { formatUsPhoneInput, requiredLabel, validateOptionalUsPhone } from "../lib/phone";
 import { statusLabelKey, useI18n } from "../lib/i18n";
 
@@ -38,6 +38,7 @@ export const StaffPage = () => {
   const { notify } = useToast();
   const { openFormDialog, FormDialog } = useFormDialog();
   const { t } = useI18n();
+  const staffTitleOptions = getStaffTitleOptions(t);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [staff, setStaff] = useState<StaffItem[]>([]);
@@ -108,13 +109,24 @@ export const StaffPage = () => {
         { name: "fullName", label: t("staff.fullName"), required: true },
         { name: "email", label: t("common.email"), type: "email", required: true },
         { name: "phone", label: t("common.phone"), type: "tel", required: true },
-        { name: "title", label: t("staff.title"), type: "select", options: staffTitleOptions }
+        { name: "title", label: t("staff.title"), type: "select", options: staffTitleOptions },
+        {
+          name: "isBookable",
+          label: t("staff.isBookableField"),
+          type: "select",
+          required: true,
+          options: [
+            { value: "true", label: t("common.statusOn") },
+            { value: "false", label: t("common.statusOff") }
+          ]
+        }
       ],
       initialValues: {
         fullName: item.fullName,
         email: item.email ?? "",
         phone: formatUsPhoneInput(item.phone ?? ""),
-        title: item.title ?? ""
+        title: item.title ?? "",
+        isBookable: item.isBookable ? "true" : "false"
       },
       confirmLabel: t("staff.save")
     });
@@ -130,7 +142,8 @@ export const StaffPage = () => {
         fullName: values.fullName,
         email: values.email,
         phone: values.phone,
-        title: values.title
+        title: values.title,
+        isBookable: values.isBookable === "true"
       });
       notify("success", t("staff.updated"));
       await load();
@@ -184,8 +197,15 @@ export const StaffPage = () => {
 
   const activeStaffCount = staff.filter((item) => item.status === "ACTIVE").length;
   const inactiveStaffCount = staff.length - activeStaffCount;
-  const loginReadyCount = staff.filter((item) => item.user?.isActive).length;
+  const loginReadyCount = staff.filter((item) => Boolean(item.user)).length;
   const bookableStaffCount = staff.filter((item) => item.isBookable && item.status === "ACTIVE").length;
+  const freeStaffLimit = billing?.currentUsage.freeStaffLimit ?? 0;
+  const billableExtraStaffCount = billing?.currentUsage.billableExtraStaffCount ?? 0;
+  const estimatedExtraCostCents = billing?.currentUsage.estimatedExtraCostCents ?? 0;
+  const freeQuotaUsed = Math.min(activeStaffCount, freeStaffLimit);
+  const quotaTotal = Math.max(activeStaffCount, freeStaffLimit, 1);
+  const freeQuotaWidth = `${(freeQuotaUsed / quotaTotal) * 100}%`;
+  const extraQuotaWidth = `${(billableExtraStaffCount / quotaTotal) * 100}%`;
 
   if (loading) {
     return <LoadingBlock />;
@@ -199,36 +219,71 @@ export const StaffPage = () => {
     <div className="stack">
       <FormDialog />
       <section className="card">
-        <h2>{t("staff.usageTitle")}</h2>
-        <p className="muted">{t("billing.rule")}</p>
+        <div className="section-header">
+          <div>
+            <h2>{t("staff.overviewTitle")}</h2>
+            <p className="muted">{t("staff.overviewHint")}</p>
+          </div>
+          <span className="status-pill info">{t("staff.directoryCount", { count: staff.length })}</span>
+        </div>
         <div className="metrics-grid">
           <div>
-            <span className="muted">{t("billing.freeStaff")}</span>
-            <strong>{billing?.currentUsage.freeStaffLimit ?? 0}</strong>
+            <span className="muted">{t("staff.activeCount")}</span>
+            <strong>{activeStaffCount}</strong>
           </div>
           <div>
-            <span className="muted">{t("billing.activeStaff")}</span>
-            <strong>{billing?.currentUsage.activeStaffCount ?? 0}</strong>
+            <span className="muted">{t("staff.inactiveCount")}</span>
+            <strong>{inactiveStaffCount}</strong>
           </div>
           <div>
-            <span className="muted">{t("billing.billableStaff")}</span>
-            <strong>{billing?.currentUsage.billableExtraStaffCount ?? 0}</strong>
+            <span className="muted">{t("staff.freeLimit")}</span>
+            <strong>{freeStaffLimit}</strong>
           </div>
           <div>
-            <span className="muted">{t("billing.estimated")}</span>
-            <strong>{formatCurrencyCents(billing?.currentUsage.estimatedExtraCostCents)}</strong>
+            <span className="muted">{t("staff.extraBillable")}</span>
+            <strong>{billableExtraStaffCount}</strong>
+          </div>
+          <div>
+            <span className="muted">{t("staff.estimatedCost")}</span>
+            <strong>{formatCurrencyCents(estimatedExtraCostCents)}</strong>
+          </div>
+        </div>
+        <div className="staff-quota-card">
+          <div className="section-header">
+            <div>
+              <h3>{t("staff.freeQuota")}</h3>
+              <p className="muted">{t("billing.rule")}</p>
+            </div>
+            <span className="summary-badge">{t("staff.freeQuotaUsed", { used: freeQuotaUsed, limit: freeStaffLimit })}</span>
+          </div>
+          <div className="staff-quota-track" aria-hidden="true">
+            <span className="staff-quota-fill staff-quota-fill-free" style={{ width: freeQuotaWidth }} />
+            {billableExtraStaffCount > 0 ? (
+              <span className="staff-quota-fill staff-quota-fill-extra" style={{ width: extraQuotaWidth }} />
+            ) : null}
+          </div>
+          <div className="staff-quota-legend">
+            <div>
+              <span className="staff-quota-dot staff-quota-dot-free" />
+              <span>{t("staff.freeQuotaUsed", { used: freeQuotaUsed, limit: freeStaffLimit })}</span>
+            </div>
+            <div>
+              <span className="staff-quota-dot staff-quota-dot-extra" />
+              <span>{t("staff.extraUsage", { count: billableExtraStaffCount })}</span>
+            </div>
           </div>
         </div>
         <div className="summary-badges">
-          <span className="summary-badge">Đang hoạt động: {activeStaffCount}</span>
-          <span className="summary-badge">Tạm tắt: {inactiveStaffCount}</span>
-          <span className="summary-badge">Có đăng nhập: {loginReadyCount}</span>
-          <span className="summary-badge">Nhận lịch: {bookableStaffCount}</span>
+          <span className="summary-badge">{t("staff.summaryLoginReady")}: {loginReadyCount}</span>
+          <span className="summary-badge">{t("staff.summaryBookable")}: {bookableStaffCount}</span>
         </div>
       </section>
 
       <section className="card">
-        <h2>{t("staff.addTitle")}</h2>
+        <div>
+          <h2>{t("staff.addTitle")}</h2>
+          <p className="muted">{t("staff.addHint")}</p>
+        </div>
         <form className="form-grid two-columns" onSubmit={createStaffMember}>
           <label className="field">
             <span>{requiredLabel(t("staff.fullName"))}</span>
@@ -273,6 +328,14 @@ export const StaffPage = () => {
               ))}
             </select>
           </label>
+          <label className="field checkbox-row">
+            <span>{t("staff.isBookableField")}</span>
+            <input
+              type="checkbox"
+              checked={form.isBookable}
+              onChange={(event) => setForm((prev) => ({ ...prev, isBookable: event.target.checked }))}
+            />
+          </label>
           <div className="form-actions">
             <button type="submit" className="button-primary">
               {t("staff.invite")}
@@ -285,53 +348,61 @@ export const StaffPage = () => {
         <div className="section-header">
           <div>
             <h2>{t("staff.listTitle")}</h2>
-            <p className="muted">Hiển thị toàn bộ nhân viên, trạng thái hoạt động, truy cập và thông tin liên hệ.</p>
+            <p className="muted">{t("staff.directoryHint")}</p>
           </div>
-          <span className="status-pill info">{staff.length} nhân viên</span>
+          <span className="status-pill info">{t("staff.directoryCount", { count: staff.length })}</span>
         </div>
         {staff.length ? (
           <div className="staff-grid">
             {staff.map((item) => {
               const loginLabel = item.user
                 ? item.user.isActive
-                  ? t("staff.on")
-                  : t("staff.off")
-                : t("staff.notCreated");
+                  ? t("staff.loginActive")
+                  : t("staff.loginInactive")
+                : t("staff.noLogin");
+              const phoneLabel = item.phone ? formatUsPhoneInput(item.phone) : t("staff.phoneMissing");
+              const emailLabel = item.email ?? t("staff.emailMissing");
+              const titleLabel = getStaffTitleLabel(item.title, t);
 
               return (
                 <article
                   key={item.id}
-                  className={item.status === "ACTIVE" ? "staff-card" : "staff-card staff-card-inactive"}
+                  className={item.status === "ACTIVE" ? "staff-card staff-card-visual" : "staff-card staff-card-inactive staff-card-visual"}
                 >
                   <div className="staff-card-header">
-                    <div className="person-cell">
-                      <DemoAvatar name={item.fullName} variant="staff" size="md" />
-                      <span>
+                    <div className="staff-identity">
+                      <DemoAvatar name={item.fullName} variant="staff" size="lg" />
+                      <div className="staff-identity-copy">
                         <strong>{item.fullName}</strong>
-                        <span className="muted">{item.email ?? "Chưa có email"}</span>
+                        <span>{titleLabel}</span>
+                      </div>
+                    </div>
+                    <div className="staff-chip-row">
+                      <span className={item.status === "ACTIVE" ? "status-pill success" : "status-pill warning"}>
+                        {statusLabelKey(item.status) ? t(statusLabelKey(item.status)!) : item.status}
+                      </span>
+                      <span className={item.isBookable ? "status-pill info" : "status-pill"}>
+                        {t("staff.bookable")}: {item.isBookable ? t("common.statusOn") : t("common.statusOff")}
                       </span>
                     </div>
-                    <span className={item.status === "ACTIVE" ? "status-pill success" : "status-pill warning"}>
-                      {statusLabelKey(item.status) ? t(statusLabelKey(item.status)!) : item.status}
-                    </span>
                   </div>
 
-                  <div className="staff-meta-grid">
+                  <div className="staff-contact-grid">
                     <div>
-                      <span className="muted">{t("staff.title")}</span>
-                      <strong>{item.title ?? "Chưa đặt vai trò"}</strong>
+                      <span className="muted">{t("common.email")}</span>
+                      <strong>{emailLabel}</strong>
                     </div>
                     <div>
                       <span className="muted">{t("common.phone")}</span>
-                      <strong>{item.phone ?? "Chưa có số điện thoại"}</strong>
+                      <strong>{phoneLabel}</strong>
+                    </div>
+                    <div>
+                      <span className="muted">{t("staff.accountStatus")}</span>
+                      <strong>{item.user ? t("staff.hasLogin") : t("staff.noLogin")}</strong>
                     </div>
                     <div>
                       <span className="muted">{t("staff.login")}</span>
                       <strong>{loginLabel}</strong>
-                    </div>
-                    <div>
-                      <span className="muted">Nhận lịch</span>
-                      <strong>{item.isBookable ? t("common.statusOn") : t("common.statusOff")}</strong>
                     </div>
                   </div>
 

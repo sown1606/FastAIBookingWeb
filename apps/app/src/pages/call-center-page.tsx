@@ -5,9 +5,19 @@ import { useToast } from "../components/toast";
 import { formatDateTime } from "../lib/format";
 import { toDateTimeLocalValue, useFormDialog } from "../components/form-dialog";
 import { formatUsPhoneInput, validateOptionalUsPhone } from "../lib/phone";
+import { statusLabelKey, useI18n } from "../lib/i18n";
 
 interface RuntimeResponse {
   assignedSalonCount: number;
+  runtimeEnv: {
+    workingDirectory: string;
+    dotenvPath: string;
+    dotenvFileExists: boolean;
+    dotenvExamplePath: string;
+    dotenvExampleExists: boolean;
+    dotenvLoadedFromFile: boolean;
+    note: string;
+  };
   amazonConnect: {
     region: string | null;
     instanceId: string | null;
@@ -17,6 +27,9 @@ interface RuntimeResponse {
     routingProfileId: string | null;
     configured: boolean;
     missing: string[];
+    adminConfigured: boolean;
+    adminMissing: string[];
+    activeIntegrationConfigCount: number;
   };
 }
 
@@ -145,13 +158,6 @@ interface EscalationDetail {
   customerMatches: CustomerItem[];
 }
 
-const appointmentStatusOptions = [
-  { value: "SCHEDULED", label: "SCHEDULED" },
-  { value: "CONFIRMED", label: "CONFIRMED" },
-  { value: "CANCELED", label: "CANCELED" },
-  { value: "NO_SHOW", label: "NO_SHOW" }
-];
-
 const loadAmazonConnectScript = async () => {
   const win = window as Window & {
     connect?: any;
@@ -168,7 +174,7 @@ const loadAmazonConnectScript = async () => {
       script.src = "https://connect-cdn.amazonaws.com/amazon-connect-streams.js";
       script.async = true;
       script.onload = () => resolve();
-      script.onerror = () => reject(new Error("Failed to load the Amazon Connect Streams library."));
+      script.onerror = () => reject(new Error("AMAZON_CONNECT_SCRIPT_LOAD_FAILED"));
       document.head.appendChild(script);
     });
   }
@@ -204,6 +210,7 @@ const extractPhoneFromContact = (contact: any): string | null => {
 export const CallCenterPage = () => {
   const { notify } = useToast();
   const { openFormDialog, FormDialog } = useFormDialog();
+  const { t } = useI18n();
   const ccpContainerRef = useRef<HTMLDivElement | null>(null);
 
   const [loading, setLoading] = useState(true);
@@ -235,9 +242,49 @@ export const CallCenterPage = () => {
     resolution: ""
   });
   const [ccpError, setCcpError] = useState("");
-  const [agentState, setAgentState] = useState("Not initialized");
-  const [contactState, setContactState] = useState("Idle");
+  const [ccpSetupState, setCcpSetupState] = useState<"disabled" | "loading" | "ready" | "error">("disabled");
+  const [agentState, setAgentState] = useState("NOT_INITIALIZED");
+  const [contactState, setContactState] = useState("IDLE");
   const [activeCallerPhone, setActiveCallerPhone] = useState<string | null>(null);
+  const [activeAmazonConnectContactId, setActiveAmazonConnectContactId] = useState<string | null>(null);
+
+  const appointmentStatusOptions = useMemo(
+    () => ["SCHEDULED", "CONFIRMED", "CANCELED", "NO_SHOW"].map((value) => ({
+      value,
+      label: statusLabelKey(value) ? t(statusLabelKey(value)!) : value
+    })),
+    [t]
+  );
+
+  const translateConnectState = (value: string) => {
+    switch (value) {
+      case "NOT_INITIALIZED":
+        return t("common.loading");
+      case "IDLE":
+      case "UNKNOWN":
+      case "ENDED":
+        return t("common.none");
+      default:
+        return value;
+    }
+  };
+
+  const translateRoutingOutcome = (value: string | null | undefined) => {
+    if (!value) {
+      return t("common.none");
+    }
+    const routingLabelKeyByValue: Record<string, Parameters<typeof t>[0]> = {
+      SALON_RING: "routing.SALON_RING",
+      AI_RECEPTION: "routing.AI_RECEPTION",
+      CALL_CENTER_ESCALATION: "routing.CALL_CENTER_ESCALATION",
+      CALLBACK_REQUEST: "routing.CALLBACK_REQUEST",
+      SMS_FALLBACK: "routing.SMS_FALLBACK",
+      VOICEMAIL: "routing.VOICEMAIL",
+      QUEUED: "routing.QUEUED"
+    };
+    const key = routingLabelKeyByValue[value];
+    return key ? t(key) : value;
+  };
 
   const loadSalonData = async (salonId: string) => {
     const [staffItems, serviceItems, customerItems, appointmentItems] = await Promise.all([
@@ -323,6 +370,7 @@ export const CallCenterPage = () => {
 
   useEffect(() => {
     if (!runtime?.amazonConnect.configured || !runtime.amazonConnect.ccpUrl || !ccpContainerRef.current) {
+      setCcpSetupState("disabled");
       return;
     }
 
@@ -331,6 +379,7 @@ export const CallCenterPage = () => {
     const initCcp = async () => {
       try {
         setCcpError("");
+        setCcpSetupState("loading");
         await loadAmazonConnectScript();
         if (disposed || !ccpContainerRef.current) {
           return;
@@ -339,7 +388,7 @@ export const CallCenterPage = () => {
         const win = window as Window & { connect?: any };
         const connectApi = win.connect;
         if (!connectApi?.core?.initCCP) {
-          throw new Error("Amazon Connect Streams is available, but CCP initialization could not start.");
+          throw new Error("AMAZON_CONNECT_CCP_INIT_FAILED");
         }
 
         connectApi.core.initCCP(ccpContainerRef.current, {
@@ -356,8 +405,9 @@ export const CallCenterPage = () => {
           if (disposed) {
             return;
           }
-          const nextState = agent?.getState?.()?.name ?? "Ready";
+          const nextState = agent?.getState?.()?.name ?? "NOT_INITIALIZED";
           setAgentState(nextState);
+          setCcpSetupState("ready");
         });
 
         connectApi.contact((contact: any) => {
@@ -366,22 +416,32 @@ export const CallCenterPage = () => {
           }
 
           const updateContact = () => {
-            const nextState = contact?.getStatus?.()?.type ?? "Unknown";
+            const nextState = contact?.getStatus?.()?.type ?? "UNKNOWN";
             setContactState(nextState);
             setActiveCallerPhone(extractPhoneFromContact(contact));
+            setActiveAmazonConnectContactId(contact?.getContactId?.() ?? null);
           };
 
           updateContact();
           contact?.onIncoming?.(updateContact);
           contact?.onConnected?.(updateContact);
           contact?.onEnded?.(() => {
-            setContactState("Ended");
+            setContactState("ENDED");
             setActiveCallerPhone(null);
+            setActiveAmazonConnectContactId(null);
           });
         });
       } catch (initError) {
         if (!disposed) {
-          setCcpError(extractErrorMessage(initError));
+          const message = extractErrorMessage(initError);
+          setCcpSetupState("error");
+          setCcpError(
+            message === "AMAZON_CONNECT_SCRIPT_LOAD_FAILED"
+              ? t("callCenter.errorScriptLoad")
+              : message === "AMAZON_CONNECT_CCP_INIT_FAILED"
+                ? t("callCenter.errorCcpInit")
+                : message
+          );
         }
       }
     };
@@ -391,7 +451,7 @@ export const CallCenterPage = () => {
     return () => {
       disposed = true;
     };
-  }, [runtime]);
+  }, [runtime, t]);
 
   const changeSalon = async (salonId: string) => {
     setSelectedSalonId(salonId);
@@ -405,11 +465,11 @@ export const CallCenterPage = () => {
   const createCustomer = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!selectedSalonId) {
-      notify("error", "Select a salon first.");
+      notify("error", t("callCenter.selectSalonFirst"));
       return;
     }
     if (!validateOptionalUsPhone(customerForm.phone)) {
-      notify("error", "Please enter a valid US phone number.");
+      notify("error", t("form.phoneInvalid"));
       return;
     }
 
@@ -417,7 +477,7 @@ export const CallCenterPage = () => {
       await apiPost(`/api/v1/call-center/salons/${selectedSalonId}/customers`, customerForm);
       setCustomerForm({ firstName: "", lastName: "", phone: "" });
       await loadSalonData(selectedSalonId);
-      notify("success", "Customer created.");
+      notify("success", t("callCenter.customerCreated"));
     } catch (createError) {
       notify("error", extractErrorMessage(createError));
     }
@@ -426,7 +486,7 @@ export const CallCenterPage = () => {
   const createBooking = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!selectedSalonId) {
-      notify("error", "Select a salon first.");
+      notify("error", t("callCenter.selectSalonFirst"));
       return;
     }
 
@@ -441,7 +501,7 @@ export const CallCenterPage = () => {
       if (selectedEscalationId) {
         await loadEscalationDetail(selectedEscalationId);
       }
-      notify("success", "Appointment created.");
+      notify("success", t("callCenter.bookingCreated"));
     } catch (createError) {
       notify("error", extractErrorMessage(createError));
     }
@@ -449,13 +509,13 @@ export const CallCenterPage = () => {
 
   const reschedule = async (appointment: AppointmentItem) => {
     const values = await openFormDialog({
-      title: "Reschedule appointment",
+      title: t("callCenter.rescheduleTitle"),
       description: `${appointment.customer.firstName} ${appointment.customer.lastName}`,
-      fields: [{ name: "startTime", label: "New time", type: "datetime-local", required: true }],
+      fields: [{ name: "startTime", label: t("callCenter.newTime"), type: "datetime-local", required: true }],
       initialValues: {
         startTime: toDateTimeLocalValue(appointment.startTime)
       },
-      confirmLabel: "Reschedule"
+      confirmLabel: t("appointments.reschedule")
     });
 
     if (!values?.startTime || !selectedSalonId) {
@@ -467,7 +527,7 @@ export const CallCenterPage = () => {
         startTime: new Date(values.startTime).toISOString()
       });
       await loadSalonData(selectedSalonId);
-      notify("success", "Appointment rescheduled.");
+      notify("success", t("callCenter.rescheduled"));
     } catch (rescheduleError) {
       notify("error", extractErrorMessage(rescheduleError));
     }
@@ -475,11 +535,11 @@ export const CallCenterPage = () => {
 
   const updateStatus = async (appointmentId: string, status: string) => {
     const values = await openFormDialog({
-      title: "Update appointment status",
+      title: t("callCenter.updateAppointmentStatusTitle"),
       fields: [
         {
           name: "status",
-          label: "Status",
+          label: t("common.status"),
           type: "select",
           required: true,
           options: appointmentStatusOptions
@@ -488,7 +548,7 @@ export const CallCenterPage = () => {
       initialValues: {
         status
       },
-      confirmLabel: "Update"
+      confirmLabel: t("appointments.updateStatus")
     });
 
     if (!values?.status || !selectedSalonId) {
@@ -500,7 +560,7 @@ export const CallCenterPage = () => {
         status: values.status
       });
       await loadSalonData(selectedSalonId);
-      notify("success", "Appointment updated.");
+      notify("success", t("callCenter.updated"));
     } catch (updateError) {
       notify("error", extractErrorMessage(updateError));
     }
@@ -508,13 +568,13 @@ export const CallCenterPage = () => {
 
   const cancel = async (appointment: AppointmentItem) => {
     const values = await openFormDialog({
-      title: "Cancel appointment",
+      title: t("callCenter.cancelTitle"),
       description: `${appointment.customer.firstName} ${appointment.customer.lastName}`,
-      fields: [{ name: "reason", label: "Reason", type: "textarea", rows: 3 }],
+      fields: [{ name: "reason", label: t("callCenter.cancelReason"), type: "textarea", rows: 3 }],
       initialValues: {
-        reason: "Customer requested cancellation"
+        reason: t("callCenter.defaultCancelReason")
       },
-      confirmLabel: "Cancel appointment"
+      confirmLabel: t("appointments.cancel")
     });
 
     if (!values || !selectedSalonId) {
@@ -526,7 +586,7 @@ export const CallCenterPage = () => {
         reason: values.reason || undefined
       });
       await loadSalonData(selectedSalonId);
-      notify("success", "Appointment canceled.");
+      notify("success", t("callCenter.canceled"));
     } catch (cancelError) {
       notify("error", extractErrorMessage(cancelError));
     }
@@ -538,9 +598,11 @@ export const CallCenterPage = () => {
     }
 
     try {
-      await apiPost(`/api/v1/call-center/queue/${selectedEscalationId}/accept`, {});
+      await apiPost(`/api/v1/call-center/queue/${selectedEscalationId}/accept`, {
+        amazonConnectContactId: activeAmazonConnectContactId || undefined
+      });
       await Promise.all([loadQueue(), loadEscalationDetail(selectedEscalationId)]);
-      notify("success", "Escalation accepted.");
+      notify("success", t("callCenter.accepted"));
     } catch (acceptError) {
       notify("error", extractErrorMessage(acceptError));
     }
@@ -554,7 +616,7 @@ export const CallCenterPage = () => {
     try {
       await apiPatch(`/api/v1/call-center/queue/${selectedEscalationId}`, notesForm);
       await loadEscalationDetail(selectedEscalationId);
-      notify("success", "Notes updated.");
+      notify("success", t("callCenter.notesSaved"));
     } catch (saveError) {
       notify("error", extractErrorMessage(saveError));
     }
@@ -567,12 +629,12 @@ export const CallCenterPage = () => {
 
     try {
       await apiPost(`/api/v1/call-center/queue/${selectedEscalationId}/complete`, {
-        resolution: notesForm.resolution || "Handled by operator",
+        resolution: notesForm.resolution || t("callCenter.completeDefaultResolution"),
         operatorNotes: notesForm.operatorNotes || null,
         qaNotes: notesForm.qaNotes || null
       });
       await Promise.all([loadQueue(), loadEscalationDetail(selectedEscalationId)]);
-      notify("success", "Escalation completed.");
+      notify("success", t("callCenter.completed"));
     } catch (completeError) {
       notify("error", extractErrorMessage(completeError));
     }
@@ -584,16 +646,16 @@ export const CallCenterPage = () => {
     }
 
     const values = await openFormDialog({
-      title: "Create callback request",
+      title: t("callCenter.createCallbackTitle"),
       fields: [
         {
           name: "callbackPhone",
-          label: "Callback phone",
+          label: t("callCenter.callbackPhone"),
           required: true
         },
         {
           name: "notes",
-          label: "Notes",
+          label: t("callCenter.operatorNotes"),
           type: "textarea",
           rows: 3
         }
@@ -606,7 +668,7 @@ export const CallCenterPage = () => {
           "",
         notes: ""
       },
-      confirmLabel: "Create callback"
+      confirmLabel: t("callCenter.createCallbackConfirm")
     });
 
     if (!values) {
@@ -619,7 +681,7 @@ export const CallCenterPage = () => {
         notes: values.notes || null
       });
       await Promise.all([loadQueue(), loadEscalationDetail(selectedEscalationId)]);
-      notify("success", "Callback request created.");
+      notify("success", t("callCenter.callbackCreated"));
     } catch (callbackError) {
       notify("error", extractErrorMessage(callbackError));
     }
@@ -631,16 +693,16 @@ export const CallCenterPage = () => {
     }
 
     const values = await openFormDialog({
-      title: "Capture voicemail metadata",
+      title: t("callCenter.captureVoicemailTitle"),
       fields: [
         {
           name: "voicemailRecordingUrl",
-          label: "Recording URL",
+          label: t("callCenter.recordingUrl"),
           type: "text"
         },
         {
           name: "notes",
-          label: "Notes",
+          label: t("callCenter.operatorNotes"),
           type: "textarea",
           rows: 3
         }
@@ -649,7 +711,7 @@ export const CallCenterPage = () => {
         voicemailRecordingUrl: selectedEscalation?.voicemailRecordingUrl ?? "",
         notes: ""
       },
-      confirmLabel: "Save voicemail"
+      confirmLabel: t("callCenter.saveVoicemailConfirm")
     });
 
     if (!values) {
@@ -662,7 +724,7 @@ export const CallCenterPage = () => {
         notes: values.notes || null
       });
       await Promise.all([loadQueue(), loadEscalationDetail(selectedEscalationId)]);
-      notify("success", "Voicemail captured.");
+      notify("success", t("callCenter.voicemailCaptured"));
     } catch (voicemailError) {
       notify("error", extractErrorMessage(voicemailError));
     }
@@ -674,16 +736,16 @@ export const CallCenterPage = () => {
     }
 
     const values = await openFormDialog({
-      title: "Send SMS fallback",
+      title: t("callCenter.sendSmsTitle"),
       fields: [
         {
           name: "recipientPhone",
-          label: "Recipient phone",
+          label: t("callCenter.recipientPhone"),
           required: true
         },
         {
           name: "message",
-          label: "Message",
+          label: t("callCenter.message"),
           type: "textarea",
           rows: 3,
           required: true
@@ -695,9 +757,9 @@ export const CallCenterPage = () => {
           selectedEscalation.customerPhone ??
           selectedEscalation.callSession.callerPhone ??
           "",
-        message: "We missed your call. Reply with your preferred time and we will call you back."
+        message: t("callCenter.defaultSmsMessage")
       },
-      confirmLabel: "Send SMS"
+      confirmLabel: t("callCenter.sendSmsConfirm")
     });
 
     if (!values?.message) {
@@ -710,7 +772,7 @@ export const CallCenterPage = () => {
         message: values.message
       });
       await Promise.all([loadQueue(), loadEscalationDetail(selectedEscalationId)]);
-      notify("success", "SMS fallback sent.");
+      notify("success", t("callCenter.smsSent"));
     } catch (smsError) {
       notify("error", extractErrorMessage(smsError));
     }
@@ -718,15 +780,58 @@ export const CallCenterPage = () => {
 
   const openRequests = queue.filter((item) => item.status !== "CLOSED").length;
   const availableStaffCount = staff.filter((member) => member.currentWorkStatus === "AVAILABLE").length;
-  const amazonConnectReady = Boolean(runtime?.amazonConnect.configured && runtime.amazonConnect.ccpUrl);
+  const amazonConnectRuntimeReady = Boolean(runtime?.amazonConnect.configured);
+  const amazonConnectPlatformReady = Boolean(runtime?.amazonConnect.adminConfigured);
+  const amazonConnectReady = Boolean(amazonConnectRuntimeReady && runtime?.amazonConnect.ccpUrl);
   const missingAmazonConnectItems = runtime?.amazonConnect.missing ?? [];
+  const missingPlatformItems = runtime?.amazonConnect.adminMissing ?? [];
   const selectedSalonName =
-    selectedEscalation?.salon.name ?? salons.find((item) => item.id === selectedSalonId)?.name ?? "-";
+    selectedEscalation?.salon.name ?? salons.find((item) => item.id === selectedSalonId)?.name ?? t("common.none");
   const hasSelectedSalon = Boolean(selectedSalonId);
+  const amazonConnectRuntimeRows = [
+    {
+      key: "AWS_REGION",
+      value: runtime?.amazonConnect.region ?? t("common.none"),
+      usage: t("callCenter.usageRegion")
+    },
+    {
+      key: "AMAZON_CONNECT_CCP_URL",
+      value: runtime?.amazonConnect.ccpUrl ?? t("common.none"),
+      usage: t("callCenter.usageCcpUrl")
+    },
+    {
+      key: "AMAZON_CONNECT_INSTANCE_ID",
+      value: runtime?.amazonConnect.instanceId ?? t("common.none"),
+      usage: t("callCenter.usageInstanceId")
+    },
+    {
+      key: "AMAZON_CONNECT_INSTANCE_URL",
+      value: runtime?.amazonConnect.instanceUrl ?? t("common.none"),
+      usage: t("callCenter.usageInstanceUrl")
+    },
+    {
+      key: "AMAZON_CONNECT_QUEUE_ID_DEFAULT",
+      value: runtime?.amazonConnect.queueIdDefault ?? t("common.none"),
+      usage: t("callCenter.usageQueue")
+    },
+    {
+      key: "AMAZON_CONNECT_ROUTING_PROFILE_ID",
+      value: runtime?.amazonConnect.routingProfileId ?? t("common.none"),
+      usage: t("callCenter.usageRoutingProfile")
+    }
+  ];
 
   const visibleAppointments = useMemo(() => {
     return appointments.slice().sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
   }, [appointments]);
+  const ccpStatusLabel =
+    ccpSetupState === "loading"
+      ? t("callCenter.ccpStatusLoading")
+      : ccpSetupState === "ready"
+        ? t("callCenter.ccpStatusReady")
+        : ccpSetupState === "error"
+          ? t("callCenter.ccpStatusError")
+          : t("callCenter.ccpStatusDisabled");
 
   if (loading) {
     return <LoadingBlock />;
@@ -743,26 +848,22 @@ export const CallCenterPage = () => {
       <section className="card">
         <div className="section-header">
           <div>
-            <h2>Tổng đài con người</h2>
-            <p className="muted">Softphone trên trình duyệt, hàng chờ escalation và công cụ đặt lịch cho operator.</p>
+            <h2>{t("callCenter.pageTitle")}</h2>
+            <p className="muted">{t("callCenter.pageHint")}</p>
           </div>
           <span className={amazonConnectReady ? "status-pill success" : "status-pill warning"}>
-            Amazon Connect {amazonConnectReady ? "sẵn sàng" : "chưa hoàn tất"}
+            {amazonConnectReady ? t("callCenter.amazonReady") : t("callCenter.amazonPending")}
           </span>
         </div>
         <div className="card-grid integration-grid">
           <article className="integration-card">
             <div className="section-header">
-              <h3>Trạng thái tích hợp</h3>
-              <span className={amazonConnectReady ? "status-pill success" : "status-pill warning"}>
-                {amazonConnectReady ? "Có thể test live" : "Đang chờ config"}
+              <h3>{t("callCenter.runtimeTitle")}</h3>
+              <span className={amazonConnectRuntimeReady ? "status-pill success" : "status-pill warning"}>
+                {amazonConnectRuntimeReady ? t("callCenter.runtimeReady") : t("callCenter.runtimePending")}
               </span>
             </div>
-            <p className="muted">
-              {amazonConnectReady
-                ? "CCP có thể được nhúng trực tiếp. Queue, context và booking tools hoạt động cùng một màn hình."
-                : "Operator vẫn có thể xem queue, lịch sử cuộc gọi và hỗ trợ đặt lịch. Softphone sẽ hiển thị ở chế độ chờ cho đến khi đủ biến môi trường."}
-            </p>
+            <p className="muted">{amazonConnectRuntimeReady ? t("callCenter.runtimeHintReady") : t("callCenter.runtimeHintPending")}</p>
             {missingAmazonConnectItems.length ? (
               <ul className="config-checklist">
                 {missingAmazonConnectItems.map((item) => (
@@ -771,29 +872,86 @@ export const CallCenterPage = () => {
               </ul>
             ) : (
               <div className="summary-badges">
-                <span className="summary-badge">AWS region: {runtime?.amazonConnect.region ?? "-"}</span>
-                <span className="summary-badge">Queue mặc định: {runtime?.amazonConnect.queueIdDefault ?? "-"}</span>
+                <span className="summary-badge">AWS_REGION: {runtime?.amazonConnect.region ?? t("common.none")}</span>
+                <span className="summary-badge">
+                  AMAZON_CONNECT_QUEUE_ID_DEFAULT: {runtime?.amazonConnect.queueIdDefault ?? t("common.none")}
+                </span>
               </div>
             )}
           </article>
 
           <article className="integration-card">
-            <h3>Ngữ cảnh vận hành</h3>
+            <div className="section-header">
+              <h3>{t("callCenter.platformTitle")}</h3>
+              <span className={amazonConnectPlatformReady ? "status-pill success" : "status-pill warning"}>
+                {amazonConnectPlatformReady ? t("callCenter.platformReady") : t("callCenter.platformPending")}
+              </span>
+            </div>
+            <p className="muted">{amazonConnectPlatformReady ? t("callCenter.platformHintReady") : t("callCenter.platformHintPending")}</p>
+            {missingPlatformItems.length ? (
+              <ul className="config-checklist">
+                {missingPlatformItems.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            ) : (
+              <div className="summary-badges">
+                <span className="summary-badge">
+                  {t("callCenter.integrationConfigCount")}: {runtime?.amazonConnect.activeIntegrationConfigCount ?? 0}
+                </span>
+              </div>
+            )}
+          </article>
+
+          <article className="integration-card">
+            <h3>{t("callCenter.runtimeEnvTitle")}</h3>
+            <p className="muted">{t("callCenter.runtimeEnvHint")}</p>
+            <div className="summary-badges">
+              <span className={runtime?.runtimeEnv.dotenvLoadedFromFile ? "status-pill success" : "status-pill warning"}>
+                {runtime?.runtimeEnv.dotenvLoadedFromFile ? t("callCenter.dotenvLoaded") : t("callCenter.dotenvMissing")}
+              </span>
+              <span className={runtime?.runtimeEnv.dotenvExampleExists ? "status-pill info" : "status-pill warning"}>
+                {runtime?.runtimeEnv.dotenvExampleExists ? t("callCenter.exampleAvailable") : t("callCenter.exampleMissing")}
+              </span>
+            </div>
+            <div className="mobile-list">
+              <article className="mobile-item">
+                <strong>{runtime?.runtimeEnv.dotenvPath ?? t("common.none")}</strong>
+                <span>{runtime?.runtimeEnv.note ?? t("common.none")}</span>
+              </article>
+            </div>
+          </article>
+
+          <article className="integration-card">
+            <h3>{t("callCenter.envUsageTitle")}</h3>
+            <div className="mobile-list">
+              {amazonConnectRuntimeRows.map((item) => (
+                <article key={item.key} className="mobile-item">
+                  <strong>{item.key}</strong>
+                  <span>{item.value}</span>
+                  <small>{item.usage}</small>
+                </article>
+              ))}
+            </div>
+          </article>
+
+          <article className="integration-card">
+            <h3>{t("callCenter.operatorContext")}</h3>
             <div className="staff-meta-grid">
               <div>
-                <span className="muted">Salon được gán</span>
+                <span className="muted">{t("callCenter.assignedSalons")}</span>
                 <strong>{runtime?.assignedSalonCount ?? 0}</strong>
               </div>
               <div>
-                <span className="muted">Salon đang xem</span>
+                <span className="muted">{t("callCenter.currentSalon")}</span>
                 <strong>{selectedSalonName}</strong>
               </div>
               <div>
-                <span className="muted">Yêu cầu đang mở</span>
+                <span className="muted">{t("callCenter.openRequests")}</span>
                 <strong>{openRequests}</strong>
               </div>
               <div>
-                <span className="muted">Nhân viên sẵn sàng</span>
+                <span className="muted">{t("callCenter.availableStaff")}</span>
                 <strong>{availableStaffCount}</strong>
               </div>
             </div>
@@ -813,51 +971,50 @@ export const CallCenterPage = () => {
             ))}
           </div>
         ) : (
-          <EmptyBlock message="No salons are assigned to this operator." />
+          <EmptyBlock message={t("callCenter.noAssignedSalons")} />
         )}
       </section>
 
       <section className="card-grid">
         <article className="card stat-card">
-          <h3>Queued items</h3>
+          <h3>{t("callCenter.queuedItems")}</h3>
           <strong>{openRequests}</strong>
         </article>
         <article className="card stat-card">
-          <h3>Available staff</h3>
+          <h3>{t("callCenter.availableStaff")}</h3>
           <strong>{availableStaffCount}</strong>
         </article>
         <article className="card stat-card">
-          <h3>Agent state</h3>
-          <strong>{agentState}</strong>
+          <h3>{t("callCenter.agentState")}</h3>
+          <strong>{translateConnectState(agentState)}</strong>
         </article>
         <article className="card stat-card">
-          <h3>Liên hệ hiện tại</h3>
-          <strong>{activeCallerPhone ?? contactState}</strong>
+          <h3>{t("callCenter.currentContact")}</h3>
+          <strong>{activeCallerPhone ?? translateConnectState(contactState)}</strong>
         </article>
       </section>
 
       <section className="card-grid">
         <article className="card">
           <div className="section-header">
-            <h3>Browser softphone</h3>
-            <span className={amazonConnectReady ? "status-pill success" : "status-pill warning"}>
-              {amazonConnectReady ? "Live CCP" : "Disabled"}
+            <h3>{t("callCenter.softphoneTitle")}</h3>
+            <span className={ccpSetupState === "ready" ? "status-pill success" : "status-pill warning"}>
+              {ccpStatusLabel}
             </span>
           </div>
           {ccpError ? <div className="form-error">{ccpError}</div> : null}
+          <p className="muted">{amazonConnectReady ? t("callCenter.softphoneReadyHint") : t("callCenter.softphonePendingHint")}</p>
           {amazonConnectReady ? (
             <div ref={ccpContainerRef} style={{ minHeight: 560 }} />
           ) : (
             <div className="softphone-placeholder">
-              <strong>Amazon Connect chưa sẵn sàng trên môi trường demo này.</strong>
-              <p className="muted">
-                Khu vực softphone được giữ nguyên để có thể bật live test ngay khi đủ biến môi trường và cấu hình instance.
-              </p>
+              <strong>{t("callCenter.softphoneDemoTitle")}</strong>
+              <p className="muted">{t("callCenter.softphoneDemoHint")}</p>
               <ul className="config-checklist compact">
                 {missingAmazonConnectItems.length ? (
                   missingAmazonConnectItems.map((item) => <li key={item}>{item}</li>)
                 ) : (
-                  <li>Thiếu URL CCP hợp lệ hoặc thông tin runtime.</li>
+                  <li>{t("callCenter.softphoneMissingRuntimeInfo")}</li>
                 )}
               </ul>
             </div>
@@ -865,42 +1022,48 @@ export const CallCenterPage = () => {
         </article>
 
         <article className="card">
-          <h3>Ngữ cảnh operator</h3>
+          <h3>{t("callCenter.operatorContext")}</h3>
           <div className="mobile-list">
             <article className="mobile-item">
-              <strong>Contact state</strong>
-              <span>{contactState}</span>
+              <strong>{t("callCenter.contactState")}</strong>
+              <span>{translateConnectState(contactState)}</span>
             </article>
             <article className="mobile-item">
-              <strong>Caller phone</strong>
-              <span>{activeCallerPhone ?? selectedEscalation?.callSession.callerPhone ?? "-"}</span>
+              <strong>{t("callCenter.callerPhone")}</strong>
+              <span>{activeCallerPhone ?? selectedEscalation?.callSession.callerPhone ?? t("common.none")}</span>
             </article>
             <article className="mobile-item">
-              <strong>Assigned salon</strong>
+              <strong>{t("callCenter.currentSalon")}</strong>
               <span>{selectedSalonName}</span>
             </article>
             <article className="mobile-item">
-              <strong>Queue status</strong>
-              <span>{selectedEscalation?.status ?? "-"}</span>
+              <strong>{t("callCenter.queueStatus")}</strong>
+              <span>
+                {selectedEscalation?.status
+                  ? statusLabelKey(selectedEscalation.status)
+                    ? t(statusLabelKey(selectedEscalation.status)!)
+                    : selectedEscalation.status
+                  : t("common.none")}
+              </span>
             </article>
           </div>
         </article>
       </section>
 
       <section className="card">
-        <h2>Escalation queue</h2>
+        <h2>{t("callCenter.queueTitle")}</h2>
         {queue.length ? (
           <div className="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>Requested</th>
-                  <th>Salon</th>
-                  <th>Caller</th>
-                  <th>Status</th>
-                  <th>Routing</th>
-                  <th>Waiting time</th>
-                  <th>Action</th>
+                  <th>{t("callCenter.requested")}</th>
+                  <th>{t("callCenter.currentSalon")}</th>
+                  <th>{t("callCenter.caller")}</th>
+                  <th>{t("common.status")}</th>
+                  <th>{t("callCenter.routing")}</th>
+                  <th>{t("callCenter.waitingTime")}</th>
+                  <th>{t("common.actions")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -917,17 +1080,17 @@ export const CallCenterPage = () => {
                     <tr key={item.id}>
                       <td>{formatDateTime(item.requestedAt)}</td>
                       <td>{item.salon.name}</td>
-                      <td>{item.callSession.callerPhone ?? "-"}</td>
-                      <td>{item.status}</td>
-                      <td>{item.routingOutcome ?? item.callSession.routingOutcome ?? "-"}</td>
-                      <td>{waitingMinutes} min</td>
+                      <td>{item.callSession.callerPhone ?? t("common.none")}</td>
+                      <td>{statusLabelKey(item.status) ? t(statusLabelKey(item.status)!) : item.status}</td>
+                      <td>{translateRoutingOutcome(item.routingOutcome ?? item.callSession.routingOutcome)}</td>
+                      <td>{t("callCenter.waitingMinutes", { count: waitingMinutes })}</td>
                       <td>
                         <button
                           type="button"
                           className="button-secondary"
                           onClick={() => setSelectedEscalationId(item.id)}
                         >
-                          Open
+                          {t("callCenter.openAction")}
                         </button>
                       </td>
                     </tr>
@@ -937,23 +1100,23 @@ export const CallCenterPage = () => {
             </table>
           </div>
         ) : (
-          <EmptyBlock message="No queued escalations." />
+          <EmptyBlock message={t("callCenter.queueEmpty")} />
         )}
       </section>
 
       <section className="card">
         <div className="section-header">
           <div>
-            <h2>Selected escalation</h2>
+            <h2>{t("callCenter.selectedTitle")}</h2>
             <p className="muted">
               {selectedEscalation
-                ? `${selectedEscalation.salon.name} · ${selectedEscalation.callSession.callerPhone ?? "Unknown caller"}`
-                : "Select a queue item to inspect the transcript, AI summary, and operator actions."}
+                ? `${selectedEscalation.salon.name} · ${selectedEscalation.callSession.callerPhone ?? t("callCenter.unknownCaller")}`
+                : t("callCenter.selectedHintEmpty")}
             </p>
           </div>
           <div className="inline-actions">
             <button type="button" className="button-secondary" onClick={() => void loadQueue()}>
-              Refresh queue
+              {t("callCenter.refreshQueue")}
             </button>
             <button
               type="button"
@@ -961,7 +1124,7 @@ export const CallCenterPage = () => {
               onClick={() => void acceptQueueItem()}
               disabled={!selectedEscalationId}
             >
-              Accept
+              {t("callCenter.accept")}
             </button>
           </div>
         </div>
@@ -970,28 +1133,32 @@ export const CallCenterPage = () => {
           <div className="stack">
             <div className="metrics-grid">
               <div>
-                <span className="muted">Status</span>
-                <strong>{selectedEscalation.status}</strong>
+                <span className="muted">{t("common.status")}</span>
+                <strong>
+                  {statusLabelKey(selectedEscalation.status)
+                    ? t(statusLabelKey(selectedEscalation.status)!)
+                    : selectedEscalation.status}
+                </strong>
               </div>
               <div>
-                <span className="muted">Caller phone</span>
-                <strong>{selectedEscalation.callSession.callerPhone ?? "-"}</strong>
+                <span className="muted">{t("callCenter.callerPhone")}</span>
+                <strong>{selectedEscalation.callSession.callerPhone ?? t("common.none")}</strong>
               </div>
               <div>
-                <span className="muted">Routing outcome</span>
-                <strong>{selectedEscalation.routingOutcome ?? "-"}</strong>
+                <span className="muted">{t("callCenter.routing")}</span>
+                <strong>{translateRoutingOutcome(selectedEscalation.routingOutcome)}</strong>
               </div>
               <div>
-                <span className="muted">Final resolution</span>
-                <strong>{selectedEscalation.callSession.finalResolution ?? "-"}</strong>
+                <span className="muted">{t("callCenter.resolution")}</span>
+                <strong>{selectedEscalation.callSession.finalResolution ?? t("common.none")}</strong>
               </div>
             </div>
 
             <section className="card">
-              <h3>Operator notes and QA</h3>
+              <h3>{t("callCenter.notesTitle")}</h3>
               <div className="form-grid two-columns">
                 <label className="field">
-                  <span>Operator notes</span>
+                  <span>{t("callCenter.operatorNotes")}</span>
                   <textarea
                     rows={4}
                     value={notesForm.operatorNotes}
@@ -1001,7 +1168,7 @@ export const CallCenterPage = () => {
                   />
                 </label>
                 <label className="field">
-                  <span>QA notes</span>
+                  <span>{t("callCenter.qaNotes")}</span>
                   <textarea
                     rows={4}
                     value={notesForm.qaNotes}
@@ -1011,7 +1178,7 @@ export const CallCenterPage = () => {
                   />
                 </label>
                 <label className="field">
-                  <span>Resolution</span>
+                  <span>{t("callCenter.resolution")}</span>
                   <textarea
                     rows={3}
                     value={notesForm.resolution}
@@ -1023,26 +1190,26 @@ export const CallCenterPage = () => {
               </div>
               <div className="inline-actions">
                 <button type="button" className="button-secondary" onClick={() => void saveNotes()}>
-                  Save notes
+                  {t("callCenter.saveNotes")}
                 </button>
                 <button type="button" className="button-primary" onClick={() => void completeQueueItem()}>
-                  Complete
+                  {t("callCenter.complete")}
                 </button>
                 <button type="button" className="button-secondary" onClick={() => void requestCallback()}>
-                  Callback request
+                  {t("callCenter.callbackRequest")}
                 </button>
                 <button type="button" className="button-secondary" onClick={() => void captureVoicemail()}>
-                  Save voicemail
+                  {t("callCenter.saveVoicemail")}
                 </button>
                 <button type="button" className="button-secondary" onClick={() => void sendSmsFallback()}>
-                  Send SMS fallback
+                  {t("callCenter.sendSmsFallback")}
                 </button>
               </div>
             </section>
 
             <section className="card-grid">
               <article className="card">
-                <h3>Transcript</h3>
+                <h3>{t("callCenter.transcript")}</h3>
                 {selectedEscalation.callSession.transcripts.length ? (
                   <div className="stack">
                     {selectedEscalation.callSession.transcripts.map((transcript) => (
@@ -1056,33 +1223,33 @@ export const CallCenterPage = () => {
                     ))}
                   </div>
                 ) : (
-                  <EmptyBlock message="No transcript stored for this call." />
+                  <EmptyBlock message={t("callCenter.transcriptEmpty")} />
                 )}
               </article>
 
               <article className="card">
-                <h3>AI summary</h3>
+                <h3>{t("callCenter.aiSummary")}</h3>
                 <pre>{JSON.stringify(selectedEscalation.callSession.aiSummary ?? null, null, 2)}</pre>
-                <h4>Recent AI interactions</h4>
+                <h4>{t("callCenter.recentAiInteractions")}</h4>
                 {selectedEscalation.callSession.aiInteractions.length ? (
                   <div className="mobile-list">
                     {selectedEscalation.callSession.aiInteractions.map((item) => (
                       <article key={item.id} className="mobile-item">
                         <strong>{item.taskType}</strong>
-                        <span>{item.model ?? "unknown-model"}</span>
+                        <span>{item.model ?? t("callCenter.unknownModel")}</span>
                         <small>{formatDateTime(item.createdAt)}</small>
                       </article>
                     ))}
                   </div>
                 ) : (
-                  <EmptyBlock message="No AI interactions linked to this call." />
+                  <EmptyBlock message={t("callCenter.aiInteractionsEmpty")} />
                 )}
               </article>
             </section>
 
             <section className="card-grid">
               <article className="card">
-                <h3>Customer lookup</h3>
+                <h3>{t("callCenter.customerLookup")}</h3>
                 {selectedEscalation.customerMatches.length ? (
                   <div className="mobile-list">
                     {selectedEscalation.customerMatches.map((customer) => (
@@ -1095,39 +1262,39 @@ export const CallCenterPage = () => {
                     ))}
                   </div>
                 ) : (
-                  <EmptyBlock message="No matching customer found from the caller phone." />
+                  <EmptyBlock message={t("callCenter.customerLookupEmpty")} />
                 )}
               </article>
 
               <article className="card">
-                <h3>Booking attempts</h3>
+                <h3>{t("callCenter.bookingAttempts")}</h3>
                 {selectedEscalation.callSession.bookingAttempts.length ? (
                   <div className="mobile-list">
                     {selectedEscalation.callSession.bookingAttempts.map((attempt) => (
                       <article key={attempt.id} className="mobile-item">
-                        <strong>{attempt.status}</strong>
-                        <span>{attempt.requestedService ?? "No service"}</span>
-                        <small>{attempt.failureReason ?? "No failure reason"}</small>
+                        <strong>{statusLabelKey(attempt.status) ? t(statusLabelKey(attempt.status)!) : attempt.status}</strong>
+                        <span>{attempt.requestedService ?? t("callCenter.noService")}</span>
+                        <small>{attempt.failureReason ?? t("callCenter.noFailureReason")}</small>
                       </article>
                     ))}
                   </div>
                 ) : (
-                  <EmptyBlock message="No AI booking attempts linked to this call." />
+                  <EmptyBlock message={t("callCenter.bookingAttemptsEmpty")} />
                 )}
               </article>
             </section>
           </div>
         ) : (
-          <EmptyBlock message="Select a queued escalation." />
+          <EmptyBlock message={t("callCenter.selectedEmpty")} />
         )}
       </section>
 
       <section className="card-grid">
         <article className="card">
-          <h2>Create customer</h2>
+          <h2>{t("callCenter.createCustomer")}</h2>
           <form className="form-grid two-columns" onSubmit={createCustomer}>
             <label className="field">
-              <span>First name</span>
+              <span>{t("customers.firstName")}</span>
               <input
                 disabled={!hasSelectedSalon}
                 value={customerForm.firstName}
@@ -1136,7 +1303,7 @@ export const CallCenterPage = () => {
               />
             </label>
             <label className="field">
-              <span>Last name</span>
+              <span>{t("customers.lastName")}</span>
               <input
                 disabled={!hasSelectedSalon}
                 value={customerForm.lastName}
@@ -1145,7 +1312,7 @@ export const CallCenterPage = () => {
               />
             </label>
             <label className="field">
-              <span>Phone</span>
+              <span>{t("common.phone")}</span>
               <input
                 type="tel"
                 inputMode="tel"
@@ -1159,25 +1326,26 @@ export const CallCenterPage = () => {
                 }
                 required
               />
+              <small>{t("form.phoneHint")}</small>
             </label>
             <button type="submit" className="button-primary" disabled={!hasSelectedSalon}>
-              Create customer
+              {t("callCenter.createCustomer")}
             </button>
           </form>
         </article>
 
         <article className="card">
-          <h2>Create booking</h2>
+          <h2>{t("callCenter.createBooking")}</h2>
           <form className="form-grid two-columns" onSubmit={createBooking}>
             <label className="field">
-              <span>Customer</span>
+              <span>{t("appointments.customer")}</span>
               <select
                 disabled={!hasSelectedSalon}
                 value={bookingForm.customerId}
                 onChange={(event) => setBookingForm((prev) => ({ ...prev, customerId: event.target.value }))}
                 required
               >
-                <option value="">Select customer</option>
+                <option value="">{t("appointments.selectCustomer")}</option>
                 {customers.map((customer) => (
                   <option key={customer.id} value={customer.id}>
                     {customer.firstName} {customer.lastName}
@@ -1186,14 +1354,14 @@ export const CallCenterPage = () => {
               </select>
             </label>
             <label className="field">
-              <span>Staff</span>
+              <span>{t("appointments.staff")}</span>
               <select
                 disabled={!hasSelectedSalon}
                 value={bookingForm.staffId}
                 onChange={(event) => setBookingForm((prev) => ({ ...prev, staffId: event.target.value }))}
                 required
               >
-                <option value="">Select staff</option>
+                <option value="">{t("appointments.selectStaff")}</option>
                 {staff.map((member) => (
                   <option key={member.id} value={member.id}>
                     {member.fullName}
@@ -1202,14 +1370,14 @@ export const CallCenterPage = () => {
               </select>
             </label>
             <label className="field">
-              <span>Service</span>
+              <span>{t("appointments.service")}</span>
               <select
                 disabled={!hasSelectedSalon}
                 value={bookingForm.serviceId}
                 onChange={(event) => setBookingForm((prev) => ({ ...prev, serviceId: event.target.value }))}
                 required
               >
-                <option value="">Select service</option>
+                <option value="">{t("appointments.selectService")}</option>
                 {services.map((service) => (
                   <option key={service.id} value={service.id}>
                     {service.name}
@@ -1218,7 +1386,7 @@ export const CallCenterPage = () => {
               </select>
             </label>
             <label className="field">
-              <span>Start time</span>
+              <span>{t("appointments.start")}</span>
               <input
                 type="datetime-local"
                 disabled={!hasSelectedSalon}
@@ -1228,25 +1396,25 @@ export const CallCenterPage = () => {
               />
             </label>
             <button type="submit" className="button-primary" disabled={!hasSelectedSalon}>
-              Create booking
+              {t("callCenter.createBooking")}
             </button>
           </form>
         </article>
       </section>
 
       <section className="card">
-        <h2>Appointments</h2>
+        <h2>{t("callCenter.appointmentsTitle")}</h2>
         {visibleAppointments.length ? (
           <div className="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>Time</th>
-                  <th>Customer</th>
-                  <th>Staff</th>
-                  <th>Service</th>
-                  <th>Status</th>
-                  <th>Action</th>
+                  <th>{t("appointments.time")}</th>
+                  <th>{t("appointments.customer")}</th>
+                  <th>{t("appointments.staff")}</th>
+                  <th>{t("appointments.service")}</th>
+                  <th>{t("common.status")}</th>
+                  <th>{t("common.actions")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1258,21 +1426,21 @@ export const CallCenterPage = () => {
                     </td>
                     <td>{appointment.staff.fullName}</td>
                     <td>{appointment.service.name}</td>
-                    <td>{appointment.status}</td>
+                    <td>{statusLabelKey(appointment.status) ? t(statusLabelKey(appointment.status)!) : appointment.status}</td>
                     <td>
                       <div className="inline-actions">
                         <button type="button" className="button-secondary" onClick={() => void reschedule(appointment)}>
-                          Reschedule
+                          {t("appointments.reschedule")}
                         </button>
                         <button
                           type="button"
                           className="button-secondary"
                           onClick={() => void updateStatus(appointment.id, appointment.status)}
                         >
-                          Status
+                          {t("appointments.updateStatus")}
                         </button>
                         <button type="button" className="button-secondary" onClick={() => void cancel(appointment)}>
-                          Cancel
+                          {t("appointments.cancel")}
                         </button>
                       </div>
                     </td>
@@ -1282,7 +1450,7 @@ export const CallCenterPage = () => {
             </table>
           </div>
         ) : (
-          <EmptyBlock message="No appointments available for the selected salon." />
+          <EmptyBlock message={t("callCenter.appointmentsEmpty")} />
         )}
       </section>
     </div>

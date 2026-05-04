@@ -184,6 +184,25 @@ export const ServicesPage = () => {
     <div className="stack">
       <FormDialog />
       <section className="card">
+        <div className="section-header">
+          <div>
+            <h2>{t("services.listTitle")}</h2>
+            <p className="muted">{t("services.catalogHint")}</p>
+          </div>
+          <div className="summary-badges">
+            <span className="summary-badge">
+              {t("services.activeCount")}: {services.filter((item) => item.isActive).length}
+            </span>
+            <span className="summary-badge">
+              {t("services.inactiveCount")}: {services.filter((item) => !item.isActive).length}
+            </span>
+            <span className="summary-badge">
+              {t("services.assignedStaffCount")}: {services.reduce((sum, item) => sum + item.staffServices.length, 0)}
+            </span>
+          </div>
+        </div>
+      </section>
+      <section className="card">
         <h2>{t("services.createTitle")}</h2>
         <form className="form-grid two-columns" onSubmit={createService}>
           <label className="field">
@@ -233,50 +252,61 @@ export const ServicesPage = () => {
       <section className="card">
         <h2>{t("services.listTitle")}</h2>
         {services.length ? (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>{t("services.name")}</th>
-                <th>{t("services.duration")}</th>
-                <th>{t("services.priceCents")}</th>
-                <th>{t("common.status")}</th>
-                <th>{t("nav.staff")}</th>
-                <th>{t("common.actions")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {services.map((item) => (
-                <tr key={item.id}>
-                  <td>{item.name}</td>
-                  <td>{item.durationMinutes} min</td>
-                  <td>{formatCurrencyCents(item.priceCents)}</td>
-                  <td>
+          <div className="entity-grid">
+            {services.map((item) => (
+              <article key={item.id} className="entity-card">
+                <div className="entity-card-header">
+                  <div className="entity-card-copy">
+                    <strong>{item.name}</strong>
+                    <span className="muted">{item.description || t("services.description")}</span>
+                  </div>
+                  <span className={item.isActive ? "status-pill success" : "status-pill warning"}>
                     {statusLabelKey(item.isActive ? "ACTIVE" : "INACTIVE")
                       ? t(statusLabelKey(item.isActive ? "ACTIVE" : "INACTIVE")!)
                       : item.isActive
                         ? "ACTIVE"
                         : "INACTIVE"}
-                  </td>
-                  <td>{item.staffServices.length}</td>
-                  <td>
-                    <div className="inline-actions">
-                      <button type="button" className="button-secondary" onClick={() => void editService(item)}>
-                        {t("staff.editAction")}
-                      </button>
-                      <button type="button" className="button-secondary" onClick={() => toggleServiceState(item)}>
-                        {item.isActive ? t("staff.disable") : t("staff.enable")}
-                      </button>
-                      <button type="button" className="button-secondary" onClick={() => void mapServiceToStaff(item)}>
-                        {t("services.assignStaff")}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                  </span>
+                </div>
+                <div className="entity-metric-grid">
+                  <div className="entity-metric">
+                    <span className="muted">{t("services.duration")}</span>
+                    <strong>{item.durationMinutes} min</strong>
+                  </div>
+                  <div className="entity-metric">
+                    <span className="muted">{t("services.priceCents")}</span>
+                    <strong>{formatCurrencyCents(item.priceCents)}</strong>
+                  </div>
+                  <div className="entity-metric">
+                    <span className="muted">{t("services.assignedStaffCount")}</span>
+                    <strong>{item.staffServices.length}</strong>
+                  </div>
+                </div>
+                <div className="summary-badges">
+                  {item.staffServices.length ? (
+                    item.staffServices.map((row) => (
+                      <span key={row.staffId} className="summary-badge">
+                        {row.staff.fullName}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="summary-badge">{t("common.none")}</span>
+                  )}
+                </div>
+                <div className="inline-actions">
+                  <button type="button" className="button-secondary" onClick={() => void editService(item)}>
+                    {t("staff.editAction")}
+                  </button>
+                  <button type="button" className="button-secondary" onClick={() => toggleServiceState(item)}>
+                    {item.isActive ? t("staff.disable") : t("staff.enable")}
+                  </button>
+                  <button type="button" className="button-secondary" onClick={() => void mapServiceToStaff(item)}>
+                    {t("services.assignStaff")}
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
         ) : (
           <EmptyBlock message={t("services.empty")} />
         )}

@@ -1,51 +1,51 @@
-export const countryOptions = [
-  { value: "US", label: "United States" },
-  { value: "CA", label: "Canada" },
-  { value: "VN", label: "Vietnam" },
-  { value: "AU", label: "Australia" },
-  { value: "GB", label: "United Kingdom" },
-  { value: "FR", label: "France" },
-  { value: "DE", label: "Germany" },
-  { value: "IT", label: "Italy" },
-  { value: "ES", label: "Spain" },
-  { value: "NL", label: "Netherlands" },
-  { value: "JP", label: "Japan" },
-  { value: "KR", label: "South Korea" },
-  { value: "SG", label: "Singapore" },
-  { value: "TH", label: "Thailand" },
-  { value: "PH", label: "Philippines" },
-  { value: "MY", label: "Malaysia" },
-  { value: "MX", label: "Mexico" },
-  { value: "BR", label: "Brazil" },
-  { value: "IN", label: "India" },
-  { value: "AE", label: "United Arab Emirates" }
+export const getCountryOptions = (t: (key: any) => string) => [
+  { value: "US", label: t("option.country.us") },
+  { value: "CA", label: t("option.country.ca") },
+  { value: "VN", label: t("option.country.vn") },
+  { value: "AU", label: t("option.country.au") },
+  { value: "GB", label: t("option.country.gb") },
+  { value: "FR", label: t("option.country.fr") },
+  { value: "DE", label: t("option.country.de") },
+  { value: "IT", label: t("option.country.it") },
+  { value: "ES", label: t("option.country.es") },
+  { value: "NL", label: t("option.country.nl") },
+  { value: "JP", label: t("option.country.jp") },
+  { value: "KR", label: t("option.country.kr") },
+  { value: "SG", label: t("option.country.sg") },
+  { value: "TH", label: t("option.country.th") },
+  { value: "PH", label: t("option.country.ph") },
+  { value: "MY", label: t("option.country.my") },
+  { value: "MX", label: t("option.country.mx") },
+  { value: "BR", label: t("option.country.br") },
+  { value: "IN", label: t("option.country.in") },
+  { value: "AE", label: t("option.country.ae") }
 ];
 
-export const timezoneOptions = [
-  { value: "America/New_York", label: "Eastern Time - New York" },
-  { value: "America/Chicago", label: "Central Time - Chicago" },
-  { value: "America/Denver", label: "Mountain Time - Denver" },
-  { value: "America/Phoenix", label: "Arizona Time - Phoenix" },
-  { value: "America/Los_Angeles", label: "Pacific Time - Los Angeles" },
-  { value: "America/Anchorage", label: "Alaska Time - Anchorage" },
-  { value: "Pacific/Honolulu", label: "Hawaii Time - Honolulu" },
-  { value: "America/Toronto", label: "Eastern Time - Toronto" },
-  { value: "America/Vancouver", label: "Pacific Time - Vancouver" },
-  { value: "Asia/Ho_Chi_Minh", label: "Vietnam Time - Ho Chi Minh City" },
-  { value: "Europe/London", label: "London" },
-  { value: "Europe/Paris", label: "Paris" },
-  { value: "Asia/Singapore", label: "Singapore" },
-  { value: "Asia/Tokyo", label: "Tokyo" },
-  { value: "Australia/Sydney", label: "Sydney" }
+export const getTimezoneOptions = (t: (key: any) => string) => [
+  { value: "America/New_York", label: t("option.timezone.newYork") },
+  { value: "America/Chicago", label: t("option.timezone.chicago") },
+  { value: "America/Denver", label: t("option.timezone.denver") },
+  { value: "America/Phoenix", label: t("option.timezone.phoenix") },
+  { value: "America/Los_Angeles", label: t("option.timezone.losAngeles") },
+  { value: "America/Anchorage", label: t("option.timezone.anchorage") },
+  { value: "Pacific/Honolulu", label: t("option.timezone.honolulu") },
+  { value: "America/Toronto", label: t("option.timezone.toronto") },
+  { value: "America/Vancouver", label: t("option.timezone.vancouver") },
+  { value: "Asia/Ho_Chi_Minh", label: t("option.timezone.hoChiMinh") },
+  { value: "Europe/London", label: t("option.timezone.london") },
+  { value: "Europe/Paris", label: t("option.timezone.paris") },
+  { value: "Asia/Singapore", label: t("option.timezone.singapore") },
+  { value: "Asia/Tokyo", label: t("option.timezone.tokyo") },
+  { value: "Australia/Sydney", label: t("option.timezone.sydney") }
 ];
 
-export const localePreferenceOptions = [
-  { value: "vi-VN", label: "Tiếng Việt (mặc định)" },
-  { value: "en-US", label: "English (US)" }
+export const getLocalePreferenceOptions = (t: (key: any) => string) => [
+  { value: "vi-VN", label: t("option.locale.viVN") },
+  { value: "en-US", label: t("option.locale.enUS") }
 ];
 
-export const currencyOptions = [
-  { value: "USD", label: "USD - US Dollar" },
-  { value: "CAD", label: "CAD - Canadian Dollar" },
-  { value: "VND", label: "VND - Vietnamese Dong" }
+export const getCurrencyOptions = (t: (key: any) => string) => [
+  { value: "USD", label: t("option.currency.usd") },
+  { value: "CAD", label: t("option.currency.cad") },
+  { value: "VND", label: t("option.currency.vnd") }
 ];

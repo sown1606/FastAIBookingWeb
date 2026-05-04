@@ -127,6 +127,26 @@ export const CustomersPage = () => {
   return (
     <div className="stack">
       <section className="card">
+        <div className="section-header">
+          <div>
+            <h2>{t("customers.listTitle")}</h2>
+            <p className="muted">{t("customers.directoryHint")}</p>
+          </div>
+          <div className="summary-badges">
+            <span className="summary-badge">
+              {t("customers.total")}: {customers?.pagination.total ?? 0}
+            </span>
+            <span className="summary-badge">
+              {t("customers.withEmail")}: {customers?.items.filter((item) => Boolean(item.email)).length ?? 0}
+            </span>
+            <span className="summary-badge">
+              {t("customers.historyCount")}: {selected?.appointments.length ?? 0}
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <section className="card">
         <h2>{t("customers.createTitle")}</h2>
         <form className="form-grid two-columns" onSubmit={createCustomer}>
           <label className="field">
@@ -183,39 +203,40 @@ export const CustomersPage = () => {
             placeholder={t("customers.searchPlaceholder")}
           />
         </label>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>{t("staff.fullName")}</th>
-                <th>{t("common.email")}</th>
-                <th>{t("common.phone")}</th>
-                <th>{t("customers.history")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {customers?.items.map((item) => (
-                <tr key={item.id}>
-                  <td>
-                    <div className="person-cell">
-                      <DemoAvatar name={`${item.firstName} ${item.lastName}`} variant="customer" size="sm" />
-                      <span>
+        {customers?.items.length ? (
+          <div className="entity-grid">
+            {customers.items.map((item) => (
+              <article key={item.id} className="entity-card">
+                <div className="entity-card-header">
+                  <div className="person-cell">
+                    <DemoAvatar name={`${item.firstName} ${item.lastName}`} variant="customer" size="sm" />
+                    <span>
+                      <strong>
                         {item.firstName} {item.lastName}
-                      </span>
-                    </div>
-                  </td>
-                  <td>{item.email ?? "-"}</td>
-                  <td>{item.phone}</td>
-                  <td>
-                    <button type="button" className="button-secondary" onClick={() => selectCustomer(item.id)}>
-                      {t("customers.viewHistory")}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                      </strong>
+                      <span className="muted">{item.email ?? t("common.none")}</span>
+                    </span>
+                  </div>
+                  <button type="button" className="button-secondary" onClick={() => selectCustomer(item.id)}>
+                    {t("customers.viewHistory")}
+                  </button>
+                </div>
+                <div className="entity-metric-grid">
+                  <div className="entity-metric">
+                    <span className="muted">{t("common.email")}</span>
+                    <strong>{item.email ?? t("common.none")}</strong>
+                  </div>
+                  <div className="entity-metric">
+                    <span className="muted">{t("common.phone")}</span>
+                    <strong>{item.phone}</strong>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <EmptyBlock message={t("common.none")} />
+        )}
       </section>
 
       <section className="card">

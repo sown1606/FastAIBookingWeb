@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { apiGet, extractErrorMessage } from "../lib/api";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
 import type { Pagination } from "../types";
+import { getStatusLabel, useI18n } from "../lib/i18n";
 
 interface OverviewMetrics {
   totalSalons: number;
@@ -53,6 +54,7 @@ interface SalonListResponse {
 }
 
 export const DashboardPage = () => {
+  const { t } = useI18n();
   const [metrics, setMetrics] = useState<OverviewMetrics | null>(null);
   const [salons, setSalons] = useState<SalonListItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -88,15 +90,15 @@ export const DashboardPage = () => {
   }
 
   if (!metrics) {
-    return <ErrorBlock message="Chưa tải được số liệu tổng quan." onRetry={load} />;
+    return <ErrorBlock message={t("dashboard.noMetrics")} onRetry={load} />;
   }
 
   const integrationSummary = metrics.integrationSummary ?? {
-    callRail: { configured: false, missing: ["Backend chưa trả integration summary"], activeConfigCount: 0 },
-    vertex: { configured: false, missing: ["Backend chưa trả integration summary"], activeConfigCount: 0 },
+    callRail: { configured: false, missing: [t("health.missingSummary")], activeConfigCount: 0 },
+    vertex: { configured: false, missing: [t("health.missingSummary")], activeConfigCount: 0 },
     amazonConnect: {
       configured: false,
-      missing: ["Backend chưa trả integration summary"],
+      missing: [t("health.missingSummary")],
       activeConfigCount: 0
     }
   };
@@ -118,54 +120,73 @@ export const DashboardPage = () => {
 
   return (
     <div className="stack">
-      <section className="card">
+      <section className="card page-hero">
         <div className="section-header">
           <div>
-            <p className="eyebrow">FastAIBooking Admin</p>
-            <h2>Vận hành nền tảng</h2>
-            <p className="muted">Theo dõi tiệm, chủ tiệm, lịch hẹn và độ sẵn sàng của AI Reception cùng tổng đài con người.</p>
+            <p className="eyebrow">{t("layout.platform")}</p>
+            <h2>{t("dashboard.heroTitle")}</h2>
+            <p className="muted">{t("dashboard.heroHint")}</p>
           </div>
           <div className="inline-actions">
-            <span className="status-pill info">Cập nhật {new Date(metrics.generatedAt).toLocaleString("vi-VN")}</span>
+            <span className="status-pill info">
+              {t("dashboard.updatedAt")} {new Date(metrics.generatedAt).toLocaleString("vi-VN")}
+            </span>
             <Link to="/salons/new" className="button-primary">
-              Tạo tiệm
+              {t("dashboard.createSalon")}
             </Link>
           </div>
         </div>
-        <div className="summary-badges">
-          <span className="summary-badge">Owner: {metrics.totalOwners}</span>
-          <span className="summary-badge">Agent tổng đài: {metrics.callCenterAgentCount ?? 0}</span>
-          <span className="summary-badge">Escalation đang mở: {metrics.openEscalationCount ?? 0}</span>
+        <div className="hero-stats">
+          <article className="hero-stat-card">
+            <span>{t("dashboard.totalOwners")}</span>
+            <strong>{metrics.totalOwners}</strong>
+          </article>
+          <article className="hero-stat-card">
+            <span>{t("dashboard.callCenterAgents")}</span>
+            <strong>{metrics.callCenterAgentCount ?? 0}</strong>
+          </article>
+          <article className="hero-stat-card">
+            <span>{t("dashboard.openEscalations")}</span>
+            <strong>{metrics.openEscalationCount ?? 0}</strong>
+          </article>
         </div>
       </section>
+
       <section className="card-grid">
         <article className="card stat-card">
-          <h3>Tổng số tiệm</h3>
+          <h3>{t("dashboard.totalSalons")}</h3>
           <strong>{metrics.totalSalons}</strong>
         </article>
         <article className="card stat-card">
-          <h3>Tiệm đang hoạt động</h3>
+          <h3>{t("dashboard.activeSalons")}</h3>
           <strong>{metrics.activeSalons}</strong>
         </article>
         <article className="card stat-card">
-          <h3>Tiệm tạm dừng</h3>
+          <h3>{t("dashboard.suspendedSalons")}</h3>
           <strong>{metrics.suspendedSalons}</strong>
         </article>
         <article className="card stat-card">
-          <h3>Lịch hẹn</h3>
+          <h3>{t("dashboard.totalAppointments")}</h3>
           <strong>{metrics.totalAppointments}</strong>
         </article>
         <article className="card stat-card">
-          <h3>Agent tổng đài</h3>
+          <h3>{t("dashboard.callCenterAgents")}</h3>
           <strong>{metrics.callCenterAgentCount ?? 0}</strong>
         </article>
         <article className="card stat-card">
-          <h3>Escalation đang mở</h3>
+          <h3>{t("dashboard.openEscalations")}</h3>
           <strong>{metrics.openEscalationCount ?? 0}</strong>
         </article>
       </section>
 
-      <section className="integration-grid">
+      <section className="card">
+        <div className="section-header">
+          <div>
+            <h3>{t("dashboard.integrationStatus")}</h3>
+            <p className="muted">{t("dashboard.integrationHint")}</p>
+          </div>
+        </div>
+        <div className="integration-grid">
         {integrations.map((integration) => (
           <article key={integration.label} className="integration-card">
             <div className="section-header">
@@ -175,91 +196,91 @@ export const DashboardPage = () => {
                   integration.value.configured ? "status-pill success" : "status-pill warning"
                 }
               >
-                {integration.value.configured ? "Sẵn sàng" : "Chờ cấu hình"}
+                {integration.value.configured ? t("dashboard.ready") : t("dashboard.pending")}
               </span>
             </div>
             <div className="key-value-grid">
               <div>
-                <span className="muted">Cấu hình active</span>
+                <span className="muted">{t("health.activeConfig")}</span>
                 <strong>{integration.value.activeConfigCount}</strong>
               </div>
               <div>
-                <span className="muted">Trạng thái</span>
-                <strong>{integration.value.configured ? "Configured" : "Pending"}</strong>
+                <span className="muted">{t("common.status")}</span>
+                <strong>{integration.value.configured ? t("status.READY") : t("status.NEEDS_SETUP")}</strong>
               </div>
             </div>
             <p className="muted">
               {integration.value.missing.length
-                ? `Thiếu: ${integration.value.missing.join(", ")}`
-                : "Không có thiếu cấu hình ở mức hệ thống."}
+                ? t("dashboard.integrationMissing", { items: integration.value.missing.join(", ") })
+                : t("dashboard.integrationReady")}
             </p>
           </article>
         ))}
+        </div>
       </section>
 
       <section className="card">
         <div className="section-header">
-          <h2>Tiệm mới tạo gần đây</h2>
+          <div>
+            <h2>{t("dashboard.recentSalons")}</h2>
+            <p className="muted">{t("dashboard.recentSalonsHint")}</p>
+          </div>
           <Link to="/salons" className="button-secondary">
-            Xem tất cả
+            {t("common.viewDetail")}
           </Link>
         </div>
         {salons.length ? (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Tiệm</th>
-                  <th>Chủ tiệm</th>
-                  <th>Trạng thái</th>
-                  <th>Nhân viên hoạt động</th>
-                  <th>Nhân viên tính phí</th>
-                </tr>
-              </thead>
-              <tbody>
-                {salons.map((salon) => (
-                  <tr key={salon.id}>
-                    <td>
-                      <div className="table-meta">
-                        <Link to={`/salons/${salon.id}`}>
-                          <strong>{salon.name}</strong>
-                        </Link>
-                        <span>{salon.owner.email}</span>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="table-meta">
-                        <strong>{salon.owner.fullName}</strong>
-                        <span>{salon.owner.email}</span>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="summary-badges">
-                        <span className={salon.status === "ACTIVE" ? "status-pill success" : "status-pill warning"}>
-                          {salon.status}
-                        </span>
-                        <span
-                          className={
-                            salon.subscriptionStatus === "ACTIVE"
-                              ? "status-pill info"
-                              : salon.subscriptionStatus === "PAST_DUE"
-                                ? "status-pill warning"
-                                : "status-pill"
-                          }
-                        >
-                          {salon.subscriptionStatus}
-                        </span>
-                      </div>
-                    </td>
-                    <td>{salon.staffUsage.activeStaffCount}</td>
-                    <td>{salon.staffUsage.billableExtraStaffCount}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="entity-grid">
+            {salons.map((salon) => (
+              <article key={salon.id} className="entity-card">
+                <div className="section-header">
+                  <div className="table-meta">
+                    <Link to={`/salons/${salon.id}`}>
+                      <strong>{salon.name}</strong>
+                    </Link>
+                    <span>{salon.owner.email}</span>
+                  </div>
+                  <div className="summary-badges">
+                    <span className={salon.status === "ACTIVE" ? "status-pill success" : "status-pill warning"}>
+                      {getStatusLabel(salon.status) ? t(getStatusLabel(salon.status)!) : salon.status}
+                    </span>
+                    <span
+                      className={
+                        salon.subscriptionStatus === "ACTIVE"
+                          ? "status-pill info"
+                          : salon.subscriptionStatus === "PAST_DUE"
+                            ? "status-pill warning"
+                            : "status-pill"
+                      }
+                    >
+                      {getStatusLabel(salon.subscriptionStatus)
+                        ? t(getStatusLabel(salon.subscriptionStatus)!)
+                        : salon.subscriptionStatus}
+                    </span>
+                  </div>
+                </div>
+                <div className="meta-grid">
+                  <div>
+                    <span className="muted">{t("common.owner")}</span>
+                    <strong>{salon.owner.fullName}</strong>
+                  </div>
+                  <div>
+                    <span className="muted">{t("salons.activeStaff")}</span>
+                    <strong>{salon.staffUsage.activeStaffCount}</strong>
+                  </div>
+                  <div>
+                    <span className="muted">{t("salons.billableExtra")}</span>
+                    <strong>{salon.staffUsage.billableExtraStaffCount}</strong>
+                  </div>
+                </div>
+                <Link to={`/salons/${salon.id}`} className="button-secondary">
+                  {t("common.viewDetail")}
+                </Link>
+              </article>
+            ))}
           </div>
         ) : (
-          <EmptyBlock message="Chưa có tiệm nào." />
+          <EmptyBlock message={t("dashboard.noSalons")} />
         )}
       </section>
     </div>

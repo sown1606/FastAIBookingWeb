@@ -3,11 +3,13 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "./auth-context";
 import { extractErrorMessage } from "../lib/api";
 import { useToast } from "../components/toast";
+import { useI18n } from "../lib/i18n";
 
 export const LoginPage = () => {
   const navigate = useNavigate();
   const { login } = useAuth();
   const { notify } = useToast();
+  const { t } = useI18n();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -20,7 +22,7 @@ export const LoginPage = () => {
     setSubmitting(true);
     try {
       await login(email, password);
-      notify("success", "Đăng nhập thành công.");
+      notify("success", t("login.success"));
       navigate("/dashboard");
     } catch (submitError) {
       const message = extractErrorMessage(submitError);
@@ -35,13 +37,13 @@ export const LoginPage = () => {
     <div className="auth-page">
       <div className="auth-card">
         <div>
-          <p className="eyebrow">FastAIBooking Platform</p>
+          <p className="eyebrow">{t("layout.platform")}</p>
           <h1>{import.meta.env.VITE_APP_NAME ?? "FastAIBooking Admin"}</h1>
-          <p className="muted">Cổng quản trị nền tảng, tiệm nail và tổng đài.</p>
+          <p className="muted">{t("login.helper")}</p>
         </div>
         <form onSubmit={onSubmit} className="form-grid">
           <label className="field">
-            <span>Email</span>
+            <span>{t("login.email")}</span>
             <input
               type="email"
               value={email}
@@ -51,7 +53,7 @@ export const LoginPage = () => {
             />
           </label>
           <label className="field">
-            <span>Mật khẩu</span>
+            <span>{t("login.password")}</span>
             <input
               type="password"
               value={password}
@@ -62,11 +64,11 @@ export const LoginPage = () => {
           </label>
           {error ? <div className="form-error">{error}</div> : null}
           <button type="submit" className="button-primary" disabled={submitting}>
-            {submitting ? "Đang đăng nhập..." : "Đăng nhập"}
+            {submitting ? t("login.submitting") : t("login.submit")}
           </button>
         </form>
         <div className="mobile-item">
-          <strong>Tài khoản demo</strong>
+          <strong>{t("login.demoTitle")}</strong>
           <span className="muted">admin@fastaibooking.local / Admin123!</span>
         </div>
       </div>

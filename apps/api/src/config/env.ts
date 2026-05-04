@@ -1,8 +1,12 @@
 import fs from "fs";
+import path from "path";
 import dotenv from "dotenv";
 import { z } from "zod";
 
-dotenv.config();
+const runtimeWorkingDirectory = process.cwd();
+const dotenvPath = path.resolve(runtimeWorkingDirectory, ".env");
+const dotenvExamplePath = path.resolve(runtimeWorkingDirectory, ".env.example");
+const dotenvResult = dotenv.config({ path: dotenvPath });
 
 const toBoolean = (value: string | undefined, defaultValue: boolean): boolean => {
   if (value === undefined) {
@@ -129,6 +133,24 @@ const hasVertexCredentialEnv =
   Boolean(asNonEmpty(base.VERTEX_CLIENT_EMAIL) ?? asNonEmpty(base.VERTEX_SERVICE_ACCOUNT_EMAIL)) &&
   Boolean(asNonEmpty(base.VERTEX_PRIVATE_KEY));
 
+const runtimeEnv = {
+  workingDirectory: runtimeWorkingDirectory,
+  dotenvPath,
+  dotenvFileExists: fs.existsSync(dotenvPath),
+  dotenvExamplePath,
+  dotenvExampleExists: fs.existsSync(dotenvExamplePath),
+  dotenvLoadedFromFile: Boolean(dotenvResult.parsed),
+  note: (() => {
+    if (dotenvResult.parsed) {
+      return `Runtime loaded environment values from ${dotenvPath}. .env.example is documentation only.`;
+    }
+    if (fs.existsSync(dotenvExamplePath)) {
+      return `No runtime .env file was loaded from ${dotenvPath}. .env.example is documentation only, so use a real .env file or deployment environment variables.`;
+    }
+    return `No runtime .env file was loaded from ${dotenvPath}. Provide environment variables through a real .env file or the deployment environment.`;
+  })()
+};
+
 const callRailRequiredKeys = [
   "CALLRAIL_WEBHOOK_SECRET",
   "CALLRAIL_API_KEY",
@@ -203,7 +225,8 @@ export const env = {
   CALLRAIL_LIVE_PERSON_FLOW_ID: asNonEmpty(base.CALLRAIL_LIVE_PERSON_FLOW_ID),
   CALL_CENTER_DEFAULT_PHONE: asNonEmpty(base.CALL_CENTER_DEFAULT_PHONE),
   DATABASE_URL: databaseUrl,
-  integrationStatuses
+  integrationStatuses,
+  runtimeEnv
 };
 
 export type Env = typeof env;

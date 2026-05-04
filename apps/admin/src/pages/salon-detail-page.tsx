@@ -12,8 +12,14 @@ import { useToast } from "../components/toast";
 import { formatCurrencyCents, formatDateTime } from "../lib/format";
 import type { Pagination } from "../types";
 import { toDateTimeLocalValue, useFormDialog } from "../components/form-dialog";
-import { countryOptions, currencyOptions, localePreferenceOptions, timezoneOptions } from "../lib/form-options";
+import {
+  getCountryOptions,
+  getCurrencyOptions,
+  getLocalePreferenceOptions,
+  getTimezoneOptions
+} from "../lib/form-options";
 import { formatUsPhoneInput, validateOptionalUsPhone } from "../lib/phone";
+import { getStatusLabel, useI18n } from "../lib/i18n";
 
 interface SalonSettings {
   currency: string;
@@ -383,6 +389,7 @@ export const SalonDetailPage = () => {
   const { salonId } = useParams<{ salonId: string }>();
   const { notify } = useToast();
   const { openFormDialog, FormDialog } = useFormDialog();
+  const { t } = useI18n();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -480,10 +487,14 @@ export const SalonDetailPage = () => {
     () => callCenterAgents.filter((agent) => assignedAgentIds.includes(agent.id)),
     [assignedAgentIds, callCenterAgents]
   );
+  const timezoneOptions = getTimezoneOptions(t);
+  const countryOptions = getCountryOptions(t);
+  const currencyOptions = getCurrencyOptions(t);
+  const localePreferenceOptions = getLocalePreferenceOptions(t);
 
   const load = async () => {
     if (!salonId) {
-      setError("Missing salon ID.");
+      setError(t("salonDetail.missingId"));
       setLoading(false);
       return;
     }
@@ -597,7 +608,7 @@ export const SalonDetailPage = () => {
       profileForm.notificationPhoneNumber
     ];
     if (!phoneValues.every(validateOptionalUsPhone)) {
-      notify("error", "Please enter valid US phone numbers.");
+      notify("error", t("salonDetail.phoneInvalid"));
       return;
     }
     setSavingProfile(true);
@@ -620,7 +631,7 @@ export const SalonDetailPage = () => {
         country: profileForm.country
       });
       setSalon(updated);
-      notify("success", "Salon profile updated.");
+      notify("success", t("salonDetail.profileUpdated"));
     } catch (saveError) {
       notify("error", extractErrorMessage(saveError));
     } finally {
@@ -634,7 +645,7 @@ export const SalonDetailPage = () => {
       return;
     }
     if (!validateOptionalUsPhone(settingsForm.callCenterRoutingNumber)) {
-      notify("error", "Please enter a valid US call center phone number.");
+      notify("error", t("salonDetail.callCenterPhoneInvalid"));
       return;
     }
     setSavingSettings(true);
@@ -661,7 +672,7 @@ export const SalonDetailPage = () => {
         callCenterRoutingNote: settingsForm.callCenterRoutingNote || null
       });
       setSalon((prev) => (prev ? { ...prev, settings: updated } : prev));
-      notify("success", "Salon settings updated.");
+      notify("success", t("salonDetail.settingsUpdated"));
     } catch (saveError) {
       notify("error", extractErrorMessage(saveError));
     } finally {
@@ -698,7 +709,7 @@ export const SalonDetailPage = () => {
         }
       );
       setIntegrations(result);
-      notify("success", "Integration settings saved.");
+      notify("success", t("salonDetail.integrationsUpdated"));
     } catch (saveError) {
       notify("error", extractErrorMessage(saveError));
     } finally {
@@ -719,7 +730,7 @@ export const SalonDetailPage = () => {
         }
       );
       setAssignedAgentIds(assignments.map((assignment) => assignment.agent.id));
-      notify("success", "Call center assignments saved.");
+      notify("success", t("salonDetail.assignmentsUpdated"));
     } catch (saveError) {
       notify("error", extractErrorMessage(saveError));
     } finally {
@@ -751,7 +762,7 @@ export const SalonDetailPage = () => {
         isBookable: true,
         password: ""
       });
-      notify("success", "Staff created.");
+      notify("success", t("salonDetail.staffCreated"));
       await load();
     } catch (createError) {
       notify("error", extractErrorMessage(createError));
@@ -791,7 +802,7 @@ export const SalonDetailPage = () => {
         phone: values.phone,
         title: values.title
       });
-      notify("success", "Staff updated.");
+      notify("success", t("salonDetail.staffUpdated"));
       await load();
     } catch (updateError) {
       notify("error", extractErrorMessage(updateError));
@@ -808,7 +819,7 @@ export const SalonDetailPage = () => {
         `/api/v1/admin/salons/${salonId}/staff/${item.id}/${action}`,
         {}
       );
-      notify("success", `Staff ${action}d.`);
+      notify("success", action === "deactivate" ? t("status.INACTIVE") : t("status.ACTIVE"));
       await load();
     } catch (toggleError) {
       notify("error", extractErrorMessage(toggleError));
@@ -846,7 +857,7 @@ export const SalonDetailPage = () => {
           newPassword: values.newPassword
         }
       );
-      notify("success", "Staff access reset.");
+      notify("success", t("salonDetail.staffReset"));
       await load();
     } catch (resetError) {
       notify("error", extractErrorMessage(resetError));
@@ -871,7 +882,7 @@ export const SalonDetailPage = () => {
         durationMinutes: "45",
         priceCents: "4500"
       });
-      notify("success", "Service created.");
+      notify("success", t("salonDetail.serviceCreated"));
       await load();
     } catch (createError) {
       notify("error", extractErrorMessage(createError));
@@ -909,7 +920,7 @@ export const SalonDetailPage = () => {
         durationMinutes: Number(values.durationMinutes),
         priceCents: Number(values.priceCents)
       });
-      notify("success", "Service updated.");
+      notify("success", t("salonDetail.serviceUpdated"));
       await load();
     } catch (updateError) {
       notify("error", extractErrorMessage(updateError));
@@ -944,7 +955,7 @@ export const SalonDetailPage = () => {
           hours
         }
       );
-      notify("success", "Business hours updated.");
+      notify("success", t("salonDetail.businessHoursUpdated"));
       await load();
     } catch (saveError) {
       notify("error", extractErrorMessage(saveError));
@@ -969,7 +980,7 @@ export const SalonDetailPage = () => {
         email: "",
         phone: ""
       });
-      notify("success", "Customer created.");
+      notify("success", t("salonDetail.customerCreated"));
       await load();
     } catch (createError) {
       notify("error", extractErrorMessage(createError));
@@ -982,7 +993,7 @@ export const SalonDetailPage = () => {
       return;
     }
     if (!appointmentForm.customerId || !appointmentForm.staffId || !appointmentForm.serviceId) {
-      notify("error", "Customer, staff, service, and date-time are required.");
+      notify("error", t("salonDetail.appointmentRequired"));
       return;
     }
     try {
@@ -999,7 +1010,7 @@ export const SalonDetailPage = () => {
         serviceId: "",
         startTime: ""
       });
-      notify("success", "Appointment created.");
+      notify("success", t("salonDetail.appointmentCreated"));
       await load();
     } catch (createError) {
       notify("error", extractErrorMessage(createError));
@@ -1029,7 +1040,7 @@ export const SalonDetailPage = () => {
           reason: values.reason || undefined
         }
       );
-      notify("success", "Appointment canceled.");
+      notify("success", t("salonDetail.appointmentCanceled"));
       await load();
     } catch (cancelError) {
       notify("error", extractErrorMessage(cancelError));
@@ -1059,7 +1070,7 @@ export const SalonDetailPage = () => {
           startTime: new Date(values.startTime).toISOString()
         }
       );
-      notify("success", "Appointment rescheduled.");
+      notify("success", t("salonDetail.appointmentRescheduled"));
       await load();
     } catch (rescheduleError) {
       notify("error", extractErrorMessage(rescheduleError));
@@ -1096,7 +1107,7 @@ export const SalonDetailPage = () => {
           status: values.status
         }
       );
-      notify("success", "Appointment updated.");
+      notify("success", t("salonDetail.appointmentUpdated"));
       await load();
     } catch (updateError) {
       notify("error", extractErrorMessage(updateError));
@@ -1121,15 +1132,15 @@ export const SalonDetailPage = () => {
       <section className="card">
         <div className="section-header">
           <div>
-            <p className="eyebrow">Salon Control Center</p>
+            <p className="eyebrow">{t("nav.salons")}</p>
             <h2>{salon.name}</h2>
             <p className="muted">
-              Trang demo chính để cấu hình AI Reception, tổng đài và mức sẵn sàng tích hợp cho tiệm.
+              {t("layout.subtitle")}
             </p>
           </div>
           <div className="summary-badges">
             <span className={profileForm.status === "ACTIVE" ? "status-pill success" : "status-pill warning"}>
-              {profileForm.status}
+              {getStatusLabel(profileForm.status) ? t(getStatusLabel(profileForm.status)!) : profileForm.status}
             </span>
             <span
               className={
@@ -1140,40 +1151,42 @@ export const SalonDetailPage = () => {
                     : "status-pill"
               }
             >
-              {profileForm.subscriptionStatus}
+              {getStatusLabel(profileForm.subscriptionStatus)
+                ? t(getStatusLabel(profileForm.subscriptionStatus)!)
+                : profileForm.subscriptionStatus}
             </span>
           </div>
         </div>
         <div className="metrics-grid">
           <div>
-            <span className="muted">Owner</span>
+            <span className="muted">{t("common.owner")}</span>
             <strong>{salon.owner.fullName}</strong>
           </div>
           <div>
-            <span className="muted">Active staff</span>
+            <span className="muted">{t("salons.activeStaff")}</span>
             <strong>{salon.staffUsage.activeStaffCount}</strong>
           </div>
           <div>
-            <span className="muted">Free limit</span>
+            <span className="muted">{t("common.freeLimit")}</span>
             <strong>{salon.staffUsage.freeStaffLimit}</strong>
           </div>
           <div>
-            <span className="muted">Extra billable</span>
+            <span className="muted">{t("salons.billableExtra")}</span>
             <strong>{salon.staffUsage.billableExtraStaffCount}</strong>
           </div>
         </div>
         <div className="summary-badges">
           <span className={settingsForm.aiReceptionEnabled ? "status-pill success" : "status-pill warning"}>
-            AI Reception {settingsForm.aiReceptionEnabled ? "ON" : "OFF"}
+            AI Reception {settingsForm.aiReceptionEnabled ? t("status.ON") : t("status.OFF")}
           </span>
           <span className={settingsForm.callCenterEnabled ? "status-pill success" : "status-pill warning"}>
-            Call Center {settingsForm.callCenterEnabled ? "ON" : "OFF"}
+            {t("nav.callCenterAgents")} {settingsForm.callCenterEnabled ? t("status.ON") : t("status.OFF")}
           </span>
           <span className={settingsForm.voicemailEnabled ? "status-pill info" : "status-pill"}>
-            Voicemail {settingsForm.voicemailEnabled ? "ON" : "OFF"}
+            Voicemail {settingsForm.voicemailEnabled ? t("status.ON") : t("status.OFF")}
           </span>
           <span className={settingsForm.smsFallbackEnabled ? "status-pill info" : "status-pill"}>
-            SMS fallback {settingsForm.smsFallbackEnabled ? "ON" : "OFF"}
+            SMS fallback {settingsForm.smsFallbackEnabled ? t("status.ON") : t("status.OFF")}
           </span>
         </div>
       </section>
@@ -1183,10 +1196,10 @@ export const SalonDetailPage = () => {
           <div className="section-header">
             <strong>AI Reception</strong>
             <span className={settingsForm.aiReceptionEnabled ? "status-pill success" : "status-pill warning"}>
-              {settingsForm.aiReceptionEnabled ? "Enabled" : "Disabled"}
+              {settingsForm.aiReceptionEnabled ? t("common.enabled") : t("common.disabled")}
             </span>
           </div>
-          <span className="muted">Ring count trước AI: {settingsForm.aiTransferRingCount}</span>
+          <span className="muted">{t("common.status")}: {settingsForm.aiTransferRingCount}</span>
           <span className="muted">
             Greeting: {settingsForm.aiGreetingPrompt?.trim() ? "Đã cấu hình lời chào" : "Chưa có lời chào"}
           </span>
@@ -1195,7 +1208,7 @@ export const SalonDetailPage = () => {
           <div className="section-header">
             <strong>Human Call Center</strong>
             <span className={settingsForm.callCenterEnabled ? "status-pill success" : "status-pill warning"}>
-              {settingsForm.callCenterEnabled ? "Enabled" : "Disabled"}
+              {settingsForm.callCenterEnabled ? t("common.enabled") : t("common.disabled")}
             </span>
           </div>
           <span className="muted">Agent được gán: {assignedAgents.length}</span>
@@ -1227,8 +1240,8 @@ export const SalonDetailPage = () => {
               {salon.integrationStatuses.amazonConnect.configured &&
               salon.integrationStatuses.callRail.configured &&
               salon.integrationStatuses.vertex.configured
-                ? "Ready"
-                : "Pending"}
+                ? t("status.READY")
+                : t("status.NEEDS_SETUP")}
             </span>
           </div>
           <span className="muted">CallRail active: {salon.integrationStatuses.callRail.activeConfigCount}</span>
