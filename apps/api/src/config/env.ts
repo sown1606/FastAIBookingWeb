@@ -4,9 +4,29 @@ import dotenv from "dotenv";
 import { z } from "zod";
 
 const runtimeWorkingDirectory = process.cwd();
-const dotenvPath = path.resolve(runtimeWorkingDirectory, ".env");
-const dotenvExamplePath = path.resolve(runtimeWorkingDirectory, ".env.example");
-const dotenvResult = dotenv.config({ path: dotenvPath });
+const monorepoRootCandidate = path.resolve(runtimeWorkingDirectory, "../..");
+const monorepoRootExists =
+  fs.existsSync(path.join(monorepoRootCandidate, "package.json")) &&
+  fs.existsSync(path.join(monorepoRootCandidate, "apps"));
+const canonicalRuntimeDirectory = monorepoRootExists ? monorepoRootCandidate : runtimeWorkingDirectory;
+const dotenvPath = path.resolve(canonicalRuntimeDirectory, ".env");
+const fallbackDotenvPath =
+  canonicalRuntimeDirectory === runtimeWorkingDirectory
+    ? null
+    : path.resolve(runtimeWorkingDirectory, ".env");
+const dotenvCandidatePaths = [dotenvPath, fallbackDotenvPath].filter(
+  (value, index, array): value is string => Boolean(value) && array.indexOf(value) === index
+);
+const loadedDotenvPath = dotenvCandidatePaths.find((candidate) => fs.existsSync(candidate)) ?? null;
+const dotenvExamplePath = path.resolve(canonicalRuntimeDirectory, ".env.example");
+const fallbackDotenvExamplePath =
+  canonicalRuntimeDirectory === runtimeWorkingDirectory
+    ? null
+    : path.resolve(runtimeWorkingDirectory, ".env.example");
+const resolvedDotenvExamplePath = fs.existsSync(dotenvExamplePath)
+  ? dotenvExamplePath
+  : fallbackDotenvExamplePath ?? dotenvExamplePath;
+const dotenvResult = dotenv.config({ path: loadedDotenvPath ?? dotenvPath });
 
 const toBoolean = (value: string | undefined, defaultValue: boolean): boolean => {
   if (value === undefined) {
@@ -136,16 +156,21 @@ const hasVertexCredentialEnv =
 const runtimeEnv = {
   workingDirectory: runtimeWorkingDirectory,
   dotenvPath,
-  dotenvFileExists: fs.existsSync(dotenvPath),
-  dotenvExamplePath,
-  dotenvExampleExists: fs.existsSync(dotenvExamplePath),
+  fallbackDotenvPath,
+  loadedDotenvPath,
+  dotenvFileExists: dotenvCandidatePaths.some((candidate) => fs.existsSync(candidate)),
+  dotenvExamplePath: resolvedDotenvExamplePath,
+  dotenvExampleExists: fs.existsSync(resolvedDotenvExamplePath),
   dotenvLoadedFromFile: Boolean(dotenvResult.parsed),
   note: (() => {
-    if (dotenvResult.parsed) {
-      return `Runtime loaded environment values from ${dotenvPath}. .env.example is documentation only.`;
+    if (loadedDotenvPath === dotenvPath && dotenvResult.parsed) {
+      return `Runtime loaded environment values from ${dotenvPath}. This is the canonical runtime .env file for the current environment. ${resolvedDotenvExamplePath} is the template only.`;
     }
-    if (fs.existsSync(dotenvExamplePath)) {
-      return `No runtime .env file was loaded from ${dotenvPath}. .env.example is documentation only, so use a real .env file or deployment environment variables.`;
+    if (loadedDotenvPath === fallbackDotenvPath && dotenvResult.parsed) {
+      return `Runtime loaded environment values from ${fallbackDotenvPath}. The canonical monorepo runtime file is ${dotenvPath}, so keep that file in sync when you want one shared env source.`;
+    }
+    if (fs.existsSync(resolvedDotenvExamplePath)) {
+      return `No runtime .env file was loaded from ${dotenvPath}. Fill ${resolvedDotenvExamplePath} first, then copy or sync it into ${dotenvPath}, or provide deployment environment variables.`;
     }
     return `No runtime .env file was loaded from ${dotenvPath}. Provide environment variables through a real .env file or the deployment environment.`;
   })()
