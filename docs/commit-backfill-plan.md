@@ -3,6 +3,11 @@
 This plan was created as the review artifact for rebuilding the FastAIBooking history
 into smaller, believable commits. It was reviewed and then executed on 2026-04-17.
 
+Current product direction note: the active demo architecture uses Amazon Connect directly
+for phone, AI call flow, queue, and human escalation. Any CallRail references below are
+historical backfill notes or optional future marketing attribution context only, and are
+not required for the current Amazon Connect-only demo.
+
 Execution note: the final backfill was consolidated into 40 chronological commits.
 Some planned Vietnamese localization and UI polish groups were folded into the commits
 that introduced the affected screens because the final working tree already contained
@@ -150,9 +155,9 @@ Summary: Add call ingestion and AI booking groundwork after the core salon flows
 
 Planned commits:
 
-1. `add CallRail, transcript, booking attempt, AI log, and integration config models`
-2. `implement CallRail provider and webhook ingestion route`
-3. `add Vertex AI provider, booking extraction prompts, and AI interaction logging`
+1. `add legacy attribution, transcript, booking attempt, AI log, and integration config models`
+2. `implement optional attribution provider and webhook ingestion route`
+3. `add AI provider groundwork, booking extraction prompts, and AI interaction logging`
 
 ### Day 12 - 2026-04-10
 
@@ -239,10 +244,10 @@ Planned commits:
 - The current Git history is too coarse to recover exact original development order. The
   proposed order is inferred from migrations, route/module shape, page structure, and the
   existing commit timestamps.
-- `202604010001_callrail_vertex_integration` appears early by migration filename, while
-  product guidance says call center groundwork should come later. The plan places call
-  ingestion and AI groundwork after core salon and web flows. If migration filenames must
-  strictly match commit dates, that portion should move earlier.
+- `202604010001_callrail_vertex_integration` appears early by migration filename and now
+  represents legacy optional attribution and AI groundwork. The current main demo uses
+  Amazon Connect directly. If migration filenames must strictly match commit dates, that
+  portion should move earlier.
 - `202604160001_amazon_connect_provider` is currently untracked. The plan treats it as a
   late integration-groundwork commit because it only adds the `AMAZON_CONNECT` provider enum.
 - Several files contain many concerns, especially `apps/admin/src/pages/salon-detail-page.tsx`,

@@ -9,10 +9,49 @@
 ## Demo Accounts
 
 - Platform admin: `admin@fastaibooking.local / Admin123!`
-- Salon owner: `owner.demo@fastaibooking.local /`` Owner123!`
+- Salon owner: `owner.demo@fastaibooking.local / Owner123!`
 - Staff: `staff.demo@fastaibooking.local / Staff123!`
 - Call center agent: `agent.demo@fastaibooking.local / Agent123!`
 - Extra owner for call-center scenario: `owner.callcenter.demo@fastaibooking.local / Owner123!`
+
+## Amazon Connect Demo Scenarios
+
+### Demo Scenario 1: Direct Call Into Amazon Connect
+
+1. Customer calls salon number `848-702-9493`.
+2. Carrier forwards directly to the Amazon Connect phone number.
+3. Amazon Connect Contact Flow answers the call.
+4. Dashboard records or displays the contact/call session if the backend integration exists.
+
+### Demo Scenario 2: AI Booking
+
+1. Customer calls salon number `848-702-9493`.
+2. Amazon Connect runs the AI Booking Reception flow.
+3. Amazon Lex Booking Bot collects:
+   - customer name
+   - customer phone
+   - service
+   - requested date/time
+   - staff preference if any
+4. Booking Lambda or FastAIBooking Backend API checks services, staff, business hours, and availability.
+5. Backend creates a real appointment.
+6. Owner sees the new appointment in the dashboard.
+7. Assigned Staff sees the appointment in their schedule.
+
+### Demo Scenario 3: Human Escalation
+
+1. Customer says they want to speak with a real person.
+2. AI says: "Please wait while I connect you."
+3. Amazon Connect transfers the call to the Operator Queue.
+4. Operator answers using Amazon Connect CCP/browser softphone.
+5. Operator manages the booking in the FastAIBooking operator dashboard.
+6. Owner/Admin can see call status and result.
+
+### Demo Scenario 4: No Operator Available
+
+1. Customer waits in the Operator Queue.
+2. If timeout happens, system offers voicemail, callback request, or SMS link fallback if enabled.
+3. Dashboard records fallback status.
 
 ## Admin Smoke Test
 
@@ -52,6 +91,7 @@
    - availability
    - messages
    - alerts
+   - call center
    - calls
    - AI logs
    - billing
@@ -73,7 +113,12 @@
    - `callCenterRoutingNumber`
    - `callCenterRoutingNote`
 8. Confirm there is no UI text implying a separate `afterHoursAiEnabled` toggle.
-9. Open Calls and AI Logs and confirm seeded call records are visible.
+9. Open Call Center and confirm the owner monitoring view shows:
+   - assigned operator list
+   - queue metrics
+   - fallback states
+   - selected escalation detail
+10. Open Calls and AI Logs and confirm seeded call records are visible.
 
 ## Staff Smoke Test
 
@@ -129,7 +174,7 @@
 
 1. Log in as owner.
 2. Open Calls or AI Logs.
-3. Find the seeded booking call with provider call id `demo-call-booking-1`.
+3. Find the seeded booking call with provider call id `demo-forwarding-call-1`.
 4. Confirm the transcript summary describes a gel manicure booking request.
 5. Confirm a booking attempt exists with success status.
 6. Confirm the linked appointment exists and is associated with the seeded customer and staff member.
@@ -138,23 +183,21 @@
 
 1. Log in as operator.
 2. Open Call Center queue.
-3. Find the seeded escalation tied to provider call id `demo-call-escalation-1`.
-4. Confirm the routing outcome is call center escalation.
-5. Confirm the assigned operator is the seeded demo agent.
+3. Find the seeded escalation tied to provider call id `demo-escalation-open-1`.
+4. Confirm the queue item is still open and the routing state is queued for operator handling.
+5. Confirm the assigned operator pool includes the seeded demo agent.
 6. Confirm the transcript shows a live-person request.
 
 ## Integration Readiness Test
 
 1. Log in as admin.
 2. Open Health.
-3. Confirm CallRail readiness shows configured only when env and active config are sufficient.
-4. Confirm Amazon Connect readiness shows configured only when env and active config are sufficient.
-5. Confirm Vertex readiness shows configured only when project and credentials are sufficient.
-6. Confirm each not-ready integration lists the missing requirements clearly.
+3. Confirm Amazon Connect readiness shows configured only when env and active config are sufficient.
+4. Confirm Amazon Lex / Amazon AI readiness is represented by the configured bot, alias, locale, and intent values in the deployment checklist.
+5. Confirm each not-ready integration lists the missing requirements clearly.
 
 ## Expected Current External Limitations
 
-- Amazon Connect live softphone is unavailable until valid env vars and an active `AMAZON_CONNECT` integration config are present.
-- CallRail live routing is unavailable until valid env vars and an active `CALLRAIL` integration config are present.
-- Vertex live AI is unavailable until valid credentials are configured.
+- Amazon Connect live softphone is unavailable until valid env vars, an assigned phone number, and an active `AMAZON_CONNECT` integration config are present.
+- Amazon Lex Booking Bot and Booking Lambda are unavailable until the bot, alias, intents, Lambda function, and backend internal token are configured.
 - SMS fallback is currently stub/log-only.

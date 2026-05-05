@@ -1,124 +1,93 @@
 # FastAIBooking
 
-API-first monorepo for a multi-tenant salon booking SaaS.
+Monorepo for the FastAIBooking SaaS booking platform for U.S. nail salons.
 
-## Repository Structure
+Current demo focus: one clean demo salon across Platform Admin, Owner, Staff, and Operator flows.
+
+## Apps
 
 ```text
 apps/
-  api/    # Node.js + Express + Prisma backend API
-  admin/  # Platform admin frontend (React + Vite)
-  app/    # Shared salon owner + staff frontend (React + Vite)
-infra/
-  nginx/
-  scripts/
-docker-compose.yml
+  api/    Node.js + Express + Prisma backend API
+  admin/  Platform Admin web app
+  app/    Owner / Staff / Operator web app
 ```
 
 ## Stack
 
-- Backend: Node.js, Express, TypeScript
-- Frontend: React, Vite, TypeScript
+- Backend: Node.js, TypeScript, Express
 - Database: PostgreSQL
-- ORM and migrations: Prisma
-- Auth: JWT access/refresh tokens
-- Validation: Zod
-- Logging: Pino
-- Infra: Docker Compose + Nginx
+- ORM: Prisma
+- Frontend: React, Vite, TypeScript
+- Auth: JWT access + refresh tokens
+- Infra: Docker Compose, Docker, Nginx
 
-## API Coverage
+## Demo Scope
 
-- Auth
-  - owner registration and onboarding
-  - login, token refresh, logout
-  - forgot/reset password
-  - change password
-  - current user profile
-- Roles
-  - `PLATFORM_ADMIN`
-  - `SALON_OWNER`
-  - `STAFF`
-- Salon
-  - profile read/update
-  - settings read/update
-- Staff
-  - list/create/update
-  - deactivate/reactivate
-  - billing usage updates
-- Billing usage
-  - centralized free limit and extra staff calculation
-  - current period and history endpoint
-- Services
-  - list/create/update
-  - activate/deactivate
-  - optional staff-service mapping
-- Business hours
-  - list/update weekly schedule
-- Customers
-  - create/search/detail
-  - appointment history
-- Appointments
-  - create/update/detail/list
-  - cancel/reschedule
-  - AI source flow endpoint
-  - status history tracking
-- Scheduling and availability
-  - business-hours-aware slot validation
-  - overlap prevention
-  - available slots API
-- Platform admin
-  - admin login
-  - list salons
-  - salon detail
-  - owner detail
-  - overview metrics
-- Ops
-  - `GET /health`
-  - `GET /health/liveness`
-  - `GET /health/ready`
-  - `GET /health/readiness`
-  - structured logging
-  - centralized error format
-  - audit log records for key actions
+Primary demo salon:
 
-## Billing Rule
+- Salon: `Inails Demo Salon`
+- Original business number: `848-702-9493`
+- Primary telephony layer: Amazon Connect
+- AI layer: Amazon Lex / Amazon AI
+- Human escalation layer: Amazon Connect Operator Queue
 
-The billing usage logic is centralized in `apps/api/src/modules/billing/billing.service.ts`:
+Live demo path:
 
-- first `FREE_STAFF_LIMIT` active staff are included
-- extra active staff are billable
-- `EXTRA_STAFF_PRICE` (USD) is configuration-driven
-- API exposes:
-  - free staff limit
-  - active staff count
-  - included staff count
-  - billable extra staff count
-  - extra staff unit price (cents)
-  - estimated extra cost (cents)
+`848-702-9493` -> Amazon Connect phone number -> Amazon Connect Contact Flow -> Amazon Lex Booking Bot -> Booking Lambda or FastAIBooking Backend API -> real appointment -> Owner/Staff dashboard
 
-## Key Environment Variables
+Important:
 
-Copy `.env.example` to `.env` and set production-safe values.
-For EC2 production, use `.env.production.example` as the baseline.
+- The salon carrier should forward `848-702-9493` directly to the Amazon Connect phone number.
+- Do not use CallRail in the main call flow.
+- If the caller asks for a real person or the AI cannot complete the booking, Amazon Connect transfers the call to the Operator Queue.
 
-Required groups:
+## Demo Accounts Preserved
 
-- app:
-  - `APP_NAME`, `NODE_ENV`, `PORT`, `API_BASE_URL`
-  - `ADMIN_FRONTEND_URL`, `OWNER_FRONTEND_URL`
-- database:
-  - `DATABASE_URL` or `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_NAME`, `DATABASE_USER`, `DATABASE_PASSWORD`, `DATABASE_SSL`
-- auth:
-  - `JWT_SECRET`, `JWT_EXPIRES_IN`
-  - `REFRESH_TOKEN_SECRET`, `REFRESH_TOKEN_EXPIRES_IN`
-- email:
-  - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, `SMTP_FROM_NAME`
-  - `RESET_PASSWORD_URL`, `VERIFY_EMAIL_URL`
-- billing and domain:
-  - `FREE_STAFF_LIMIT`, `EXTRA_STAFF_PRICE`
-  - `DOMAIN_API`, `DOMAIN_ADMIN`, `DOMAIN_APP`, `SERVER_IP`
+- Platform admin: `admin@fastaibooking.local` / `Admin123!`
+- Owner: `owner.demo@fastaibooking.local` / `Owner123!`
+- Staff: `staff.demo@fastaibooking.local` / `Staff123!`
+- Call center agent: `agent.demo@fastaibooking.local` / `Agent123!`
+- Preserved extra owner login: `owner.callcenter.demo@fastaibooking.local` / `Owner123!`
 
-## Local Development
+Only `owner.demo@fastaibooking.local` is seeded as the primary owner of the single demo salon.
+
+## Demo Seed Snapshot
+
+- One active demo salon: `Inails Demo Salon`
+- 7 staff records seeded:
+  - 6 active
+  - 1 inactive
+  - first 5 active staff included
+  - 6th active staff billable
+- 8 customers
+- 9 appointments across today and upcoming dates
+- 7 demo call sessions covering:
+  - salon answered directly
+  - AI booking success
+  - open operator escalation
+  - resolved operator escalation
+  - callback fallback
+  - voicemail fallback
+  - SMS fallback
+- One real operator assignment to the demo salon
+
+## Root Scripts
+
+```bash
+npm run dev:api
+npm run dev:admin
+npm run dev:app
+npm run build:api
+npm run build:admin
+npm run build:app
+npm run typecheck:api
+npm run typecheck:admin
+npm run typecheck:app
+npm run seed
+```
+
+## Local Setup
 
 1. Install dependencies:
 
@@ -126,89 +95,182 @@ Required groups:
 npm install
 ```
 
-2. Generate Prisma client:
+2. Copy the env template:
 
 ```bash
-npm --workspace @fastaibooking/api run prisma:generate
+cp .env.example .env
 ```
 
-3. Start PostgreSQL, API, and Nginx using Docker Compose:
+3. Start PostgreSQL in Docker:
 
 ```bash
-docker compose up -d --build
+docker compose up -d postgres
 ```
 
-4. Run seed data:
+4. Generate Prisma client:
 
 ```bash
-docker compose exec -T api npm run prisma:seed
+npm --prefix apps/api run prisma:generate
 ```
+
+5. Apply migrations:
+
+```bash
+npm --prefix apps/api run prisma:migrate:deploy
+```
+
+6. Seed the single demo salon:
+
+```bash
+npm --prefix apps/api run prisma:seed
+```
+
+7. Start the apps you need:
+
+```bash
+npm run dev:api
+npm run dev:app
+npm run dev:admin
+```
+
+## Env Notes
+
+Main demo defaults in `.env.example` and `apps/api/.env.example`:
+
+- `CALL_PROVIDER=amazon_connect`
+- `AI_PROVIDER=amazon`
+- `DEMO_ORIGINAL_PHONE_NUMBER=8487029493`
+- `AMAZON_CONNECT_INSTANCE_URL=https://fastaibooking.my.connect.aws`
+- `AMAZON_CONNECT_CCP_URL=https://fastaibooking.my.connect.aws/ccp-v2/`
+- `AMAZON_LEX_LOCALE_ID=en_US`
+
+Still requires real values before a live Amazon Connect demo:
+
+- `AWS_REGION`
+- `AWS_ACCESS_KEY_ID`
+- `AWS_SECRET_ACCESS_KEY`
+- `AMAZON_CONNECT_INSTANCE_ID`
+- `AMAZON_CONNECT_INSTANCE_ARN`
+- `AMAZON_CONNECT_PHONE_NUMBER`
+- `AMAZON_CONNECT_PHONE_NUMBER_ID`
+- `AMAZON_CONNECT_CONTACT_FLOW_ID_AI_RECEPTION`
+- `AMAZON_CONNECT_CONTACT_FLOW_ID_HUMAN_ESCALATION`
+- `AMAZON_CONNECT_QUEUE_ID_DEFAULT`
+- `AMAZON_CONNECT_ROUTING_PROFILE_ID`
+- `AMAZON_CONNECT_OPERATOR_SECURITY_PROFILE_ID`
+- `AMAZON_LEX_BOT_ID`
+- `AMAZON_LEX_BOT_ALIAS_ID`
+- `AMAZON_LEX_BOOKING_INTENT_NAME`
+- `AMAZON_LEX_HUMAN_ESCALATION_INTENT_NAME`
+- `BOOKING_LAMBDA_FUNCTION_NAME`
+- `BOOKING_LAMBDA_FUNCTION_ARN`
+- `FASTAIBOOKING_API_BASE_URL`
+- `FASTAIBOOKING_API_INTERNAL_TOKEN`
+- `SMTP_*` if email fallback or notifications are enabled
+- `TWILIO_*` if live SMS fallback is enabled
+
+## Database and Docker Reference
+
+Docker Compose PostgreSQL service:
+
+- Service name: `postgres`
+- Container name: `fastaibooking-postgres`
+
+Inside the Docker network:
+
+- Host: `postgres`
+- Port: `5432`
+- Database: `fastaibooking`
+- User: `postgres`
+- Password: `postgres`
+- `DATABASE_URL`: `postgresql://postgres:postgres@postgres:5432/fastaibooking`
+
+From the local machine:
+
+- Host: `localhost`
+- Port: `5432`
+- Database: `fastaibooking`
+- User: `postgres`
+- Password: `postgres`
+- `DATABASE_URL`: `postgresql://postgres:postgres@localhost:5432/fastaibooking`
 
 ## Prisma Commands
 
 ```bash
-npm --workspace @fastaibooking/api run prisma:migrate:deploy
-npm --workspace @fastaibooking/api run prisma:seed
-npm --workspace @fastaibooking/api run prisma:generate
+npm --prefix apps/api run prisma:generate
+npm --prefix apps/api run prisma:migrate:deploy
+npm --prefix apps/api run prisma:seed
 ```
+
+## Safe Local Demo DB Reset
+
+Only use this for the local demo database.
+
+```bash
+docker compose down -v
+docker compose up -d postgres
+npm --prefix apps/api run prisma:generate
+npm --prefix apps/api run prisma:migrate:deploy
+npm --prefix apps/api run prisma:seed
+```
+
+## Verify the Seeded Demo Salon
+
+```bash
+docker compose exec -T postgres \
+  psql -U postgres -d fastaibooking \
+  -c 'SELECT name, "originalPhoneNumber", "customerIncomingPhoneNumber" FROM "Salon";'
+```
+
+Expected salon row:
+
+- `Inails Demo Salon`
+- `+18487029493`
+- the Amazon Connect forwarding number configured in `AMAZON_CONNECT_PHONE_NUMBER`
+
+Seeded provider call IDs useful for demo verification:
+
+- AI booking success: `demo-forwarding-call-1`
+- Open operator escalation: `demo-escalation-open-1`
+- Resolved operator escalation: `demo-escalation-closed-1`
+- Callback fallback: `demo-callback-fallback-1`
+- Voicemail fallback: `demo-voicemail-fallback-1`
+- SMS fallback: `demo-sms-fallback-1`
+
+## Manual Live Demo Test
+
+1. Confirm the Amazon Connect phone number is claimed and assigned to the AI Booking Reception contact flow.
+2. Confirm the salon/carrier forwards `848-702-9493` directly to that Amazon Connect phone number.
+3. Call `848-702-9493` from another phone.
+4. Confirm Amazon Connect answers through the Amazon Connect Contact Flow.
+5. Complete an AI booking through the Amazon Lex Booking Bot.
+6. Confirm the Booking Lambda or FastAIBooking Backend API creates a real appointment.
+7. Confirm the Owner dashboard and assigned Staff schedule show the appointment.
+8. Ask for a real person and confirm Amazon Connect says, "Please wait while I connect you." before transferring to the Operator Queue.
+9. Confirm an operator can answer in Amazon Connect CCP and manage the booking in the FastAIBooking operator dashboard.
+
+## Optional Future Marketing Attribution
+
+CallRail is not required for the current Amazon Connect-only demo. If it is used later, it should sit outside the core phone and AI booking flow as an optional marketing attribution source only.
+
+Optional CallRail env keys, when that future attribution work is explicitly enabled:
+
+- `CALLRAIL_API_KEY`
+- `CALLRAIL_ACCOUNT_ID`
+- `CALLRAIL_COMPANY_ID`
+- `CALLRAIL_TRACKING_NUMBER_ID`
+- `CALLRAIL_TRACKING_NUMBER`
+- `CALLRAIL_WEBHOOK_SECRET`
 
 ## Deployment Scripts
 
 ```bash
-./infra/scripts/deploy_ec2.sh
 ./infra/scripts/run_migrations.sh
 ./infra/scripts/run_seed.sh
 ./infra/scripts/backup_postgres.sh
+./infra/scripts/deploy_ec2.sh
+./infra/scripts/deploy_remote_ec2.sh
 ./infra/scripts/enable_ssl.sh your-email@example.com
 ./infra/scripts/renew_ssl.sh
 ./infra/scripts/smoke_test_production.sh
 ```
-
-## Demo Seed Accounts
-
-- platform admin:
-  - `admin@fastaibooking.local`
-  - `Admin123!`
-- salon owner:
-  - `owner.demo@fastaibooking.local`
-  - `Owner123!`
-
-Seed includes one salon, 7 active staff (5 included + 2 extra), sample services, business hours, customers, and appointments.
-
-## Domain and Nginx Mapping
-
-`infra/nginx/default.conf` configures:
-
-- `api-new-nail.kendemo.com` -> API container
-- `admin-new-nail.kendemo.com` -> Admin frontend container
-- `app-new-nail.kendemo.com` -> Shared owner/staff frontend container
-
-## EC2 Deployment Notes
-
-1. Provision Docker and Docker Compose on EC2 (`32.194.150.135`).
-2. Configure DNS A records:
-   - `api-new-nail.kendemo.com` -> `32.194.150.135`
-   - `admin-new-nail.kendemo.com` -> `32.194.150.135`
-   - `app-new-nail.kendemo.com` -> `32.194.150.135`
-3. Copy `.env.example` to `.env` and set production secrets.
-4. Deploy:
-
-```bash
-./infra/scripts/deploy_ec2.sh
-```
-
-Remote deploy from this workspace uses the root SSH key without overwriting the EC2 `.env` file:
-
-```bash
-EC2_USER=ubuntu ./infra/scripts/deploy_remote_ec2.sh
-```
-
-5. Verify:
-   - `http://api-new-nail.kendemo.com/health/liveness`
-   - `http://api-new-nail.kendemo.com/health/readiness`
-
-## Frontend Integration Later
-
-- Admin frontend should use `https://admin-new-nail.kendemo.com` and call admin APIs under `/api/v1/admin/*`.
-- Salon owner frontend should use `https://app-new-nail.kendemo.com` and call owner APIs under `/api/v1/*`.
-- API authorization and tenant isolation are already enforced in backend middleware and service-layer queries.
