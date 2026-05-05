@@ -52,6 +52,7 @@ services:
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-https://api-new-nail.kendemo.com}
         VITE_ADMIN_BASE_URL: ${VITE_ADMIN_BASE_URL:-https://admin-new-nail.kendemo.com}
         VITE_APP_BASE_URL: ${VITE_APP_BASE_URL:-https://app-new-nail.kendemo.com}
+        VITE_AMAZON_CONNECT_CCP_URL: ${VITE_AMAZON_CONNECT_CCP_URL:-https://fastaibooking.my.connect.aws/ccp-v2/}
         VITE_APP_NAME: ${VITE_ADMIN_APP_NAME:-FastAIBooking Admin}
     container_name: fastaibooking-admin
     restart: unless-stopped
@@ -68,6 +69,7 @@ services:
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-https://api-new-nail.kendemo.com}
         VITE_APP_BASE_URL: ${VITE_APP_BASE_URL:-https://app-new-nail.kendemo.com}
         VITE_ADMIN_BASE_URL: ${VITE_ADMIN_BASE_URL:-https://admin-new-nail.kendemo.com}
+        VITE_AMAZON_CONNECT_CCP_URL: ${VITE_AMAZON_CONNECT_CCP_URL:-https://fastaibooking.my.connect.aws/ccp-v2/}
         VITE_APP_NAME: ${VITE_OWNER_APP_NAME:-FastAIBooking}
     container_name: fastaibooking-app
     restart: unless-stopped

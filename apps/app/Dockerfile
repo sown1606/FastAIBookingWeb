@@ -15,11 +15,13 @@ COPY apps/app/src ./src
 ARG VITE_API_BASE_URL=https://api-new-nail.kendemo.com
 ARG VITE_APP_BASE_URL=https://app-new-nail.kendemo.com
 ARG VITE_ADMIN_BASE_URL=https://admin-new-nail.kendemo.com
+ARG VITE_AMAZON_CONNECT_CCP_URL=https://fastaibooking.my.connect.aws/ccp-v2/
 ARG VITE_APP_NAME=FastAIBooking
 
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
 ENV VITE_APP_BASE_URL=${VITE_APP_BASE_URL}
 ENV VITE_ADMIN_BASE_URL=${VITE_ADMIN_BASE_URL}
+ENV VITE_AMAZON_CONNECT_CCP_URL=${VITE_AMAZON_CONNECT_CCP_URL}
 ENV VITE_APP_NAME=${VITE_APP_NAME}
 
 RUN npm run build
