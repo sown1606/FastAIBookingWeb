@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "crypto";
+import { createHash, createHmac, timingSafeEqual } from "crypto";
 import { CallSessionStatus, ExternalProvider } from "@prisma/client";
 import { env } from "../../../config/env";
 import { AppError } from "../../../lib/errors";
@@ -211,6 +211,26 @@ const verifyWebhookSignature = (
   );
 };
 
+const buildFallbackProviderCallId = (input: {
+  provider: ExternalProvider;
+  trackingNumber?: string;
+  dialedPhone?: string;
+  callerPhone?: string;
+  timestamp?: Date;
+  rawBody: string;
+}): string => {
+  const normalizedTimestamp = input.timestamp?.toISOString() ?? "";
+  const base = [
+    input.provider,
+    input.trackingNumber ?? input.dialedPhone ?? "unknown-tracking-number",
+    input.callerPhone ?? "unknown-caller",
+    normalizedTimestamp || "missing-timestamp"
+  ].join("|");
+  const hashSource = normalizedTimestamp ? base : `${base}|${input.rawBody}`;
+  const digest = createHash("sha256").update(hashSource).digest("hex");
+  return `callrail-fallback-${digest.slice(0, 24)}`;
+};
+
 const mapStatus = (input: {
   statusInput?: string;
   eventTypeInput?: string;
@@ -388,16 +408,6 @@ export class CallRailProviderAdapter implements CallProviderAdapter {
       "unknown_event";
 
     const callRecord = asRecord(payloadRecord.call);
-    const providerCallId =
-      asString(payloadRecord.call_id) ??
-      asString(payloadRecord.lead_id) ??
-      asString(payloadRecord.session_id) ??
-      (callRecord ? asString(callRecord.id) : undefined) ??
-      asString(payloadRecord.id);
-
-    if (!providerCallId) {
-      throw new AppError("Missing provider call ID in CallRail payload.", 400, "CALLRAIL_INVALID_PAYLOAD");
-    }
 
     const callerPhone = normalizePhoneForMatching(
       asString(payloadRecord.customer_phone_number) ??
@@ -467,6 +477,27 @@ export class CallRailProviderAdapter implements CallProviderAdapter {
       asString(payloadRecord.failure_reason) ??
       asString(payloadRecord.error_message) ??
       (callRecord ? asString(callRecord.failure_reason) ?? asString(callRecord.error_message) : undefined);
+    const eventTimestamp =
+      asDate(payloadRecord.event_time) ??
+      asDate(payloadRecord.event_timestamp) ??
+      asDate(payloadRecord.timestamp) ??
+      (callRecord
+        ? asDate(callRecord.updated_at) ?? asDate(callRecord.created_at) ?? asDate(callRecord.start_time)
+        : undefined);
+    const providerCallId =
+      asString(payloadRecord.call_id) ??
+      asString(payloadRecord.lead_id) ??
+      asString(payloadRecord.session_id) ??
+      (callRecord ? asString(callRecord.id) : undefined) ??
+      asString(payloadRecord.id) ??
+      buildFallbackProviderCallId({
+        provider: ExternalProvider.CALLRAIL,
+        trackingNumber,
+        dialedPhone,
+        callerPhone,
+        timestamp: eventTimestamp ?? endedAt,
+        rawBody
+      });
 
     const status = mapStatus({
       statusInput:
@@ -509,13 +540,7 @@ export class CallRailProviderAdapter implements CallProviderAdapter {
           asUuid(payloadRecord.salonId) ??
           (callRecord ? asUuid(callRecord.salon_id) ?? asUuid(callRecord.salonId) : undefined),
         eventType,
-        eventTimestamp:
-          asDate(payloadRecord.event_time) ??
-          asDate(payloadRecord.event_timestamp) ??
-          asDate(payloadRecord.timestamp) ??
-          (callRecord
-            ? asDate(callRecord.updated_at) ?? asDate(callRecord.created_at) ?? asDate(callRecord.start_time)
-            : undefined),
+        eventTimestamp,
         status,
         callerPhone,
         originalPhoneNumber,

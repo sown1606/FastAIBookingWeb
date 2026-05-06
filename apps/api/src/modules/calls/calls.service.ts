@@ -151,6 +151,10 @@ const resolveSalonIdForCallEvent = async (event: {
       configValues: buildPhoneLookupValues(event.trackingNumber)
     },
     {
+      configKey: "forwarding_phone_number",
+      configValues: buildPhoneLookupValues(event.trackingNumber)
+    },
+    {
       configKey: "dialed_number",
       configValues: buildPhoneLookupValues(event.dialedPhone)
     },
@@ -395,7 +399,7 @@ export const processCallRailWebhook = async (
         dialedPhone: normalized.event.dialedPhone,
         providerCompanyId: normalized.event.providerCompanyId
       },
-      "Unmapped CallRail webhook call received"
+      "Unmapped optional attribution webhook call received"
     );
   }
 
@@ -560,7 +564,7 @@ export const buildCallRoutingPlan = async (input: {
       queueId: env.AMAZON_CONNECT_QUEUE_ID_DEFAULT ?? null,
       queueRoutingProfileId: env.AMAZON_CONNECT_ROUTING_PROFILE_ID ?? null,
       transferNumber,
-      callRailFlowId: env.CALLRAIL_LIVE_PERSON_FLOW_ID ?? null,
+      contactFlowId: env.AMAZON_CONNECT_CONTACT_FLOW_ID_HUMAN_ESCALATION ?? null,
       assignedAgent: assignedAgent?.agent ?? null,
       reason: "LIVE_PERSON_REQUEST",
       routingSummary
@@ -572,7 +576,7 @@ export const buildCallRoutingPlan = async (input: {
       salonId: salon.id,
       routeType: "SALON_ORIGINAL_PHONE",
       routingOutcome: "SALON_RING" as const,
-      transferNumber: salon.originalPhoneNumber ?? salon.contactPhone ?? env.CALLRAIL_TARGET_NUMBER ?? null,
+      transferNumber: salon.originalPhoneNumber ?? salon.contactPhone ?? null,
       reason: "LIVE_PERSON_REQUEST_CALL_CENTER_DISABLED",
       routingSummary
     };
@@ -581,11 +585,12 @@ export const buildCallRoutingPlan = async (input: {
   if (aiReceptionEnabled) {
     return {
       salonId: salon.id,
-      routeType: "CALLRAIL_AI",
+      routeType: "AMAZON_CONNECT_AI_RECEPTION",
       routingOutcome: "AI_RECEPTION" as const,
       transferAfterRings: settings?.aiTransferRingCount ?? 3,
-      callRailFlowId: env.CALLRAIL_AI_FLOW_ID ?? null,
-      trackingNumber: salon.customerIncomingPhoneNumber ?? env.CALLRAIL_TRACKING_NUMBER ?? null,
+      contactFlowId:
+        env.AMAZON_CONNECT_CONTACT_FLOW_ID_AI_RECEPTION ?? env.AMAZON_CONNECT_CONTACT_FLOW_ID ?? null,
+      trackingNumber: env.AMAZON_CONNECT_PHONE_NUMBER ?? salon.customerIncomingPhoneNumber ?? null,
       reason: "AI_RECEPTION_ENABLED",
       routingSummary
     };
@@ -595,7 +600,7 @@ export const buildCallRoutingPlan = async (input: {
     salonId: salon.id,
     routeType: "SALON_ORIGINAL_PHONE",
     routingOutcome: "SALON_RING" as const,
-    transferNumber: salon.originalPhoneNumber ?? salon.contactPhone ?? env.CALLRAIL_TARGET_NUMBER ?? null,
+    transferNumber: salon.originalPhoneNumber ?? salon.contactPhone ?? null,
     reason: "AI_RECEPTION_DISABLED",
     routingSummary
   };

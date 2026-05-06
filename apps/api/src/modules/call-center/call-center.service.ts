@@ -4,7 +4,8 @@ import {
   CallEscalationStatus,
   CallRoutingOutcome,
   ExternalProvider,
-  Prisma
+  Prisma,
+  Role
 } from "@prisma/client";
 import { env } from "../../config/env";
 import { prisma } from "../../db/prisma";
@@ -26,12 +27,54 @@ const toJson = (value: unknown): Prisma.InputJsonValue => {
   return JSON.parse(JSON.stringify(value ?? null)) as Prisma.InputJsonValue;
 };
 
-export const assertCallCenterSalonAccess = async (agentUserId: string, salonId: string) => {
+interface CallCenterWorkspaceActor {
+  userId: string;
+  role: Role;
+  salonId?: string | null;
+}
+
+const buildAgentActor = (agentUserId: string): CallCenterWorkspaceActor => ({
+  userId: agentUserId,
+  role: Role.CALL_CENTER_AGENT
+});
+
+const getAccessibleSalonIds = async (actor: CallCenterWorkspaceActor): Promise<string[]> => {
+  if (actor.role === Role.SALON_OWNER) {
+    return actor.salonId ? [actor.salonId] : [];
+  }
+
+  const assignments = await prisma.callCenterSalonAssignment.findMany({
+    where: {
+      agentUserId: actor.userId
+    },
+    select: {
+      salonId: true
+    }
+  });
+
+  return assignments.map((item) => item.salonId);
+};
+
+export const assertCallCenterSalonAccess = async (
+  actor: CallCenterWorkspaceActor,
+  salonId: string
+) => {
+  if (actor.role === Role.SALON_OWNER) {
+    if (!actor.salonId || actor.salonId !== salonId) {
+      throw new AppError("Salon is not available in this owner workspace.", 403, "FORBIDDEN");
+    }
+    return prisma.salon.findUniqueOrThrow({
+      where: {
+        id: salonId
+      }
+    });
+  }
+
   const assignment = await prisma.callCenterSalonAssignment.findUnique({
     where: {
       salonId_agentUserId: {
         salonId,
-        agentUserId
+        agentUserId: actor.userId
       }
     },
     include: {
@@ -44,24 +87,55 @@ export const assertCallCenterSalonAccess = async (agentUserId: string, salonId: 
   return assignment.salon;
 };
 
-export const listAssignedSalons = async (agentUserId: string) => {
+const salonWorkspaceInclude = {
+  settings: true,
+  staff: {
+    orderBy: {
+      fullName: "asc" as const
+    }
+  },
+  callCenterAssignments: {
+    orderBy: {
+      createdAt: "asc" as const
+    },
+    include: {
+      agent: {
+        select: {
+          id: true,
+          fullName: true,
+          email: true,
+          phone: true,
+          isActive: true
+        }
+      }
+    }
+  }
+};
+
+export const listAssignedSalons = async (actor: CallCenterWorkspaceActor) => {
+  if (actor.role === Role.SALON_OWNER) {
+    if (!actor.salonId) {
+      return [];
+    }
+
+    return prisma.salon.findMany({
+      where: {
+        id: actor.salonId
+      },
+      include: salonWorkspaceInclude
+    });
+  }
+
   const assignments = await prisma.callCenterSalonAssignment.findMany({
     where: {
-      agentUserId
+      agentUserId: actor.userId
     },
     orderBy: {
       createdAt: "desc"
     },
     include: {
       salon: {
-        include: {
-          settings: true,
-          staff: {
-            orderBy: {
-              fullName: "asc"
-            }
-          }
-        }
+        include: salonWorkspaceInclude
       }
     }
   });
@@ -69,44 +143,40 @@ export const listAssignedSalons = async (agentUserId: string) => {
   return assignments.map((assignment) => assignment.salon);
 };
 
-export const getAssignedSalonDetail = async (agentUserId: string, salonId: string) => {
-  await assertCallCenterSalonAccess(agentUserId, salonId);
+export const getAssignedSalonDetail = async (actor: CallCenterWorkspaceActor, salonId: string) => {
+  await assertCallCenterSalonAccess(actor, salonId);
   return prisma.salon.findUniqueOrThrow({
     where: {
       id: salonId
     },
-    include: {
-      settings: true,
-      staff: {
-        orderBy: {
-          fullName: "asc"
-        }
-      }
-    }
+    include: salonWorkspaceInclude
   });
 };
 
-export const listAssignedSalonStaff = async (agentUserId: string, salonId: string) => {
-  await assertCallCenterSalonAccess(agentUserId, salonId);
+export const listAssignedSalonStaff = async (actor: CallCenterWorkspaceActor, salonId: string) => {
+  await assertCallCenterSalonAccess(actor, salonId);
   return listStaff(salonId, false);
 };
 
-export const listAssignedSalonServices = async (agentUserId: string, salonId: string) => {
-  await assertCallCenterSalonAccess(agentUserId, salonId);
+export const listAssignedSalonServices = async (
+  actor: CallCenterWorkspaceActor,
+  salonId: string
+) => {
+  await assertCallCenterSalonAccess(actor, salonId);
   return listServices(salonId, false);
 };
 
 export const listAssignedSalonCustomers = async (
-  agentUserId: string,
+  actor: CallCenterWorkspaceActor,
   salonId: string,
   input: { q?: string; page: number; limit: number }
 ) => {
-  await assertCallCenterSalonAccess(agentUserId, salonId);
+  await assertCallCenterSalonAccess(actor, salonId);
   return searchCustomers(salonId, input);
 };
 
 export const createAssignedSalonCustomer = async (
-  agentUserId: string,
+  actor: CallCenterWorkspaceActor,
   salonId: string,
   input: {
     firstName: string;
@@ -116,12 +186,12 @@ export const createAssignedSalonCustomer = async (
     notes?: string;
   }
 ) => {
-  await assertCallCenterSalonAccess(agentUserId, salonId);
-  return createCustomer(salonId, agentUserId, input);
+  await assertCallCenterSalonAccess(actor, salonId);
+  return createCustomer(salonId, actor.userId, input);
 };
 
 export const listAssignedSalonAppointments = async (
-  agentUserId: string,
+  actor: CallCenterWorkspaceActor,
   salonId: string,
   input: {
     page: number;
@@ -133,12 +203,12 @@ export const listAssignedSalonAppointments = async (
     dateTo?: Date;
   }
 ) => {
-  await assertCallCenterSalonAccess(agentUserId, salonId);
+  await assertCallCenterSalonAccess(actor, salonId);
   return listAppointments(salonId, input);
 };
 
 export const createAssignedSalonAppointment = async (
-  agentUserId: string,
+  actor: CallCenterWorkspaceActor,
   salonId: string,
   input: {
     customerId: string;
@@ -150,15 +220,15 @@ export const createAssignedSalonAppointment = async (
     status?: AppointmentStatus;
   }
 ) => {
-  await assertCallCenterSalonAccess(agentUserId, salonId);
-  return createAppointment(salonId, agentUserId, {
+  await assertCallCenterSalonAccess(actor, salonId);
+  return createAppointment(salonId, actor.userId, {
     ...input,
     source: AppointmentSource.CALL_CENTER
   });
 };
 
 export const updateAssignedSalonAppointment = async (
-  agentUserId: string,
+  actor: CallCenterWorkspaceActor,
   salonId: string,
   appointmentId: string,
   input: {
@@ -171,15 +241,15 @@ export const updateAssignedSalonAppointment = async (
     status?: AppointmentStatus;
   }
 ) => {
-  await assertCallCenterSalonAccess(agentUserId, salonId);
-  return updateAppointment(salonId, appointmentId, agentUserId, {
+  await assertCallCenterSalonAccess(actor, salonId);
+  return updateAppointment(salonId, appointmentId, actor.userId, {
     ...input,
     source: AppointmentSource.CALL_CENTER
   });
 };
 
 export const rescheduleAssignedSalonAppointment = async (
-  agentUserId: string,
+  actor: CallCenterWorkspaceActor,
   salonId: string,
   appointmentId: string,
   input: {
@@ -187,21 +257,24 @@ export const rescheduleAssignedSalonAppointment = async (
     startTime: Date;
   }
 ) => {
-  await assertCallCenterSalonAccess(agentUserId, salonId);
-  return rescheduleAppointment(salonId, appointmentId, agentUserId, input);
+  await assertCallCenterSalonAccess(actor, salonId);
+  return rescheduleAppointment(salonId, appointmentId, actor.userId, input);
 };
 
 export const cancelAssignedSalonAppointment = async (
-  agentUserId: string,
+  actor: CallCenterWorkspaceActor,
   salonId: string,
   appointmentId: string,
   reason?: string
 ) => {
-  await assertCallCenterSalonAccess(agentUserId, salonId);
-  return cancelAppointment(salonId, appointmentId, agentUserId, reason);
+  await assertCallCenterSalonAccess(actor, salonId);
+  return cancelAppointment(salonId, appointmentId, actor.userId, reason);
 };
 
-const getEscalationAccessContext = async (agentUserId: string, escalationId: string) => {
+const getEscalationAccessContext = async (
+  actor: CallCenterWorkspaceActor,
+  escalationId: string
+) => {
   const escalation = await prisma.callEscalation.findUnique({
     where: { id: escalationId },
     include: {
@@ -239,7 +312,7 @@ const getEscalationAccessContext = async (agentUserId: string, escalationId: str
     throw new AppError("Call escalation not found.", 404, "CALL_ESCALATION_NOT_FOUND");
   }
 
-  await assertCallCenterSalonAccess(agentUserId, escalation.salonId);
+  await assertCallCenterSalonAccess(actor, escalation.salonId);
   return escalation;
 };
 
@@ -391,13 +464,9 @@ export const createOrUpdateCallEscalation = async (input: {
   return escalation;
 };
 
-export const getCallCenterRuntime = async (agentUserId: string) => {
-  const [assignmentCount, activeAmazonConnectConfigCount] = await Promise.all([
-    prisma.callCenterSalonAssignment.count({
-      where: {
-        agentUserId
-      }
-    }),
+export const getCallCenterRuntime = async (actor: CallCenterWorkspaceActor) => {
+  const [accessibleSalonIds, activeAmazonConnectConfigCount] = await Promise.all([
+    getAccessibleSalonIds(actor),
     prisma.integrationConfig.count({
       where: {
         provider: ExternalProvider.AMAZON_CONNECT,
@@ -412,7 +481,17 @@ export const getCallCenterRuntime = async (agentUserId: string) => {
   ].filter((value): value is string => Boolean(value));
 
   return {
-    assignedSalonCount: assignmentCount,
+    accessMode: actor.role === Role.SALON_OWNER ? "owner" : "operator",
+    assignedSalonCount: accessibleSalonIds.length,
+    ownerSalonId: actor.salonId ?? null,
+    assignedAgentCount:
+      actor.role === Role.SALON_OWNER && actor.salonId
+        ? await prisma.callCenterSalonAssignment.count({
+            where: {
+              salonId: actor.salonId
+            }
+          })
+        : null,
     runtimeEnv: {
       ...env.runtimeEnv
     },
@@ -434,22 +513,13 @@ export const getCallCenterRuntime = async (agentUserId: string) => {
 };
 
 export const listEscalationQueue = async (
-  agentUserId: string,
+  actor: CallCenterWorkspaceActor,
   input: {
     status?: CallEscalationStatus;
     limit: number;
   }
 ) => {
-  const assignments = await prisma.callCenterSalonAssignment.findMany({
-    where: {
-      agentUserId
-    },
-    select: {
-      salonId: true
-    }
-  });
-
-  const salonIds = assignments.map((item) => item.salonId);
+  const salonIds = await getAccessibleSalonIds(actor);
   if (!salonIds.length) {
     return [];
   }
@@ -488,8 +558,8 @@ export const listEscalationQueue = async (
   });
 };
 
-export const getEscalationDetail = async (agentUserId: string, escalationId: string) => {
-  const escalation = await getEscalationAccessContext(agentUserId, escalationId);
+export const getEscalationDetail = async (actor: CallCenterWorkspaceActor, escalationId: string) => {
+  const escalation = await getEscalationAccessContext(actor, escalationId);
   const callerPhone = escalation.callSession.callerPhone ?? escalation.customerPhone ?? undefined;
   const customers = callerPhone
     ? await prisma.customer.findMany({
@@ -517,7 +587,7 @@ export const acceptEscalation = async (
   escalationId: string,
   input: { amazonConnectContactId?: string }
 ) => {
-  const escalation = await getEscalationAccessContext(agentUserId, escalationId);
+  const escalation = await getEscalationAccessContext(buildAgentActor(agentUserId), escalationId);
 
   const updated = await prisma.callEscalation.update({
     where: { id: escalation.id },
@@ -547,7 +617,7 @@ export const updateEscalation = async (
     resolution?: string | null;
   }
 ) => {
-  const escalation = await getEscalationAccessContext(agentUserId, escalationId);
+  const escalation = await getEscalationAccessContext(buildAgentActor(agentUserId), escalationId);
 
   return prisma.callEscalation.update({
     where: { id: escalation.id },
@@ -568,7 +638,7 @@ export const completeEscalation = async (
     qaNotes?: string | null;
   }
 ) => {
-  const escalation = await getEscalationAccessContext(agentUserId, escalationId);
+  const escalation = await getEscalationAccessContext(buildAgentActor(agentUserId), escalationId);
 
   const updated = await prisma.callEscalation.update({
     where: { id: escalation.id },
@@ -599,7 +669,7 @@ export const createCallbackRequestForEscalation = async (
     notes?: string | null;
   }
 ) => {
-  const escalation = await getEscalationAccessContext(agentUserId, escalationId);
+  const escalation = await getEscalationAccessContext(buildAgentActor(agentUserId), escalationId);
   const callbackPhone =
     input.callbackPhone ?? escalation.customerPhone ?? escalation.callSession.callerPhone ?? null;
 
@@ -630,7 +700,7 @@ export const captureVoicemailForEscalation = async (
     notes?: string | null;
   }
 ) => {
-  const escalation = await getEscalationAccessContext(agentUserId, escalationId);
+  const escalation = await getEscalationAccessContext(buildAgentActor(agentUserId), escalationId);
 
   const updated = await prisma.callEscalation.update({
     where: { id: escalation.id },
@@ -659,7 +729,7 @@ export const sendSmsFallbackForEscalation = async (
     message: string;
   }
 ) => {
-  const escalation = await getEscalationAccessContext(agentUserId, escalationId);
+  const escalation = await getEscalationAccessContext(buildAgentActor(agentUserId), escalationId);
   const recipientPhone =
     input.recipientPhone ?? escalation.customerPhone ?? escalation.callSession.callerPhone ?? null;
 

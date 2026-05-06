@@ -10,13 +10,13 @@ import { createAuditLog } from "../../lib/audit";
 import { AppError } from "../../lib/errors";
 import { formatUsPhone, normalizeUsPhone } from "../../utils/phone";
 
-const DEFAULT_PROVIDER = "callrail" as const;
-const DEFAULT_CARRIER = "tmobile" as const;
+const DEFAULT_PROVIDER = "amazon_connect" as const;
+const DEFAULT_CARRIER = (env.DEMO_CARRIER?.toLowerCase() ?? "tmobile") as "tmobile";
 const DEFAULT_CARRIER_LABEL = "T-Mobile";
-const DEFAULT_FORWARDING_TYPE = "no_answer" as const;
+const DEFAULT_FORWARDING_TYPE = (env.DEMO_FORWARDING_TYPE?.toLowerCase() ?? "no_answer") as "no_answer";
 const DEFAULT_CALL_DIRECTION = "inbound" as const;
-const STATUS_CHECK_CODE = "*#61#";
-const DEACTIVATION_CODE = "##61#";
+const STATUS_CHECK_CODE = env.DEMO_FORWARDING_STATUS_CODE;
+const DEACTIVATION_CODE = env.DEMO_FORWARDING_DEACTIVATION_CODE;
 
 const normalizePhoneDigits = (value: string | null | undefined): string | undefined => {
   if (!value) {
@@ -64,7 +64,15 @@ const formatPhoneDigits = (value: string | null | undefined): string | null => {
 };
 
 const getConfiguredTrackingDigits = (): string | undefined => {
-  return normalizePhoneDigits(env.CALLRAIL_TRACKING_NUMBER);
+  return normalizePhoneDigits(env.AMAZON_CONNECT_PHONE_NUMBER ?? env.DEMO_FORWARDING_PHONE_NUMBER);
+};
+
+const getDemoOriginalPhoneDigits = (): string | undefined => {
+  return normalizePhoneDigits(env.DEMO_ORIGINAL_PHONE_NUMBER);
+};
+
+const getDemoForwardingDigits = (): string | undefined => {
+  return normalizePhoneDigits(env.DEMO_FORWARDING_PHONE_NUMBER);
 };
 
 const mapStatusToApi = (status: AiReceptionSetupStatus | null | undefined) => {
@@ -98,13 +106,26 @@ const mapApiStatusToDb = (
 };
 
 const resolveForwardingDigits = (value?: string | null): string => {
-  return requirePhoneDigits(value ?? env.CALLRAIL_TRACKING_NUMBER, "Forward-to AI number");
+  return requirePhoneDigits(
+    value ?? env.AMAZON_CONNECT_PHONE_NUMBER ?? env.DEMO_FORWARDING_PHONE_NUMBER,
+    "Forward-to AI number"
+  );
 };
 
 const buildForwardingCodes = (forwardingDigits: string) => {
+  const demoForwardingDigits = getDemoForwardingDigits();
+  const activationCode =
+    demoForwardingDigits && forwardingDigits === demoForwardingDigits
+      ? env.DEMO_FORWARDING_ACTIVATION_CODE
+      : `**61*${forwardingDigits}**10#`;
+  const fallbackActivationCode =
+    demoForwardingDigits && forwardingDigits === demoForwardingDigits
+      ? `**61*${forwardingDigits}#`
+      : `**61*${forwardingDigits}#`;
   return {
-    activationCode: `**61*${forwardingDigits}**10#`,
-    activationCodeWithoutDelay: `**61*${forwardingDigits}#`,
+    activationCode,
+    fallbackActivationCode,
+    activationCodeWithoutDelay: fallbackActivationCode,
     deactivationCode: DEACTIVATION_CODE,
     statusCheckCode: STATUS_CHECK_CODE
   };
@@ -112,16 +133,19 @@ const buildForwardingCodes = (forwardingDigits: string) => {
 
 const buildSetupInstructions = (codes: {
   activationCode: string;
-  activationCodeWithoutDelay: string;
+  fallbackActivationCode: string;
   deactivationCode: string;
+  originalPhoneNumberFormatted: string;
+  forwardToNumberFormatted: string;
 }) => {
   return [
-    "Use this setup only on the phone line that owns the salon number.",
-    `Dial ${codes.activationCode} to enable T-Mobile no-answer forwarding after about 10 seconds.`,
-    `If the delayed code does not work on the device, try ${codes.activationCodeWithoutDelay}.`,
-    "The phone will ring first. If unanswered, T-Mobile will forward the call to the AI booking line.",
+    `Use this setup only on the line that owns ${codes.originalPhoneNumberFormatted}.`,
+    `Dial ${codes.activationCode} to enable T-Mobile no-answer forwarding.`,
+    `If the delayed code does not work on the device, try ${codes.fallbackActivationCode}.`,
+    `The phone rings first. If unanswered, T-Mobile forwards the call to ${codes.forwardToNumberFormatted}.`,
+    "Do not enable the full iPhone Call Forwarding toggle for this flow.",
     `Dial ${codes.deactivationCode} to disable forwarding.`,
-    "Do not configure the CallRail tracking number to route back to the original salon number."
+    "Forward directly to the Amazon Connect phone number for this flow."
   ];
 };
 
@@ -147,23 +171,28 @@ const buildAiReceptionResponse = (input: Awaited<ReturnType<typeof getSalonAiRec
     setup?.originalPhoneNumber ??
     normalizePhoneDigits(input.originalPhoneNumber) ??
     normalizePhoneDigits(input.contactPhone) ??
+    getDemoOriginalPhoneDigits() ??
     null;
   const codes = buildForwardingCodes(forwardingDigits);
+  const originalPhoneNumberFormatted = formatPhoneDigits(originalPhoneDigits);
+  const forwardToNumberFormatted = formatPhoneDigits(forwardingDigits);
 
   return {
     id: setup?.id ?? null,
     salonId: input.id,
+    salonName: input.name,
     provider: DEFAULT_PROVIDER,
     carrier: setup?.carrier ?? DEFAULT_CARRIER,
     carrierLabel: DEFAULT_CARRIER_LABEL,
     originalPhoneNumber: originalPhoneDigits,
-    originalPhoneNumberFormatted: formatPhoneDigits(originalPhoneDigits),
+    originalPhoneNumberFormatted,
     forwardToNumber: forwardingDigits,
-    forwardToNumberFormatted: formatPhoneDigits(forwardingDigits),
+    forwardToNumberFormatted,
     forwardingPhoneNumber: forwardingDigits,
-    forwardingPhoneNumberFormatted: formatPhoneDigits(forwardingDigits),
+    forwardingPhoneNumberFormatted: forwardToNumberFormatted,
     forwardingType: DEFAULT_FORWARDING_TYPE,
     activationCode: setup?.activationCode ?? codes.activationCode,
+    fallbackActivationCode: codes.fallbackActivationCode,
     activationCodeWithoutDelay: codes.activationCodeWithoutDelay,
     deactivationCode: setup?.deactivationCode ?? codes.deactivationCode,
     statusCheckCode: codes.statusCheckCode,
@@ -171,7 +200,11 @@ const buildAiReceptionResponse = (input: Awaited<ReturnType<typeof getSalonAiRec
     lastTestedAt: setup?.lastTestedAt ?? null,
     lastVerifiedAt: setup?.lastVerifiedAt ?? null,
     webhookVerificationEnabled: Boolean(env.CALLRAIL_WEBHOOK_SECRET?.trim()),
-    setupInstructions: buildSetupInstructions(codes)
+    setupInstructions: buildSetupInstructions({
+      ...codes,
+      originalPhoneNumberFormatted: originalPhoneNumberFormatted ?? "the original salon line",
+      forwardToNumberFormatted: forwardToNumberFormatted ?? "the AI forwarding line"
+    })
   };
 };
 
@@ -202,6 +235,7 @@ export const updateAiReceptionConfigForSalon = async (
       ? context.aiReceptionSetup?.originalPhoneNumber ??
         normalizePhoneDigits(context.originalPhoneNumber) ??
         normalizePhoneDigits(context.contactPhone) ??
+        getDemoOriginalPhoneDigits() ??
         null
       : input.originalPhoneNumber === null
         ? null
@@ -280,6 +314,7 @@ export const generateAiReceptionForwardingCodeForSalon = async (
       ? context.aiReceptionSetup?.originalPhoneNumber ??
         normalizePhoneDigits(context.originalPhoneNumber) ??
         normalizePhoneDigits(context.contactPhone) ??
+        getDemoOriginalPhoneDigits() ??
         null
       : input.originalPhoneNumber === null
         ? null
@@ -361,7 +396,8 @@ export const markAiReceptionForwardingTestedForSalon = async (
   const originalPhoneDigits =
     context.aiReceptionSetup?.originalPhoneNumber ??
     normalizePhoneDigits(context.originalPhoneNumber) ??
-    normalizePhoneDigits(context.contactPhone);
+    normalizePhoneDigits(context.contactPhone) ??
+    getDemoOriginalPhoneDigits();
 
   if (!originalPhoneDigits) {
     throw new AppError(
@@ -560,6 +596,8 @@ export const getCallRailHealthStatus = async () => {
   ]);
 
   const trackingDigits = getConfiguredTrackingDigits();
+  const demoOriginalPhoneNumber = getDemoOriginalPhoneDigits();
+  const demoForwardingPhoneNumber = getDemoForwardingDigits() ?? trackingDigits;
   const webhookSecretConfigured = Boolean(env.CALLRAIL_WEBHOOK_SECRET);
   const apiKeyConfigured = Boolean(env.CALLRAIL_API_KEY);
   const accountIdConfigured = Boolean(env.CALLRAIL_ACCOUNT_ID);
@@ -577,7 +615,8 @@ export const getCallRailHealthStatus = async () => {
     status,
     configured,
     missing: env.integrationStatuses.callRail.missing,
-    webhookEndpoint: "/api/v1/integrations/callrail/webhook",
+    webhookEndpoint: env.CALLRAIL_WEBHOOK_PATH,
+    webhookConfigured: webhookSecretConfigured,
     webhookVerificationEnabled: webhookSecretConfigured,
     webhookSecretConfigured,
     apiKeyConfigured,
@@ -590,9 +629,15 @@ export const getCallRailHealthStatus = async () => {
     aiFlowIdConfigured,
     livePersonFlowIdConfigured,
     livePersonFlowOptional: true,
-    trackingNumber: trackingDigits ?? "",
-    trackingNumberFormatted: formatPhoneDigits(trackingDigits),
+    trackingNumber: trackingDigits ?? demoForwardingPhoneNumber ?? "",
+    trackingNumberFormatted: formatPhoneDigits(trackingDigits ?? demoForwardingPhoneNumber),
+    callFlowName: env.CALLRAIL_CALL_FLOW_NAME ?? "",
+    demoOriginalPhoneNumber: demoOriginalPhoneNumber ?? "",
+    demoOriginalPhoneNumberFormatted: formatPhoneDigits(demoOriginalPhoneNumber),
+    demoForwardingPhoneNumber: demoForwardingPhoneNumber ?? "",
+    demoForwardingPhoneNumberFormatted: formatPhoneDigits(demoForwardingPhoneNumber),
     activeAiReceptionSetupCount: activeSetupCount,
+    lastReceivedWebhookAt: latestEvent?.receivedAt ?? null,
     lastWebhookReceivedAt: latestEvent?.receivedAt ?? null,
     lastMappedCallAt: latestMappedCall?.updatedAt ?? null
   };

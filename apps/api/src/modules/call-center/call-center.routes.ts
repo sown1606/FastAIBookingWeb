@@ -1,7 +1,8 @@
 import { Router } from "express";
-import { AppointmentStatus, CallEscalationStatus } from "@prisma/client";
+import { AppointmentStatus, CallEscalationStatus, Role } from "@prisma/client";
 import { z } from "zod";
 import { asyncHandler } from "../../middleware/async-handler";
+import { requireRoles } from "../../middleware/auth";
 import { validate } from "../../middleware/validate";
 import { sendSuccess } from "../../utils/response";
 import { isValidUsPhone } from "../../utils/phone";
@@ -141,7 +142,11 @@ export const callCenterRouter = Router();
 callCenterRouter.get(
   "/runtime",
   asyncHandler(async (req, res) => {
-    const runtime = await getCallCenterRuntime(req.auth!.userId);
+    const runtime = await getCallCenterRuntime({
+      userId: req.auth!.userId,
+      role: req.auth!.role,
+      salonId: req.auth!.salonId
+    });
     return sendSuccess(res, {
       data: runtime
     });
@@ -153,7 +158,14 @@ callCenterRouter.get(
   validate(listQueueQuerySchema, "query"),
   asyncHandler(async (req, res) => {
     const query = req.query as unknown as z.infer<typeof listQueueQuerySchema>;
-    const queue = await listEscalationQueue(req.auth!.userId, query);
+    const queue = await listEscalationQueue(
+      {
+        userId: req.auth!.userId,
+        role: req.auth!.role,
+        salonId: req.auth!.salonId
+      },
+      query
+    );
     return sendSuccess(res, {
       data: queue
     });
@@ -165,7 +177,14 @@ callCenterRouter.get(
   validate(escalationIdSchema, "params"),
   asyncHandler(async (req, res) => {
     const { id } = req.params as z.infer<typeof escalationIdSchema>;
-    const escalation = await getEscalationDetail(req.auth!.userId, id);
+    const escalation = await getEscalationDetail(
+      {
+        userId: req.auth!.userId,
+        role: req.auth!.role,
+        salonId: req.auth!.salonId
+      },
+      id
+    );
     return sendSuccess(res, {
       data: escalation
     });
@@ -174,6 +193,7 @@ callCenterRouter.get(
 
 callCenterRouter.post(
   "/queue/:id/accept",
+  requireRoles(Role.CALL_CENTER_AGENT),
   validate(escalationIdSchema, "params"),
   validate(acceptEscalationSchema),
   asyncHandler(async (req, res) => {
@@ -189,6 +209,7 @@ callCenterRouter.post(
 
 callCenterRouter.patch(
   "/queue/:id",
+  requireRoles(Role.CALL_CENTER_AGENT),
   validate(escalationIdSchema, "params"),
   validate(updateEscalationSchema),
   asyncHandler(async (req, res) => {
@@ -204,6 +225,7 @@ callCenterRouter.patch(
 
 callCenterRouter.post(
   "/queue/:id/complete",
+  requireRoles(Role.CALL_CENTER_AGENT),
   validate(escalationIdSchema, "params"),
   validate(completeEscalationSchema),
   asyncHandler(async (req, res) => {
@@ -219,6 +241,7 @@ callCenterRouter.post(
 
 callCenterRouter.post(
   "/queue/:id/callback-request",
+  requireRoles(Role.CALL_CENTER_AGENT),
   validate(escalationIdSchema, "params"),
   validate(callbackRequestSchema),
   asyncHandler(async (req, res) => {
@@ -234,6 +257,7 @@ callCenterRouter.post(
 
 callCenterRouter.post(
   "/queue/:id/voicemail",
+  requireRoles(Role.CALL_CENTER_AGENT),
   validate(escalationIdSchema, "params"),
   validate(voicemailSchema),
   asyncHandler(async (req, res) => {
@@ -249,6 +273,7 @@ callCenterRouter.post(
 
 callCenterRouter.post(
   "/queue/:id/sms-fallback",
+  requireRoles(Role.CALL_CENTER_AGENT),
   validate(escalationIdSchema, "params"),
   validate(smsFallbackSchema),
   asyncHandler(async (req, res) => {
@@ -265,7 +290,11 @@ callCenterRouter.post(
 callCenterRouter.get(
   "/salons",
   asyncHandler(async (req, res) => {
-    const salons = await listAssignedSalons(req.auth!.userId);
+    const salons = await listAssignedSalons({
+      userId: req.auth!.userId,
+      role: req.auth!.role,
+      salonId: req.auth!.salonId
+    });
     return sendSuccess(res, {
       data: salons
     });
@@ -277,7 +306,14 @@ callCenterRouter.get(
   validate(salonIdSchema, "params"),
   asyncHandler(async (req, res) => {
     const { salonId } = req.params as z.infer<typeof salonIdSchema>;
-    const salon = await getAssignedSalonDetail(req.auth!.userId, salonId);
+    const salon = await getAssignedSalonDetail(
+      {
+        userId: req.auth!.userId,
+        role: req.auth!.role,
+        salonId: req.auth!.salonId
+      },
+      salonId
+    );
     return sendSuccess(res, {
       data: salon
     });
@@ -289,7 +325,14 @@ callCenterRouter.get(
   validate(salonIdSchema, "params"),
   asyncHandler(async (req, res) => {
     const { salonId } = req.params as z.infer<typeof salonIdSchema>;
-    const staff = await listAssignedSalonStaff(req.auth!.userId, salonId);
+    const staff = await listAssignedSalonStaff(
+      {
+        userId: req.auth!.userId,
+        role: req.auth!.role,
+        salonId: req.auth!.salonId
+      },
+      salonId
+    );
     return sendSuccess(res, {
       data: staff
     });
@@ -301,7 +344,14 @@ callCenterRouter.get(
   validate(salonIdSchema, "params"),
   asyncHandler(async (req, res) => {
     const { salonId } = req.params as z.infer<typeof salonIdSchema>;
-    const services = await listAssignedSalonServices(req.auth!.userId, salonId);
+    const services = await listAssignedSalonServices(
+      {
+        userId: req.auth!.userId,
+        role: req.auth!.role,
+        salonId: req.auth!.salonId
+      },
+      salonId
+    );
     return sendSuccess(res, {
       data: services
     });
@@ -315,7 +365,15 @@ callCenterRouter.get(
   asyncHandler(async (req, res) => {
     const { salonId } = req.params as z.infer<typeof salonIdSchema>;
     const payload = req.query as unknown as z.infer<typeof listCustomerQuerySchema>;
-    const customers = await listAssignedSalonCustomers(req.auth!.userId, salonId, payload);
+    const customers = await listAssignedSalonCustomers(
+      {
+        userId: req.auth!.userId,
+        role: req.auth!.role,
+        salonId: req.auth!.salonId
+      },
+      salonId,
+      payload
+    );
     return sendSuccess(res, {
       data: customers
     });
@@ -329,7 +387,15 @@ callCenterRouter.post(
   asyncHandler(async (req, res) => {
     const { salonId } = req.params as z.infer<typeof salonIdSchema>;
     const payload = req.body as z.infer<typeof createCustomerSchema>;
-    const customer = await createAssignedSalonCustomer(req.auth!.userId, salonId, payload);
+    const customer = await createAssignedSalonCustomer(
+      {
+        userId: req.auth!.userId,
+        role: req.auth!.role,
+        salonId: req.auth!.salonId
+      },
+      salonId,
+      payload
+    );
     return sendSuccess(res, {
       statusCode: 201,
       message: "Customer created.",
@@ -345,15 +411,23 @@ callCenterRouter.get(
   asyncHandler(async (req, res) => {
     const { salonId } = req.params as z.infer<typeof salonIdSchema>;
     const payload = req.query as unknown as z.infer<typeof listAppointmentsQuerySchema>;
-    const appointments = await listAssignedSalonAppointments(req.auth!.userId, salonId, {
-      page: payload.page,
-      limit: payload.limit,
-      staffId: payload.staffId,
-      customerId: payload.customerId,
-      status: payload.status,
-      dateFrom: payload.dateFrom ? new Date(payload.dateFrom) : undefined,
-      dateTo: payload.dateTo ? new Date(payload.dateTo) : undefined
-    });
+    const appointments = await listAssignedSalonAppointments(
+      {
+        userId: req.auth!.userId,
+        role: req.auth!.role,
+        salonId: req.auth!.salonId
+      },
+      salonId,
+      {
+        page: payload.page,
+        limit: payload.limit,
+        staffId: payload.staffId,
+        customerId: payload.customerId,
+        status: payload.status,
+        dateFrom: payload.dateFrom ? new Date(payload.dateFrom) : undefined,
+        dateTo: payload.dateTo ? new Date(payload.dateTo) : undefined
+      }
+    );
     return sendSuccess(res, {
       data: appointments
     });
@@ -367,15 +441,23 @@ callCenterRouter.post(
   asyncHandler(async (req, res) => {
     const { salonId } = req.params as z.infer<typeof salonIdSchema>;
     const payload = req.body as z.infer<typeof createAppointmentSchema>;
-    const appointment = await createAssignedSalonAppointment(req.auth!.userId, salonId, {
-      customerId: payload.customerId,
-      staffId: payload.staffId,
-      serviceId: payload.serviceId,
-      serviceIds: payload.serviceIds,
-      startTime: new Date(payload.startTime),
-      notes: payload.notes,
-      status: payload.status
-    });
+    const appointment = await createAssignedSalonAppointment(
+      {
+        userId: req.auth!.userId,
+        role: req.auth!.role,
+        salonId: req.auth!.salonId
+      },
+      salonId,
+      {
+        customerId: payload.customerId,
+        staffId: payload.staffId,
+        serviceId: payload.serviceId,
+        serviceIds: payload.serviceIds,
+        startTime: new Date(payload.startTime),
+        notes: payload.notes,
+        status: payload.status
+      }
+    );
     return sendSuccess(res, {
       statusCode: 201,
       message: "Appointment created.",
@@ -391,15 +473,24 @@ callCenterRouter.patch(
   asyncHandler(async (req, res) => {
     const { salonId, id } = req.params as z.infer<typeof salonAppointmentSchema>;
     const payload = req.body as z.infer<typeof updateAppointmentSchema>;
-    const appointment = await updateAssignedSalonAppointment(req.auth!.userId, salonId, id, {
-      customerId: payload.customerId,
-      staffId: payload.staffId,
-      serviceId: payload.serviceId,
-      serviceIds: payload.serviceIds,
-      startTime: payload.startTime ? new Date(payload.startTime) : undefined,
-      notes: payload.notes,
-      status: payload.status
-    });
+    const appointment = await updateAssignedSalonAppointment(
+      {
+        userId: req.auth!.userId,
+        role: req.auth!.role,
+        salonId: req.auth!.salonId
+      },
+      salonId,
+      id,
+      {
+        customerId: payload.customerId,
+        staffId: payload.staffId,
+        serviceId: payload.serviceId,
+        serviceIds: payload.serviceIds,
+        startTime: payload.startTime ? new Date(payload.startTime) : undefined,
+        notes: payload.notes,
+        status: payload.status
+      }
+    );
     return sendSuccess(res, {
       message: "Appointment updated.",
       data: appointment
@@ -414,10 +505,19 @@ callCenterRouter.patch(
   asyncHandler(async (req, res) => {
     const { salonId, id } = req.params as z.infer<typeof salonAppointmentSchema>;
     const payload = req.body as z.infer<typeof rescheduleSchema>;
-    const appointment = await rescheduleAssignedSalonAppointment(req.auth!.userId, salonId, id, {
-      staffId: payload.staffId,
-      startTime: new Date(payload.startTime)
-    });
+    const appointment = await rescheduleAssignedSalonAppointment(
+      {
+        userId: req.auth!.userId,
+        role: req.auth!.role,
+        salonId: req.auth!.salonId
+      },
+      salonId,
+      id,
+      {
+        staffId: payload.staffId,
+        startTime: new Date(payload.startTime)
+      }
+    );
     return sendSuccess(res, {
       message: "Appointment rescheduled.",
       data: appointment
@@ -432,7 +532,16 @@ callCenterRouter.patch(
   asyncHandler(async (req, res) => {
     const { salonId, id } = req.params as z.infer<typeof salonAppointmentSchema>;
     const payload = req.body as z.infer<typeof cancelSchema>;
-    const appointment = await cancelAssignedSalonAppointment(req.auth!.userId, salonId, id, payload.reason);
+    const appointment = await cancelAssignedSalonAppointment(
+      {
+        userId: req.auth!.userId,
+        role: req.auth!.role,
+        salonId: req.auth!.salonId
+      },
+      salonId,
+      id,
+      payload.reason
+    );
     return sendSuccess(res, {
       message: "Appointment canceled.",
       data: appointment

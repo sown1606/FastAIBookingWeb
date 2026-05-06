@@ -53,13 +53,13 @@ callrailWebhookRouter.post(
               callSessionId: result.callSessionId,
               error
             },
-            "Call automation failed after CallRail webhook ingestion"
+            "Call automation failed after optional attribution webhook ingestion"
           );
         });
       }
 
       return sendSuccess(res, {
-        message: "CallRail webhook accepted.",
+        message: "Optional attribution webhook accepted.",
         data: result
       });
     } catch (error) {
@@ -69,10 +69,10 @@ callrailWebhookRouter.post(
             message: error.message,
             body: req.body
           },
-          "Ignoring CallRail webhook with unsupported payload shape"
+          "Ignoring optional attribution webhook with unsupported payload shape"
         );
         return sendSuccess(res, {
-          message: "CallRail webhook accepted.",
+          message: "Optional attribution webhook accepted.",
           data: {
             signatureVerified: true,
             callSessionId: null,

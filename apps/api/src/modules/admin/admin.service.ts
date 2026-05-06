@@ -345,7 +345,7 @@ export const getSalonDetailForAdmin = async (salonId: string) => {
         configured: env.integrationStatuses.callRail.configured && activeCallRailConfigs.length > 0,
         missing: [
           ...env.integrationStatuses.callRail.missing,
-          activeCallRailConfigs.length === 0 ? "Active CALLRAIL IntegrationConfig" : null
+          activeCallRailConfigs.length === 0 ? "Optional CALLRAIL attribution IntegrationConfig" : null
         ].filter((value): value is string => Boolean(value)),
         activeConfigCount: activeCallRailConfigs.length
       },
@@ -460,7 +460,7 @@ export const getAdminOverviewMetrics = async () => {
         configured: env.integrationStatuses.callRail.configured && activeCallRailConfigCount > 0,
         missing: [
           ...env.integrationStatuses.callRail.missing,
-          activeCallRailConfigCount === 0 ? "Active CALLRAIL IntegrationConfig" : null
+          activeCallRailConfigCount === 0 ? "Optional CALLRAIL attribution IntegrationConfig" : null
         ].filter((value): value is string => Boolean(value)),
         activeConfigCount: activeCallRailConfigCount
       },
