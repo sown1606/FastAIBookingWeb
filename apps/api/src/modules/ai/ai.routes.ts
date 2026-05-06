@@ -1,9 +1,12 @@
+import { timingSafeEqual } from "crypto";
 import { Router } from "express";
 import { Role } from "@prisma/client";
 import { z } from "zod";
+import { env } from "../../config/env";
 import { asyncHandler } from "../../middleware/async-handler";
 import { requireRoles } from "../../middleware/auth";
 import { validate } from "../../middleware/validate";
+import { AppError } from "../../lib/errors";
 import { sendSuccess } from "../../utils/response";
 import {
   bookingFromTextRequestSchema,
@@ -14,6 +17,7 @@ import {
 import {
   bookingFromText,
   bookingFromTranscript,
+  createAmazonConnectAIAppointment,
   getAIInteractionById,
   listAIInteractions,
   parseBookingText,
@@ -31,7 +35,81 @@ const interactionsQuerySchema = z.object({
   callSessionId: z.string().uuid().optional()
 });
 
+const createAIAppointmentSchema = z.object({
+  salonId: z.string().trim().min(1).optional(),
+  customerName: z.string().trim().min(1).max(160),
+  customerPhone: z.string().trim().min(7).max(40),
+  serviceName: z.string().trim().min(1).max(160),
+  requestedDate: z.string().trim().min(1).max(80),
+  requestedTime: z.string().trim().min(1).max(40).optional(),
+  staffPreference: z.string().trim().min(1).max(160).optional(),
+  source: z.string().trim().min(1).max(80).optional(),
+  amazonConnectContactId: z.string().trim().min(1).max(160).optional(),
+  amazonConnectPhoneNumber: z.string().trim().min(1).max(40).optional(),
+  calledNumber: z.string().trim().min(1).max(40).optional()
+});
+
+const extractInternalToken = (authorizationHeader?: string, internalHeader?: string | string[]) => {
+  const headerToken = Array.isArray(internalHeader) ? internalHeader[0] : internalHeader;
+  if (headerToken?.trim()) {
+    return headerToken.trim();
+  }
+
+  const [scheme, token] = authorizationHeader?.split(" ") ?? [];
+  if (scheme === "Bearer" && token) {
+    return token.trim();
+  }
+
+  return undefined;
+};
+
+const tokensMatch = (actual: string, expected: string): boolean => {
+  const actualBuffer = Buffer.from(actual);
+  const expectedBuffer = Buffer.from(expected);
+  return (
+    actualBuffer.length === expectedBuffer.length && timingSafeEqual(actualBuffer, expectedBuffer)
+  );
+};
+
+const requireInternalApiToken = asyncHandler(async (req, _res, next) => {
+  const configuredToken = env.FASTAIBOOKING_API_INTERNAL_TOKEN?.trim();
+  if (!configuredToken) {
+    throw new AppError("AI appointment endpoint is not configured.", 503, "AI_INTERNAL_TOKEN_MISSING");
+  }
+
+  const requestToken = extractInternalToken(
+    req.headers.authorization,
+    req.headers["x-fastaibooking-internal-token"]
+  );
+  if (!requestToken || !tokensMatch(requestToken, configuredToken)) {
+    throw new AppError("Invalid internal token.", 401, "UNAUTHORIZED");
+  }
+
+  next();
+});
+
+export const aiInternalRouter = Router();
 export const aiRouter = Router();
+
+aiInternalRouter.post(
+  "/appointments",
+  requireInternalApiToken,
+  validate(createAIAppointmentSchema),
+  asyncHandler(async (req, res) => {
+    const payload = req.body as z.infer<typeof createAIAppointmentSchema>;
+    const result = await createAmazonConnectAIAppointment(payload);
+    return sendSuccess(res, {
+      statusCode: 201,
+      message: "AI appointment created.",
+      data: {
+        appointment: result.appointment,
+        bookingAttemptId: result.bookingAttempt.id,
+        callSessionId: result.callSession?.id ?? null,
+        salonResolutionSource: result.salonResolutionSource
+      }
+    });
+  })
+);
 
 aiRouter.use(requireRoles(Role.SALON_OWNER));
 

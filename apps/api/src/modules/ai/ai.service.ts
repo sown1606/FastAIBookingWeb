@@ -2,10 +2,12 @@ import { DateTime } from "luxon";
 import {
   BookingAttemptStatus,
   CallRoutingOutcome,
+  CallSessionStatus,
   ExternalProvider,
   Prisma,
   StaffStatus
 } from "@prisma/client";
+import { env } from "../../config/env";
 import { prisma } from "../../db/prisma";
 import { createAuditLog } from "../../lib/audit";
 import { AppError } from "../../lib/errors";
@@ -43,6 +45,27 @@ interface SuggestSlotsInput {
   daysAhead: number;
   maxSlots: number;
 }
+
+interface CreateAmazonConnectAIAppointmentInput {
+  salonId?: string;
+  customerName: string;
+  customerPhone: string;
+  serviceName: string;
+  requestedDate: string;
+  requestedTime?: string;
+  staffPreference?: string;
+  source?: string;
+  amazonConnectContactId?: string;
+  amazonConnectPhoneNumber?: string;
+  calledNumber?: string;
+}
+
+type SalonResolutionSource =
+  | "explicit_salon_id"
+  | "amazon_connect_integration_config"
+  | "amazon_connect_reception_setup"
+  | "salon_phone_number"
+  | "default_salon_demo_fallback";
 
 const toJson = (value: unknown): Prisma.InputJsonValue => {
   return JSON.parse(JSON.stringify(value ?? null)) as Prisma.InputJsonValue;
@@ -528,6 +551,307 @@ const getStaffCandidates = async (input: {
   return staff;
 };
 
+const normalizePhoneDigitsForLookup = (value?: string | null): string | undefined => {
+  if (!value) {
+    return undefined;
+  }
+
+  const digits = value.replace(/\D/g, "");
+  if (!digits) {
+    return undefined;
+  }
+  return digits;
+};
+
+const buildPhoneLookupValues = (value?: string | null): string[] => {
+  const digits = normalizePhoneDigitsForLookup(value);
+  const normalized = normalizePhoneForMatching(value ?? undefined);
+  const values = new Set<string>();
+
+  [value?.trim(), normalized, digits].forEach((candidate) => {
+    if (candidate) {
+      values.add(candidate);
+    }
+  });
+
+  if (digits?.length === 10) {
+    values.add(`1${digits}`);
+    values.add(`+1${digits}`);
+  }
+  if (digits?.length === 11 && digits.startsWith("1")) {
+    values.add(digits.slice(1));
+    values.add(`+${digits}`);
+  }
+
+  return Array.from(values.values());
+};
+
+const parseRequestedStartTime = (input: {
+  requestedDate: string;
+  requestedTime?: string;
+  timezone: string;
+}): Date => {
+  const requestedDate = input.requestedDate.trim();
+  const requestedTime = input.requestedTime?.trim();
+
+  if (!requestedTime) {
+    const iso = DateTime.fromISO(requestedDate, { zone: input.timezone });
+    if (iso.isValid) {
+      return iso.toUTC().toJSDate();
+    }
+    throw new AppError("requestedDate must be a valid ISO date or datetime.", 400, "INVALID_REQUESTED_DATE");
+  }
+
+  const combined = `${requestedDate} ${requestedTime}`;
+  const formats = [
+    "yyyy-MM-dd HH:mm",
+    "yyyy-MM-dd H:mm",
+    "yyyy-MM-dd h:mm a",
+    "yyyy-MM-dd h a",
+    "M/d/yyyy HH:mm",
+    "M/d/yyyy H:mm",
+    "M/d/yyyy h:mm a",
+    "M/d/yyyy h a"
+  ];
+
+  for (const format of formats) {
+    const parsed = DateTime.fromFormat(combined, format, { zone: input.timezone });
+    if (parsed.isValid) {
+      return parsed.toUTC().toJSDate();
+    }
+  }
+
+  throw new AppError("requestedDate and requestedTime do not form a valid appointment time.", 400, "INVALID_REQUESTED_TIME");
+};
+
+const salonSelect = {
+  id: true,
+  timezone: true,
+  ownerId: true
+} as const;
+
+const resolveAmazonConnectSalon = async (input: {
+  salonId?: string;
+  amazonConnectPhoneNumber?: string;
+  calledNumber?: string;
+}): Promise<{
+  salon: { id: string; timezone: string; ownerId: string };
+  resolutionSource: SalonResolutionSource;
+}> => {
+  const explicitSalonId = input.salonId?.trim();
+  if (explicitSalonId) {
+    const salon = await prisma.salon.findUnique({
+      where: { id: explicitSalonId },
+      select: salonSelect
+    });
+    if (!salon) {
+      throw new AppError("Salon not found.", 404, "SALON_NOT_FOUND");
+    }
+    return { salon, resolutionSource: "explicit_salon_id" };
+  }
+
+  const phoneLookupValues = Array.from(
+    new Set([
+      ...buildPhoneLookupValues(input.amazonConnectPhoneNumber),
+      ...buildPhoneLookupValues(input.calledNumber)
+    ])
+  );
+
+  if (phoneLookupValues.length) {
+    const integration = await prisma.integrationConfig.findFirst({
+      where: {
+        provider: ExternalProvider.AMAZON_CONNECT,
+        isActive: true,
+        configKey: {
+          in: [
+            "phone_number",
+            "amazon_connect_phone_number",
+            "forwarding_phone_number",
+            "called_number",
+            "dialed_number",
+            "tracking_number",
+            "salon_original_number"
+          ]
+        },
+        configValue: {
+          in: phoneLookupValues
+        }
+      },
+      select: {
+        salon: {
+          select: salonSelect
+        }
+      }
+    });
+    if (integration?.salon) {
+      return {
+        salon: integration.salon,
+        resolutionSource: "amazon_connect_integration_config"
+      };
+    }
+
+    const receptionSetup = await prisma.salonAiReceptionSetup.findFirst({
+      where: {
+        provider: ExternalProvider.AMAZON_CONNECT,
+        forwardingPhoneNumber: {
+          in: phoneLookupValues
+        }
+      },
+      select: {
+        salon: {
+          select: salonSelect
+        }
+      }
+    });
+    if (receptionSetup?.salon) {
+      return {
+        salon: receptionSetup.salon,
+        resolutionSource: "amazon_connect_reception_setup"
+      };
+    }
+
+    const salon = await prisma.salon.findFirst({
+      where: {
+        OR: [
+          {
+            customerIncomingPhoneNumber: {
+              in: phoneLookupValues
+            }
+          },
+          {
+            originalPhoneNumber: {
+              in: phoneLookupValues
+            }
+          },
+          {
+            contactPhone: {
+              in: phoneLookupValues
+            }
+          }
+        ]
+      },
+      select: salonSelect
+    });
+    if (salon) {
+      return { salon, resolutionSource: "salon_phone_number" };
+    }
+  }
+
+  const defaultSalonId = env.DEFAULT_SALON_ID?.trim();
+  if (defaultSalonId) {
+    const salon = await prisma.salon.findUnique({
+      where: { id: defaultSalonId },
+      select: salonSelect
+    });
+    if (!salon) {
+      throw new AppError("DEFAULT_SALON_ID does not match an existing salon.", 500, "DEFAULT_SALON_NOT_FOUND");
+    }
+    return { salon, resolutionSource: "default_salon_demo_fallback" };
+  }
+
+  throw new AppError(
+    "Unable to resolve salon from Amazon Connect phone attributes.",
+    422,
+    "SALON_RESOLUTION_FAILED"
+  );
+};
+
+const selectStaffForAIAppointment = async (input: {
+  salonId: string;
+  serviceId: string;
+  requestedStartTime: Date;
+  staffPreference?: string;
+}) => {
+  const staffCandidates = await getStaffCandidates({
+    salonId: input.salonId,
+    requestedStaffName: input.staffPreference
+  });
+
+  if (!staffCandidates.length) {
+    throw new AppError("No matching bookable staff found.", 400, "STAFF_UNAVAILABLE");
+  }
+
+  const rejectedReasons: string[] = [];
+  for (const staff of staffCandidates) {
+    try {
+      const slotValidation = await validateAppointmentSlot({
+        salonId: input.salonId,
+        staffId: staff.id,
+        serviceIds: [input.serviceId],
+        startTime: input.requestedStartTime
+      });
+      if (slotValidation.valid) {
+        return staff;
+      }
+      rejectedReasons.push(slotValidation.reason ?? `Staff ${staff.fullName} is unavailable.`);
+    } catch (error) {
+      if (error instanceof AppError && error.statusCode < 500) {
+        rejectedReasons.push(error.message);
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  throw new AppError(
+    input.staffPreference
+      ? "Requested staff is not available for this appointment."
+      : "No bookable staff is available for this appointment.",
+    409,
+    "NO_AVAILABLE_STAFF",
+    {
+      reasons: Array.from(new Set(rejectedReasons)).slice(0, 5)
+    }
+  );
+};
+
+const upsertAmazonConnectCallSession = async (input: {
+  salonId: string;
+  contactId?: string;
+  customerPhone: string;
+  amazonConnectPhoneNumber?: string;
+  calledNumber?: string;
+}) => {
+  const contactId = input.contactId?.trim();
+  if (!contactId) {
+    return null;
+  }
+
+  return prisma.callSession.upsert({
+    where: {
+      provider_providerCallId: {
+        provider: ExternalProvider.AMAZON_CONNECT,
+        providerCallId: contactId
+      }
+    },
+    update: {
+      salonId: input.salonId,
+      providerCompanyId: env.AMAZON_CONNECT_INSTANCE_ID,
+      callerPhone: normalizePhoneForMatching(input.customerPhone),
+      trackingNumber: normalizePhoneForMatching(input.amazonConnectPhoneNumber),
+      dialedPhone: normalizePhoneForMatching(input.calledNumber),
+      status: CallSessionStatus.IN_PROGRESS,
+      routingOutcome: CallRoutingOutcome.AI_RECEPTION,
+      finalResolution: "AI appointment created."
+    },
+    create: {
+      salonId: input.salonId,
+      provider: ExternalProvider.AMAZON_CONNECT,
+      providerCallId: contactId,
+      providerCompanyId: env.AMAZON_CONNECT_INSTANCE_ID,
+      callerPhone: normalizePhoneForMatching(input.customerPhone),
+      trackingNumber: normalizePhoneForMatching(input.amazonConnectPhoneNumber),
+      dialedPhone: normalizePhoneForMatching(input.calledNumber),
+      direction: "inbound",
+      sourceName: "amazon_connect_lex",
+      status: CallSessionStatus.IN_PROGRESS,
+      routingOutcome: CallRoutingOutcome.AI_RECEPTION,
+      startedAt: new Date(),
+      finalResolution: "AI appointment created."
+    }
+  });
+};
+
 const getSuggestedSlotsForService = async (input: {
   salonId: string;
   serviceId: string;
@@ -672,6 +996,119 @@ const buildStructuredCallSummary = (input: {
         ? input.escalation?.messageToCaller ?? "Please wait while I connect you."
         : input.resolution,
     updatedAt: new Date().toISOString()
+  };
+};
+
+export const createAmazonConnectAIAppointment = async (
+  input: CreateAmazonConnectAIAppointmentInput
+) => {
+  const { salon, resolutionSource } = await resolveAmazonConnectSalon({
+    salonId: input.salonId,
+    amazonConnectPhoneNumber: input.amazonConnectPhoneNumber,
+    calledNumber: input.calledNumber
+  });
+  const actorUserId = await resolveActionActorUserId(salon.id);
+  const requestedStartTime = parseRequestedStartTime({
+    requestedDate: input.requestedDate,
+    requestedTime: input.requestedTime,
+    timezone: salon.timezone
+  });
+
+  const service = await resolveService(salon.id, input.serviceName);
+  if (!service) {
+    throw new AppError("Service not found or inactive.", 400, "SERVICE_UNAVAILABLE");
+  }
+
+  const customer = await resolveCustomer({
+    salonId: salon.id,
+    actorUserId,
+    customerName: input.customerName,
+    customerPhone: input.customerPhone,
+    createCustomerIfMissing: true
+  });
+  if (!customer) {
+    throw new AppError("Customer name and a valid phone are required.", 400, "CUSTOMER_REQUIRED");
+  }
+
+  const staff = await selectStaffForAIAppointment({
+    salonId: salon.id,
+    serviceId: service.id,
+    requestedStartTime,
+    staffPreference: input.staffPreference
+  });
+
+  const callSession = await upsertAmazonConnectCallSession({
+    salonId: salon.id,
+    contactId: input.amazonConnectContactId,
+    customerPhone: input.customerPhone,
+    amazonConnectPhoneNumber: input.amazonConnectPhoneNumber,
+    calledNumber: input.calledNumber
+  });
+
+  const appointment = await createAppointmentFromAI(salon.id, actorUserId, {
+    customerId: customer.id,
+    staffId: staff.id,
+    serviceId: service.id,
+    startTime: requestedStartTime,
+    notes: [
+      "Created by Amazon Connect AI Booking.",
+      input.source ? `Source: ${input.source}` : null,
+      input.amazonConnectContactId ? `Amazon Connect contact: ${input.amazonConnectContactId}` : null
+    ]
+      .filter((value): value is string => Boolean(value))
+      .join("\n")
+  });
+
+  const bookingAttempt = await prisma.bookingAttempt.create({
+    data: {
+      salonId: salon.id,
+      callSessionId: callSession?.id,
+      appointmentId: appointment.id,
+      status: BookingAttemptStatus.SUCCESS,
+      source: input.source?.trim() || "AMAZON_CONNECT_LEX",
+      customerName: input.customerName,
+      customerPhone: normalizePhoneForMatching(input.customerPhone),
+      requestedService: input.serviceName,
+      requestedStaff: input.staffPreference,
+      requestedDateTimeText: requestedStartTime.toISOString(),
+      normalizedRequest: toJson({
+        salonId: salon.id,
+        salonResolutionSource: resolutionSource,
+        serviceId: service.id,
+        staffId: staff.id,
+        customerId: customer.id,
+        startTimeIso: requestedStartTime.toISOString(),
+        timezone: salon.timezone
+      }),
+      rawInput: toJson({
+        source: input.source,
+        amazonConnectContactId: input.amazonConnectContactId,
+        amazonConnectPhoneNumber: input.amazonConnectPhoneNumber,
+        calledNumber: input.calledNumber
+      }),
+      createdByUserId: actorUserId
+    }
+  });
+
+  if (callSession) {
+    await prisma.callSession.update({
+      where: { id: callSession.id },
+      data: {
+        bookingResult: toJson({
+          bookingAttemptId: bookingAttempt.id,
+          appointmentId: appointment.id,
+          status: BookingAttemptStatus.SUCCESS
+        }),
+        finalResolution: "AI appointment created."
+      }
+    });
+  }
+
+  return {
+    appointment,
+    bookingAttempt,
+    callSession,
+    salonResolutionSource: resolutionSource
   };
 };
 

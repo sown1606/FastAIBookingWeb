@@ -1,6 +1,7 @@
 import { AppointmentStatus, Role, StaffStatus } from "@prisma/client";
+import { env } from "./env";
 
-export const PUBLIC_API_PREFIX = "/api/v1";
+export const PUBLIC_API_PREFIX = env.API_PREFIX;
 
 export const OWNER_ROLES: Role[] = [Role.SALON_OWNER];
 export const ADMIN_ROLES: Role[] = [Role.PLATFORM_ADMIN];

@@ -17,7 +17,7 @@ import { authRouter } from "./modules/auth/auth.routes";
 import { availabilityRouter } from "./modules/availability/availability.routes";
 import { billingRouter } from "./modules/billing/billing.routes";
 import { businessHoursRouter } from "./modules/business-hours/business-hours.routes";
-import { aiRouter } from "./modules/ai/ai.routes";
+import { aiInternalRouter, aiRouter } from "./modules/ai/ai.routes";
 import { callCenterRouter } from "./modules/call-center/call-center.routes";
 import { callrailWebhookRouter } from "./modules/calls/callrail-webhook.routes";
 import { callsRouter } from "./modules/calls/calls.routes";
@@ -30,9 +30,7 @@ import { salonRouter } from "./modules/salon/salon.routes";
 import { servicesRouter } from "./modules/services/services.routes";
 import { staffRouter } from "./modules/staff/staff.routes";
 
-const allowedOrigins = [env.ADMIN_FRONTEND_URL, env.OWNER_FRONTEND_URL]
-  .map((origin) => origin.trim())
-  .filter((origin) => origin.length > 0);
+const allowedOrigins = env.corsOrigins;
 
 export const app = express();
 
@@ -78,13 +76,14 @@ app.use(`${PUBLIC_API_PREFIX}/health`, healthRouter);
 
 app.use(`${PUBLIC_API_PREFIX}/auth`, authRouter);
 app.use(`${PUBLIC_API_PREFIX}/admin`, adminRouter);
+app.use(`${PUBLIC_API_PREFIX}/ai`, aiInternalRouter);
 app.use(`${PUBLIC_API_PREFIX}/integrations/callrail`, callrailWebhookRouter);
 app.use(`${PUBLIC_API_PREFIX}/feedback`, feedbackRouter);
 
 app.use(
   `${PUBLIC_API_PREFIX}/call-center`,
   authenticate,
-  requireRoles(Role.CALL_CENTER_AGENT),
+  requireRoles(Role.CALL_CENTER_AGENT, Role.SALON_OWNER),
   callCenterRouter
 );
 

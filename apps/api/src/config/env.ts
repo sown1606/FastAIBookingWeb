@@ -66,7 +66,9 @@ const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
   PORT: z.coerce.number().int().positive().default(3000),
+  API_PREFIX: z.string().default("/api/v1"),
   API_BASE_URL: z.string().default("http://localhost:3000"),
+  CORS_ORIGINS: z.string().optional(),
   ADMIN_FRONTEND_URL: z.string().default("https://admin-new-nail.kendemo.com"),
   OWNER_FRONTEND_URL: z.string().default("https://app-new-nail.kendemo.com"),
   DATABASE_URL: z.string().optional(),
@@ -75,6 +77,11 @@ const envSchema = z.object({
   DATABASE_NAME: z.string().default("fastaibooking"),
   DATABASE_USER: z.string().default("postgres"),
   DATABASE_PASSWORD: z.string().default("postgres"),
+  POSTGRES_HOST: z.string().optional(),
+  POSTGRES_PORT: z.coerce.number().int().positive().optional(),
+  POSTGRES_DB: z.string().optional(),
+  POSTGRES_USER: z.string().optional(),
+  POSTGRES_PASSWORD: z.string().optional(),
   JWT_SECRET: z.string().min(16),
   JWT_EXPIRES_IN: z.string().default("15m"),
   REFRESH_TOKEN_SECRET: z.string().min(16),
@@ -85,6 +92,10 @@ const envSchema = z.object({
   SMTP_PASSWORD: z.string().optional(),
   SMTP_FROM_EMAIL: z.string().optional(),
   SMTP_FROM_NAME: z.string().default("FastAIBooking"),
+  EMAIL_PROVIDER: z.string().default("demo"),
+  AWS_SES_REGION: z.string().optional(),
+  AWS_SES_FROM_EMAIL: z.string().optional(),
+  AWS_SES_CONFIGURATION_SET: z.string().optional(),
   RESET_PASSWORD_URL: z.string().default("https://app-new-nail.kendemo.com/reset-password"),
   VERIFY_EMAIL_URL: z.string().default("https://app-new-nail.kendemo.com/verify-email"),
   STAFF_INVITE_APP_LINK: z.string().default("https://app-new-nail.kendemo.com/download-demo-app"),
@@ -97,33 +108,76 @@ const envSchema = z.object({
   FREE_STAFF_LIMIT: z.coerce.number().int().nonnegative().default(5),
   EXTRA_STAFF_PRICE: z.coerce.number().nonnegative().default(0),
   CALLRAIL_WEBHOOK_SECRET: nonEmptyStringOrUndefined,
+  CALLRAIL_WEBHOOK_PATH: z.string().default("/api/v1/integrations/callrail/webhook"),
   CALLRAIL_API_KEY: nonEmptyStringOrUndefined,
   CALLRAIL_ACCOUNT_ID: nonEmptyStringOrUndefined,
   CALLRAIL_COMPANY_ID: nonEmptyStringOrUndefined,
   CALLRAIL_TRACKING_NUMBER_ID: nonEmptyStringOrUndefined,
   CALLRAIL_TRACKING_NUMBER: nonEmptyStringOrUndefined,
+  CALLRAIL_CALL_FLOW_NAME: nonEmptyStringOrUndefined,
   CALLRAIL_TARGET_NUMBER: nonEmptyStringOrUndefined,
   CALLRAIL_DEFAULT_SALON_ID: nonEmptyStringOrUndefined,
   CALLRAIL_AI_FLOW_ID: nonEmptyStringOrUndefined,
   CALLRAIL_LIVE_PERSON_FLOW_ID: nonEmptyStringOrUndefined,
   CALL_CENTER_DEFAULT_PHONE: nonEmptyStringOrUndefined,
+  DEMO_SALON_NAME: z.string().default("Inails Demo Salon"),
+  DEMO_ORIGINAL_PHONE_NUMBER: z.string().default("8487029493"),
+  DEMO_FORWARDING_PHONE_NUMBER: z.string().default(""),
+  DEMO_CARRIER: z.string().default("tmobile"),
+  DEMO_FORWARDING_TYPE: z.string().default("no_answer"),
+  DEMO_FORWARDING_ACTIVATION_CODE: z.string().default(""),
+  DEMO_FORWARDING_DEACTIVATION_CODE: z.string().default("##61#"),
+  DEMO_FORWARDING_STATUS_CODE: z.string().default("*#61#"),
   AWS_REGION: z.string().optional(),
+  AWS_ACCESS_KEY_ID: z.string().optional(),
+  AWS_SECRET_ACCESS_KEY: z.string().optional(),
+  AWS_END_USER_MESSAGING_REGION: z.string().optional(),
+  AWS_SMS_ORIGINATION_NUMBER: z.string().optional(),
+  AWS_SMS_CONFIGURATION_SET: z.string().optional(),
   AMAZON_CONNECT_INSTANCE_ID: z.string().optional(),
+  AMAZON_CONNECT_INSTANCE_ARN: z.string().optional(),
+  AMAZON_CONNECT_INSTANCE_ALIAS: z.string().optional(),
   AMAZON_CONNECT_INSTANCE_URL: z.string().optional(),
   AMAZON_CONNECT_CCP_URL: z.string().optional(),
   AMAZON_CONNECT_QUEUE_ID_DEFAULT: z.string().optional(),
   AMAZON_CONNECT_ROUTING_PROFILE_ID: z.string().optional(),
+  AMAZON_CONNECT_OPERATOR_SECURITY_PROFILE_ID: z.string().optional(),
+  AMAZON_CONNECT_CONTACT_FLOW_ID: z.string().optional(),
+  AMAZON_CONNECT_CONTACT_FLOW_ID_AI_RECEPTION: z.string().optional(),
+  AMAZON_CONNECT_CONTACT_FLOW_ID_HUMAN_ESCALATION: z.string().optional(),
+  AMAZON_CONNECT_PHONE_NUMBER: z.string().optional(),
+  AMAZON_CONNECT_PHONE_NUMBER_ID: z.string().optional(),
+  AMAZON_CONNECT_RECORDING_BUCKET: z.string().optional(),
+  AMAZON_CONNECT_RECORDING_PREFIX: z.string().optional(),
+  AMAZON_LEX_BOT_ID: z.string().optional(),
+  AMAZON_LEX_BOT_ALIAS_ID: z.string().optional(),
+  AMAZON_LEX_LOCALE_ID: z.string().default("en_US"),
+  AMAZON_LEX_BOOKING_INTENT_NAME: z.string().optional(),
+  AMAZON_LEX_HUMAN_ESCALATION_INTENT_NAME: z.string().optional(),
+  BOOKING_LAMBDA_FUNCTION_NAME: z.string().optional(),
+  BOOKING_LAMBDA_FUNCTION_ARN: z.string().optional(),
+  FASTAIBOOKING_API_BASE_URL: z.string().optional(),
+  FASTAIBOOKING_API_INTERNAL_TOKEN: z.string().optional(),
+  DEFAULT_SALON_ID: nonEmptyStringOrUndefined,
+  GOOGLE_CLOUD_PROJECT: z.string().optional(),
   VERTEX_PROJECT_ID: z.string().optional(),
+  VERTEX_AI_LOCATION: z.string().optional(),
   VERTEX_LOCATION: z.string().default("us-central1"),
+  VERTEX_AI_MODEL: z.string().optional(),
   VERTEX_MODEL: z.string().default("gemini-1.5-flash-002"),
   VERTEX_SYSTEM_PROMPT_VERSION: z.string().default("v1"),
   GOOGLE_APPLICATION_CREDENTIALS: z.string().optional(),
   VERTEX_SERVICE_ACCOUNT_EMAIL: z.string().optional(),
+  GEMINI_API_KEY: z.string().optional(),
+  VERTEX_API_KEY: z.string().optional(),
   VERTEX_PRIVATE_KEY: z.string().optional(),
   VERTEX_PRIVATE_KEY_ID: z.string().optional(),
   VERTEX_CLIENT_EMAIL: z.string().optional(),
-  AI_PROVIDER: z.enum(["vertex"]).default("vertex"),
-  CALL_PROVIDER: z.enum(["callrail"]).default("callrail")
+  VERTEX_CLIENT_ID: z.string().optional(),
+  VERTEX_CLIENT_CERT_URL: z.string().optional(),
+  TWILIO_PHONE_NUMBER: z.string().optional(),
+  AI_PROVIDER: z.enum(["amazon", "vertex"]).default("amazon"),
+  CALL_PROVIDER: z.enum(["amazon_connect", "callrail"]).default("amazon_connect")
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -137,9 +191,16 @@ if (!parsed.success) {
 
 const base = parsed.data;
 
+const resolvedDatabaseHost = asNonEmpty(base.DATABASE_HOST) ?? asNonEmpty(base.POSTGRES_HOST) ?? "localhost";
+const resolvedDatabasePort = base.DATABASE_PORT ?? base.POSTGRES_PORT ?? 5432;
+const resolvedDatabaseName = asNonEmpty(base.DATABASE_NAME) ?? asNonEmpty(base.POSTGRES_DB) ?? "fastaibooking";
+const resolvedDatabaseUser = asNonEmpty(base.DATABASE_USER) ?? asNonEmpty(base.POSTGRES_USER) ?? "postgres";
+const resolvedDatabasePassword =
+  asNonEmpty(base.DATABASE_PASSWORD) ?? asNonEmpty(base.POSTGRES_PASSWORD) ?? "postgres";
+
 const databaseUrl =
   base.DATABASE_URL ??
-  `postgresql://${encodeURIComponent(base.DATABASE_USER)}:${encodeURIComponent(base.DATABASE_PASSWORD)}@${base.DATABASE_HOST}:${base.DATABASE_PORT}/${base.DATABASE_NAME}`;
+  `postgresql://${encodeURIComponent(resolvedDatabaseUser)}:${encodeURIComponent(resolvedDatabasePassword)}@${resolvedDatabaseHost}:${resolvedDatabasePort}/${resolvedDatabaseName}`;
 
 const hasVertexCredentialFile = (() => {
   const credentialsPath = asNonEmpty(base.GOOGLE_APPLICATION_CREDENTIALS);
@@ -176,39 +237,56 @@ const runtimeEnv = {
   })()
 };
 
-const callRailRequiredKeys = [
-  "CALLRAIL_WEBHOOK_SECRET",
+const callRailAttributionKeys = [
   "CALLRAIL_API_KEY",
   "CALLRAIL_ACCOUNT_ID",
   "CALLRAIL_COMPANY_ID",
   "CALLRAIL_TRACKING_NUMBER_ID",
   "CALLRAIL_TRACKING_NUMBER",
-  "CALLRAIL_DEFAULT_SALON_ID",
-  "CALLRAIL_AI_FLOW_ID"
+  "CALLRAIL_WEBHOOK_SECRET"
 ] as const;
 
-const callRailValueByKey: Record<(typeof callRailRequiredKeys)[number], string | undefined> = {
-  CALLRAIL_WEBHOOK_SECRET: asNonEmpty(base.CALLRAIL_WEBHOOK_SECRET),
+const callRailValueByKey: Record<(typeof callRailAttributionKeys)[number], string | undefined> = {
   CALLRAIL_API_KEY: asNonEmpty(base.CALLRAIL_API_KEY),
   CALLRAIL_ACCOUNT_ID: asNonEmpty(base.CALLRAIL_ACCOUNT_ID),
   CALLRAIL_COMPANY_ID: asNonEmpty(base.CALLRAIL_COMPANY_ID),
   CALLRAIL_TRACKING_NUMBER_ID: asNonEmpty(base.CALLRAIL_TRACKING_NUMBER_ID),
   CALLRAIL_TRACKING_NUMBER: asNonEmpty(base.CALLRAIL_TRACKING_NUMBER),
-  CALLRAIL_DEFAULT_SALON_ID: asNonEmpty(base.CALLRAIL_DEFAULT_SALON_ID),
-  CALLRAIL_AI_FLOW_ID: asNonEmpty(base.CALLRAIL_AI_FLOW_ID)
+  CALLRAIL_WEBHOOK_SECRET: asNonEmpty(base.CALLRAIL_WEBHOOK_SECRET),
 };
+
+const resolvedCorsOrigins = Array.from(
+  new Set(
+    [
+      ...((base.CORS_ORIGINS ?? "")
+        .split(",")
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0)),
+      base.ADMIN_FRONTEND_URL.trim(),
+      base.OWNER_FRONTEND_URL.trim()
+    ].filter((value) => value.length > 0)
+  )
+);
+
+const resolvedVertexProjectId =
+  asNonEmpty(base.VERTEX_PROJECT_ID) ?? asNonEmpty(base.GOOGLE_CLOUD_PROJECT);
+const resolvedVertexLocation =
+  asNonEmpty(base.VERTEX_AI_LOCATION) ?? asNonEmpty(base.VERTEX_LOCATION) ?? "us-central1";
+const resolvedVertexModel =
+  asNonEmpty(base.VERTEX_AI_MODEL) ?? asNonEmpty(base.VERTEX_MODEL) ?? "gemini-1.5-flash-002";
+const resolvedGeminiApiKey = asNonEmpty(base.GEMINI_API_KEY) ?? asNonEmpty(base.VERTEX_API_KEY);
 
 const integrationStatuses = {
   callRail: {
-    configured: callRailRequiredKeys.every((key) => Boolean(callRailValueByKey[key])),
-    missing: callRailRequiredKeys.filter((key) => !callRailValueByKey[key])
+    configured: callRailAttributionKeys.every((key) => Boolean(callRailValueByKey[key])),
+    missing: callRailAttributionKeys.filter((key) => !callRailValueByKey[key])
   },
   vertex: {
-    configured: Boolean(asNonEmpty(base.VERTEX_PROJECT_ID) && (hasVertexCredentialFile || hasVertexCredentialEnv)),
+    configured: Boolean(resolvedVertexProjectId && (hasVertexCredentialFile || hasVertexCredentialEnv || resolvedGeminiApiKey)),
     missing: [
-      !asNonEmpty(base.VERTEX_PROJECT_ID) ? "VERTEX_PROJECT_ID" : null,
-      !hasVertexCredentialFile && !hasVertexCredentialEnv
-        ? "GOOGLE_APPLICATION_CREDENTIALS or VERTEX_CLIENT_EMAIL/VERTEX_PRIVATE_KEY"
+      !resolvedVertexProjectId ? "VERTEX_PROJECT_ID or GOOGLE_CLOUD_PROJECT" : null,
+      !hasVertexCredentialFile && !hasVertexCredentialEnv && !resolvedGeminiApiKey
+        ? "GOOGLE_APPLICATION_CREDENTIALS or VERTEX_CLIENT_EMAIL/VERTEX_PRIVATE_KEY or GEMINI_API_KEY"
         : null
     ].filter((value): value is string => Boolean(value))
   },
@@ -216,40 +294,116 @@ const integrationStatuses = {
     configured: Boolean(
       asNonEmpty(base.AWS_REGION) &&
         asNonEmpty(base.AMAZON_CONNECT_INSTANCE_ID) &&
+        asNonEmpty(base.AMAZON_CONNECT_INSTANCE_ARN) &&
         asNonEmpty(base.AMAZON_CONNECT_INSTANCE_URL) &&
         asNonEmpty(base.AMAZON_CONNECT_CCP_URL) &&
+        asNonEmpty(base.AMAZON_CONNECT_PHONE_NUMBER) &&
+        asNonEmpty(base.AMAZON_CONNECT_PHONE_NUMBER_ID) &&
+        asNonEmpty(base.AMAZON_CONNECT_CONTACT_FLOW_ID_AI_RECEPTION) &&
+        asNonEmpty(base.AMAZON_CONNECT_CONTACT_FLOW_ID_HUMAN_ESCALATION) &&
         asNonEmpty(base.AMAZON_CONNECT_QUEUE_ID_DEFAULT) &&
-        asNonEmpty(base.AMAZON_CONNECT_ROUTING_PROFILE_ID)
+        asNonEmpty(base.AMAZON_CONNECT_ROUTING_PROFILE_ID) &&
+        asNonEmpty(base.AMAZON_CONNECT_OPERATOR_SECURITY_PROFILE_ID) &&
+        asNonEmpty(base.AMAZON_LEX_BOT_ID) &&
+        asNonEmpty(base.AMAZON_LEX_BOT_ALIAS_ID) &&
+        asNonEmpty(base.AMAZON_LEX_BOOKING_INTENT_NAME) &&
+        asNonEmpty(base.AMAZON_LEX_HUMAN_ESCALATION_INTENT_NAME) &&
+        asNonEmpty(base.BOOKING_LAMBDA_FUNCTION_NAME) &&
+        asNonEmpty(base.BOOKING_LAMBDA_FUNCTION_ARN) &&
+        asNonEmpty(base.FASTAIBOOKING_API_BASE_URL) &&
+        asNonEmpty(base.FASTAIBOOKING_API_INTERNAL_TOKEN)
     ),
     missing: [
       !asNonEmpty(base.AWS_REGION) ? "AWS_REGION" : null,
       !asNonEmpty(base.AMAZON_CONNECT_INSTANCE_ID) ? "AMAZON_CONNECT_INSTANCE_ID" : null,
+      !asNonEmpty(base.AMAZON_CONNECT_INSTANCE_ARN) ? "AMAZON_CONNECT_INSTANCE_ARN" : null,
       !asNonEmpty(base.AMAZON_CONNECT_INSTANCE_URL) ? "AMAZON_CONNECT_INSTANCE_URL" : null,
       !asNonEmpty(base.AMAZON_CONNECT_CCP_URL) ? "AMAZON_CONNECT_CCP_URL" : null,
+      !asNonEmpty(base.AMAZON_CONNECT_PHONE_NUMBER) ? "AMAZON_CONNECT_PHONE_NUMBER" : null,
+      !asNonEmpty(base.AMAZON_CONNECT_PHONE_NUMBER_ID)
+        ? "AMAZON_CONNECT_PHONE_NUMBER_ID"
+        : null,
+      !asNonEmpty(base.AMAZON_CONNECT_CONTACT_FLOW_ID_AI_RECEPTION)
+        ? "AMAZON_CONNECT_CONTACT_FLOW_ID_AI_RECEPTION"
+        : null,
+      !asNonEmpty(base.AMAZON_CONNECT_CONTACT_FLOW_ID_HUMAN_ESCALATION)
+        ? "AMAZON_CONNECT_CONTACT_FLOW_ID_HUMAN_ESCALATION"
+        : null,
       !asNonEmpty(base.AMAZON_CONNECT_QUEUE_ID_DEFAULT)
         ? "AMAZON_CONNECT_QUEUE_ID_DEFAULT"
         : null,
       !asNonEmpty(base.AMAZON_CONNECT_ROUTING_PROFILE_ID)
         ? "AMAZON_CONNECT_ROUTING_PROFILE_ID"
-        : null
+        : null,
+      !asNonEmpty(base.AMAZON_CONNECT_OPERATOR_SECURITY_PROFILE_ID)
+        ? "AMAZON_CONNECT_OPERATOR_SECURITY_PROFILE_ID"
+        : null,
+      !asNonEmpty(base.AMAZON_LEX_BOT_ID) ? "AMAZON_LEX_BOT_ID" : null,
+      !asNonEmpty(base.AMAZON_LEX_BOT_ALIAS_ID) ? "AMAZON_LEX_BOT_ALIAS_ID" : null,
+      !asNonEmpty(base.AMAZON_LEX_BOOKING_INTENT_NAME)
+        ? "AMAZON_LEX_BOOKING_INTENT_NAME"
+        : null,
+      !asNonEmpty(base.AMAZON_LEX_HUMAN_ESCALATION_INTENT_NAME)
+        ? "AMAZON_LEX_HUMAN_ESCALATION_INTENT_NAME"
+        : null,
+      !asNonEmpty(base.BOOKING_LAMBDA_FUNCTION_NAME) ? "BOOKING_LAMBDA_FUNCTION_NAME" : null,
+      !asNonEmpty(base.BOOKING_LAMBDA_FUNCTION_ARN) ? "BOOKING_LAMBDA_FUNCTION_ARN" : null,
+      !asNonEmpty(base.FASTAIBOOKING_API_BASE_URL) ? "FASTAIBOOKING_API_BASE_URL" : null,
+      !asNonEmpty(base.FASTAIBOOKING_API_INTERNAL_TOKEN) ? "FASTAIBOOKING_API_INTERNAL_TOKEN" : null
     ].filter((value): value is string => Boolean(value))
   }
 };
 
 export const env = {
   ...base,
+  API_PREFIX: base.API_PREFIX,
+  CORS_ORIGINS: base.CORS_ORIGINS,
+  corsOrigins: resolvedCorsOrigins,
   CALLRAIL_WEBHOOK_SECRET: asNonEmpty(base.CALLRAIL_WEBHOOK_SECRET),
+  CALLRAIL_WEBHOOK_PATH: base.CALLRAIL_WEBHOOK_PATH,
   CALLRAIL_API_KEY: asNonEmpty(base.CALLRAIL_API_KEY),
   CALLRAIL_ACCOUNT_ID: asNonEmpty(base.CALLRAIL_ACCOUNT_ID),
   CALLRAIL_COMPANY_ID: asNonEmpty(base.CALLRAIL_COMPANY_ID),
   CALLRAIL_TRACKING_NUMBER_ID: asNonEmpty(base.CALLRAIL_TRACKING_NUMBER_ID),
   CALLRAIL_TRACKING_NUMBER: asNonEmpty(base.CALLRAIL_TRACKING_NUMBER),
+  CALLRAIL_CALL_FLOW_NAME: asNonEmpty(base.CALLRAIL_CALL_FLOW_NAME),
   CALLRAIL_TARGET_NUMBER: asNonEmpty(base.CALLRAIL_TARGET_NUMBER),
   CALLRAIL_DEFAULT_SALON_ID: asNonEmpty(base.CALLRAIL_DEFAULT_SALON_ID),
   CALLRAIL_AI_FLOW_ID: asNonEmpty(base.CALLRAIL_AI_FLOW_ID),
   CALLRAIL_LIVE_PERSON_FLOW_ID: asNonEmpty(base.CALLRAIL_LIVE_PERSON_FLOW_ID),
   CALL_CENTER_DEFAULT_PHONE: asNonEmpty(base.CALL_CENTER_DEFAULT_PHONE),
+  DEMO_SALON_NAME: base.DEMO_SALON_NAME,
+  DEMO_ORIGINAL_PHONE_NUMBER: base.DEMO_ORIGINAL_PHONE_NUMBER,
+  DEMO_FORWARDING_PHONE_NUMBER: base.DEMO_FORWARDING_PHONE_NUMBER,
+  DEMO_CARRIER: base.DEMO_CARRIER,
+  DEMO_FORWARDING_TYPE: base.DEMO_FORWARDING_TYPE,
+  DEMO_FORWARDING_ACTIVATION_CODE: base.DEMO_FORWARDING_ACTIVATION_CODE,
+  DEMO_FORWARDING_DEACTIVATION_CODE: base.DEMO_FORWARDING_DEACTIVATION_CODE,
+  DEMO_FORWARDING_STATUS_CODE: base.DEMO_FORWARDING_STATUS_CODE,
+  GOOGLE_CLOUD_PROJECT: asNonEmpty(base.GOOGLE_CLOUD_PROJECT),
+  GEMINI_API_KEY: resolvedGeminiApiKey,
+  DEFAULT_SALON_ID: asNonEmpty(base.DEFAULT_SALON_ID),
+  EMAIL_PROVIDER: base.EMAIL_PROVIDER,
+  AWS_SES_REGION: asNonEmpty(base.AWS_SES_REGION),
+  AWS_SES_FROM_EMAIL: asNonEmpty(base.AWS_SES_FROM_EMAIL),
+  AWS_SES_CONFIGURATION_SET: asNonEmpty(base.AWS_SES_CONFIGURATION_SET),
+  AWS_END_USER_MESSAGING_REGION: asNonEmpty(base.AWS_END_USER_MESSAGING_REGION),
+  AWS_SMS_ORIGINATION_NUMBER: asNonEmpty(base.AWS_SMS_ORIGINATION_NUMBER),
+  AWS_SMS_CONFIGURATION_SET: asNonEmpty(base.AWS_SMS_CONFIGURATION_SET),
   DATABASE_URL: databaseUrl,
+  DATABASE_HOST: resolvedDatabaseHost,
+  DATABASE_PORT: resolvedDatabasePort,
+  DATABASE_NAME: resolvedDatabaseName,
+  DATABASE_USER: resolvedDatabaseUser,
+  DATABASE_PASSWORD: resolvedDatabasePassword,
+  POSTGRES_HOST: asNonEmpty(base.POSTGRES_HOST) ?? resolvedDatabaseHost,
+  POSTGRES_PORT: base.POSTGRES_PORT ?? resolvedDatabasePort,
+  POSTGRES_DB: asNonEmpty(base.POSTGRES_DB) ?? resolvedDatabaseName,
+  POSTGRES_USER: asNonEmpty(base.POSTGRES_USER) ?? resolvedDatabaseUser,
+  POSTGRES_PASSWORD: asNonEmpty(base.POSTGRES_PASSWORD) ?? resolvedDatabasePassword,
+  VERTEX_PROJECT_ID: resolvedVertexProjectId,
+  VERTEX_LOCATION: resolvedVertexLocation,
+  VERTEX_MODEL: resolvedVertexModel,
   integrationStatuses,
   runtimeEnv
 };
