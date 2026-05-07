@@ -50,7 +50,7 @@ const main = async () => {
       endedAt,
       durationSeconds: 150,
       answered: true,
-      callSummary: "Voice Assist completed the call and a transcript update is expected.",
+      callSummary: "AI Booking Reception completed the call and a transcript update is expected.",
       recordingUrl: `https://example.com/recordings/${callId}.mp3`,
       tags: ["voice-assist", "live-person-request", "mvp"]
     }),

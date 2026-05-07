@@ -696,7 +696,7 @@ model SalonAiReceptionSetup {
   id                   String                    @id @default(uuid())
   salonId              String                    @unique
   salon                Salon                     @relation(fields: [salonId], references: [id], onDelete: Cascade)
-  provider             ExternalProvider          @default(CALLRAIL)
+  provider             ExternalProvider          @default(AMAZON_CONNECT)
   carrier              String                    @default("tmobile")
   originalPhoneNumber  String?
   forwardingPhoneNumber String

@@ -53,7 +53,7 @@ const main = async () => {
       answered: true,
       transcript,
       transcriptSummary: `Caller requested ${scenario.service.name} at ${scenario.slot.startTime}.`,
-      callSummary: `Voice Assist captured a booking request for ${scenario.service.name}.`,
+      callSummary: `AI Booking Reception captured a booking request for ${scenario.service.name}.`,
       recordingUrl: `https://example.com/recordings/${callId}.mp3`,
       tags: ["voice-assist", "booking", "mvp"]
     })
