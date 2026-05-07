@@ -9,6 +9,12 @@ import { env } from "../../config/env";
 import { prisma } from "../../db/prisma";
 import { createAuditLog } from "../../lib/audit";
 import { AppError } from "../../lib/errors";
+import { logger } from "../../lib/logger";
+import {
+  sendAppointmentCancellationEmail,
+  sendAppointmentConfirmationEmail,
+  sendAppointmentUpdateEmail
+} from "../../lib/mailer";
 import { sendSms } from "../../lib/sms";
 import { validateAppointmentSlot } from "../availability/availability.service";
 import { createSalonAlert } from "../alerts/alerts.service";
@@ -305,6 +311,62 @@ const createBookingAlert = async (appointment: Awaited<ReturnType<typeof getAppo
   });
 };
 
+const formatNotificationTime = (startTime: Date): string => {
+  return new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "UTC"
+  }).format(startTime);
+};
+
+const getNotificationServiceLabel = (appointment: Awaited<ReturnType<typeof getAppointmentDetail>>) => {
+  const serviceNames = appointment.appointmentServices
+    .map((item) => item.service.name)
+    .filter(Boolean);
+  return serviceNames.length ? serviceNames.join(", ") : appointment.service.name;
+};
+
+const sendAppointmentCustomerNotifications = async (
+  appointment: Awaited<ReturnType<typeof getAppointmentDetail>>,
+  eventType: "created" | "updated" | "canceled"
+): Promise<void> => {
+  try {
+    const serviceName = getNotificationServiceLabel(appointment);
+    const appointmentTime = formatNotificationTime(appointment.startTime);
+    const actionText =
+      eventType === "created" ? "booked" : eventType === "updated" ? "updated" : "canceled";
+
+    const emailPromise =
+      eventType === "created"
+        ? sendAppointmentConfirmationEmail(appointment)
+        : eventType === "updated"
+          ? sendAppointmentUpdateEmail(appointment)
+          : sendAppointmentCancellationEmail(appointment);
+
+    const smsPromise = sendSms({
+      to: appointment.customer.phone,
+      body: `FastAIBooking: your ${serviceName} appointment with ${appointment.staff.fullName} was ${actionText} for ${appointmentTime}.`,
+      reason:
+        eventType === "created"
+          ? "APPOINTMENT_CONFIRMATION"
+          : eventType === "updated"
+            ? "APPOINTMENT_UPDATE"
+            : "APPOINTMENT_CANCELLATION"
+    });
+
+    await Promise.allSettled([emailPromise, smsPromise]);
+  } catch (error) {
+    logger.warn(
+      {
+        appointmentId: appointment.id,
+        eventType,
+        error: error instanceof Error ? error.message : String(error)
+      },
+      "Appointment notification failed. Continuing without blocking appointment workflow."
+    );
+  }
+};
+
 export const createAppointment = async (
   salonId: string,
   actorUserId: string,
@@ -392,6 +454,7 @@ export const createAppointment = async (
   });
 
   await createBookingAlert(created);
+  await sendAppointmentCustomerNotifications(created, "created");
   return created;
 };
 
@@ -510,7 +573,7 @@ export const updateAppointment = async (
     throw new AppError(slotValidation.reason ?? "Invalid appointment slot.", 400, "INVALID_SLOT");
   }
 
-  return prisma.$transaction(async (tx) => {
+  const updatedAppointment = await prisma.$transaction(async (tx) => {
     const appointment = await tx.appointment.update({
       where: { id: existing.id },
       data: {
@@ -573,6 +636,9 @@ export const updateAppointment = async (
       include: buildAppointmentInclude()
     });
   });
+
+  await sendAppointmentCustomerNotifications(updatedAppointment, "updated");
+  return updatedAppointment;
 };
 
 export const cancelAppointment = async (
@@ -594,7 +660,7 @@ export const cancelAppointment = async (
     return getAppointmentDetail(salonId, existing.id);
   }
 
-  return prisma.$transaction(async (tx) => {
+  const canceledAppointment = await prisma.$transaction(async (tx) => {
     const updated = await tx.appointment.update({
       where: { id: existing.id },
       data: {
@@ -654,6 +720,9 @@ export const cancelAppointment = async (
       include: buildAppointmentInclude()
     });
   });
+
+  await sendAppointmentCustomerNotifications(canceledAppointment, "canceled");
+  return canceledAppointment;
 };
 
 export const rescheduleAppointment = async (
@@ -695,7 +764,7 @@ export const rescheduleAppointment = async (
     throw new AppError(slotValidation.reason ?? "Invalid appointment slot.", 400, "INVALID_SLOT");
   }
 
-  return prisma.$transaction(async (tx) => {
+  const rescheduledAppointment = await prisma.$transaction(async (tx) => {
     const updated = await tx.appointment.update({
       where: { id: existing.id },
       data: {
@@ -736,6 +805,9 @@ export const rescheduleAppointment = async (
       include: buildAppointmentInclude()
     });
   });
+
+  await sendAppointmentCustomerNotifications(rescheduledAppointment, "updated");
+  return rescheduledAppointment;
 };
 
 const assertStaffCanOperateAppointment = (
