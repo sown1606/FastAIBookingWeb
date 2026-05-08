@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { apiGet, extractErrorMessage } from "../lib/api";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
 import { formatDateTime } from "../lib/format";
+import { getStatusLabel, useI18n } from "../lib/i18n";
 
 interface CallDetail {
   id: string;
@@ -74,18 +75,46 @@ interface CallDetail {
   }>;
 }
 
+const routingLabelKeyByValue = {
+  SALON_RING: "routing.SALON_RING",
+  AI_RECEPTION: "routing.AI_RECEPTION",
+  CALL_CENTER_ESCALATION: "routing.CALL_CENTER_ESCALATION",
+  CALLBACK_REQUEST: "routing.CALLBACK_REQUEST",
+  SMS_FALLBACK: "routing.SMS_FALLBACK",
+  VOICEMAIL: "routing.VOICEMAIL",
+  QUEUED: "routing.QUEUED"
+} as const;
+
 export const CallDetailPage = () => {
+  const { t } = useI18n();
   const { id } = useParams<{ id: string }>();
   const [call, setCall] = useState<CallDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  const translateStatus = (value: string | null | undefined) => {
+    if (!value) {
+      return t("common.none");
+    }
+    const key = getStatusLabel(value);
+    return key ? t(key) : value;
+  };
+
+  const translateRouting = (value: string | null | undefined) => {
+    if (!value) {
+      return t("common.none");
+    }
+    const key = routingLabelKeyByValue[value as keyof typeof routingLabelKeyByValue];
+    return key ? t(key) : value;
+  };
+
   const load = async () => {
     if (!id) {
-      setError("Missing call ID.");
+      setError(t("calls.missingId"));
       setLoading(false);
       return;
     }
+
     setError("");
     setLoading(true);
     try {
@@ -111,82 +140,93 @@ export const CallDetailPage = () => {
   }
 
   if (!call) {
-    return <EmptyBlock message="Call session not found." />;
+    return <EmptyBlock message={t("calls.notFound")} />;
   }
 
   return (
     <div className="stack">
       <section className="card">
-        <h2>Call session {call.providerCallId}</h2>
+        <div className="section-header">
+          <div>
+            <h2>
+              {t("calls.detailTitle")} {call.providerCallId}
+            </h2>
+            <p className="muted">{t("calls.flowValue")}</p>
+          </div>
+        </div>
         <div className="metrics-grid">
           <div>
-            <span className="muted">Salon</span>
-            <strong>{call.salon?.name ?? "-"}</strong>
+            <span className="muted">{t("calls.salon")}</span>
+            <strong>{call.salon?.name ?? t("common.none")}</strong>
           </div>
           <div>
-            <span className="muted">Status</span>
-            <strong>{call.status}</strong>
+            <span className="muted">{t("common.status")}</span>
+            <strong>{translateStatus(call.status)}</strong>
           </div>
           <div>
-            <span className="muted">Routing outcome</span>
-            <strong>{call.routingOutcome ?? "-"}</strong>
+            <span className="muted">{t("calls.routing")}</span>
+            <strong>{translateRouting(call.routingOutcome)}</strong>
           </div>
           <div>
-            <span className="muted">Caller phone</span>
-            <strong>{call.callerPhone ?? "-"}</strong>
+            <span className="muted">{t("calls.caller")}</span>
+            <strong>{call.callerPhone ?? t("common.none")}</strong>
           </div>
           <div>
-            <span className="muted">Duration</span>
-            <strong>{call.durationSeconds ?? 0} sec</strong>
+            <span className="muted">{t("calls.duration")}</span>
+            <strong>
+              {call.durationSeconds !== null
+                ? t("calls.seconds", { count: call.durationSeconds })
+                : t("common.none")}
+            </strong>
           </div>
           <div>
-            <span className="muted">Recording</span>
-            <strong>{call.recordingUrl ? "Available" : "Not available"}</strong>
+            <span className="muted">{t("calls.recording")}</span>
+            <strong>{call.recordingUrl ? t("calls.recordingAvailable") : t("calls.recordingMissing")}</strong>
           </div>
         </div>
         {call.failureReason ? <p className="form-error">{call.failureReason}</p> : null}
       </section>
 
       <section className="card">
-        <h3>Call metadata</h3>
+        <h3>{t("calls.callMetadata")}</h3>
         <div className="metrics-grid">
           <div>
-            <span className="muted">Dialed phone</span>
-            <strong>{call.dialedPhone ?? "-"}</strong>
+            <span className="muted">{t("calls.dialedPhone")}</span>
+            <strong>{call.dialedPhone ?? t("common.none")}</strong>
           </div>
           <div>
-            <span className="muted">Tracking number</span>
-            <strong>{call.trackingNumber ?? "-"}</strong>
+            <span className="muted">{t("calls.trackingNumber")}</span>
+            <strong>{call.trackingNumber ?? t("common.none")}</strong>
           </div>
           <div>
-            <span className="muted">Campaign</span>
-            <strong>{call.campaignName ?? "-"}</strong>
+            <span className="muted">{t("calls.campaign")}</span>
+            <strong>{call.campaignName ?? t("common.none")}</strong>
           </div>
           <div>
-            <span className="muted">Source</span>
-            <strong>{call.sourceName ?? "-"}</strong>
+            <span className="muted">{t("calls.source")}</span>
+            <strong>{call.sourceName ?? t("common.none")}</strong>
           </div>
           <div>
-            <span className="muted">Started</span>
-            <strong>{call.startedAt ? formatDateTime(call.startedAt) : "-"}</strong>
+            <span className="muted">{t("calls.started")}</span>
+            <strong>{call.startedAt ? formatDateTime(call.startedAt) : t("common.none")}</strong>
           </div>
           <div>
-            <span className="muted">Ended</span>
-            <strong>{call.endedAt ? formatDateTime(call.endedAt) : "-"}</strong>
+            <span className="muted">{t("calls.ended")}</span>
+            <strong>{call.endedAt ? formatDateTime(call.endedAt) : t("common.none")}</strong>
           </div>
         </div>
       </section>
 
       <section className="card">
-        <h3>Event timeline</h3>
+        <h3>{t("calls.eventTimeline")}</h3>
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Time</th>
-                <th>Type</th>
-                <th>Status before</th>
-                <th>Status after</th>
+                <th>{t("calls.time")}</th>
+                <th>{t("calls.eventType")}</th>
+                <th>{t("calls.statusBefore")}</th>
+                <th>{t("calls.statusAfter")}</th>
               </tr>
             </thead>
             <tbody>
@@ -194,8 +234,8 @@ export const CallDetailPage = () => {
                 <tr key={event.id}>
                   <td>{formatDateTime(event.receivedAt)}</td>
                   <td>{event.eventType}</td>
-                  <td>{event.statusBefore ?? "-"}</td>
-                  <td>{event.statusAfter ?? "-"}</td>
+                  <td>{translateStatus(event.statusBefore)}</td>
+                  <td>{translateStatus(event.statusAfter)}</td>
                 </tr>
               ))}
             </tbody>
@@ -205,7 +245,7 @@ export const CallDetailPage = () => {
 
       <section className="card-grid">
         <article className="card">
-          <h3>Transcript</h3>
+          <h3>{t("calls.transcript")}</h3>
           {call.transcripts.length ? (
             <div className="stack">
               {call.transcripts.map((transcript) => (
@@ -219,110 +259,115 @@ export const CallDetailPage = () => {
               ))}
             </div>
           ) : (
-            <EmptyBlock message="No transcript stored for this call." />
+            <EmptyBlock message={t("common.none")} />
           )}
         </article>
 
         <article className="card">
-          <h3>AI summary</h3>
-          {call.transcriptSummary ? <p>{call.transcriptSummary}</p> : null}
+          <h3>{t("calls.aiSummary")}</h3>
+          {call.transcriptSummary ? (
+            <article className="inspection-box">
+              <h4>{t("calls.transcriptSummary")}</h4>
+              <p>{call.transcriptSummary}</p>
+            </article>
+          ) : null}
           <pre>{JSON.stringify(call.aiSummary ?? null, null, 2)}</pre>
-          <h4>AI interactions</h4>
+          <h4>{t("calls.aiInteractions")}</h4>
           {call.aiInteractions.length ? (
             <div className="mobile-list">
               {call.aiInteractions.map((item) => (
                 <article key={item.id} className="mobile-item">
                   <strong>{item.taskType}</strong>
-                  <span>{item.model ?? "unknown-model"}</span>
+                  <span>{item.model ?? t("common.none")}</span>
                   <small>{formatDateTime(item.createdAt)}</small>
                 </article>
               ))}
             </div>
           ) : (
-            <EmptyBlock message="No AI interactions linked to this call." />
+            <EmptyBlock message={t("calls.aiInteractionsEmpty")} />
           )}
         </article>
       </section>
 
       <section className="card">
-        <h3>Booking attempts</h3>
+        <h3>{t("calls.bookingAttempts")}</h3>
         {call.bookingAttempts.length ? (
           <div className="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>Created</th>
-                  <th>Status</th>
-                  <th>Service</th>
-                  <th>Staff</th>
-                  <th>Failure reason</th>
-                  <th>Appointment</th>
+                  <th>{t("calls.created")}</th>
+                  <th>{t("common.status")}</th>
+                  <th>{t("common.service")}</th>
+                  <th>{t("common.staff")}</th>
+                  <th>{t("calls.failureReason")}</th>
+                  <th>{t("calls.appointment")}</th>
                 </tr>
               </thead>
               <tbody>
                 {call.bookingAttempts.map((attempt) => (
                   <tr key={attempt.id}>
                     <td>{formatDateTime(attempt.createdAt)}</td>
-                    <td>{attempt.status}</td>
-                    <td>{attempt.requestedService ?? "-"}</td>
-                    <td>{attempt.requestedStaff ?? "-"}</td>
-                    <td>{attempt.failureReason ?? "-"}</td>
-                    <td>{attempt.appointment?.id ?? "-"}</td>
+                    <td>{translateStatus(attempt.status)}</td>
+                    <td>{attempt.requestedService ?? t("common.none")}</td>
+                    <td>{attempt.requestedStaff ?? t("common.none")}</td>
+                    <td>{attempt.failureReason ?? t("common.none")}</td>
+                    <td>{attempt.appointment?.id ?? t("common.none")}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         ) : (
-          <EmptyBlock message="No booking attempts were recorded for this call." />
+          <EmptyBlock message={t("calls.bookingAttemptsEmpty")} />
         )}
       </section>
 
       <section className="card">
-        <h3>Escalation and fallback state</h3>
+        <h3>{t("calls.escalationState")}</h3>
         {call.callEscalations.length ? (
           <div className="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>Requested</th>
-                  <th>Status</th>
-                  <th>Routing</th>
-                  <th>Resolution</th>
-                  <th>Fallback</th>
-                  <th>QA notes</th>
+                  <th>{t("calls.requested")}</th>
+                  <th>{t("common.status")}</th>
+                  <th>{t("calls.routing")}</th>
+                  <th>{t("calls.resolution")}</th>
+                  <th>{t("calls.fallback")}</th>
+                  <th>{t("calls.qaNotes")}</th>
                 </tr>
               </thead>
               <tbody>
                 {call.callEscalations.map((item) => (
                   <tr key={item.id}>
                     <td>{formatDateTime(item.requestedAt)}</td>
-                    <td>{item.status}</td>
-                    <td>{item.routingOutcome ?? "-"}</td>
-                    <td>{item.resolution ?? "-"}</td>
+                    <td>{translateStatus(item.status)}</td>
+                    <td>{translateRouting(item.routingOutcome)}</td>
+                    <td>{item.resolution ?? t("common.none")}</td>
                     <td>
                       {item.voicemailRecordingUrl
-                        ? "Voicemail"
+                        ? t("routing.VOICEMAIL")
                         : item.callbackPhone
-                          ? "Callback"
+                          ? t("routing.CALLBACK_REQUEST")
                           : item.smsRecipientPhone
-                            ? "SMS"
-                            : "-"}
+                            ? t("routing.SMS_FALLBACK")
+                            : t("common.none")}
                     </td>
-                    <td>{item.qaNotes ?? "-"}</td>
+                    <td>{item.qaNotes ?? t("common.none")}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         ) : (
-          <EmptyBlock message="No escalation or fallback state was recorded for this call." />
+          <EmptyBlock message={t("calls.noEscalations")} />
         )}
       </section>
 
       <section className="card">
-        <h3>Final resolution</h3>
-        <p>{call.finalResolution ?? "No final resolution was stored for this call."}</p>
+        <h3>{t("calls.finalResolutionTitle")}</h3>
+        <p>{call.finalResolution ?? t("calls.finalResolutionEmpty")}</p>
       </section>
     </div>
   );

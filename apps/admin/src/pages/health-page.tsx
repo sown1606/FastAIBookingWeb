@@ -116,7 +116,7 @@ export const HealthPage = () => {
           <div className="integration-grid">
           {[
             {
-              label: "CallRail",
+              label: "Optional attribution",
               value:
                 overview.integrationSummary?.callRail ?? {
                   configured: false,
@@ -125,7 +125,7 @@ export const HealthPage = () => {
                 }
             },
             {
-              label: "Vertex AI",
+              label: "Optional legacy AI",
               value:
                 overview.integrationSummary?.vertex ?? {
                   configured: false,

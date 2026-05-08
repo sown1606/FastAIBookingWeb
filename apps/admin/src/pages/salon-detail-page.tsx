@@ -254,7 +254,8 @@ interface CallCenterAssignment {
 interface AiReceptionConfig {
   id: string | null;
   salonId: string;
-  provider: "callrail";
+  salonName: string;
+  provider: "amazon_connect" | "callrail";
   carrier: "tmobile";
   carrierLabel: string;
   originalPhoneNumber: string | null;
@@ -265,6 +266,7 @@ interface AiReceptionConfig {
   forwardingPhoneNumberFormatted: string | null;
   forwardingType: "no_answer";
   activationCode: string;
+  fallbackActivationCode: string;
   activationCodeWithoutDelay: string;
   deactivationCode: string;
   statusCheckCode: string;
@@ -277,7 +279,7 @@ interface AiReceptionConfig {
 
 interface AiReceptionCallLog {
   id: string;
-  provider: "callrail";
+  provider: "amazon_connect" | "callrail";
   providerCallId: string;
   trackingNumber: string | null;
   trackingNumberFormatted: string;
@@ -302,11 +304,12 @@ interface AiReceptionCallLogsResponse {
 }
 
 interface CallRailHealthStatus {
-  provider: "callrail";
+  provider: "amazon_connect" | "callrail";
   status: string;
   configured: boolean;
   missing: string[];
   webhookEndpoint: string;
+  webhookConfigured: boolean;
   webhookVerificationEnabled: boolean;
   webhookSecretConfigured: boolean;
   apiKeyConfigured: boolean;
@@ -321,12 +324,16 @@ interface CallRailHealthStatus {
   livePersonFlowOptional: boolean;
   trackingNumber: string;
   trackingNumberFormatted: string | null;
+  callFlowName: string;
+  demoOriginalPhoneNumber: string;
+  demoOriginalPhoneNumberFormatted: string | null;
+  demoForwardingPhoneNumber: string;
+  demoForwardingPhoneNumberFormatted: string | null;
   activeAiReceptionSetupCount: number;
+  lastReceivedWebhookAt: string | null;
   lastWebhookReceivedAt: string | null;
   lastMappedCallAt: string | null;
 }
-
-const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const integrationProviderOptions: Array<IntegrationConfig["provider"]> = [
   "CALLRAIL",
@@ -340,20 +347,6 @@ const appointmentStatusOptions = [
   { value: "CANCELED", label: "CANCELED" },
   { value: "NO_SHOW", label: "NO_SHOW" }
 ];
-
-const routingModeLabels: Record<SalonSettings["routingSummary"]["mode"], string> = {
-  SALON_PHONE_ONLY: "Salon phone only",
-  AI_RECEPTION_ONLY: "AI Reception only",
-  CALL_CENTER_ONLY: "Human Call Center only",
-  AI_RECEPTION_WITH_CALL_CENTER: "AI Reception with human escalation"
-};
-
-const aiReceptionStatusLabels: Record<AiReceptionConfig["status"], string> = {
-  not_configured: "Not configured",
-  pending: "Pending",
-  active: "Active",
-  failed: "Failed"
-};
 
 const aiReceptionStatusClasses: Record<AiReceptionConfig["status"], string> = {
   not_configured: "status-pill warning",
@@ -390,6 +383,56 @@ export const SalonDetailPage = () => {
   const { notify } = useToast();
   const { openFormDialog, FormDialog } = useFormDialog();
   const { t } = useI18n();
+
+  const weekdayLabels = useMemo<Record<number, string>>(
+    () => ({
+      0: t("weekday.0"),
+      1: t("weekday.1"),
+      2: t("weekday.2"),
+      3: t("weekday.3"),
+      4: t("weekday.4"),
+      5: t("weekday.5"),
+      6: t("weekday.6")
+    }),
+    [t]
+  );
+
+  const routingModeLabels = useMemo<Record<SalonSettings["routingSummary"]["mode"], string>>(
+    () => ({
+      SALON_PHONE_ONLY: t("salonDetail.routingSalonOnly"),
+      AI_RECEPTION_ONLY: t("salonDetail.routingAiOnly"),
+      CALL_CENTER_ONLY: t("salonDetail.routingCallCenterOnly"),
+      AI_RECEPTION_WITH_CALL_CENTER: t("salonDetail.routingAiWithCallCenter")
+    }),
+    [t]
+  );
+
+  const aiReceptionStatusLabels = useMemo<Record<AiReceptionConfig["status"], string>>(
+    () => ({
+      not_configured: t("common.notConfigured"),
+      pending: t("status.PENDING"),
+      active: t("status.ACTIVE"),
+      failed: t("status.FAILED")
+    }),
+    [t]
+  );
+
+  const callLogVisibilityOptions = useMemo(
+    () => [
+      { value: "OWNER_ONLY", label: t("salonDetail.ownerOnly") },
+      { value: "OWNER_AND_STAFF", label: t("salonDetail.ownerAndStaff") },
+      { value: "OWNER_STAFF_OPERATOR", label: t("salonDetail.ownerStaffOperator") }
+    ],
+    [t]
+  );
+
+  const formatStatusLabel = (value: string) => {
+    const translationKey = getStatusLabel(value);
+    return translationKey ? t(translationKey) : value;
+  };
+
+  const formatYesNo = (value: boolean) => (value ? t("common.yes") : t("common.no"));
+  const formatOnOff = (value: boolean) => (value ? t("status.ON") : t("status.OFF"));
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -1082,20 +1125,23 @@ export const SalonDetailPage = () => {
       return;
     }
     const values = await openFormDialog({
-      title: "Cập nhật trạng thái",
+      title: t("salonDetail.updateStatus"),
       fields: [
         {
           name: "status",
-          label: "Trạng thái",
+          label: t("common.status"),
           type: "select",
           required: true,
-          options: appointmentStatusOptions
+          options: appointmentStatusOptions.map((option) => ({
+            ...option,
+            label: formatStatusLabel(option.value)
+          }))
         }
       ],
       initialValues: {
         status: currentStatus
       },
-      confirmLabel: "Cập nhật"
+      confirmLabel: t("salonDetail.updateStatus")
     });
     if (!values?.status) {
       return;
@@ -1123,7 +1169,7 @@ export const SalonDetailPage = () => {
   }
 
   if (!salon) {
-    return <EmptyBlock message="Salon not found." />;
+    return <EmptyBlock message={t("salonDetail.notFound")} />;
   }
 
   return (
@@ -1177,16 +1223,16 @@ export const SalonDetailPage = () => {
         </div>
         <div className="summary-badges">
           <span className={settingsForm.aiReceptionEnabled ? "status-pill success" : "status-pill warning"}>
-            AI Reception {settingsForm.aiReceptionEnabled ? t("status.ON") : t("status.OFF")}
+            AI Reception {formatOnOff(settingsForm.aiReceptionEnabled)}
           </span>
           <span className={settingsForm.callCenterEnabled ? "status-pill success" : "status-pill warning"}>
-            {t("nav.callCenterAgents")} {settingsForm.callCenterEnabled ? t("status.ON") : t("status.OFF")}
+            {t("salonDetail.humanCallCenter")} {formatOnOff(settingsForm.callCenterEnabled)}
           </span>
           <span className={settingsForm.voicemailEnabled ? "status-pill info" : "status-pill"}>
-            Voicemail {settingsForm.voicemailEnabled ? t("status.ON") : t("status.OFF")}
+            Voicemail {formatOnOff(settingsForm.voicemailEnabled)}
           </span>
           <span className={settingsForm.smsFallbackEnabled ? "status-pill info" : "status-pill"}>
-            SMS fallback {settingsForm.smsFallbackEnabled ? t("status.ON") : t("status.OFF")}
+            SMS fallback {formatOnOff(settingsForm.smsFallbackEnabled)}
           </span>
         </div>
       </section>
@@ -1199,35 +1245,38 @@ export const SalonDetailPage = () => {
               {settingsForm.aiReceptionEnabled ? t("common.enabled") : t("common.disabled")}
             </span>
           </div>
-          <span className="muted">{t("common.status")}: {settingsForm.aiTransferRingCount}</span>
+          <span className="muted">{t("salonDetail.ringCountBeforeAi")}: {settingsForm.aiTransferRingCount}</span>
           <span className="muted">
-            Greeting: {settingsForm.aiGreetingPrompt?.trim() ? "Đã cấu hình lời chào" : "Chưa có lời chào"}
+            {t("salonDetail.aiGreetingPrompt")}:{" "}
+            {settingsForm.aiGreetingPrompt?.trim()
+              ? t("salonDetail.greetingConfigured")
+              : t("salonDetail.greetingMissing")}
           </span>
         </article>
         <article className="control-tile">
           <div className="section-header">
-            <strong>Human Call Center</strong>
+            <strong>{t("salonDetail.humanCallCenter")}</strong>
             <span className={settingsForm.callCenterEnabled ? "status-pill success" : "status-pill warning"}>
               {settingsForm.callCenterEnabled ? t("common.enabled") : t("common.disabled")}
             </span>
           </div>
-          <span className="muted">Agent được gán: {assignedAgents.length}</span>
+          <span className="muted">{t("salonDetail.assignedAgents")}: {assignedAgents.length}</span>
           <span className="muted">
-            Routing number: {settingsForm.callCenterRoutingNumber || "Chưa cấu hình"}
+            {t("salonDetail.routingNumber")}: {settingsForm.callCenterRoutingNumber || t("common.notConfigured")}
           </span>
         </article>
         <article className="control-tile">
           <div className="section-header">
-            <strong>Fallback stack</strong>
-            <span className="status-pill info">Demo ready</span>
+            <strong>{t("salonDetail.fallbackStack")}</strong>
+            <span className="status-pill info">{t("salonDetail.demoReady")}</span>
           </div>
-          <span className="muted">Voicemail: {settingsForm.voicemailEnabled ? "ON" : "OFF"}</span>
-          <span className="muted">Callback request: {settingsForm.callbackRequestEnabled ? "ON" : "OFF"}</span>
-          <span className="muted">SMS fallback: {settingsForm.smsFallbackEnabled ? "ON" : "OFF"}</span>
+          <span className="muted">Voicemail: {formatOnOff(settingsForm.voicemailEnabled)}</span>
+          <span className="muted">{t("routing.CALLBACK_REQUEST")}: {formatOnOff(settingsForm.callbackRequestEnabled)}</span>
+          <span className="muted">{t("routing.SMS_FALLBACK")}: {formatOnOff(settingsForm.smsFallbackEnabled)}</span>
         </article>
         <article className="control-tile">
           <div className="section-header">
-            <strong>Integration readiness</strong>
+            <strong>{t("salonDetail.integrationReadiness")}</strong>
             <span
               className={
                 salon.integrationStatuses.amazonConnect.configured &&
@@ -1237,31 +1286,29 @@ export const SalonDetailPage = () => {
                   : "status-pill warning"
               }
             >
-              {salon.integrationStatuses.amazonConnect.configured &&
-              salon.integrationStatuses.callRail.configured &&
-              salon.integrationStatuses.vertex.configured
+              {salon.integrationStatuses.amazonConnect.configured
                 ? t("status.READY")
                 : t("status.NEEDS_SETUP")}
             </span>
           </div>
-          <span className="muted">CallRail active: {salon.integrationStatuses.callRail.activeConfigCount}</span>
-          <span className="muted">Vertex active: {salon.integrationStatuses.vertex.activeConfigCount}</span>
+          <span className="muted">Optional attribution {t("salonDetail.activeConfigCount")}: {salon.integrationStatuses.callRail.activeConfigCount}</span>
+          <span className="muted">Optional legacy AI {t("salonDetail.activeConfigCount")}: {salon.integrationStatuses.vertex.activeConfigCount}</span>
           <span className="muted">
-            Amazon Connect active: {salon.integrationStatuses.amazonConnect.activeConfigCount}
+            Amazon Connect {t("salonDetail.activeConfigCount")}: {salon.integrationStatuses.amazonConnect.activeConfigCount}
           </span>
         </article>
       </section>
 
       <section className="card">
         <div className="section-header">
-          <h3>Salon profile</h3>
+          <h3>{t("salonDetail.salonProfileTitle")}</h3>
           <span className={savingProfile ? "status-pill info" : "status-pill"}>
-            {savingProfile ? "Đang lưu..." : "Sẵn sàng"}
+            {savingProfile ? t("common.saving") : t("common.ready")}
           </span>
         </div>
         <form className="form-grid two-columns" onSubmit={saveProfile}>
           <label className="field">
-            <span>Name</span>
+            <span>{t("salonCreate.salonName")}</span>
             <input
               value={profileForm.name}
               onChange={(event) => setProfileForm((prev) => ({ ...prev, name: event.target.value }))}
@@ -1269,7 +1316,7 @@ export const SalonDetailPage = () => {
             />
           </label>
           <label className="field">
-            <span>Timezone</span>
+            <span>{t("common.timezone")}</span>
             <select
               value={profileForm.timezone}
               onChange={(event) =>
@@ -1284,7 +1331,7 @@ export const SalonDetailPage = () => {
             </select>
           </label>
           <label className="field">
-            <span>Contact email</span>
+            <span>{t("salonDetail.contactEmail")}</span>
             <input
               type="email"
               value={profileForm.contactEmail}
@@ -1294,7 +1341,7 @@ export const SalonDetailPage = () => {
             />
           </label>
           <label className="field">
-            <span>Contact phone</span>
+            <span>{t("salonDetail.contactPhone")}</span>
             <input
               type="tel"
               inputMode="tel"
@@ -1306,7 +1353,7 @@ export const SalonDetailPage = () => {
             />
           </label>
           <label className="field">
-            <span>Original salon phone</span>
+            <span>{t("salonDetail.originalSalonPhone")}</span>
             <input
               type="tel"
               inputMode="tel"
@@ -1321,7 +1368,7 @@ export const SalonDetailPage = () => {
             />
           </label>
           <label className="field">
-            <span>Customer incoming phone</span>
+            <span>{t("salonDetail.customerIncomingPhone")}</span>
             <input
               type="tel"
               inputMode="tel"
@@ -1336,7 +1383,7 @@ export const SalonDetailPage = () => {
             />
           </label>
           <label className="field">
-            <span>Notification phone</span>
+            <span>{t("salonDetail.notificationPhone")}</span>
             <input
               type="tel"
               inputMode="tel"
@@ -1351,7 +1398,7 @@ export const SalonDetailPage = () => {
             />
           </label>
           <label className="field">
-            <span>Status</span>
+            <span>{t("common.status")}</span>
             <select
               value={profileForm.status}
               onChange={(event) =>
@@ -1361,13 +1408,13 @@ export const SalonDetailPage = () => {
                 }))
               }
             >
-              <option value="PENDING">PENDING</option>
-              <option value="ACTIVE">ACTIVE</option>
-              <option value="SUSPENDED">SUSPENDED</option>
+              <option value="PENDING">{t("status.PENDING")}</option>
+              <option value="ACTIVE">{t("status.ACTIVE")}</option>
+              <option value="SUSPENDED">{t("status.SUSPENDED")}</option>
             </select>
           </label>
           <label className="field">
-            <span>Subscription status</span>
+            <span>{t("salonDetail.subscriptionStatus")}</span>
             <select
               value={profileForm.subscriptionStatus}
               onChange={(event) =>
@@ -1377,14 +1424,14 @@ export const SalonDetailPage = () => {
                 }))
               }
             >
-              <option value="TRIAL">TRIAL</option>
-              <option value="ACTIVE">ACTIVE</option>
-              <option value="PAST_DUE">PAST_DUE</option>
-              <option value="CANCELED">CANCELED</option>
+              <option value="TRIAL">{t("status.TRIAL")}</option>
+              <option value="ACTIVE">{t("status.ACTIVE")}</option>
+              <option value="PAST_DUE">{t("status.PAST_DUE")}</option>
+              <option value="CANCELED">{t("status.CANCELED")}</option>
             </select>
           </label>
           <label className="field">
-            <span>Address line 1</span>
+            <span>{t("common.addressLine1")}</span>
             <input
               value={profileForm.addressLine1}
               onChange={(event) =>
@@ -1393,7 +1440,7 @@ export const SalonDetailPage = () => {
             />
           </label>
           <label className="field">
-            <span>Address line 2</span>
+            <span>{t("common.addressLine2")}</span>
             <input
               value={profileForm.addressLine2}
               onChange={(event) =>
@@ -1402,21 +1449,21 @@ export const SalonDetailPage = () => {
             />
           </label>
           <label className="field">
-            <span>City</span>
+            <span>{t("common.city")}</span>
             <input
               value={profileForm.city}
               onChange={(event) => setProfileForm((prev) => ({ ...prev, city: event.target.value }))}
             />
           </label>
           <label className="field">
-            <span>State</span>
+            <span>{t("common.state")}</span>
             <input
               value={profileForm.state}
               onChange={(event) => setProfileForm((prev) => ({ ...prev, state: event.target.value }))}
             />
           </label>
           <label className="field">
-            <span>Postal code</span>
+            <span>{t("common.postalCode")}</span>
             <input
               value={profileForm.postalCode}
               onChange={(event) =>
@@ -1425,7 +1472,7 @@ export const SalonDetailPage = () => {
             />
           </label>
           <label className="field">
-            <span>Country</span>
+            <span>{t("common.country")}</span>
             <select
               value={profileForm.country}
               onChange={(event) => setProfileForm((prev) => ({ ...prev, country: event.target.value }))}
@@ -1439,7 +1486,7 @@ export const SalonDetailPage = () => {
           </label>
           <div className="form-actions">
             <button type="submit" className="button-primary" disabled={savingProfile}>
-              {savingProfile ? "Saving profile..." : "Save profile"}
+              {savingProfile ? t("salonDetail.savingProfile") : t("salonDetail.saveProfile")}
             </button>
           </div>
         </form>
@@ -1447,37 +1494,47 @@ export const SalonDetailPage = () => {
 
       <section className="card-grid">
         <article className="card">
-          <h3>Integration status</h3>
+          <h3>{t("salonDetail.integrationStatusTitle")}</h3>
           <div className="mobile-list">
             <article className="mobile-item">
-              <strong>CallRail</strong>
-              <span>{salon.integrationStatuses.callRail.configured ? "Configured" : "Attention required"}</span>
+              <strong>Optional attribution</strong>
+              <span>
+                {salon.integrationStatuses.callRail.configured
+                  ? t("salonDetail.configured")
+                  : t("salonDetail.attentionRequired")}
+              </span>
               <small>
-                Active configs: {salon.integrationStatuses.callRail.activeConfigCount}
+                {t("salonDetail.activeConfigCount")}: {salon.integrationStatuses.callRail.activeConfigCount}
                 {salon.integrationStatuses.callRail.missing.length
-                  ? ` · Missing: ${salon.integrationStatuses.callRail.missing.join(", ")}`
+                  ? ` · ${t("dashboard.integrationMissing", { items: salon.integrationStatuses.callRail.missing.join(", ") })}`
                   : ""}
               </small>
             </article>
             <article className="mobile-item">
               <strong>Vertex AI</strong>
-              <span>{salon.integrationStatuses.vertex.configured ? "Configured" : "Attention required"}</span>
+              <span>
+                {salon.integrationStatuses.vertex.configured
+                  ? t("salonDetail.configured")
+                  : t("salonDetail.attentionRequired")}
+              </span>
               <small>
-                Active configs: {salon.integrationStatuses.vertex.activeConfigCount}
+                {t("salonDetail.activeConfigCount")}: {salon.integrationStatuses.vertex.activeConfigCount}
                 {salon.integrationStatuses.vertex.missing.length
-                  ? ` · Missing: ${salon.integrationStatuses.vertex.missing.join(", ")}`
+                  ? ` · ${t("dashboard.integrationMissing", { items: salon.integrationStatuses.vertex.missing.join(", ") })}`
                   : ""}
               </small>
             </article>
             <article className="mobile-item">
               <strong>Amazon Connect</strong>
               <span>
-                {salon.integrationStatuses.amazonConnect.configured ? "Configured" : "Attention required"}
+                {salon.integrationStatuses.amazonConnect.configured
+                  ? t("salonDetail.configured")
+                  : t("salonDetail.attentionRequired")}
               </span>
               <small>
-                Active configs: {salon.integrationStatuses.amazonConnect.activeConfigCount}
+                {t("salonDetail.activeConfigCount")}: {salon.integrationStatuses.amazonConnect.activeConfigCount}
                 {salon.integrationStatuses.amazonConnect.missing.length
-                  ? ` · Missing: ${salon.integrationStatuses.amazonConnect.missing.join(", ")}`
+                  ? ` · ${t("dashboard.integrationMissing", { items: salon.integrationStatuses.amazonConnect.missing.join(", ") })}`
                   : ""}
               </small>
             </article>
@@ -1485,22 +1542,22 @@ export const SalonDetailPage = () => {
         </article>
 
         <article className="card">
-          <h3>Call center assignment status</h3>
+          <h3>{t("salonDetail.callCenterAssignmentStatus")}</h3>
           <div className="metrics-grid">
             <div>
-              <span className="muted">Assigned agents</span>
+              <span className="muted">{t("salonDetail.assignedAgents")}</span>
               <strong>{salon.callCenterAssignmentStatus.assignedAgentCount}</strong>
             </div>
             <div>
-              <span className="muted">Queue ready</span>
-              <strong>{salon.callCenterAssignmentStatus.hasAssignedAgents ? "YES" : "NO"}</strong>
+              <span className="muted">{t("salonDetail.queueReady")}</span>
+              <strong>{formatYesNo(salon.callCenterAssignmentStatus.hasAssignedAgents)}</strong>
             </div>
             <div>
-              <span className="muted">Routing summary</span>
+              <span className="muted">{t("salonDetail.routingSummary")}</span>
               <strong>{salon.settings?.routingSummary.mode ? routingModeLabels[salon.settings.routingSummary.mode] : "-"}</strong>
             </div>
             <div>
-              <span className="muted">Ring count before AI</span>
+              <span className="muted">{t("salonDetail.ringCountBeforeAi")}</span>
               <strong>{salon.settings?.routingSummary.ringCountBeforeAi ?? 3}</strong>
             </div>
           </div>
@@ -1509,40 +1566,40 @@ export const SalonDetailPage = () => {
 
       <section className="card-grid">
         <article className="card">
-          <h3>Recent escalations</h3>
+          <h3>{t("salonDetail.recentEscalations")}</h3>
           {salon.recentEscalations.length ? (
             <div className="mobile-list">
               {salon.recentEscalations.map((item) => (
                 <article key={item.id} className="mobile-item">
-                  <strong>{item.status}</strong>
+                  <strong>{formatStatusLabel(item.status)}</strong>
                   <span>{item.callSession.callerPhone ?? "-"}</span>
                   <small>
                     {formatDateTime(item.requestedAt)} · {item.routingOutcome ?? item.callSession.routingOutcome ?? "-"}
                   </small>
-                  <small>{item.resolution ?? "No resolution yet"}</small>
+                  <small>{item.resolution ?? t("salonDetail.noResolutionYet")}</small>
                 </article>
               ))}
             </div>
           ) : (
-            <EmptyBlock message="No recent escalations." />
+            <EmptyBlock message={t("salonDetail.noRecentEscalations")} />
           )}
         </article>
 
         <article className="card">
-          <h3>Failures and fallback states</h3>
+          <h3>{t("salonDetail.failuresAndFallbackStates")}</h3>
           {salon.recentCallFailures.length ? (
             <div className="mobile-list">
               {salon.recentCallFailures.map((item) => (
                 <article key={item.id} className="mobile-item">
-                  <strong>{item.status}</strong>
+                  <strong>{formatStatusLabel(item.status)}</strong>
                   <span>{item.routingOutcome ?? "-"}</span>
                   <small>{item.callerPhone ?? "-"}</small>
-                  <small>{item.finalResolution ?? "No final resolution"}</small>
+                  <small>{item.finalResolution ?? t("salonDetail.noFinalResolution")}</small>
                 </article>
               ))}
             </div>
           ) : (
-            <EmptyBlock message="No recent failures or fallback calls." />
+            <EmptyBlock message={t("salonDetail.noRecentFailures")} />
           )}
         </article>
       </section>
@@ -1550,121 +1607,167 @@ export const SalonDetailPage = () => {
       <section className="card">
         <div className="section-header">
           <div>
-            <h3>AI Reception forwarding MVP</h3>
-            <p className="muted">
-              Read-only view of the salon forwarding setup, recent CallRail webhook traffic, and
-              webhook health.
-            </p>
+            <h3>{t("salonDetail.aiReceptionForwardingTitle")}</h3>
+            <p className="muted">{t("salonDetail.aiReceptionForwardingHint")}</p>
           </div>
           <span className={aiReception ? aiReceptionStatusClasses[aiReception.status] : "status-pill warning"}>
-            {aiReception ? aiReceptionStatusLabels[aiReception.status] : "Not configured"}
+            {aiReception ? aiReceptionStatusLabels[aiReception.status] : t("common.notConfigured")}
           </span>
         </div>
 
         <div className="metrics-grid">
           <div>
-            <span className="muted">Original phone number</span>
+            <span className="muted">{t("nav.salons")}</span>
+            <strong>{aiReception?.salonName ?? salon.name}</strong>
+          </div>
+          <div>
+            <span className="muted">{t("common.owner")}</span>
+            <strong>{salon.owner.fullName}</strong>
+          </div>
+          <div>
+            <span className="muted">{t("salonDetail.originalPhoneNumber")}</span>
             <strong>{aiReception?.originalPhoneNumberFormatted ?? "-"}</strong>
           </div>
           <div>
-            <span className="muted">Forwarding number</span>
+            <span className="muted">{t("salonDetail.callRailNumber")}</span>
             <strong>{aiReception?.forwardToNumberFormatted ?? "-"}</strong>
           </div>
           <div>
-            <span className="muted">Carrier</span>
+            <span className="muted">{t("salonDetail.carrier")}</span>
             <strong>{aiReception?.carrierLabel ?? "T-Mobile"}</strong>
           </div>
           <div>
-            <span className="muted">Last tested</span>
+            <span className="muted">{t("salonDetail.aiReceptionStatus")}</span>
+            <strong>{aiReception ? aiReceptionStatusLabels[aiReception.status] : t("common.notConfigured")}</strong>
+          </div>
+          <div>
+            <span className="muted">{t("salonDetail.lastTested")}</span>
             <strong>{aiReception?.lastTestedAt ? formatDateTime(aiReception.lastTestedAt) : "-"}</strong>
           </div>
           <div>
-            <span className="muted">Last verified</span>
+            <span className="muted">{t("salonDetail.lastVerified")}</span>
             <strong>{aiReception?.lastVerifiedAt ? formatDateTime(aiReception.lastVerifiedAt) : "-"}</strong>
           </div>
           <div>
-            <span className="muted">Webhook health</span>
+            <span className="muted">{t("salonDetail.lastCallRailWebhook")}</span>
+            <strong>
+              {callRailHealth?.lastReceivedWebhookAt
+                ? formatDateTime(callRailHealth.lastReceivedWebhookAt)
+                : "-"}
+            </strong>
+          </div>
+          <div>
+            <span className="muted">{t("salonDetail.webhookHealth")}</span>
             <strong>{callRailHealth?.status?.toUpperCase() ?? "UNKNOWN"}</strong>
           </div>
         </div>
 
         <article className="inspection-box">
-          <h4>CallRail webhook health</h4>
+          <h4>{t("salonDetail.callRailWebhookHealth")}</h4>
           <div className="metrics-grid">
             <div>
-              <span className="muted">Integration ready</span>
-              <strong>{callRailHealth?.configured ? "YES" : "NO"}</strong>
+              <span className="muted">{t("salonDetail.webhookConfigured")}</span>
+              <strong>{formatYesNo(Boolean(callRailHealth?.webhookConfigured))}</strong>
             </div>
             <div>
-              <span className="muted">Verification enabled</span>
-              <strong>{callRailHealth?.webhookVerificationEnabled ? "YES" : "NO"}</strong>
+              <span className="muted">{t("salonDetail.integrationReady")}</span>
+              <strong>{formatYesNo(Boolean(callRailHealth?.configured))}</strong>
             </div>
             <div>
-              <span className="muted">Webhook secret configured</span>
-              <strong>{callRailHealth?.webhookSecretConfigured ? "YES" : "NO"}</strong>
+              <span className="muted">{t("salonDetail.verificationEnabled")}</span>
+              <strong>{formatYesNo(Boolean(callRailHealth?.webhookVerificationEnabled))}</strong>
             </div>
             <div>
-              <span className="muted">API key configured</span>
-              <strong>{callRailHealth?.apiKeyConfigured ? "YES" : "NO"}</strong>
+              <span className="muted">{t("salonDetail.webhookSecretConfigured")}</span>
+              <strong>{formatYesNo(Boolean(callRailHealth?.webhookSecretConfigured))}</strong>
             </div>
             <div>
-              <span className="muted">Account + company configured</span>
-              <strong>{callRailHealth?.accountCompanyConfigured ? "YES" : "NO"}</strong>
+              <span className="muted">{t("salonDetail.apiKeyConfigured")}</span>
+              <strong>{formatYesNo(Boolean(callRailHealth?.apiKeyConfigured))}</strong>
             </div>
             <div>
-              <span className="muted">Tracking number configured</span>
-              <strong>{callRailHealth?.trackingNumberConfigured ? "YES" : "NO"}</strong>
+              <span className="muted">{t("salonDetail.accountCompanyConfigured")}</span>
+              <strong>{formatYesNo(Boolean(callRailHealth?.accountCompanyConfigured))}</strong>
             </div>
             <div>
-              <span className="muted">Tracking number ID configured</span>
-              <strong>{callRailHealth?.trackingNumberIdConfigured ? "YES" : "NO"}</strong>
+              <span className="muted">{t("salonDetail.trackingNumberConfigured")}</span>
+              <strong>{formatYesNo(Boolean(callRailHealth?.trackingNumberConfigured))}</strong>
             </div>
             <div>
-              <span className="muted">Default salon ID configured</span>
-              <strong>{callRailHealth?.defaultSalonIdConfigured ? "YES" : "NO"}</strong>
+              <span className="muted">{t("salonDetail.trackingNumberIdConfigured")}</span>
+              <strong>{formatYesNo(Boolean(callRailHealth?.trackingNumberIdConfigured))}</strong>
             </div>
             <div>
-              <span className="muted">AI flow ID configured</span>
-              <strong>{callRailHealth?.aiFlowIdConfigured ? "YES" : "NO"}</strong>
+              <span className="muted">{t("salonDetail.defaultSalonIdConfigured")}</span>
+              <strong>{formatYesNo(Boolean(callRailHealth?.defaultSalonIdConfigured))}</strong>
             </div>
             <div>
-              <span className="muted">Live person flow ID</span>
-              <strong>{callRailHealth?.livePersonFlowIdConfigured ? "CONFIGURED" : "OPTIONAL"}</strong>
+              <span className="muted">{t("salonDetail.aiFlowIdConfigured")}</span>
+              <strong>{formatYesNo(Boolean(callRailHealth?.aiFlowIdConfigured))}</strong>
             </div>
             <div>
-              <span className="muted">Tracking number</span>
+              <span className="muted">{t("salonDetail.livePersonFlowId")}</span>
+              <strong>
+                {callRailHealth?.livePersonFlowIdConfigured
+                  ? t("salonDetail.configured")
+                  : t("salonDetail.optional")}
+              </strong>
+            </div>
+            <div>
+              <span className="muted">{t("salonDetail.callFlowName")}</span>
+              <strong>{callRailHealth?.callFlowName || "-"}</strong>
+            </div>
+            <div>
+              <span className="muted">{t("calls.trackingNumber")}</span>
               <strong>
                 {callRailHealth?.trackingNumberFormatted ?? callRailHealth?.trackingNumber ?? "-"}
               </strong>
             </div>
             <div>
-              <span className="muted">Last webhook received</span>
+              <span className="muted">{t("salonDetail.demoOriginalNumber")}</span>
               <strong>
-                {callRailHealth?.lastWebhookReceivedAt
-                  ? formatDateTime(callRailHealth.lastWebhookReceivedAt)
+                {callRailHealth?.demoOriginalPhoneNumberFormatted ??
+                  callRailHealth?.demoOriginalPhoneNumber ??
+                  "-"}
+              </strong>
+            </div>
+            <div>
+              <span className="muted">{t("salonDetail.demoForwardingNumber")}</span>
+              <strong>
+                {callRailHealth?.demoForwardingPhoneNumberFormatted ??
+                  callRailHealth?.demoForwardingPhoneNumber ??
+                  "-"}
+              </strong>
+            </div>
+            <div>
+              <span className="muted">{t("salonDetail.lastWebhookReceived")}</span>
+              <strong>
+                {callRailHealth?.lastReceivedWebhookAt
+                  ? formatDateTime(callRailHealth.lastReceivedWebhookAt)
                   : "-"}
               </strong>
             </div>
           </div>
           <p className="muted">
             {callRailHealth?.missing?.length
-              ? `Missing: ${callRailHealth.missing.join(", ")}`
-              : "No required CallRail config is missing at the system level."}
+              ? t("dashboard.integrationMissing", { items: callRailHealth.missing.join(", ") })
+              : t("salonDetail.noMissingCallRailConfig")}
           </p>
         </article>
 
         <div className="stack">
-          <h4>Recent CallRail logs</h4>
+          <h4>{t("salonDetail.recentCallRailLogs")}</h4>
           {aiReceptionCallLogs.length ? (
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>Started</th>
-                    <th>Caller</th>
-                    <th>Status</th>
-                    <th>Duration</th>
-                    <th>Recording</th>
+                    <th>{t("calls.started")}</th>
+                    <th>{t("calls.caller")}</th>
+                    <th>{t("common.status")}</th>
+                    <th>{t("salonDetail.summary")}</th>
+                    <th>{t("calls.duration")}</th>
+                    <th>{t("calls.recording")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1672,12 +1775,13 @@ export const SalonDetailPage = () => {
                     <tr key={item.id}>
                       <td>{item.startedAt ? formatDateTime(item.startedAt) : "-"}</td>
                       <td>{item.callerNumberFormatted || item.callerNumber || "-"}</td>
-                      <td>{item.status}</td>
+                      <td>{formatStatusLabel(item.status)}</td>
+                      <td>{item.summary ?? "-"}</td>
                       <td>{formatDuration(item.durationSeconds)}</td>
                       <td>
                         {item.recordingUrl ? (
                           <a href={item.recordingUrl} target="_blank" rel="noreferrer">
-                            Open
+                            {t("common.open")}
                           </a>
                         ) : (
                           "-"
@@ -1689,7 +1793,7 @@ export const SalonDetailPage = () => {
               </table>
             </div>
           ) : (
-            <EmptyBlock message="No CallRail webhook logs are available for this salon." />
+            <EmptyBlock message={t("salonDetail.noCallRailLogs")} />
           )}
         </div>
       </section>
@@ -1697,25 +1801,26 @@ export const SalonDetailPage = () => {
       <section className="card">
         <div className="section-header">
           <div>
-            <h3>Salon settings</h3>
+            <h3>{t("salonDetail.salonSettingsTitle")}</h3>
             <p className="muted">
               {salon.settings?.routingSummary.mode
                 ? routingModeLabels[salon.settings.routingSummary.mode]
-                : "Settings are not configured yet."}
+                : t("salonDetail.settingsNotConfiguredYet")}
             </p>
           </div>
           <span className={settingsForm.callCenterEnabled ? "status-pill success" : "status-pill"}>
-            Call center {settingsForm.callCenterEnabled ? "enabled" : "disabled"}
+            {t("salonDetail.humanCallCenter")}{" "}
+            {settingsForm.callCenterEnabled ? t("common.enabled") : t("common.disabled")}
           </span>
         </div>
         <form className="form-grid two-columns" onSubmit={saveSettings}>
           <div className="form-panel">
             <div>
-              <h4>Business rules</h4>
-              <p className="muted">Defaults used by booking and owner-facing screens.</p>
+              <h4>{t("salonDetail.businessRules")}</h4>
+              <p className="muted">{t("salonDetail.businessRulesHint")}</p>
             </div>
             <label className="field">
-              <span>Currency</span>
+              <span>{t("salonDetail.currency")}</span>
               <select
                 value={settingsForm.currency}
                 onChange={(event) => setSettingsForm((prev) => ({ ...prev, currency: event.target.value }))}
@@ -1728,7 +1833,7 @@ export const SalonDetailPage = () => {
               </select>
             </label>
             <label className="field">
-              <span>Default language</span>
+              <span>{t("salonDetail.defaultLanguage")}</span>
               <select
                 value={settingsForm.locale}
                 onChange={(event) => setSettingsForm((prev) => ({ ...prev, locale: event.target.value }))}
@@ -1741,7 +1846,7 @@ export const SalonDetailPage = () => {
               </select>
             </label>
             <label className="field">
-              <span>Minimum lead time (minutes)</span>
+              <span>{t("salonDetail.minimumLeadTimeMinutes")}</span>
               <input
                 type="number"
                 min={0}
@@ -1755,7 +1860,7 @@ export const SalonDetailPage = () => {
               />
             </label>
             <label className="field">
-              <span>Cancellation policy</span>
+              <span>{t("salonDetail.cancellationPolicy")}</span>
               <textarea
                 rows={3}
                 value={settingsForm.cancellationPolicy}
@@ -1768,11 +1873,11 @@ export const SalonDetailPage = () => {
 
           <div className="form-panel">
             <div>
-              <h4>AI Reception and fallback</h4>
-              <p className="muted">Business-facing controls for AI Reception, human escalation, and fallback routing.</p>
+              <h4>{t("salonDetail.aiReceptionFallbackTitle")}</h4>
+              <p className="muted">{t("salonDetail.aiReceptionFallbackHint")}</p>
             </div>
             <label className="field checkbox-row">
-              <span>AI Reception ON</span>
+              <span>{t("salonDetail.aiReceptionOn")}</span>
               <input
                 type="checkbox"
                 checked={settingsForm.aiReceptionEnabled}
@@ -1782,7 +1887,7 @@ export const SalonDetailPage = () => {
               />
             </label>
             <label className="field">
-              <span>Ring count before AI</span>
+              <span>{t("salonDetail.ringCountBeforeAi")}</span>
               <input
                 type="number"
                 min={1}
@@ -1794,7 +1899,7 @@ export const SalonDetailPage = () => {
               />
             </label>
             <label className="field checkbox-row">
-              <span>Human Call Center ON</span>
+              <span>{t("salonDetail.humanCallCenterOn")}</span>
               <input
                 type="checkbox"
                 checked={settingsForm.callCenterEnabled}
@@ -1804,7 +1909,7 @@ export const SalonDetailPage = () => {
               />
             </label>
             <label className="field checkbox-row">
-              <span>Voicemail fallback ON</span>
+              <span>{t("salonDetail.voicemailFallbackOn")}</span>
               <input
                 type="checkbox"
                 checked={settingsForm.voicemailEnabled}
@@ -1814,7 +1919,7 @@ export const SalonDetailPage = () => {
               />
             </label>
             <label className="field checkbox-row">
-              <span>Callback request ON</span>
+              <span>{t("salonDetail.callbackRequestOn")}</span>
               <input
                 type="checkbox"
                 checked={settingsForm.callbackRequestEnabled}
@@ -1824,7 +1929,7 @@ export const SalonDetailPage = () => {
               />
             </label>
             <label className="field checkbox-row">
-              <span>SMS fallback ON</span>
+              <span>{t("salonDetail.smsFallbackOn")}</span>
               <input
                 type="checkbox"
                 checked={settingsForm.smsFallbackEnabled}
@@ -1834,7 +1939,7 @@ export const SalonDetailPage = () => {
               />
             </label>
             <label className="field">
-              <span>AI greeting prompt</span>
+              <span>{t("salonDetail.aiGreetingPrompt")}</span>
               <textarea
                 rows={4}
                 value={settingsForm.aiGreetingPrompt}
@@ -1844,18 +1949,18 @@ export const SalonDetailPage = () => {
               />
             </label>
             <label className="field">
-              <span>Caller language</span>
+              <span>{t("salonDetail.callerLanguage")}</span>
               <select
                 value={settingsForm.callerLanguage}
                 onChange={(event) =>
                   setSettingsForm((prev) => ({ ...prev, callerLanguage: event.target.value }))
                 }
               >
-                <option value="en">English</option>
+                <option value="en">{t("language.en")}</option>
               </select>
             </label>
             <label className="field">
-              <span>Call center routing number</span>
+              <span>{t("salonDetail.callCenterRoutingNumber")}</span>
               <input
                 type="tel"
                 inputMode="tel"
@@ -1868,10 +1973,10 @@ export const SalonDetailPage = () => {
                   }))
                 }
               />
-              <small>Used before assigned agent phones and default platform routing.</small>
+              <small>{t("salonDetail.callCenterRoutingNumberHint")}</small>
             </label>
             <label className="field">
-              <span>Call center note</span>
+              <span>{t("salonDetail.callCenterNote")}</span>
               <textarea
                 rows={3}
                 value={settingsForm.callCenterRoutingNote}
@@ -1881,7 +1986,7 @@ export const SalonDetailPage = () => {
               />
             </label>
             <label className="field">
-              <span>Notification recipients</span>
+              <span>{t("salonDetail.notificationRecipients")}</span>
               <textarea
                 rows={3}
                 value={settingsForm.notificationRecipientsText}
@@ -1895,7 +2000,7 @@ export const SalonDetailPage = () => {
               />
             </label>
             <label className="field">
-              <span>Call log visibility</span>
+              <span>{t("salonDetail.callLogVisibility")}</span>
               <select
                 value={settingsForm.callLogVisibility}
                 onChange={(event) =>
@@ -1905,15 +2010,17 @@ export const SalonDetailPage = () => {
                   }))
                 }
               >
-                <option value="OWNER_ONLY">Owner only</option>
-                <option value="OWNER_AND_STAFF">Owner and staff</option>
-                <option value="OWNER_STAFF_OPERATOR">Owner, staff, and operator</option>
+                {callLogVisibilityOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
               </select>
             </label>
           </div>
           <div className="form-actions">
             <button type="submit" className="button-primary" disabled={savingSettings}>
-              {savingSettings ? "Saving settings..." : "Save salon settings"}
+              {savingSettings ? t("salonDetail.savingSettings") : t("salonDetail.saveSettings")}
             </button>
           </div>
         </form>
@@ -1921,10 +2028,10 @@ export const SalonDetailPage = () => {
 
       <section className="card">
         <div className="section-header">
-          <h3>Integration config</h3>
+          <h3>{t("salonDetail.integrationConfig")}</h3>
           <div className="inline-actions">
             <button type="button" className="button-secondary" onClick={addIntegration}>
-              Add row
+              {t("salonDetail.addRow")}
             </button>
             <button
               type="button"
@@ -1932,7 +2039,7 @@ export const SalonDetailPage = () => {
               onClick={saveIntegrations}
               disabled={savingIntegrations}
             >
-              {savingIntegrations ? "Saving..." : "Save integrations"}
+              {savingIntegrations ? t("common.saving") : t("salonDetail.saveIntegrations")}
             </button>
           </div>
         </div>
@@ -1940,11 +2047,11 @@ export const SalonDetailPage = () => {
           <table>
             <thead>
               <tr>
-                <th>Provider</th>
-                <th>Key</th>
-                <th>Value</th>
-                <th>Active</th>
-                <th>Remove</th>
+                <th>{t("salonDetail.provider")}</th>
+                <th>{t("salonDetail.key")}</th>
+                <th>{t("salonDetail.value")}</th>
+                <th>{t("salonDetail.active")}</th>
+                <th>{t("salonDetail.remove")}</th>
               </tr>
             </thead>
             <tbody>
@@ -2015,7 +2122,7 @@ export const SalonDetailPage = () => {
                         setIntegrations((prev) => prev.filter((_row, rowIndex) => rowIndex !== index))
                       }
                     >
-                      Delete
+                      {t("salonDetail.delete")}
                     </button>
                   </td>
                 </tr>
@@ -2027,20 +2134,21 @@ export const SalonDetailPage = () => {
 
       <section className="card">
         <div className="section-header">
-          <h3>Call center assignment</h3>
+          <h3>{t("salonDetail.callCenterAssignment")}</h3>
           <button
             type="button"
             className="button-primary"
             onClick={saveCallCenterAssignments}
             disabled={savingAssignments}
           >
-            {savingAssignments ? "Saving..." : "Save assignments"}
+            {savingAssignments ? t("common.saving") : t("salonDetail.saveAssignments")}
           </button>
         </div>
         <div className="summary-badges">
-          <span className="summary-badge">Assigned agents: {assignedAgents.length}</span>
+          <span className="summary-badge">{t("salonDetail.assignedAgents")}: {assignedAgents.length}</span>
           <span className="summary-badge">
-            Queue ready: {assignedAgents.length > 0 && settingsForm.callCenterEnabled ? "YES" : "NO"}
+            {t("salonDetail.queueReady")}:{" "}
+            {formatYesNo(assignedAgents.length > 0 && settingsForm.callCenterEnabled)}
           </span>
         </div>
         <div className="mobile-list">
@@ -2070,15 +2178,15 @@ export const SalonDetailPage = () => {
 
       <section className="card">
         <div className="section-header">
-          <h3>Staff</h3>
+          <h3>{t("common.staff")}</h3>
           <span className="muted">
-            Active {salon.staffUsage.activeStaffCount} / Free {salon.staffUsage.freeStaffLimit} / Extra{" "}
+            {t("salonDetail.activeStaff")}: {salon.staffUsage.activeStaffCount} / {t("common.freeLimit")}: {salon.staffUsage.freeStaffLimit} / {t("salonDetail.extraStaff")}{" "}
             {salon.staffUsage.billableExtraStaffCount}
           </span>
         </div>
         <form className="form-grid two-columns" onSubmit={createStaffMember}>
           <label className="field">
-            <span>Full name</span>
+            <span>{t("salonDetail.fullName")}</span>
             <input
               value={staffForm.fullName}
               onChange={(event) => setStaffForm((prev) => ({ ...prev, fullName: event.target.value }))}
@@ -2086,7 +2194,7 @@ export const SalonDetailPage = () => {
             />
           </label>
           <label className="field">
-            <span>Email</span>
+            <span>{t("common.email")}</span>
             <input
               type="email"
               value={staffForm.email}
@@ -2095,7 +2203,7 @@ export const SalonDetailPage = () => {
             />
           </label>
           <label className="field">
-            <span>Phone</span>
+            <span>{t("common.phone")}</span>
             <input
               type="tel"
               inputMode="numeric"
@@ -2105,14 +2213,14 @@ export const SalonDetailPage = () => {
             />
           </label>
           <label className="field">
-            <span>Title</span>
+            <span>{t("salonDetail.title")}</span>
             <input
               value={staffForm.title}
               onChange={(event) => setStaffForm((prev) => ({ ...prev, title: event.target.value }))}
             />
           </label>
           <label className="field">
-            <span>Temporary password</span>
+            <span>{t("salonDetail.temporaryPassword")}</span>
             <input
               type="password"
               minLength={8}
@@ -2122,7 +2230,7 @@ export const SalonDetailPage = () => {
           </label>
           <div className="form-actions">
             <button type="submit" className="button-primary" disabled={creatingStaff}>
-              {creatingStaff ? "Creating..." : "Add staff"}
+              {creatingStaff ? t("salonDetail.creating") : t("salonDetail.addStaff")}
             </button>
           </div>
         </form>
@@ -2130,11 +2238,11 @@ export const SalonDetailPage = () => {
           <table>
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Title</th>
-                <th>Status</th>
-                <th>Login</th>
-                <th>Actions</th>
+                <th>{t("salonCreate.ownerName")}</th>
+                <th>{t("salonDetail.title")}</th>
+                <th>{t("common.status")}</th>
+                <th>{t("salonDetail.login")}</th>
+                <th>{t("common.actions")}</th>
               </tr>
             </thead>
             <tbody>
@@ -2145,18 +2253,24 @@ export const SalonDetailPage = () => {
                     <div className="muted">{item.email ?? "-"}</div>
                   </td>
                   <td>{item.title ?? "-"}</td>
-                  <td>{item.status}</td>
-                  <td>{item.user ? (item.user.isActive ? "Enabled" : "Disabled") : "Not created"}</td>
+                  <td>{formatStatusLabel(item.status)}</td>
+                  <td>
+                    {item.user
+                      ? item.user.isActive
+                        ? t("salonDetail.enabled")
+                        : t("salonDetail.disabled")
+                      : t("salonDetail.notCreated")}
+                  </td>
                   <td>
                     <div className="inline-actions">
                       <button type="button" className="button-secondary" onClick={() => editStaffMember(item)}>
-                        Edit
+                        {t("common.edit")}
                       </button>
                       <button type="button" className="button-secondary" onClick={() => toggleStaffStatus(item)}>
-                        {item.status === "ACTIVE" ? "Deactivate" : "Reactivate"}
+                        {item.status === "ACTIVE" ? t("salonDetail.deactivate") : t("salonDetail.reactivate")}
                       </button>
                       <button type="button" className="button-secondary" onClick={() => resetStaffLogin(item)}>
-                        Reset access
+                        {t("salonDetail.resetAccess")}
                       </button>
                     </div>
                   </td>
@@ -2168,10 +2282,10 @@ export const SalonDetailPage = () => {
       </section>
 
       <section className="card">
-        <h3>Services</h3>
+        <h3>{t("salonDetail.servicesTitle")}</h3>
         <form className="form-grid two-columns" onSubmit={createServiceItem}>
           <label className="field">
-            <span>Name</span>
+            <span>{t("salonCreate.salonName")}</span>
             <input
               value={serviceForm.name}
               onChange={(event) => setServiceForm((prev) => ({ ...prev, name: event.target.value }))}
@@ -2179,7 +2293,7 @@ export const SalonDetailPage = () => {
             />
           </label>
           <label className="field">
-            <span>Description</span>
+            <span>{t("salonDetail.description")}</span>
             <input
               value={serviceForm.description}
               onChange={(event) =>
@@ -2188,7 +2302,7 @@ export const SalonDetailPage = () => {
             />
           </label>
           <label className="field">
-            <span>Duration (minutes)</span>
+            <span>{t("salonDetail.durationMinutes")}</span>
             <input
               type="number"
               min={1}
@@ -2200,7 +2314,7 @@ export const SalonDetailPage = () => {
             />
           </label>
           <label className="field">
-            <span>Price (cents)</span>
+            <span>{t("salonDetail.priceCents")}</span>
             <input
               type="number"
               min={0}
@@ -2210,7 +2324,7 @@ export const SalonDetailPage = () => {
           </label>
           <div className="form-actions">
             <button type="submit" className="button-primary">
-              Add service
+              {t("salonDetail.addService")}
             </button>
           </div>
         </form>
@@ -2218,12 +2332,12 @@ export const SalonDetailPage = () => {
           <table>
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Duration</th>
-                <th>Price</th>
-                <th>Status</th>
-                <th>Mapped staff</th>
-                <th>Actions</th>
+                <th>{t("salonCreate.salonName")}</th>
+                <th>{t("salonDetail.duration")}</th>
+                <th>{t("salonDetail.price")}</th>
+                <th>{t("common.status")}</th>
+                <th>{t("salonDetail.mappedStaff")}</th>
+                <th>{t("common.actions")}</th>
               </tr>
             </thead>
             <tbody>
@@ -2232,15 +2346,15 @@ export const SalonDetailPage = () => {
                   <td>{item.name}</td>
                   <td>{item.durationMinutes} min</td>
                   <td>{formatCurrencyCents(item.priceCents)}</td>
-                  <td>{item.isActive ? "ACTIVE" : "INACTIVE"}</td>
+                  <td>{item.isActive ? t("status.ACTIVE") : t("status.INACTIVE")}</td>
                   <td>{item.staffServices.length}</td>
                   <td>
                     <div className="inline-actions">
                       <button type="button" className="button-secondary" onClick={() => editServiceItem(item)}>
-                        Edit
+                        {t("common.edit")}
                       </button>
                       <button type="button" className="button-secondary" onClick={() => toggleServiceState(item)}>
-                        {item.isActive ? "Deactivate" : "Activate"}
+                        {item.isActive ? t("salonDetail.deactivate") : t("salonDetail.activate")}
                       </button>
                     </div>
                   </td>
@@ -2253,25 +2367,25 @@ export const SalonDetailPage = () => {
 
       <section className="card">
         <div className="section-header">
-          <h3>Business hours</h3>
+          <h3>{t("salonDetail.businessHoursTitle")}</h3>
           <button type="button" className="button-primary" onClick={saveBusinessHours}>
-            Save hours
+            {t("salonDetail.saveHours")}
           </button>
         </div>
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Day</th>
-                <th>Open</th>
-                <th>Open time</th>
-                <th>Close time</th>
+                <th>{t("salonDetail.day")}</th>
+                <th>{t("common.open")}</th>
+                <th>{t("salonDetail.openTime")}</th>
+                <th>{t("salonDetail.closeTime")}</th>
               </tr>
             </thead>
             <tbody>
               {hours.map((item, index) => (
                 <tr key={item.dayOfWeek}>
-                  <td>{days[item.dayOfWeek]}</td>
+                  <td>{weekdayLabels[item.dayOfWeek]}</td>
                   <td>
                     <input
                       type="checkbox"
@@ -2328,10 +2442,10 @@ export const SalonDetailPage = () => {
       </section>
 
       <section className="card">
-        <h3>Customers</h3>
+        <h3>{t("salonDetail.customersTitle")}</h3>
         <form className="form-grid two-columns" onSubmit={createCustomerItem}>
           <label className="field">
-            <span>First name</span>
+            <span>{t("salonDetail.firstName")}</span>
             <input
               value={customerForm.firstName}
               onChange={(event) =>
@@ -2341,7 +2455,7 @@ export const SalonDetailPage = () => {
             />
           </label>
           <label className="field">
-            <span>Last name</span>
+            <span>{t("salonDetail.lastName")}</span>
             <input
               value={customerForm.lastName}
               onChange={(event) => setCustomerForm((prev) => ({ ...prev, lastName: event.target.value }))}
@@ -2349,7 +2463,7 @@ export const SalonDetailPage = () => {
             />
           </label>
           <label className="field">
-            <span>Email</span>
+            <span>{t("common.email")}</span>
             <input
               type="email"
               value={customerForm.email}
@@ -2357,7 +2471,7 @@ export const SalonDetailPage = () => {
             />
           </label>
           <label className="field">
-            <span>Phone</span>
+            <span>{t("common.phone")}</span>
             <input
               type="tel"
               inputMode="numeric"
@@ -2368,7 +2482,7 @@ export const SalonDetailPage = () => {
           </label>
           <div className="form-actions">
             <button type="submit" className="button-primary">
-              Add customer
+              {t("salonDetail.addCustomer")}
             </button>
           </div>
         </form>
@@ -2376,9 +2490,9 @@ export const SalonDetailPage = () => {
           <table>
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Email</th>
-                <th>Phone</th>
+                <th>{t("salonCreate.ownerName")}</th>
+                <th>{t("common.email")}</th>
+                <th>{t("common.phone")}</th>
               </tr>
             </thead>
             <tbody>
@@ -2397,10 +2511,10 @@ export const SalonDetailPage = () => {
       </section>
 
       <section className="card">
-        <h3>Appointments</h3>
+        <h3>{t("salonDetail.appointmentsTitle")}</h3>
         <form className="form-grid two-columns" onSubmit={createAppointmentItem}>
           <label className="field">
-            <span>Customer</span>
+            <span>{t("common.customer")}</span>
             <select
               value={appointmentForm.customerId}
               onChange={(event) =>
@@ -2408,7 +2522,7 @@ export const SalonDetailPage = () => {
               }
               required
             >
-              <option value="">Select customer</option>
+              <option value="">{t("salonDetail.selectCustomer")}</option>
               {customers.map((customer) => (
                 <option key={customer.id} value={customer.id}>
                   {customer.firstName} {customer.lastName}
@@ -2417,13 +2531,13 @@ export const SalonDetailPage = () => {
             </select>
           </label>
           <label className="field">
-            <span>Staff</span>
+            <span>{t("common.staff")}</span>
             <select
               value={appointmentForm.staffId}
               onChange={(event) => setAppointmentForm((prev) => ({ ...prev, staffId: event.target.value }))}
               required
             >
-              <option value="">Select staff</option>
+              <option value="">{t("salonDetail.selectStaff")}</option>
               {availableStaffForSelect.map((item) => (
                 <option key={item.id} value={item.id}>
                   {item.fullName}
@@ -2432,7 +2546,7 @@ export const SalonDetailPage = () => {
             </select>
           </label>
           <label className="field">
-            <span>Service</span>
+            <span>{t("common.service")}</span>
             <select
               value={appointmentForm.serviceId}
               onChange={(event) =>
@@ -2440,7 +2554,7 @@ export const SalonDetailPage = () => {
               }
               required
             >
-              <option value="">Select service</option>
+              <option value="">{t("salonDetail.selectService")}</option>
               {services
                 .filter((item) => item.isActive)
                 .map((item) => (
@@ -2451,7 +2565,7 @@ export const SalonDetailPage = () => {
             </select>
           </label>
           <label className="field">
-            <span>Start time</span>
+            <span>{t("salonDetail.startTime")}</span>
             <input
               type="datetime-local"
               value={appointmentForm.startTime}
@@ -2463,7 +2577,7 @@ export const SalonDetailPage = () => {
           </label>
           <div className="form-actions">
             <button type="submit" className="button-primary">
-              Create appointment
+              {t("salonDetail.createAppointmentCta")}
             </button>
           </div>
         </form>
@@ -2471,13 +2585,13 @@ export const SalonDetailPage = () => {
           <table>
             <thead>
               <tr>
-                <th>Time</th>
-                <th>Customer</th>
-                <th>Staff</th>
-                <th>Service</th>
-                <th>Status</th>
-                <th>Source</th>
-                <th>Actions</th>
+                <th>{t("salonDetail.time")}</th>
+                <th>{t("common.customer")}</th>
+                <th>{t("common.staff")}</th>
+                <th>{t("common.service")}</th>
+                <th>{t("common.status")}</th>
+                <th>{t("salonDetail.source")}</th>
+                <th>{t("common.actions")}</th>
               </tr>
             </thead>
             <tbody>
@@ -2489,7 +2603,7 @@ export const SalonDetailPage = () => {
                   </td>
                   <td>{item.staff.fullName}</td>
                   <td>{item.service.name}</td>
-                  <td>{item.status}</td>
+                  <td>{formatStatusLabel(item.status)}</td>
                   <td>{item.source}</td>
                   <td>
                     <div className="inline-actions">
@@ -2498,21 +2612,21 @@ export const SalonDetailPage = () => {
                         className="button-secondary"
                         onClick={() => setSelectedAppointment(item)}
                       >
-                        Inspect
+                        {t("salonDetail.inspect")}
                       </button>
                       <button
                         type="button"
                         className="button-secondary"
                         onClick={() => void setAppointmentStatus(item.id, item.status)}
                       >
-                        Status
+                        {t("salonDetail.statusAction")}
                       </button>
                       <button
                         type="button"
                         className="button-secondary"
                         onClick={() => void rescheduleAppointmentItem(item)}
                       >
-                        Reschedule
+                        {t("salonDetail.reschedule")}
                       </button>
                       <button
                         type="button"
@@ -2531,13 +2645,13 @@ export const SalonDetailPage = () => {
         {selectedAppointment ? (
           <div className="inspection-box">
             <div className="section-header">
-              <h4>Appointment detail</h4>
+              <h4>{t("salonDetail.appointmentDetail")}</h4>
               <button
                 type="button"
                 className="button-secondary"
                 onClick={() => setSelectedAppointment(null)}
               >
-                Close
+                {t("salonDetail.close")}
               </button>
             </div>
             <pre>{JSON.stringify(selectedAppointment, null, 2)}</pre>
@@ -2546,24 +2660,24 @@ export const SalonDetailPage = () => {
       </section>
 
       <section className="card">
-        <h3>Billing usage</h3>
+        <h3>{t("salonDetail.billingUsageTitle")}</h3>
         {billing ? (
           <>
             <div className="metrics-grid">
               <div>
-                <span className="muted">Free allowance</span>
+                <span className="muted">{t("salonDetail.freeAllowance")}</span>
                 <strong>{billing.currentUsage.freeStaffLimit}</strong>
               </div>
               <div>
-                <span className="muted">Active staff</span>
+                <span className="muted">{t("salonDetail.activeStaff")}</span>
                 <strong>{billing.currentUsage.activeStaffCount}</strong>
               </div>
               <div>
-                <span className="muted">Extra staff</span>
+                <span className="muted">{t("salonDetail.extraStaff")}</span>
                 <strong>{billing.currentUsage.billableExtraStaffCount}</strong>
               </div>
               <div>
-                <span className="muted">Estimated extra</span>
+                <span className="muted">{t("salonDetail.estimatedExtra")}</span>
                 <strong>{formatCurrencyCents(billing.currentUsage.estimatedExtraCostCents)}</strong>
               </div>
             </div>
@@ -2571,10 +2685,10 @@ export const SalonDetailPage = () => {
               <table>
                 <thead>
                   <tr>
-                    <th>Period start</th>
-                    <th>Period end</th>
-                    <th>Extra staff</th>
-                    <th>Estimated extra cost</th>
+                    <th>{t("salonDetail.periodStart")}</th>
+                    <th>{t("salonDetail.periodEnd")}</th>
+                    <th>{t("salonDetail.extraStaff")}</th>
+                    <th>{t("salonDetail.estimatedExtraCost")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2591,7 +2705,7 @@ export const SalonDetailPage = () => {
             </div>
           </>
         ) : (
-          <EmptyBlock message="Billing usage data is not available." />
+          <EmptyBlock message={t("salonDetail.billingUnavailable")} />
         )}
       </section>
     </div>

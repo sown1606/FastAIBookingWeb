@@ -1,9 +1,10 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiGet, extractErrorMessage } from "../lib/api";
-import { ErrorBlock, LoadingBlock } from "../components/states";
+import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
 import type { Pagination } from "../types";
 import { formatDateTime } from "../lib/format";
+import { useI18n } from "../lib/i18n";
 
 interface AiLogItem {
   id: string;
@@ -25,6 +26,7 @@ interface AiLogsResponse {
 }
 
 export const AiLogsPage = () => {
+  const { t } = useI18n();
   const [taskType, setTaskType] = useState("");
   const [salonId, setSalonId] = useState("");
   const [querySalonId, setQuerySalonId] = useState("");
@@ -61,7 +63,7 @@ export const AiLogsPage = () => {
 
   const onFilter = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setSalonId(querySalonId);
+    setSalonId(querySalonId.trim());
   };
 
   if (loading) {
@@ -74,58 +76,67 @@ export const AiLogsPage = () => {
 
   return (
     <section className="card">
-      <h2>AI logs</h2>
+      <div className="section-header">
+        <div>
+          <h2>{t("aiLogs.title")}</h2>
+          <p className="muted">{t("aiLogs.hint")}</p>
+        </div>
+      </div>
       <form className="filters" onSubmit={onFilter}>
         <label className="field compact">
-          <span>Task type</span>
+          <span>{t("aiLogs.taskType")}</span>
           <input
             value={taskType}
             onChange={(event) => setTaskType(event.target.value)}
-            placeholder="parse_booking"
+            placeholder={t("aiLogs.filterTaskPlaceholder")}
           />
         </label>
         <label className="field compact">
-          <span>Salon ID</span>
+          <span>{t("calls.filterSalonId")}</span>
           <input
             value={querySalonId}
             onChange={(event) => setQuerySalonId(event.target.value)}
-            placeholder="Optional salon UUID"
+            placeholder={t("aiLogs.filterSalonPlaceholder")}
           />
         </label>
         <button type="submit" className="button-secondary">
-          Apply
+          {t("aiLogs.apply")}
         </button>
       </form>
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Created</th>
-              <th>Salon</th>
-              <th>Task</th>
-              <th>Provider</th>
-              <th>Valid</th>
-              <th>Confidence</th>
-              <th>Details</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data?.items.map((item) => (
-              <tr key={item.id}>
-                <td>{formatDateTime(item.createdAt)}</td>
-                <td>{item.salon?.name ?? "-"}</td>
-                <td>{item.taskType}</td>
-                <td>{item.provider}</td>
-                <td>{item.isValid ? "Yes" : "No"}</td>
-                <td>{item.confidence ?? "-"}</td>
-                <td>
-                  <Link to={`/ai-logs/${item.id}`}>Open</Link>
-                </td>
+      {data?.items.length ? (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>{t("aiLogs.created")}</th>
+                <th>{t("aiLogs.salon")}</th>
+                <th>{t("aiLogs.task")}</th>
+                <th>{t("aiLogs.provider")}</th>
+                <th>{t("aiLogs.valid")}</th>
+                <th>{t("aiLogs.confidence")}</th>
+                <th>{t("aiLogs.details")}</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {data.items.map((item) => (
+                <tr key={item.id}>
+                  <td>{formatDateTime(item.createdAt)}</td>
+                  <td>{item.salon?.name ?? t("common.none")}</td>
+                  <td>{item.taskType}</td>
+                  <td>{item.model ? `${item.provider} / ${item.model}` : item.provider}</td>
+                  <td>{item.isValid ? t("common.yes") : t("common.no")}</td>
+                  <td>{item.confidence ?? t("common.none")}</td>
+                  <td>
+                    <Link to={`/ai-logs/${item.id}`}>{t("common.open")}</Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <EmptyBlock message={t("aiLogs.empty")} />
+      )}
     </section>
   );
 };

@@ -105,11 +105,11 @@ export const DashboardPage = () => {
 
   const integrations = [
     {
-      label: "CallRail",
+      label: "Optional attribution",
       value: integrationSummary.callRail
     },
     {
-      label: "Vertex AI",
+      label: "Optional legacy AI",
       value: integrationSummary.vertex
     },
     {
