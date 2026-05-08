@@ -132,7 +132,7 @@ export const App = () => {
         <Route
           path="call-center"
           element={
-            <RequireRole roles={["CALL_CENTER_AGENT"]}>
+            <RequireRole roles={["SALON_OWNER", "CALL_CENTER_AGENT"]}>
               <CallCenterPage />
             </RequireRole>
           }

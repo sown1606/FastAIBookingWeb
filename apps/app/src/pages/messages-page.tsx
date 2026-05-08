@@ -4,6 +4,7 @@ import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
 import { useAuth } from "../auth/auth-context";
 import { useToast } from "../components/toast";
 import { formatDateTime } from "../lib/format";
+import { useI18n } from "../lib/i18n";
 
 interface StaffSummary {
   id: string;
@@ -30,6 +31,7 @@ interface ChatMessage {
 export const MessagesPage = () => {
   const { session } = useAuth();
   const { notify } = useToast();
+  const { t } = useI18n();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [threads, setThreads] = useState<ThreadItem[]>([]);
@@ -104,7 +106,7 @@ export const MessagesPage = () => {
     <div className="stack">
       {isOwner ? (
         <section className="card">
-          <h2>Nhân viên</h2>
+          <h2>{t("messages.staffTitle")}</h2>
           {threads.length ? (
             <div className="quick-actions">
               {threads.map((thread) => (
@@ -119,13 +121,18 @@ export const MessagesPage = () => {
               ))}
             </div>
           ) : (
-            <EmptyBlock message="Chưa có hội thoại nhân viên." />
+            <EmptyBlock message={t("messages.threadsEmpty")} />
           )}
         </section>
       ) : null}
 
       <section className="card chat-panel">
-        <h2>Tin nhắn</h2>
+        <div className="section-header">
+          <div>
+            <h2>{t("messages.title")}</h2>
+            <p className="muted">{isOwner ? t("messages.hintOwner") : t("messages.hintStaff")}</p>
+          </div>
+        </div>
         {messages.length ? (
           <div className="message-list">
             {messages.map((message) => (
@@ -140,11 +147,11 @@ export const MessagesPage = () => {
             ))}
           </div>
         ) : (
-          <EmptyBlock message="Chưa có tin nhắn." />
+          <EmptyBlock message={t("messages.empty")} />
         )}
         <form className="form-grid" onSubmit={send}>
           <label className="field">
-            <span>Nội dung</span>
+            <span>{t("messages.body")}</span>
             <textarea
               rows={3}
               value={body}
@@ -153,7 +160,7 @@ export const MessagesPage = () => {
             />
           </label>
           <button type="submit" className="button-primary" disabled={isOwner && !selectedStaffId}>
-            Gửi tin nhắn
+            {t("messages.send")}
           </button>
         </form>
       </section>

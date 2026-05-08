@@ -1,10 +1,12 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { apiGet, apiPatch, apiPost, extractErrorMessage } from "../lib/api";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
 import { useToast } from "../components/toast";
 import { formatDateTime } from "../lib/format";
 import { toDateTimeLocalValue, useFormDialog } from "../components/form-dialog";
 import { formatUsPhoneInput, validateOptionalUsPhone } from "../lib/phone";
+import { useAuth } from "../auth/auth-context";
 import { statusLabelKey, useI18n } from "../lib/i18n";
 
 interface RuntimeResponse {
@@ -37,6 +39,33 @@ interface SalonItem {
   id: string;
   name: string;
   customerIncomingPhoneNumber: string | null;
+}
+
+interface SalonDetailResponse {
+  id: string;
+  name: string;
+  originalPhoneNumber: string | null;
+  customerIncomingPhoneNumber: string | null;
+  settings: {
+    aiReceptionEnabled: boolean;
+    aiTransferRingCount: number;
+    callCenterEnabled: boolean;
+    voicemailEnabled: boolean;
+    callbackRequestEnabled: boolean;
+    smsFallbackEnabled: boolean;
+    callCenterRoutingNumber: string | null;
+    callCenterRoutingNote: string | null;
+  } | null;
+  callCenterAssignments: Array<{
+    id: string;
+    agent: {
+      id: string;
+      fullName: string;
+      email: string;
+      phone: string | null;
+      isActive: boolean;
+    };
+  }>;
 }
 
 interface StaffItem {
@@ -208,6 +237,7 @@ const extractPhoneFromContact = (contact: any): string | null => {
 };
 
 export const CallCenterPage = () => {
+  const { session } = useAuth();
   const { notify } = useToast();
   const { openFormDialog, FormDialog } = useFormDialog();
   const { t } = useI18n();
@@ -217,6 +247,7 @@ export const CallCenterPage = () => {
   const [error, setError] = useState("");
   const [runtime, setRuntime] = useState<RuntimeResponse | null>(null);
   const [salons, setSalons] = useState<SalonItem[]>([]);
+  const [selectedSalonDetail, setSelectedSalonDetail] = useState<SalonDetailResponse | null>(null);
   const [selectedSalonId, setSelectedSalonId] = useState("");
   const [staff, setStaff] = useState<StaffItem[]>([]);
   const [services, setServices] = useState<ServiceItem[]>([]);
@@ -247,6 +278,9 @@ export const CallCenterPage = () => {
   const [contactState, setContactState] = useState("IDLE");
   const [activeCallerPhone, setActiveCallerPhone] = useState<string | null>(null);
   const [activeAmazonConnectContactId, setActiveAmazonConnectContactId] = useState<string | null>(null);
+  const isOwner = session?.user.role === "SALON_OWNER";
+  const configuredCcpUrl = import.meta.env.VITE_AMAZON_CONNECT_CCP_URL?.trim();
+  const ccpUrl = configuredCcpUrl || runtime?.amazonConnect.ccpUrl || null;
 
   const appointmentStatusOptions = useMemo(
     () => ["SCHEDULED", "CONFIRMED", "CANCELED", "NO_SHOW"].map((value) => ({
@@ -287,13 +321,15 @@ export const CallCenterPage = () => {
   };
 
   const loadSalonData = async (salonId: string) => {
-    const [staffItems, serviceItems, customerItems, appointmentItems] = await Promise.all([
+    const [salonDetail, staffItems, serviceItems, customerItems, appointmentItems] = await Promise.all([
+      apiGet<SalonDetailResponse>(`/api/v1/call-center/salons/${salonId}`),
       apiGet<StaffItem[]>(`/api/v1/call-center/salons/${salonId}/staff`),
       apiGet<ServiceItem[]>(`/api/v1/call-center/salons/${salonId}/services`),
       apiGet<CustomersResponse>(`/api/v1/call-center/salons/${salonId}/customers?page=1&limit=100`),
       apiGet<AppointmentsResponse>(`/api/v1/call-center/salons/${salonId}/appointments?page=1&limit=50`)
     ]);
 
+    setSelectedSalonDetail(salonDetail);
     setStaff(staffItems);
     setServices(serviceItems.filter((item) => item.isActive));
     setCustomers(customerItems.items);
@@ -369,7 +405,7 @@ export const CallCenterPage = () => {
   }, [selectedEscalationId]);
 
   useEffect(() => {
-    if (!runtime?.amazonConnect.configured || !runtime.amazonConnect.ccpUrl || !ccpContainerRef.current) {
+    if (!runtime?.amazonConnect.configured || !ccpUrl || !ccpContainerRef.current) {
       setCcpSetupState("disabled");
       return;
     }
@@ -392,7 +428,7 @@ export const CallCenterPage = () => {
         }
 
         connectApi.core.initCCP(ccpContainerRef.current, {
-          ccpUrl: runtime.amazonConnect.ccpUrl,
+          ccpUrl,
           loginPopup: true,
           loginPopupAutoClose: true,
           region: runtime.amazonConnect.region ?? undefined,
@@ -451,7 +487,7 @@ export const CallCenterPage = () => {
     return () => {
       disposed = true;
     };
-  }, [runtime, t]);
+  }, [ccpUrl, runtime, t]);
 
   const changeSalon = async (salonId: string) => {
     setSelectedSalonId(salonId);
@@ -782,7 +818,7 @@ export const CallCenterPage = () => {
   const availableStaffCount = staff.filter((member) => member.currentWorkStatus === "AVAILABLE").length;
   const amazonConnectRuntimeReady = Boolean(runtime?.amazonConnect.configured);
   const amazonConnectPlatformReady = Boolean(runtime?.amazonConnect.adminConfigured);
-  const amazonConnectReady = Boolean(amazonConnectRuntimeReady && runtime?.amazonConnect.ccpUrl);
+  const amazonConnectReady = Boolean(amazonConnectRuntimeReady && ccpUrl);
   const missingAmazonConnectItems = runtime?.amazonConnect.missing ?? [];
   const missingPlatformItems = runtime?.amazonConnect.adminMissing ?? [];
   const selectedSalonName =
@@ -796,7 +832,7 @@ export const CallCenterPage = () => {
     },
     {
       key: "AMAZON_CONNECT_CCP_URL",
-      value: runtime?.amazonConnect.ccpUrl ?? t("common.none"),
+      value: ccpUrl ?? t("common.none"),
       usage: t("callCenter.usageCcpUrl")
     },
     {
@@ -839,6 +875,299 @@ export const CallCenterPage = () => {
 
   if (error) {
     return <ErrorBlock message={error} onRetry={load} />;
+  }
+
+  if (isOwner) {
+    const assignedAgents = selectedSalonDetail?.callCenterAssignments ?? [];
+    const queuedItems = queue.filter((item) => item.status === "QUEUED");
+    const fallbackItems = queue.filter((item) =>
+      ["CALLBACK_REQUESTED", "VOICEMAIL_LEFT", "SMS_SENT"].includes(item.status)
+    );
+
+    return (
+      <div className="stack">
+        <FormDialog />
+
+        <section className="card">
+          <div className="section-header">
+            <div>
+              <h2>{t("callCenter.ownerMonitorTitle")}</h2>
+              <p className="muted">{t("callCenter.ownerMonitorHint")}</p>
+            </div>
+            <div className="summary-badges">
+              <span
+                className={
+                  selectedSalonDetail?.settings?.callCenterEnabled
+                    ? "status-pill success"
+                    : "status-pill warning"
+                }
+              >
+                {t("nav.callCenter")}:{" "}
+                {selectedSalonDetail?.settings?.callCenterEnabled ? t("common.enabled") : t("common.disabled")}
+              </span>
+              <span className={runtime?.amazonConnect.adminConfigured ? "status-pill success" : "status-pill warning"}>
+                {runtime?.amazonConnect.adminConfigured ? t("callCenter.platformReady") : t("callCenter.platformPending")}
+              </span>
+            </div>
+          </div>
+          <div className="hero-stats">
+            <article className="hero-stat-card">
+              <span>{t("callCenter.currentSalon")}</span>
+              <strong>{selectedSalonName}</strong>
+            </article>
+            <article className="hero-stat-card">
+              <span>{t("callCenter.assignedSalons")}</span>
+              <strong>{runtime?.assignedSalonCount ?? 0}</strong>
+            </article>
+            <article className="hero-stat-card">
+              <span>{t("callCenter.openRequests")}</span>
+              <strong>{openRequests}</strong>
+            </article>
+            <article className="hero-stat-card">
+              <span>{t("callCenter.assignedAgentsTitle")}</span>
+              <strong>{assignedAgents.length}</strong>
+            </article>
+          </div>
+          <div className="quick-actions">
+            <Link to="/salon-profile" className="button-secondary">
+              {t("nav.salonProfile")}
+            </Link>
+            <Link to="/appointments" className="button-secondary">
+              {t("nav.appointments")}
+            </Link>
+            <Link to="/calls" className="button-secondary">
+              {t("nav.calls")}
+            </Link>
+            {ccpUrl ? (
+              <a
+                href={ccpUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="button-secondary"
+              >
+                {t("callCenter.ccpLink")}
+              </a>
+            ) : null}
+          </div>
+        </section>
+
+        <section className="card-grid">
+          <article className="card stat-card">
+            <h3>{t("callCenter.queuedItems")}</h3>
+            <strong>{queuedItems.length}</strong>
+          </article>
+          <article className="card stat-card">
+            <h3>{t("callCenter.availableStaff")}</h3>
+            <strong>{availableStaffCount}</strong>
+          </article>
+          <article className="card stat-card">
+            <h3>{t("callCenter.fallbackTitle")}</h3>
+            <strong>{fallbackItems.length}</strong>
+          </article>
+          <article className="card stat-card">
+            <h3>{t("callCenter.currentContact")}</h3>
+            <strong>{selectedEscalation?.callSession.callerPhone ?? t("common.none")}</strong>
+          </article>
+        </section>
+
+        <section className="card-grid">
+          <article className="card">
+            <div className="section-header">
+              <h3>{t("callCenter.assignedAgentsTitle")}</h3>
+              <span className="status-pill info">{assignedAgents.length}</span>
+            </div>
+            {assignedAgents.length ? (
+              <div className="mobile-list">
+                {assignedAgents.map((assignment) => (
+                  <article key={assignment.id} className="mobile-item">
+                    <strong>{assignment.agent.fullName}</strong>
+                    <span>{assignment.agent.email}</span>
+                    <small>
+                      {assignment.agent.phone ?? t("common.none")} ·{" "}
+                      {assignment.agent.isActive ? t("status.ACTIVE") : t("status.INACTIVE")}
+                    </small>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <EmptyBlock message={t("callCenter.assignedAgentsEmpty")} />
+            )}
+          </article>
+
+          <article className="card">
+            <h3>{t("callCenter.fallbackTitle")}</h3>
+            <div className="mobile-list">
+              <article className="mobile-item">
+                <strong>{t("dashboard.metricHumanCallCenter")}</strong>
+                <span>
+                  {selectedSalonDetail?.settings?.callCenterEnabled ? t("common.enabled") : t("common.disabled")}
+                </span>
+              </article>
+              <article className="mobile-item">
+                <strong>{t("dashboard.metricVoicemailFallback")}</strong>
+                <span>
+                  {selectedSalonDetail?.settings?.voicemailEnabled ? t("common.enabled") : t("common.disabled")}
+                </span>
+              </article>
+              <article className="mobile-item">
+                <strong>{t("dashboard.metricCallbackRequest")}</strong>
+                <span>
+                  {selectedSalonDetail?.settings?.callbackRequestEnabled ? t("common.enabled") : t("common.disabled")}
+                </span>
+              </article>
+              <article className="mobile-item">
+                <strong>{t("dashboard.metricSmsFallback")}</strong>
+                <span>
+                  {selectedSalonDetail?.settings?.smsFallbackEnabled ? t("common.enabled") : t("common.disabled")}
+                </span>
+              </article>
+              <article className="mobile-item">
+                <strong>{t("callCenter.ccpLinkHint")}</strong>
+                <span>{ccpUrl ?? t("common.none")}</span>
+              </article>
+            </div>
+          </article>
+        </section>
+
+        <section className="card">
+          <div className="section-header">
+            <div>
+              <h2>{t("callCenter.queueTitle")}</h2>
+              <p className="muted">{t("callCenter.ownerQueueHint")}</p>
+            </div>
+            <button type="button" className="button-secondary" onClick={() => void loadQueue(false)}>
+              {t("callCenter.refreshQueue")}
+            </button>
+          </div>
+          {queue.length ? (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>{t("callCenter.requested")}</th>
+                    <th>{t("callCenter.caller")}</th>
+                    <th>{t("common.status")}</th>
+                    <th>{t("callCenter.routing")}</th>
+                    <th>{t("callCenter.waitingTime")}</th>
+                    <th>{t("common.actions")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {queue.map((item) => {
+                    const waitingReference = item.connectedAt ?? item.closedAt ?? new Date().toISOString();
+                    const waitingMinutes = Math.max(
+                      0,
+                      Math.round(
+                        (new Date(waitingReference).getTime() - new Date(item.requestedAt).getTime()) / 60000
+                      )
+                    );
+
+                    return (
+                      <tr key={item.id}>
+                        <td>{formatDateTime(item.requestedAt)}</td>
+                        <td>{item.callSession.callerPhone ?? t("common.none")}</td>
+                        <td>{statusLabelKey(item.status) ? t(statusLabelKey(item.status)!) : item.status}</td>
+                        <td>{translateRoutingOutcome(item.routingOutcome ?? item.callSession.routingOutcome)}</td>
+                        <td>{t("callCenter.waitingMinutes", { count: waitingMinutes })}</td>
+                        <td>
+                          <button
+                            type="button"
+                            className="button-secondary"
+                            onClick={() => setSelectedEscalationId(item.id)}
+                          >
+                            {t("callCenter.openAction")}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <EmptyBlock message={t("callCenter.queueEmpty")} />
+          )}
+        </section>
+
+        <section className="card">
+          <div className="section-header">
+            <div>
+              <h2>{t("callCenter.selectedTitle")}</h2>
+              <p className="muted">{t("callCenter.selectedHintEmpty")}</p>
+            </div>
+          </div>
+          {selectedEscalation ? (
+            <div className="stack">
+              <div className="metrics-grid">
+                <div>
+                  <span className="muted">{t("common.status")}</span>
+                  <strong>
+                    {statusLabelKey(selectedEscalation.status)
+                      ? t(statusLabelKey(selectedEscalation.status)!)
+                      : selectedEscalation.status}
+                  </strong>
+                </div>
+                <div>
+                  <span className="muted">{t("callCenter.routing")}</span>
+                  <strong>{translateRoutingOutcome(selectedEscalation.routingOutcome)}</strong>
+                </div>
+                <div>
+                  <span className="muted">{t("callCenter.escalationReason")}</span>
+                  <strong>{selectedEscalation.escalationReason ?? t("common.none")}</strong>
+                </div>
+                <div>
+                  <span className="muted">{t("callCenter.finalResolution")}</span>
+                  <strong>{selectedEscalation.callSession.finalResolution ?? t("common.none")}</strong>
+                </div>
+              </div>
+
+              <article className="inspection-box">
+                <h3>{t("callCenter.transcript")}</h3>
+                {selectedEscalation.callSession.transcripts.length ? (
+                  selectedEscalation.callSession.transcripts.map((transcript) => (
+                    <div key={transcript.id} className="stack">
+                      {transcript.transcriptSummary ? <p>{transcript.transcriptSummary}</p> : null}
+                      <pre>{transcript.transcriptText}</pre>
+                    </div>
+                  ))
+                ) : (
+                  <EmptyBlock message={t("callCenter.transcriptEmpty")} />
+                )}
+              </article>
+
+              <article className="inspection-box">
+                <h3>{t("callCenter.aiSummary")}</h3>
+                <pre>{JSON.stringify(selectedEscalation.callSession.aiSummary ?? null, null, 2)}</pre>
+              </article>
+
+              <article className="inspection-box">
+                <h3>{t("callCenter.bookingAttempts")}</h3>
+                {selectedEscalation.callSession.bookingAttempts.length ? (
+                  <div className="mobile-list">
+                    {selectedEscalation.callSession.bookingAttempts.map((attempt) => (
+                      <article key={attempt.id} className="mobile-item">
+                        <strong>
+                          {statusLabelKey(attempt.status) ? t(statusLabelKey(attempt.status)!) : attempt.status}
+                        </strong>
+                        <span>
+                          {attempt.requestedService ?? t("callCenter.noService")} ·{" "}
+                          {attempt.requestedStaff ?? t("common.unassigned")}
+                        </span>
+                        <small>{attempt.failureReason ?? t("callCenter.noFailureReason")}</small>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyBlock message={t("callCenter.bookingAttemptsEmpty")} />
+                )}
+              </article>
+            </div>
+          ) : (
+            <EmptyBlock message={t("callCenter.selectedEmpty")} />
+          )}
+        </section>
+      </div>
+    );
   }
 
   return (
@@ -1004,6 +1333,11 @@ export const CallCenterPage = () => {
           </div>
           {ccpError ? <div className="form-error">{ccpError}</div> : null}
           <p className="muted">{amazonConnectReady ? t("callCenter.softphoneReadyHint") : t("callCenter.softphonePendingHint")}</p>
+          {ccpUrl ? (
+            <a href={ccpUrl} target="_blank" rel="noreferrer" className="button-secondary">
+              {t("callCenter.ccpLink")}
+            </a>
+          ) : null}
           {amazonConnectReady ? (
             <div ref={ccpContainerRef} style={{ minHeight: 560 }} />
           ) : (

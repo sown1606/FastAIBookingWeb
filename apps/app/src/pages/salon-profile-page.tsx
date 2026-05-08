@@ -1,5 +1,4 @@
 import { FormEvent, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import { useAuth } from "../auth/auth-context";
 import { apiGet, apiPost, apiPut, extractErrorMessage } from "../lib/api";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
@@ -61,7 +60,8 @@ interface SalonSettings {
 interface AiReceptionConfig {
   id: string | null;
   salonId: string;
-  provider: "callrail";
+  salonName: string;
+  provider: "amazon_connect" | "callrail";
   carrier: "tmobile";
   carrierLabel: string;
   originalPhoneNumber: string | null;
@@ -72,6 +72,7 @@ interface AiReceptionConfig {
   forwardingPhoneNumberFormatted: string | null;
   forwardingType: "no_answer";
   activationCode: string;
+  fallbackActivationCode: string;
   activationCodeWithoutDelay: string;
   deactivationCode: string;
   statusCheckCode: string;
@@ -84,7 +85,7 @@ interface AiReceptionConfig {
 
 interface AiReceptionCallLog {
   id: string;
-  provider: "callrail";
+  provider: "amazon_connect" | "callrail";
   providerCallId: string;
   trackingNumber: string | null;
   trackingNumberFormatted: string;
@@ -832,6 +833,10 @@ export const SalonProfilePage = () => {
 
         <div className="metrics-grid">
           <div>
+            <span className="muted">{t("profile.salonName")}</span>
+            <strong>{(aiReception?.salonName ?? profileForm.name) || "-"}</strong>
+          </div>
+          <div>
             <span className="muted">{t("profile.originalPhoneNumber")}</span>
             <strong>{aiReception?.originalPhoneNumberFormatted ?? t("profile.addSalonPhoneFirst")}</strong>
           </div>
@@ -842,6 +847,16 @@ export const SalonProfilePage = () => {
           <div>
             <span className="muted">{t("profile.carrier")}</span>
             <strong>{aiReception?.carrierLabel ?? "T-Mobile"}</strong>
+          </div>
+          <div>
+            <span className="muted">{t("profile.forwardingType")}</span>
+            <strong>{t("profile.forwardingTypeNoAnswer")}</strong>
+          </div>
+          <div>
+            <span className="muted">{t("profile.setupStatus")}</span>
+            <strong>
+              {aiReception ? aiReceptionStatusLabels[aiReception.status] : t("profile.aiStatusNotConfigured")}
+            </strong>
           </div>
           <div>
             <span className="muted">{t("profile.lastTested")}</span>
@@ -865,7 +880,10 @@ export const SalonProfilePage = () => {
           </label>
           <label className="field">
             <span>{t("profile.fallbackActivationCode")}</span>
-            <input value={aiReception?.activationCodeWithoutDelay ?? ""} readOnly />
+            <input
+              value={aiReception?.fallbackActivationCode ?? aiReception?.activationCodeWithoutDelay ?? ""}
+              readOnly
+            />
             <small>{t("profile.fallbackActivationCodeHint")}</small>
           </label>
           <label className="field">
@@ -916,12 +934,12 @@ export const SalonProfilePage = () => {
           >
             {t("profile.markTestCompleted")}
           </button>
-          <Link to="/calls" className="button-secondary">
+          <a href="#ai-reception-call-logs" className="button-secondary">
             {t("profile.viewCallLogs")}
-          </Link>
+          </a>
         </div>
 
-        <div className="stack">
+        <div className="stack" id="ai-reception-call-logs">
           <h3>{t("profile.recentCallrailLogs")}</h3>
           {aiReceptionCallLogs.length ? (
             <div className="table-wrap">
@@ -931,6 +949,7 @@ export const SalonProfilePage = () => {
                     <th>{t("profile.started")}</th>
                     <th>{t("profile.caller")}</th>
                     <th>{t("common.status")}</th>
+                    <th>{t("profile.summary")}</th>
                     <th>{t("profile.duration")}</th>
                     <th>{t("profile.recording")}</th>
                   </tr>
@@ -941,6 +960,7 @@ export const SalonProfilePage = () => {
                       <td>{item.startedAt ? formatDateTime(item.startedAt) : "-"}</td>
                       <td>{item.callerNumberFormatted || item.callerNumber || "-"}</td>
                       <td>{item.status}</td>
+                      <td>{item.summary ?? "-"}</td>
                       <td>{formatDuration(item.durationSeconds)}</td>
                       <td>
                         {item.recordingUrl ? (

@@ -4,6 +4,7 @@ import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
 import { useToast } from "../components/toast";
 import { formatDateTime } from "../lib/format";
 import type { Pagination } from "../types";
+import { useI18n } from "../lib/i18n";
 
 interface AlertItem {
   id: string;
@@ -22,6 +23,7 @@ interface AlertsResponse {
 
 export const AlertsPage = () => {
   const { notify } = useToast();
+  const { t } = useI18n();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
@@ -62,7 +64,12 @@ export const AlertsPage = () => {
 
   return (
     <section className="card">
-      <h2>Cảnh báo</h2>
+      <div className="section-header">
+        <div>
+          <h2>{t("alerts.title")}</h2>
+          <p className="muted">{t("alerts.hint")}</p>
+        </div>
+      </div>
       {alerts.length ? (
         <div className="mobile-list">
           {alerts.map((alert) => (
@@ -74,14 +81,14 @@ export const AlertsPage = () => {
               </small>
               {!alert.readAt ? (
                 <button type="button" className="button-secondary" onClick={() => markRead(alert.id)}>
-                  Đã xem
+                  {t("alerts.read")}
                 </button>
               ) : null}
             </article>
           ))}
         </div>
       ) : (
-        <EmptyBlock message="Chưa có cảnh báo." />
+        <EmptyBlock message={t("alerts.empty")} />
       )}
     </section>
   );

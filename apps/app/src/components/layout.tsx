@@ -15,6 +15,7 @@ const ownerNav = [
   { to: "/availability", labelKey: "nav.availability" },
   { to: "/messages", labelKey: "nav.messages" },
   { to: "/alerts", labelKey: "nav.alerts" },
+  { to: "/call-center", labelKey: "nav.callCenter" },
   { to: "/calls", labelKey: "nav.calls" },
   { to: "/ai-logs", labelKey: "nav.aiLogs" },
   { to: "/billing", labelKey: "nav.billing" }

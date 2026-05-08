@@ -2,6 +2,8 @@ import { FormEvent, useEffect, useState } from "react";
 import { apiGet, apiPost, apiPut, extractErrorMessage } from "../lib/api";
 import { ErrorBlock, LoadingBlock } from "../components/states";
 import { useToast } from "../components/toast";
+import { getStaffTitleLabel } from "../lib/form-options";
+import { statusLabelKey, useI18n } from "../lib/i18n";
 
 interface StaffProfileResponse {
   user: {
@@ -22,6 +24,7 @@ interface StaffProfileResponse {
 
 export const MyProfilePage = () => {
   const { notify } = useToast();
+  const { t } = useI18n();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [profile, setProfile] = useState<StaffProfileResponse | null>(null);
@@ -65,7 +68,7 @@ export const MyProfilePage = () => {
         phone: form.phone || null
       });
       setProfile(response);
-      notify("success", "Đã cập nhật hồ sơ.");
+      notify("success", t("myProfile.saved"));
     } catch (saveError) {
       notify("error", extractErrorMessage(saveError));
     }
@@ -85,7 +88,7 @@ export const MyProfilePage = () => {
         currentPassword: "",
         newPassword: ""
       });
-      notify("success", "Đã đổi mật khẩu.");
+      notify("success", t("myProfile.passwordChanged"));
     } catch (changeError) {
       notify("error", extractErrorMessage(changeError));
     }
@@ -100,20 +103,47 @@ export const MyProfilePage = () => {
   }
 
   if (!profile) {
-    return <ErrorBlock message="Chưa tải được hồ sơ nhân viên." onRetry={load} />;
+    return <ErrorBlock message={t("myProfile.loadError")} onRetry={load} />;
   }
 
   return (
     <div className="stack">
       <section className="card">
-        <h2>Hồ sơ của tôi</h2>
+        <div className="section-header">
+          <div>
+            <h2>{t("myProfile.title")}</h2>
+            <p className="muted">{profile.user.email}</p>
+          </div>
+          <div className="summary-badges">
+            <span className={profile.user.isActive ? "status-pill success" : "status-pill warning"}>
+              {statusLabelKey(profile.staff.status) ? t(statusLabelKey(profile.staff.status)!) : profile.staff.status}
+            </span>
+            <span className={profile.staff.isBookable ? "status-pill info" : "status-pill warning"}>
+              {profile.staff.isBookable ? t("common.enabled") : t("common.disabled")}
+            </span>
+          </div>
+        </div>
+        <div className="metrics-grid">
+          <div>
+            <span className="muted">{t("myProfile.jobTitle")}</span>
+            <strong>{getStaffTitleLabel(profile.staff.title, t)}</strong>
+          </div>
+          <div>
+            <span className="muted">{t("myProfile.bookable")}</span>
+            <strong>{profile.staff.isBookable ? t("common.enabled") : t("common.disabled")}</strong>
+          </div>
+        </div>
+      </section>
+
+      <section className="card">
+        <h2>{t("myProfile.accountTitle")}</h2>
         <form className="form-grid two-columns" onSubmit={saveProfile}>
           <label className="field">
-            <span>Email</span>
+            <span>{t("common.email")}</span>
             <input value={profile.user.email} disabled />
           </label>
           <label className="field">
-            <span>Họ tên</span>
+            <span>{t("myProfile.fullName")}</span>
             <input
               value={form.fullName}
               onChange={(event) => setForm((prev) => ({ ...prev, fullName: event.target.value }))}
@@ -121,29 +151,32 @@ export const MyProfilePage = () => {
             />
           </label>
           <label className="field">
-            <span>Số điện thoại</span>
+            <span>{t("myProfile.phone")}</span>
             <input
               value={form.phone}
               onChange={(event) => setForm((prev) => ({ ...prev, phone: event.target.value }))}
             />
           </label>
           <label className="field">
-            <span>Trạng thái</span>
-            <input value={profile.staff.status} disabled />
+            <span>{t("myProfile.status")}</span>
+            <input
+              value={statusLabelKey(profile.staff.status) ? t(statusLabelKey(profile.staff.status)!) : profile.staff.status}
+              disabled
+            />
           </label>
           <div className="form-actions">
             <button type="submit" className="button-primary">
-              Lưu hồ sơ
+              {t("myProfile.save")}
             </button>
           </div>
         </form>
       </section>
 
       <section className="card">
-        <h2>Đổi mật khẩu</h2>
+        <h2>{t("myProfile.passwordTitle")}</h2>
         <form className="form-grid two-columns" onSubmit={changePassword}>
           <label className="field">
-            <span>Mật khẩu hiện tại</span>
+            <span>{t("myProfile.currentPassword")}</span>
             <input
               type="password"
               value={passwordForm.currentPassword}
@@ -154,7 +187,7 @@ export const MyProfilePage = () => {
             />
           </label>
           <label className="field">
-            <span>Mật khẩu mới</span>
+            <span>{t("myProfile.newPassword")}</span>
             <input
               type="password"
               minLength={8}
@@ -164,10 +197,11 @@ export const MyProfilePage = () => {
               }
               required
             />
+            <small>{t("myProfile.passwordHint")}</small>
           </label>
           <div className="form-actions">
             <button type="submit" className="button-primary">
-              Đổi mật khẩu
+              {t("myProfile.passwordTitle")}
             </button>
           </div>
         </form>
