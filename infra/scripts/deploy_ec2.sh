@@ -24,13 +24,16 @@ if [[ -f "${ROOT_DIR}/infra/nginx/default-ssl.conf" ]]; then
   fi
 fi
 
-"${COMPOSE[@]}" up -d --build --remove-orphans
-"${COMPOSE[@]}" exec -T api npm run prisma:migrate:deploy
-"${COMPOSE[@]}" exec -T nginx nginx -s reload
+"${COMPOSE[@]}" build
+"${COMPOSE[@]}" up -d postgres
+"${COMPOSE[@]}" run --rm --no-deps api npm run prisma:migrate:deploy
 
 if [[ "${RUN_SEED:-false}" == "true" ]]; then
-  "${COMPOSE[@]}" exec -T api npm run prisma:seed
+  "${COMPOSE[@]}" run --rm --no-deps api npm run prisma:seed
 fi
+
+"${COMPOSE[@]}" up -d --remove-orphans
+"${COMPOSE[@]}" exec -T nginx nginx -s reload
 
 "${COMPOSE[@]}" ps
 echo "Deployment completed successfully."

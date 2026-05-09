@@ -1279,9 +1279,7 @@ export const SalonDetailPage = () => {
             <strong>{t("salonDetail.integrationReadiness")}</strong>
             <span
               className={
-                salon.integrationStatuses.amazonConnect.configured &&
-                salon.integrationStatuses.callRail.configured &&
-                salon.integrationStatuses.vertex.configured
+                salon.integrationStatuses.amazonConnect.configured
                   ? "status-pill success"
                   : "status-pill warning"
               }
@@ -1501,7 +1499,7 @@ export const SalonDetailPage = () => {
               <span>
                 {salon.integrationStatuses.callRail.configured
                   ? t("salonDetail.configured")
-                  : t("salonDetail.attentionRequired")}
+                  : t("salonDetail.optional")}
               </span>
               <small>
                 {t("salonDetail.activeConfigCount")}: {salon.integrationStatuses.callRail.activeConfigCount}
@@ -1511,11 +1509,11 @@ export const SalonDetailPage = () => {
               </small>
             </article>
             <article className="mobile-item">
-              <strong>Vertex AI</strong>
+              <strong>Optional legacy AI</strong>
               <span>
                 {salon.integrationStatuses.vertex.configured
                   ? t("salonDetail.configured")
-                  : t("salonDetail.attentionRequired")}
+                  : t("salonDetail.optional")}
               </span>
               <small>
                 {t("salonDetail.activeConfigCount")}: {salon.integrationStatuses.vertex.activeConfigCount}

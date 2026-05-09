@@ -6,6 +6,8 @@ ADMIN_WEB_URL="${ADMIN_WEB_URL:-https://admin-new-nail.kendemo.com}"
 APP_WEB_URL="${APP_WEB_URL:-https://app-new-nail.kendemo.com}"
 ADMIN_EMAIL="${ADMIN_EMAIL:-admin@fastaibooking.local}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-Admin123!}"
+CALL_PROVIDER="${CALL_PROVIDER:-amazon_connect}"
+INTERNAL_API_TOKEN="${FASTAIBOOKING_API_INTERNAL_TOKEN:-}"
 
 timestamp="$(date +%s)"
 owner_email="owner.${timestamp}@fastaibooking.test"
@@ -13,6 +15,8 @@ owner_password="Owner123!Test"
 owner_new_password="Owner123!TestNew"
 staff_login_password="Staff123!Test"
 staff_email="staff.${timestamp}@fastaibooking.test"
+call_center_email="agent.${timestamp}@fastaibooking.test"
+call_center_password="Agent123!Test"
 
 tmp_body="$(mktemp)"
 trap 'rm -f "$tmp_body"' EXIT
@@ -32,10 +36,21 @@ with open(body_path, "r", encoding="utf-8") as handle:
 
 cur = data
 for part in path:
-    if part.isdigit():
-        cur = cur[int(part)]
-    else:
-        cur = cur[part]
+    try:
+        if part.isdigit():
+            index = int(part)
+            if not isinstance(cur, list) or index >= len(cur):
+                print("")
+                sys.exit(0)
+            cur = cur[index]
+        else:
+            if not isinstance(cur, dict) or part not in cur:
+                print("")
+                sys.exit(0)
+            cur = cur[part]
+    except (IndexError, KeyError, TypeError):
+        print("")
+        sys.exit(0)
 
 if cur is None:
     print("")
@@ -136,7 +151,7 @@ register_payload="$(cat <<JSON
   "fullName":"Smoke Owner",
   "email":"${owner_email}",
   "password":"${owner_password}",
-    "phone":"+12125550101",
+  "phone":"+12125550101",
   "salon":{
     "name":"Smoke Test Salon ${timestamp}",
     "contactEmail":"${owner_email}",
@@ -183,6 +198,28 @@ assert_status "200" "salon settings get"
 
 request PUT "${BASE_URL}/api/v1/salon/settings" "{\"bookingLeadTimeMinutes\":15}" "$owner_access_token"
 assert_status "200" "salon settings update"
+
+request POST "${BASE_URL}/api/v1/admin/auth/login" "{\"email\":\"${ADMIN_EMAIL}\",\"password\":\"${ADMIN_PASSWORD}\"}"
+assert_status "200" "admin login"
+admin_token="$(json_get "data.accessToken")"
+
+request GET "${BASE_URL}/api/v1/admin/salons" "" "$admin_token"
+assert_status "200" "admin salons list"
+
+if [[ -n "${salon_id}" ]]; then
+  request GET "${BASE_URL}/api/v1/admin/salons/${salon_id}" "" "$admin_token"
+  assert_status "200" "admin salon detail"
+fi
+
+request POST "${BASE_URL}/api/v1/admin/call-center/agents" "{\"fullName\":\"Smoke Agent\",\"email\":\"${call_center_email}\",\"phone\":\"+12125550151\",\"password\":\"${call_center_password}\"}" "$admin_token"
+assert_status "201" "admin call center agent create"
+call_center_agent_id="$(json_get "data.id")"
+
+request PUT "${BASE_URL}/api/v1/admin/salons/${salon_id}/call-center-assignments" "{\"agentUserIds\":[\"${call_center_agent_id}\"]}" "$admin_token"
+assert_status "200" "admin call center assignment update"
+
+request PUT "${BASE_URL}/api/v1/admin/salons/${salon_id}/settings" '{"callCenterEnabled":true,"callbackRequestEnabled":true,"voicemailEnabled":true,"smsFallbackEnabled":false,"callLogVisibility":"OWNER_STAFF_OPERATOR"}' "$admin_token"
+assert_status "200" "admin call center settings update"
 
 request POST "${BASE_URL}/api/v1/staff" "{\"fullName\":\"Smoke Staff\",\"email\":\"${staff_email}\",\"phone\":\"+12125550111\",\"title\":\"Technician\",\"createLogin\":true,\"password\":\"${staff_login_password}\"}" "$owner_access_token"
 assert_status "201" "staff create"
@@ -277,32 +314,74 @@ if [[ "$http_code" != "201" && "$http_code" != "400" ]]; then
 fi
 echo "OK [appointment create from ai] status=${http_code}"
 
-callrail_payload="$(cat <<JSON
+request GET "${BASE_URL}/api/v1/availability/slots?staffId=${staff_id}&serviceId=${service_id}&date=${slot_date}&intervalMinutes=15" "" "$owner_access_token"
+assert_status "200" "availability slots for amazon connect internal booking"
+ai_internal_slot_start="$(json_get "data.slots.0.startTime")"
+if [[ -z "${ai_internal_slot_start}" ]]; then
+  ai_internal_slot_start="${slot_start}"
+fi
+
+if [[ -z "${INTERNAL_API_TOKEN}" ]]; then
+  echo "FAILED [ai internal appointment endpoint] FASTAIBOOKING_API_INTERNAL_TOKEN is required."
+  exit 1
+fi
+
+ai_internal_payload="$(cat <<JSON
 {
-  "event_type":"call.completed",
-  "event_id":"evt-${timestamp}",
-  "call_id":"call-${timestamp}",
-  "salon_id":"${salon_id}",
-  "status":"completed",
-  "customer_phone_number":"+12125550131",
-  "tracking_phone_number":"+12125550141",
-  "source_name":"Smoke Test Campaign",
-  "start_time":"${slot_start}",
-  "duration_seconds":300,
-  "transcript":"My name is Smoke Caller and my phone is +12125550131. Please book Smoke Service with Smoke Staff on ${slot_start}."
+  "salonId":"${salon_id}",
+  "customerName":"Smoke AI Caller",
+  "customerPhone":"+12125550131",
+  "serviceName":"Smoke Service",
+  "requestedDate":"${ai_internal_slot_start}",
+  "staffPreference":"Smoke Staff",
+  "source":"amazon_connect_smoke_test",
+  "amazonConnectContactId":"smoke-contact-${timestamp}",
+  "amazonConnectPhoneNumber":"+12125550141",
+  "calledNumber":"+12125550141"
 }
 JSON
 )"
 
-request POST "${BASE_URL}/api/v1/integrations/callrail/webhook" "$callrail_payload"
-assert_status "202" "callrail webhook ingest"
+request POST "${BASE_URL}/api/v1/ai/appointments" "$ai_internal_payload" "$INTERNAL_API_TOKEN"
+assert_status "201" "ai internal amazon connect appointment"
+call_session_id="$(json_get "data.callSessionId")"
 
-request POST "${BASE_URL}/api/v1/integrations/callrail/webhook" "$callrail_payload"
-assert_status "202" "callrail webhook idempotent ingest"
+if [[ -z "${call_session_id}" ]]; then
+  echo "FAILED [ai internal call session] expected callSessionId"
+  cat "$tmp_body"
+  exit 1
+fi
+echo "OK [ai internal call session] id=${call_session_id}"
+
+if [[ "${CALL_PROVIDER}" == "callrail" ]]; then
+  callrail_payload="$(cat <<JSON
+{
+  "event_type":"call.completed",
+  "event_id":"evt-${timestamp}",
+  "call_id":"callrail-${timestamp}",
+  "salon_id":"${salon_id}",
+  "status":"completed",
+  "customer_phone_number":"+12125550139",
+  "tracking_phone_number":"+12125550149",
+  "source_name":"Smoke Test Campaign",
+  "start_time":"${ai_internal_slot_start}",
+  "duration_seconds":300,
+  "transcript":"My name is Smoke Attribution Caller and my phone is +12125550139."
+}
+JSON
+)"
+
+  request POST "${BASE_URL}/api/v1/integrations/callrail/webhook" "$callrail_payload"
+  assert_status "202" "optional callrail webhook ingest"
+
+  request POST "${BASE_URL}/api/v1/integrations/callrail/webhook" "$callrail_payload"
+  assert_status "202" "optional callrail webhook idempotent ingest"
+else
+  echo "SKIP [optional callrail webhook] CALL_PROVIDER=${CALL_PROVIDER}"
+fi
 
 request GET "${BASE_URL}/api/v1/calls" "" "$owner_access_token"
 assert_status "200" "calls list"
-call_session_id="$(json_get "data.items.0.id")"
 
 request GET "${BASE_URL}/api/v1/calls/${call_session_id}" "" "$owner_access_token"
 assert_status "200" "call detail"
@@ -345,6 +424,93 @@ echo "OK [ai booking from text success] status=${ai_booking_status}"
 
 request POST "${BASE_URL}/api/v1/ai/booking-from-transcript" "{\"transcriptText\":\"My name is Smoke Caller and my phone is +12125550131. Book Smoke Service with Smoke Staff on ${ai_slot_start}.\",\"callSessionId\":\"${call_session_id}\",\"transcriptSource\":\"smoke_test\",\"createCustomerIfMissing\":true}" "$owner_access_token"
 assert_status "200" "ai booking from transcript"
+
+request GET "${BASE_URL}/api/v1/call-center/runtime" "" "$owner_access_token"
+assert_status "200" "owner call center runtime"
+
+request GET "${BASE_URL}/api/v1/call-center/queue" "" "$owner_access_token"
+assert_status "200" "owner call center queue"
+
+request POST "${BASE_URL}/api/v1/ai/booking-from-text" "{\"text\":\"This is Smoke Escalation and my phone is +12125550132. I need a real person to help with my appointment.\",\"callSessionId\":\"${call_session_id}\",\"createCustomerIfMissing\":true}" "$owner_access_token"
+assert_status "200" "ai human escalation from text"
+escalation_id="$(json_get "data.escalation.id")"
+if [[ -z "${escalation_id}" ]]; then
+  echo "FAILED [ai human escalation id] expected escalation id"
+  cat "$tmp_body"
+  exit 1
+fi
+echo "OK [ai human escalation id] id=${escalation_id}"
+
+request POST "${BASE_URL}/api/v1/auth/login-call-center" "{\"email\":\"${call_center_email}\",\"password\":\"${call_center_password}\"}"
+assert_status "200" "call center login"
+call_center_access_token="$(json_get "data.accessToken")"
+call_center_refresh_token="$(json_get "data.refreshToken")"
+
+request GET "${BASE_URL}/api/v1/auth/me" "" "$call_center_access_token"
+assert_status "200" "call center auth me"
+
+request GET "${BASE_URL}/api/v1/call-center/runtime" "" "$call_center_access_token"
+assert_status "200" "operator call center runtime"
+
+request GET "${BASE_URL}/api/v1/call-center/salons" "" "$call_center_access_token"
+assert_status "200" "operator assigned salons"
+
+request GET "${BASE_URL}/api/v1/call-center/salons/${salon_id}" "" "$call_center_access_token"
+assert_status "200" "operator assigned salon detail"
+
+request GET "${BASE_URL}/api/v1/call-center/salons/${salon_id}/staff" "" "$call_center_access_token"
+assert_status "200" "operator assigned salon staff"
+
+request GET "${BASE_URL}/api/v1/call-center/salons/${salon_id}/services" "" "$call_center_access_token"
+assert_status "200" "operator assigned salon services"
+
+request GET "${BASE_URL}/api/v1/call-center/salons/${salon_id}/customers?q=Smoke" "" "$call_center_access_token"
+assert_status "200" "operator assigned salon customers"
+
+request GET "${BASE_URL}/api/v1/call-center/queue?status=QUEUED" "" "$call_center_access_token"
+assert_status "200" "operator queued escalations"
+
+request GET "${BASE_URL}/api/v1/call-center/queue/${escalation_id}" "" "$call_center_access_token"
+assert_status "200" "operator escalation detail"
+
+request POST "${BASE_URL}/api/v1/call-center/queue/${escalation_id}/accept" "{\"amazonConnectContactId\":\"smoke-contact-${timestamp}\"}" "$call_center_access_token"
+assert_status "200" "operator escalation accept"
+
+request PATCH "${BASE_URL}/api/v1/call-center/queue/${escalation_id}" '{"operatorNotes":"Smoke test operator note","qaNotes":"Smoke QA note","resolution":"Operator is handling the caller."}' "$call_center_access_token"
+assert_status "200" "operator escalation update"
+
+request GET "${BASE_URL}/api/v1/availability/slots?staffId=${staff_id}&serviceId=${service_id}&date=${slot_date}&intervalMinutes=15" "" "$owner_access_token"
+assert_status "200" "availability slots for operator appointment"
+operator_slot_start="$(json_get "data.slots.0.startTime")"
+if [[ -z "${operator_slot_start}" ]]; then
+  operator_slot_start="${slot_start}"
+fi
+
+request POST "${BASE_URL}/api/v1/call-center/salons/${salon_id}/appointments" "{\"customerId\":\"${customer_id}\",\"staffId\":\"${staff_id}\",\"serviceId\":\"${service_id}\",\"startTime\":\"${operator_slot_start}\",\"notes\":\"Created by operator smoke test\",\"status\":\"CONFIRMED\"}" "$call_center_access_token"
+assert_status "201" "operator appointment create"
+operator_appointment_id="$(json_get "data.id")"
+
+request PATCH "${BASE_URL}/api/v1/call-center/salons/${salon_id}/appointments/${operator_appointment_id}" '{"notes":"Updated by operator smoke test","status":"IN_PROGRESS"}' "$call_center_access_token"
+assert_status "200" "operator appointment update"
+
+request GET "${BASE_URL}/api/v1/availability/slots?staffId=${staff_id}&serviceId=${service_id}&date=${slot_date}&intervalMinutes=15" "" "$owner_access_token"
+assert_status "200" "availability slots for operator reschedule"
+operator_reschedule_start="$(json_get "data.slots.0.startTime")"
+if [[ -z "${operator_reschedule_start}" ]]; then
+  operator_reschedule_start="${operator_slot_start}"
+fi
+
+request PATCH "${BASE_URL}/api/v1/call-center/salons/${salon_id}/appointments/${operator_appointment_id}/reschedule" "{\"startTime\":\"${operator_reschedule_start}\"}" "$call_center_access_token"
+assert_status "200" "operator appointment reschedule"
+
+request PATCH "${BASE_URL}/api/v1/call-center/salons/${salon_id}/appointments/${operator_appointment_id}/cancel" '{"reason":"Smoke test operator cancel"}' "$call_center_access_token"
+assert_status "200" "operator appointment cancel"
+
+request POST "${BASE_URL}/api/v1/call-center/queue/${escalation_id}/complete" '{"resolution":"Smoke test completed the human escalation.","operatorNotes":"Completed by smoke test","qaNotes":"Workflow verified"}' "$call_center_access_token"
+assert_status "200" "operator escalation complete"
+
+request POST "${BASE_URL}/api/v1/auth/logout" "{\"refreshToken\":\"${call_center_refresh_token}\"}"
+assert_status "200" "call center logout"
 
 request GET "${BASE_URL}/api/v1/availability/slots?staffId=${staff_id}&serviceId=${service_id}&date=${slot_date}&intervalMinutes=15" "" "$owner_access_token"
 assert_status "200" "availability slots for staff smoke appointment"

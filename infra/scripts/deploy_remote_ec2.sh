@@ -20,6 +20,9 @@ rsync -az --delete -e "${RSYNC_RSH}" \
   --exclude ".git" \
   --exclude ".idea" \
   --exclude ".env" \
+  --exclude "*.pem" \
+  --exclude "*.zip" \
+  --exclude "allmyne-tree-*.txt" \
   --exclude "fastAibooking.pem" \
   --exclude "fastAIBooking.zip" \
   --exclude "node_modules" \
