@@ -375,6 +375,16 @@ export const SalonProfilePage = () => {
     window.location.href = `tel:${encodeDialerCode(aiReception.activationCode)}`;
   };
 
+  const handleCopyActivationCode = async () => {
+    if (!aiReception?.activationCode) {
+      notify("error", t("profile.generateCodeFirst"));
+      return;
+    }
+
+    await navigator.clipboard.writeText(aiReception.activationCode);
+    notify("success", t("profile.copyCodeSuccess"));
+  };
+
   const handleMarkTestCompleted = async () => {
     if (!salonId) {
       notify("error", t("profile.missingSalonContext"));
@@ -407,6 +417,76 @@ export const SalonProfilePage = () => {
 
   return (
     <div className="stack">
+      <section className="card phone-flow-card">
+        <div className="section-header">
+          <div>
+            <h2>{t("profile.phoneFlowTitle")}</h2>
+            <p className="muted">{t("profile.phoneFlowHint")}</p>
+          </div>
+          <span className={aiReception ? aiReceptionStatusClasses[aiReception.status] : "status-pill warning"}>
+            {aiReception ? aiReceptionStatusLabels[aiReception.status] : t("profile.aiStatusNotConfigured")}
+          </span>
+        </div>
+
+        <div className="phone-flow-steps">
+          <article>
+            <span>1</span>
+            <strong>{t("profile.phoneFlowCustomer")}</strong>
+            <p>{aiReception?.originalPhoneNumberFormatted ?? (profileForm.originalPhoneNumber || t("profile.addSalonPhoneFirst"))}</p>
+          </article>
+          <article>
+            <span>2</span>
+            <strong>{t("profile.phoneFlowForward")}</strong>
+            <p>{aiReception?.activationCode ?? t("profile.generateCodeFirst")}</p>
+          </article>
+          <article>
+            <span>3</span>
+            <strong>{t("profile.phoneFlowAi")}</strong>
+            <p>{aiReception?.forwardToNumberFormatted ?? (profileForm.customerIncomingPhoneNumber || "-")}</p>
+          </article>
+        </div>
+
+        <div className="simple-callout">
+          <strong>{t("profile.phoneFlowPlainTitle")}</strong>
+          <p>{t("profile.phoneFlowPlainCopy")}</p>
+        </div>
+
+        <div className="inline-actions">
+          <button
+            type="button"
+            className="button-primary"
+            onClick={handleOpenDialer}
+            disabled={aiReceptionSubmitting || !aiReception?.activationCode}
+          >
+            {t("profile.openDialer")}
+          </button>
+          <button
+            type="button"
+            className="button-secondary"
+            onClick={() => void handleCopyActivationCode()}
+            disabled={aiReceptionSubmitting || !aiReception?.activationCode}
+          >
+            {t("profile.copyCode")}
+          </button>
+          <button
+            type="button"
+            className="button-secondary"
+            onClick={() => void handleGenerateSetupCode()}
+            disabled={aiReceptionSubmitting}
+          >
+            {t("profile.generateCode")}
+          </button>
+          <button
+            type="button"
+            className="button-secondary"
+            onClick={() => void handleMarkTestCompleted()}
+            disabled={aiReceptionSubmitting}
+          >
+            {t("profile.markTestCompleted")}
+          </button>
+        </div>
+      </section>
+
       <section className="card">
         <h2>{t("profile.title")}</h2>
         <form className="form-grid two-columns" onSubmit={saveProfile}>

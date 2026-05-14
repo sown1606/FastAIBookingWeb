@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiGet, apiPatch, apiPost, extractErrorMessage } from "../lib/api";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
@@ -189,61 +189,11 @@ interface EscalationDetail {
   customerMatches: CustomerItem[];
 }
 
-const loadAmazonConnectScript = async () => {
-  const win = window as Window & {
-    connect?: any;
-    __amazonConnectScriptPromise?: Promise<void>;
-  };
-
-  if (win.connect?.core) {
-    return;
-  }
-
-  if (!win.__amazonConnectScriptPromise) {
-    win.__amazonConnectScriptPromise = new Promise((resolve, reject) => {
-      const script = document.createElement("script");
-      script.src = "https://connect-cdn.amazonaws.com/amazon-connect-streams.js";
-      script.async = true;
-      script.onload = () => resolve();
-      script.onerror = () => reject(new Error("AMAZON_CONNECT_SCRIPT_LOAD_FAILED"));
-      document.head.appendChild(script);
-    });
-  }
-
-  await win.__amazonConnectScriptPromise;
-};
-
-const extractPhoneFromContact = (contact: any): string | null => {
-  const connections = contact?.getConnections?.() ?? [];
-  for (const connection of connections) {
-    const endpoint = connection?.getEndpoint?.();
-    const candidate =
-      endpoint?.phoneNumber ??
-      endpoint?.address ??
-      endpoint?.endpoint ??
-      endpoint?.name ??
-      null;
-    if (typeof candidate === "string" && candidate.trim().length > 0) {
-      return candidate;
-    }
-  }
-
-  const initialEndpoint = contact?.getInitialConnection?.()?.getEndpoint?.();
-  const fallback =
-    initialEndpoint?.phoneNumber ??
-    initialEndpoint?.address ??
-    initialEndpoint?.endpoint ??
-    null;
-
-  return typeof fallback === "string" && fallback.trim().length > 0 ? fallback : null;
-};
-
 export const CallCenterPage = () => {
   const { session } = useAuth();
   const { notify } = useToast();
   const { openFormDialog, FormDialog } = useFormDialog();
   const { t } = useI18n();
-  const ccpContainerRef = useRef<HTMLDivElement | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -274,15 +224,11 @@ export const CallCenterPage = () => {
     qaNotes: "",
     resolution: ""
   });
-  const [ccpError, setCcpError] = useState("");
-  const [ccpSetupState, setCcpSetupState] = useState<"disabled" | "loading" | "ready" | "error">("disabled");
-  const [agentState, setAgentState] = useState("NOT_INITIALIZED");
-  const [contactState, setContactState] = useState("IDLE");
-  const [activeCallerPhone, setActiveCallerPhone] = useState<string | null>(null);
-  const [activeAmazonConnectContactId, setActiveAmazonConnectContactId] = useState<string | null>(null);
+  const [ccpError] = useState("");
   const isOwner = session?.user.role === "SALON_OWNER";
   const configuredCcpUrl = import.meta.env.VITE_AMAZON_CONNECT_CCP_URL?.trim();
   const ccpUrl = configuredCcpUrl || runtime?.amazonConnect.ccpUrl || null;
+  const ccpSettingsUrl = `${(ccpUrl ?? "https://fastaibooking.my.connect.aws/ccp-v2/").replace(/\/+$/, "")}/settings`;
 
   const appointmentStatusOptions = useMemo(
     () => ["SCHEDULED", "CONFIRMED", "CANCELED", "NO_SHOW"].map((value) => ({
@@ -291,19 +237,6 @@ export const CallCenterPage = () => {
     })),
     [t]
   );
-
-  const translateConnectState = (value: string) => {
-    switch (value) {
-      case "NOT_INITIALIZED":
-        return t("common.loading");
-      case "IDLE":
-      case "UNKNOWN":
-      case "ENDED":
-        return t("common.none");
-      default:
-        return value;
-    }
-  };
 
   const translateRoutingOutcome = (value: string | null | undefined) => {
     if (!value) {
@@ -344,7 +277,7 @@ export const CallCenterPage = () => {
     const nextId =
       preserveSelected && selectedEscalationId
         ? items.find((item) => item.id === selectedEscalationId)?.id
-        : items[0]?.id ?? "";
+        : (items.find((item) => item.status !== "CLOSED") ?? items[0])?.id ?? "";
     if (nextId) {
       setSelectedEscalationId(nextId);
     } else {
@@ -405,91 +338,6 @@ export const CallCenterPage = () => {
       setError(extractErrorMessage(detailError));
     });
   }, [selectedEscalationId]);
-
-  useEffect(() => {
-    if (!runtime?.amazonConnect.configured || !ccpUrl || !ccpContainerRef.current) {
-      setCcpSetupState("disabled");
-      return;
-    }
-
-    let disposed = false;
-
-    const initCcp = async () => {
-      try {
-        setCcpError("");
-        setCcpSetupState("loading");
-        await loadAmazonConnectScript();
-        if (disposed || !ccpContainerRef.current) {
-          return;
-        }
-
-        const win = window as Window & { connect?: any };
-        const connectApi = win.connect;
-        if (!connectApi?.core?.initCCP) {
-          throw new Error("AMAZON_CONNECT_CCP_INIT_FAILED");
-        }
-
-        connectApi.core.initCCP(ccpContainerRef.current, {
-          ccpUrl,
-          loginPopup: true,
-          loginPopupAutoClose: true,
-          region: runtime.amazonConnect.region ?? undefined,
-          softphone: {
-            allowFramedSoftphone: true
-          }
-        });
-
-        connectApi.agent((agent: any) => {
-          if (disposed) {
-            return;
-          }
-          const nextState = agent?.getState?.()?.name ?? "NOT_INITIALIZED";
-          setAgentState(nextState);
-          setCcpSetupState("ready");
-        });
-
-        connectApi.contact((contact: any) => {
-          if (disposed) {
-            return;
-          }
-
-          const updateContact = () => {
-            const nextState = contact?.getStatus?.()?.type ?? "UNKNOWN";
-            setContactState(nextState);
-            setActiveCallerPhone(extractPhoneFromContact(contact));
-            setActiveAmazonConnectContactId(contact?.getContactId?.() ?? null);
-          };
-
-          updateContact();
-          contact?.onIncoming?.(updateContact);
-          contact?.onConnected?.(updateContact);
-          contact?.onEnded?.(() => {
-            setContactState("ENDED");
-            setActiveCallerPhone(null);
-            setActiveAmazonConnectContactId(null);
-          });
-        });
-      } catch (initError) {
-        if (!disposed) {
-          const message = extractErrorMessage(initError);
-          setCcpSetupState("error");
-          setCcpError(
-            message === "AMAZON_CONNECT_SCRIPT_LOAD_FAILED"
-              ? t("callCenter.errorScriptLoad")
-              : message === "AMAZON_CONNECT_CCP_INIT_FAILED"
-                ? t("callCenter.errorCcpInit")
-                : message
-          );
-        }
-      }
-    };
-
-    void initCcp();
-
-    return () => {
-      disposed = true;
-    };
-  }, [ccpUrl, runtime, t]);
 
   const changeSalon = async (salonId: string) => {
     setSelectedSalonId(salonId);
@@ -636,48 +484,11 @@ export const CallCenterPage = () => {
     }
 
     try {
-      await apiPost(`/api/v1/call-center/queue/${selectedEscalationId}/accept`, {
-        amazonConnectContactId: activeAmazonConnectContactId || undefined
-      });
+      await apiPost(`/api/v1/call-center/queue/${selectedEscalationId}/accept`, {});
       await Promise.all([loadQueue(), loadEscalationDetail(selectedEscalationId)]);
       notify("success", t("callCenter.accepted"));
     } catch (acceptError) {
       notify("error", extractErrorMessage(acceptError));
-    }
-  };
-
-  const matchActiveContact = async () => {
-    if (!activeCallerPhone && !activeAmazonConnectContactId) {
-      notify("info", t("callCenter.matchContactMissing"));
-      return;
-    }
-
-    const query = new URLSearchParams();
-    if (activeCallerPhone) {
-      query.set("callerPhone", activeCallerPhone);
-    }
-    if (activeAmazonConnectContactId) {
-      query.set("amazonConnectContactId", activeAmazonConnectContactId);
-    }
-
-    try {
-      const match = await apiGet<QueueItem | null>(`/api/v1/call-center/queue/match?${query.toString()}`);
-      if (!match) {
-        notify("info", t("callCenter.matchContactNotFound"));
-        return;
-      }
-
-      setSelectedEscalationId(match.id);
-      setQueue((prev) => {
-        if (prev.some((item) => item.id === match.id)) {
-          return prev.map((item) => (item.id === match.id ? match : item));
-        }
-        return [match, ...prev];
-      });
-      await loadEscalationDetail(match.id);
-      notify("success", t("callCenter.matchContactSelected"));
-    } catch (matchError) {
-      notify("error", extractErrorMessage(matchError));
     }
   };
 
@@ -851,7 +662,10 @@ export const CallCenterPage = () => {
     }
   };
 
-  const openRequests = queue.filter((item) => item.status !== "CLOSED").length;
+  const selectedSalonQueue = selectedSalonId
+    ? queue.filter((item) => item.salon.id === selectedSalonId)
+    : queue;
+  const openRequests = selectedSalonQueue.filter((item) => item.status !== "CLOSED").length;
   const availableStaffCount = staff.filter((member) => member.currentWorkStatus === "AVAILABLE").length;
   const amazonConnectRuntimeReady = Boolean(runtime?.amazonConnect.configured);
   const amazonConnectPlatformReady = Boolean(runtime?.amazonConnect.adminConfigured);
@@ -897,15 +711,6 @@ export const CallCenterPage = () => {
   const visibleAppointments = useMemo(() => {
     return appointments.slice().sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
   }, [appointments]);
-  const ccpStatusLabel =
-    ccpSetupState === "loading"
-      ? t("callCenter.ccpStatusLoading")
-      : ccpSetupState === "ready"
-        ? t("callCenter.ccpStatusReady")
-        : ccpSetupState === "error"
-          ? t("callCenter.ccpStatusError")
-          : t("callCenter.ccpStatusDisabled");
-
   if (loading) {
     return <LoadingBlock />;
   }
@@ -1211,6 +1016,75 @@ export const CallCenterPage = () => {
     <div className="stack">
       <FormDialog />
 
+      <section className="card operator-focus-card">
+        <div className="section-header">
+          <div>
+            <h2>{t("callCenter.operatorSimpleTitle")}</h2>
+            <p className="muted">{t("callCenter.operatorSimpleHint")}</p>
+          </div>
+          <span className={amazonConnectReady ? "status-pill success" : "status-pill warning"}>
+            {amazonConnectReady ? t("callCenter.amazonReady") : t("callCenter.amazonPending")}
+          </span>
+        </div>
+
+        <div className="operator-focus-grid">
+          <label className="field">
+            <span>{t("callCenter.selectSalon")}</span>
+            <select
+              value={selectedSalonId}
+              onChange={(event) => void changeSalon(event.target.value)}
+              disabled={!salons.length}
+            >
+              {salons.map((salon) => (
+                <option key={salon.id} value={salon.id}>
+                  {salon.name}
+                </option>
+              ))}
+            </select>
+            <small>{t("callCenter.selectSalonHint")}</small>
+          </label>
+
+          <div className="simple-action-panel">
+            <a href={ccpUrl ?? "https://fastaibooking.my.connect.aws/ccp-v2/"} target="_blank" rel="noreferrer" className="button-primary">
+              {t("callCenter.ccpLink")}
+            </a>
+            <a href={ccpSettingsUrl} target="_blank" rel="noreferrer" className="button-secondary">
+              {t("callCenter.ccpSettingsLink")}
+            </a>
+            <button type="button" className="button-secondary" onClick={() => void loadQueue()}>
+              {t("callCenter.refreshQueue")}
+            </button>
+          </div>
+        </div>
+
+        <div className="metrics-grid compact-metrics">
+          <div>
+            <span className="muted">{t("callCenter.currentSalon")}</span>
+            <strong>{selectedSalonName}</strong>
+          </div>
+          <div>
+            <span className="muted">{t("callCenter.openRequests")}</span>
+            <strong>{openRequests}</strong>
+          </div>
+          <div>
+            <span className="muted">{t("callCenter.availableStaff")}</span>
+            <strong>{availableStaffCount}</strong>
+          </div>
+          <div>
+            <span className="muted">{t("callCenter.callerPhone")}</span>
+            <strong>{selectedEscalation?.callSession.callerPhone ?? t("common.none")}</strong>
+          </div>
+        </div>
+
+        <div className="call-center-next-steps">
+          <span>{t("callCenter.stepOpenCcp")}</span>
+          <span>{t("callCenter.stepPickSalon")}</span>
+          <span>{t("callCenter.stepHandleQueue")}</span>
+        </div>
+      </section>
+
+      <details className="advanced-config">
+        <summary>{t("callCenter.advancedConfig")}</summary>
       <section className="card">
         <div className="section-header">
           <div>
@@ -1340,80 +1214,45 @@ export const CallCenterPage = () => {
           <EmptyBlock message={t("callCenter.noAssignedSalons")} />
         )}
       </section>
+      </details>
 
       <section className="card-grid">
-        <article className="card stat-card">
-          <h3>{t("callCenter.queuedItems")}</h3>
-          <strong>{openRequests}</strong>
-        </article>
-        <article className="card stat-card">
-          <h3>{t("callCenter.availableStaff")}</h3>
-          <strong>{availableStaffCount}</strong>
-        </article>
-        <article className="card stat-card">
-          <h3>{t("callCenter.agentState")}</h3>
-          <strong>{translateConnectState(agentState)}</strong>
-        </article>
-        <article className="card stat-card">
-          <h3>{t("callCenter.currentContact")}</h3>
-          <strong>{activeCallerPhone ?? translateConnectState(contactState)}</strong>
-        </article>
-      </section>
-
-      <section className="card-grid">
-        <article className="card">
+        <article className="card simple-ccp-card">
           <div className="section-header">
-            <h3>{t("callCenter.softphoneTitle")}</h3>
-            <span className={ccpSetupState === "ready" ? "status-pill success" : "status-pill warning"}>
-              {ccpStatusLabel}
+            <div>
+              <h3>{t("callCenter.softphoneTitle")}</h3>
+              <p className="muted">{t("callCenter.directCcpHint")}</p>
+            </div>
+            <span className={amazonConnectReady ? "status-pill success" : "status-pill warning"}>
+              {amazonConnectReady ? t("callCenter.amazonReady") : t("callCenter.amazonPending")}
             </span>
           </div>
           {ccpError ? <div className="form-error">{ccpError}</div> : null}
-          <p className="muted">{amazonConnectReady ? t("callCenter.softphoneReadyHint") : t("callCenter.softphonePendingHint")}</p>
-          {ccpUrl ? (
-            <a href={ccpUrl} target="_blank" rel="noreferrer" className="button-secondary">
+          <div className="inline-actions">
+            <a href={ccpUrl ?? "https://fastaibooking.my.connect.aws/ccp-v2/"} target="_blank" rel="noreferrer" className="button-primary">
               {t("callCenter.ccpLink")}
             </a>
+            <a href={ccpSettingsUrl} target="_blank" rel="noreferrer" className="button-secondary">
+              {t("callCenter.ccpSettingsLink")}
+            </a>
+          </div>
+          {missingAmazonConnectItems.length ? (
+            <ul className="config-checklist compact">
+              {missingAmazonConnectItems.map((item) => <li key={item}>{item}</li>)}
+            </ul>
           ) : null}
-          {amazonConnectReady ? (
-            <div ref={ccpContainerRef} style={{ minHeight: 560 }} />
-          ) : (
-            <div className="softphone-placeholder">
-              <strong>{t("callCenter.softphoneDemoTitle")}</strong>
-              <p className="muted">{t("callCenter.softphoneDemoHint")}</p>
-              <ul className="config-checklist compact">
-                {missingAmazonConnectItems.length ? (
-                  missingAmazonConnectItems.map((item) => <li key={item}>{item}</li>)
-                ) : (
-                  <li>{t("callCenter.softphoneMissingRuntimeInfo")}</li>
-                )}
-              </ul>
-            </div>
-          )}
         </article>
 
         <article className="card">
           <h3>{t("callCenter.operatorContext")}</h3>
           <div className="mobile-list">
             <article className="mobile-item">
-              <strong>{t("callCenter.contactState")}</strong>
-              <span>{translateConnectState(contactState)}</span>
-            </article>
-            <article className="mobile-item">
               <strong>{t("callCenter.callerPhone")}</strong>
-              <span>{activeCallerPhone ?? selectedEscalation?.callSession.callerPhone ?? t("common.none")}</span>
+              <span>{selectedEscalation?.callSession.callerPhone ?? t("common.none")}</span>
             </article>
             <article className="mobile-item">
               <strong>{t("callCenter.contactId")}</strong>
-              <span>
-                {activeAmazonConnectContactId ??
-                  selectedEscalation?.callSession.providerCallId ??
-                  t("common.none")}
-              </span>
-            </article>
-            <article className="mobile-item">
-              <strong>{t("callCenter.currentSalon")}</strong>
-              <span>{selectedSalonName}</span>
+              <span>{selectedEscalation?.callSession.providerCallId ?? t("common.none")}</span>
             </article>
             <article className="mobile-item">
               <strong>{t("callCenter.queueStatus")}</strong>
@@ -1431,7 +1270,7 @@ export const CallCenterPage = () => {
 
       <section className="card">
         <h2>{t("callCenter.queueTitle")}</h2>
-        {queue.length ? (
+        {selectedSalonQueue.length ? (
           <div className="table-wrap">
             <table>
               <thead>
@@ -1446,7 +1285,7 @@ export const CallCenterPage = () => {
                 </tr>
               </thead>
               <tbody>
-                {queue.map((item) => {
+                {selectedSalonQueue.map((item) => {
                   const waitingSince = item.connectedAt ?? item.closedAt ?? new Date().toISOString();
                   const waitingMinutes = Math.max(
                     0,
@@ -1496,14 +1335,6 @@ export const CallCenterPage = () => {
           <div className="inline-actions">
             <button type="button" className="button-secondary" onClick={() => void loadQueue()}>
               {t("callCenter.refreshQueue")}
-            </button>
-            <button
-              type="button"
-              className="button-secondary"
-              onClick={() => void matchActiveContact()}
-              disabled={!activeCallerPhone && !activeAmazonConnectContactId}
-            >
-              {t("callCenter.matchActiveContact")}
             </button>
             <button
               type="button"

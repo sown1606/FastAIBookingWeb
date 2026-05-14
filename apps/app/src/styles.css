@@ -846,6 +846,93 @@ pre {
   font-weight: 700;
 }
 
+.operator-focus-card,
+.phone-flow-card,
+.simple-ccp-card {
+  display: grid;
+  gap: 16px;
+}
+
+.operator-focus-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: end;
+}
+
+.simple-action-panel {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.call-center-next-steps,
+.phone-flow-steps {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 1fr;
+}
+
+.call-center-next-steps span,
+.phone-flow-steps article,
+.simple-callout {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  padding: 12px;
+}
+
+.phone-flow-steps article {
+  display: grid;
+  gap: 6px;
+}
+
+.phone-flow-steps article > span {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--primary);
+  color: #fff;
+  font-weight: 800;
+}
+
+.phone-flow-steps p,
+.simple-callout p {
+  margin: 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.advanced-config {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.advanced-config > summary {
+  cursor: pointer;
+  padding: 14px 16px;
+  font-weight: 800;
+  color: var(--primary-strong);
+}
+
+.advanced-config > .card {
+  border: 0;
+  box-shadow: none;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 8px 8px;
+}
+
+.compact-metrics strong {
+  font-size: 1.05rem;
+  overflow-wrap: anywhere;
+}
+
 .mobile-list {
   display: grid;
   gap: 10px;
@@ -1637,6 +1724,15 @@ pre {
 
   .settings-panel {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .operator-focus-grid {
+    grid-template-columns: minmax(280px, 420px) minmax(0, 1fr);
+  }
+
+  .call-center-next-steps,
+  .phone-flow-steps {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .form-actions {
