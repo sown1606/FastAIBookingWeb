@@ -31,16 +31,38 @@ const STAFF_PASSWORD = "Staff123!";
 const CALL_CENTER_EMAIL = "agent.demo@fastaibooking.local";
 const CALL_CENTER_PASSWORD = "Agent123!";
 
-const DEMO_SALON_NAME = "Inails Demo Salon";
-const DEMO_ORIGINAL_PHONE = "+18487029493";
-const DEMO_TRACKING_PHONE = "+18485550100";
-const DEMO_ORIGINAL_PHONE_DIGITS = "18487029493";
-const DEMO_TRACKING_PHONE_DIGITS = "18485550100";
-const DEMO_CALL_FLOW_NAME = "AI Booking Reception";
-const DEMO_FORWARDING_ACTIVATION_CODE = "**61*18485550100**10#";
-const DEMO_FORWARDING_FALLBACK_CODE = "**61*18485550100#";
-const DEMO_FORWARDING_DEACTIVATION_CODE = "##61#";
-const DEMO_FORWARDING_STATUS_CODE = "*#61#";
+const normalizePhoneDigits = (value: string): string => value.replace(/\D/g, "");
+
+const toDemoPhone = (value: string, fallbackDigits: string): string => {
+  const digits = normalizePhoneDigits(value) || fallbackDigits;
+  return digits.startsWith("1") ? `+${digits}` : `+1${digits}`;
+};
+
+const DEMO_SALON_NAME = process.env.DEMO_SALON_NAME?.trim() || "Kiet Nails & Beauty";
+const DEMO_ORIGINAL_PHONE = toDemoPhone(process.env.DEMO_ORIGINAL_PHONE_NUMBER ?? "8487029493", "18487029493");
+const DEMO_TRACKING_PHONE = toDemoPhone(
+  process.env.AMAZON_CONNECT_PHONE_NUMBER ??
+    process.env.DEMO_FORWARDING_PHONE_NUMBER ??
+    "18485550100",
+  "18485550100"
+);
+const DEMO_ORIGINAL_PHONE_DIGITS = normalizePhoneDigits(DEMO_ORIGINAL_PHONE);
+const DEMO_TRACKING_PHONE_DIGITS = normalizePhoneDigits(DEMO_TRACKING_PHONE);
+const DEMO_CALL_FLOW_NAME = process.env.AMAZON_CONNECT_CALL_FLOW_NAME ?? "AI Booking Reception";
+const DEMO_CONNECT_INSTANCE_ID =
+  process.env.AMAZON_CONNECT_INSTANCE_ID ?? "demo-amazon-connect-instance";
+const DEMO_CONNECT_QUEUE_ID = process.env.AMAZON_CONNECT_QUEUE_ID_DEFAULT ?? "demo-shared-queue";
+const DEMO_CONNECT_ROUTING_PROFILE_ID =
+  process.env.AMAZON_CONNECT_ROUTING_PROFILE_ID ?? "demo-routing-profile";
+const DEMO_LEX_BOT_ID = process.env.AMAZON_LEX_BOT_ID ?? "demo-lex-booking-bot";
+const DEMO_LEX_BOT_ALIAS_ID =
+  process.env.AMAZON_LEX_BOT_ALIAS_ID ?? "demo-lex-booking-bot-alias";
+const DEMO_FORWARDING_ACTIVATION_CODE =
+  process.env.DEMO_FORWARDING_ACTIVATION_CODE?.trim() || `**61*${DEMO_TRACKING_PHONE_DIGITS}**10#`;
+const DEMO_FORWARDING_FALLBACK_CODE = `**61*${DEMO_TRACKING_PHONE_DIGITS}#`;
+const DEMO_FORWARDING_DEACTIVATION_CODE =
+  process.env.DEMO_FORWARDING_DEACTIVATION_CODE?.trim() || "##61#";
+const DEMO_FORWARDING_STATUS_CODE = process.env.DEMO_FORWARDING_STATUS_CODE?.trim() || "*#61#";
 
 const hashPassword = async (plainPassword: string): Promise<string> => {
   return bcrypt.hash(plainPassword, SALT_ROUNDS);
@@ -118,7 +140,7 @@ const run = async (): Promise<void> => {
 
   const ownerUser = await upsertUser({
     email: OWNER_EMAIL,
-    fullName: "Linh Nguyen",
+    fullName: "Kiet Nguyen",
     passwordHash: ownerPasswordHash,
     role: Role.SALON_OWNER,
     phone: DEMO_ORIGINAL_PHONE
@@ -264,7 +286,7 @@ const run = async (): Promise<void> => {
       callbackRequestEnabled: true,
       smsFallbackEnabled: true,
       aiGreetingPrompt:
-        "Thank you for calling Inails Demo Salon. I can help with bookings, service changes, or connect you with our call center team.",
+        `Thank you for calling ${DEMO_SALON_NAME}. I can help with bookings, service changes, or connect you with our call center team.`,
       callerLanguage: "en",
       callLogVisibility: "OWNER_STAFF_OPERATOR",
       notificationRecipients: [OWNER_EMAIL, DEMO_ORIGINAL_PHONE, CALL_CENTER_EMAIL],
@@ -285,7 +307,7 @@ const run = async (): Promise<void> => {
       callbackRequestEnabled: true,
       smsFallbackEnabled: true,
       aiGreetingPrompt:
-        "Thank you for calling Inails Demo Salon. I can help with bookings, service changes, or connect you with our call center team.",
+        `Thank you for calling ${DEMO_SALON_NAME}. I can help with bookings, service changes, or connect you with our call center team.`,
       callerLanguage: "en",
       callLogVisibility: "OWNER_STAFF_OPERATOR",
       notificationRecipients: [OWNER_EMAIL, DEMO_ORIGINAL_PHONE, CALL_CENTER_EMAIL],
@@ -976,25 +998,53 @@ const run = async (): Promise<void> => {
         salonId: salon.id,
         provider: ExternalProvider.AMAZON_CONNECT,
         configKey: "instance_id",
-        configValue: "demo-amazon-connect-instance"
+        configValue: DEMO_CONNECT_INSTANCE_ID
       },
       {
         salonId: salon.id,
         provider: ExternalProvider.AMAZON_CONNECT,
         configKey: "lex_bot_id",
-        configValue: "demo-lex-booking-bot"
+        configValue: DEMO_LEX_BOT_ID
+      },
+      {
+        salonId: salon.id,
+        provider: ExternalProvider.AMAZON_CONNECT,
+        configKey: "lex_bot_alias_id",
+        configValue: DEMO_LEX_BOT_ALIAS_ID
+      },
+      {
+        salonId: salon.id,
+        provider: ExternalProvider.AMAZON_CONNECT,
+        configKey: "contact_flow_id_ai_reception",
+        configValue:
+          process.env.AMAZON_CONNECT_CONTACT_FLOW_ID_AI_RECEPTION ??
+          "demo-ai-reception-contact-flow"
+      },
+      {
+        salonId: salon.id,
+        provider: ExternalProvider.AMAZON_CONNECT,
+        configKey: "contact_flow_id_human_escalation",
+        configValue:
+          process.env.AMAZON_CONNECT_CONTACT_FLOW_ID_HUMAN_ESCALATION ??
+          "demo-human-escalation-contact-flow"
       },
       {
         salonId: salon.id,
         provider: ExternalProvider.AMAZON_CONNECT,
         configKey: "queue_id",
-        configValue: "demo-shared-queue"
+        configValue: DEMO_CONNECT_QUEUE_ID
       },
       {
         salonId: salon.id,
         provider: ExternalProvider.AMAZON_CONNECT,
         configKey: "routing_profile_id",
-        configValue: "demo-routing-profile"
+        configValue: DEMO_CONNECT_ROUTING_PROFILE_ID
+      },
+      {
+        salonId: salon.id,
+        provider: ExternalProvider.AMAZON_CONNECT,
+        configKey: "booking_lambda_function_name",
+        configValue: process.env.BOOKING_LAMBDA_FUNCTION_NAME ?? "demo-booking-handler"
       }
     ]
   });
@@ -1009,7 +1059,7 @@ const run = async (): Promise<void> => {
       salonId: salon.id,
       provider: ExternalProvider.AMAZON_CONNECT,
       providerCallId: "demo-salon-ring-1",
-      providerCompanyId: "demo-amazon-connect-instance",
+      providerCompanyId: DEMO_CONNECT_INSTANCE_ID,
       callerPhone: customers[6]!.phone,
       originalPhoneNumber: DEMO_ORIGINAL_PHONE,
       dialedPhone: DEMO_ORIGINAL_PHONE,
@@ -1040,7 +1090,7 @@ const run = async (): Promise<void> => {
       salonId: salon.id,
       provider: ExternalProvider.AMAZON_CONNECT,
       providerCallId: "demo-forwarding-call-1",
-      providerCompanyId: "demo-amazon-connect-instance",
+      providerCompanyId: DEMO_CONNECT_INSTANCE_ID,
       callerPhone: customers[4]!.phone,
       originalPhoneNumber: DEMO_ORIGINAL_PHONE,
       dialedPhone: DEMO_TRACKING_PHONE,
@@ -1119,7 +1169,7 @@ const run = async (): Promise<void> => {
     data: {
       salonId: salon.id,
       provider: ExternalProvider.AMAZON_CONNECT,
-      model: "amazon-lex-booking-bot",
+      model: DEMO_LEX_BOT_ID,
       taskType: "parse_booking",
       requestText: aiBookingTranscript.transcriptText,
       requestPayload: {
@@ -1155,7 +1205,7 @@ const run = async (): Promise<void> => {
       salonId: salon.id,
       provider: ExternalProvider.AMAZON_CONNECT,
       providerCallId: "demo-escalation-open-1",
-      providerCompanyId: "demo-amazon-connect-instance",
+      providerCompanyId: DEMO_CONNECT_INSTANCE_ID,
       callerPhone: customers[7]!.phone,
       originalPhoneNumber: DEMO_ORIGINAL_PHONE,
       dialedPhone: DEMO_TRACKING_PHONE,
@@ -1222,7 +1272,7 @@ const run = async (): Promise<void> => {
     data: {
       salonId: salon.id,
       provider: ExternalProvider.AMAZON_CONNECT,
-      model: "amazon-lex-booking-bot",
+      model: DEMO_LEX_BOT_ID,
       taskType: "route_live_person_request",
       requestText: openEscalationTranscript.transcriptText,
       responseText: JSON.stringify({
@@ -1251,7 +1301,7 @@ const run = async (): Promise<void> => {
       escalationReason: "VIP reschedule requires a human operator.",
       requestedBy: "AI_RECEPTION",
       customerPhone: customers[7]!.phone,
-      queueId: "demo-shared-queue",
+      queueId: DEMO_CONNECT_QUEUE_ID,
       queueName: "Amazon Connect Shared Queue",
       messageToCaller: "Please hold while I place you into our operator queue.",
       requestedAt: new Date(nowMs - 1000 * 60 * 28),
@@ -1270,7 +1320,7 @@ const run = async (): Promise<void> => {
       salonId: salon.id,
       provider: ExternalProvider.AMAZON_CONNECT,
       providerCallId: "demo-escalation-closed-1",
-      providerCompanyId: "demo-amazon-connect-instance",
+      providerCompanyId: DEMO_CONNECT_INSTANCE_ID,
       callerPhone: customers[6]!.phone,
       originalPhoneNumber: DEMO_ORIGINAL_PHONE,
       dialedPhone: DEMO_TRACKING_PHONE,
@@ -1314,7 +1364,7 @@ const run = async (): Promise<void> => {
     data: {
       salonId: salon.id,
       provider: ExternalProvider.AMAZON_CONNECT,
-      model: "amazon-lex-booking-bot",
+      model: DEMO_LEX_BOT_ID,
       taskType: "route_live_person_request",
       requestText: resolvedEscalationTranscript.transcriptText,
       responseText: JSON.stringify({
@@ -1342,7 +1392,7 @@ const run = async (): Promise<void> => {
       escalationReason: "Caller requested help from a live operator.",
       requestedBy: "AI_RECEPTION",
       customerPhone: customers[6]!.phone,
-      queueId: "demo-shared-queue",
+      queueId: DEMO_CONNECT_QUEUE_ID,
       queueName: "Amazon Connect Shared Queue",
       assignedAgentUserId: callCenterUser.id,
       messageToCaller: "Please stay on the line while I connect you.",
@@ -1367,7 +1417,7 @@ const run = async (): Promise<void> => {
       salonId: salon.id,
       provider: ExternalProvider.AMAZON_CONNECT,
       providerCallId: "demo-callback-fallback-1",
-      providerCompanyId: "demo-amazon-connect-instance",
+      providerCompanyId: DEMO_CONNECT_INSTANCE_ID,
       callerPhone: customers[5]!.phone,
       originalPhoneNumber: DEMO_ORIGINAL_PHONE,
       dialedPhone: DEMO_TRACKING_PHONE,
@@ -1411,7 +1461,7 @@ const run = async (): Promise<void> => {
       salonId: salon.id,
       provider: ExternalProvider.AMAZON_CONNECT,
       providerCallId: "demo-voicemail-fallback-1",
-      providerCompanyId: "demo-amazon-connect-instance",
+      providerCompanyId: DEMO_CONNECT_INSTANCE_ID,
       callerPhone: customers[2]!.phone,
       originalPhoneNumber: DEMO_ORIGINAL_PHONE,
       dialedPhone: DEMO_TRACKING_PHONE,
@@ -1455,7 +1505,7 @@ const run = async (): Promise<void> => {
       salonId: salon.id,
       provider: ExternalProvider.AMAZON_CONNECT,
       providerCallId: "demo-sms-fallback-1",
-      providerCompanyId: "demo-amazon-connect-instance",
+      providerCompanyId: DEMO_CONNECT_INSTANCE_ID,
       callerPhone: customers[3]!.phone,
       originalPhoneNumber: DEMO_ORIGINAL_PHONE,
       dialedPhone: DEMO_TRACKING_PHONE,

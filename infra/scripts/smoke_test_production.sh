@@ -213,7 +213,10 @@ fi
 
 request POST "${BASE_URL}/api/v1/admin/call-center/agents" "{\"fullName\":\"Smoke Agent\",\"email\":\"${call_center_email}\",\"phone\":\"+12125550151\",\"password\":\"${call_center_password}\"}" "$admin_token"
 assert_status "201" "admin call center agent create"
-call_center_agent_id="$(json_get "data.id")"
+call_center_agent_id="$(json_get "data.user.id")"
+if [[ -z "${call_center_agent_id}" ]]; then
+  call_center_agent_id="$(json_get "data.id")"
+fi
 
 request PUT "${BASE_URL}/api/v1/admin/salons/${salon_id}/call-center-assignments" "{\"agentUserIds\":[\"${call_center_agent_id}\"]}" "$admin_token"
 assert_status "200" "admin call center assignment update"
@@ -342,9 +345,16 @@ ai_internal_payload="$(cat <<JSON
 JSON
 )"
 
-request POST "${BASE_URL}/api/v1/ai/appointments" "$ai_internal_payload" "$INTERNAL_API_TOKEN"
+request POST "${BASE_URL}/api/v1/internal/ai/appointments" "$ai_internal_payload" "$INTERNAL_API_TOKEN"
 assert_status "201" "ai internal amazon connect appointment"
+ai_internal_outcome="$(json_get "data.outcome")"
+if [[ "${ai_internal_outcome}" != "BOOKED" ]]; then
+  echo "FAILED [ai internal outcome] expected BOOKED got ${ai_internal_outcome}"
+  cat "$tmp_body"
+  exit 1
+fi
 call_session_id="$(json_get "data.callSessionId")"
+ai_internal_interaction_id="$(json_get "data.aiInteractionId")"
 
 if [[ -z "${call_session_id}" ]]; then
   echo "FAILED [ai internal call session] expected callSessionId"
@@ -352,6 +362,12 @@ if [[ -z "${call_session_id}" ]]; then
   exit 1
 fi
 echo "OK [ai internal call session] id=${call_session_id}"
+if [[ -z "${ai_internal_interaction_id}" ]]; then
+  echo "FAILED [ai internal interaction] expected aiInteractionId"
+  cat "$tmp_body"
+  exit 1
+fi
+echo "OK [ai internal interaction] id=${ai_internal_interaction_id}"
 
 if [[ "${CALL_PROVIDER}" == "callrail" ]]; then
   callrail_payload="$(cat <<JSON
@@ -490,7 +506,7 @@ request POST "${BASE_URL}/api/v1/call-center/salons/${salon_id}/appointments" "{
 assert_status "201" "operator appointment create"
 operator_appointment_id="$(json_get "data.id")"
 
-request PATCH "${BASE_URL}/api/v1/call-center/salons/${salon_id}/appointments/${operator_appointment_id}" '{"notes":"Updated by operator smoke test","status":"IN_PROGRESS"}' "$call_center_access_token"
+request PATCH "${BASE_URL}/api/v1/call-center/salons/${salon_id}/appointments/${operator_appointment_id}" '{"notes":"Updated by operator smoke test","status":"CONFIRMED"}' "$call_center_access_token"
 assert_status "200" "operator appointment update"
 
 request GET "${BASE_URL}/api/v1/availability/slots?staffId=${staff_id}&serviceId=${service_id}&date=${slot_date}&intervalMinutes=15" "" "$owner_access_token"

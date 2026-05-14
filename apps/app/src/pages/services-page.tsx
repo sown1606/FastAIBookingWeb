@@ -1,10 +1,12 @@
 import { FormEvent, useEffect, useState } from "react";
+import type { CSSProperties } from "react";
 import { apiGet, apiPatch, apiPost, apiPut, extractErrorMessage } from "../lib/api";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
 import { useToast } from "../components/toast";
 import { formatCurrencyCents } from "../lib/format";
 import { useFormDialog } from "../components/form-dialog";
 import { statusLabelKey, useI18n } from "../lib/i18n";
+import { requiredLabel } from "../lib/phone";
 
 interface StaffItem {
   id: string;
@@ -65,15 +67,46 @@ export const ServicesPage = () => {
     void load();
   }, []);
 
+  const parseServiceForm = (values: {
+    name: string;
+    description: string;
+    durationMinutes: string;
+    priceCents: string;
+  }) => {
+    const name = values.name.trim();
+    const description = values.description.trim();
+    const durationMinutes = Number(values.durationMinutes);
+    const priceCents = Number(values.priceCents);
+
+    if (name.length < 2) {
+      notify("error", t("form.requiredAll"));
+      return null;
+    }
+    if (!Number.isInteger(durationMinutes) || durationMinutes < 1 || durationMinutes > 600) {
+      notify("error", t("form.numberInvalid"));
+      return null;
+    }
+    if (!Number.isInteger(priceCents) || priceCents < 0) {
+      notify("error", t("form.numberInvalid"));
+      return null;
+    }
+
+    return {
+      name,
+      description: description || undefined,
+      durationMinutes,
+      priceCents
+    };
+  };
+
   const createService = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const payload = parseServiceForm(form);
+    if (!payload) {
+      return;
+    }
     try {
-      await apiPost<unknown, unknown>("/api/v1/services", {
-        name: form.name,
-        description: form.description || undefined,
-        durationMinutes: Number(form.durationMinutes),
-        priceCents: Number(form.priceCents)
-      });
+      await apiPost<unknown, unknown>("/api/v1/services", payload);
       setForm({
         name: "",
         description: "",
@@ -107,12 +140,14 @@ export const ServicesPage = () => {
     if (!values) {
       return;
     }
+    const payload = parseServiceForm(values);
+    if (!payload) {
+      return;
+    }
     try {
       await apiPatch<unknown, unknown>(`/api/v1/services/${item.id}`, {
-        name: values.name,
-        description: values.description || null,
-        durationMinutes: Number(values.durationMinutes),
-        priceCents: Number(values.priceCents)
+        ...payload,
+        description: payload.description ?? null
       });
       notify("success", t("services.updated"));
       await load();
@@ -206,11 +241,12 @@ export const ServicesPage = () => {
         <h2>{t("services.createTitle")}</h2>
         <form className="form-grid two-columns" onSubmit={createService}>
           <label className="field">
-            <span>{t("services.name")}</span>
+            <span>{requiredLabel(t("services.name"))}</span>
             <input
               value={form.name}
               onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
               required
+              minLength={2}
             />
           </label>
           <label className="field">
@@ -221,7 +257,7 @@ export const ServicesPage = () => {
             />
           </label>
           <label className="field">
-            <span>{t("services.duration")}</span>
+            <span>{requiredLabel(t("services.duration"))}</span>
             <input
               type="number"
               min={1}
@@ -233,7 +269,7 @@ export const ServicesPage = () => {
             />
           </label>
           <label className="field">
-            <span>{t("services.priceCents")}</span>
+            <span>{requiredLabel(t("services.priceCents"))}</span>
             <input
               type="number"
               min={0}
@@ -247,6 +283,67 @@ export const ServicesPage = () => {
             </button>
           </div>
         </form>
+      </section>
+
+      <section className="card">
+        <div className="section-header">
+          <div>
+            <h2>{t("services.staffMatrixTitle")}</h2>
+            <p className="muted">{t("services.staffMatrixHint")}</p>
+          </div>
+          <span className="status-pill info">{t("staff.directoryCount", { count: staff.length })}</span>
+        </div>
+        {services.length && staff.length ? (
+          <div className="service-matrix-wrap">
+            <div
+              className="service-matrix"
+              style={{ "--staff-count": staff.length } as CSSProperties}
+            >
+              <div className="service-matrix-heading service-matrix-sticky">
+                {t("services.serviceColumn")}
+              </div>
+              {staff.map((member) => (
+                <div key={member.id} className="service-matrix-heading service-matrix-staff">
+                  <strong>{member.fullName}</strong>
+                </div>
+              ))}
+              {services.map((service) => {
+                const assigned = new Set(service.staffServices.map((row) => row.staffId));
+                return (
+                  <div key={service.id} className="service-matrix-row">
+                    <div className="service-matrix-service service-matrix-sticky">
+                      <strong>{service.name}</strong>
+                      <span className="muted">
+                        {service.durationMinutes} min · {formatCurrencyCents(service.priceCents)}
+                      </span>
+                      <span className={service.isActive ? "status-pill success" : "status-pill warning"}>
+                        {statusLabelKey(service.isActive ? "ACTIVE" : "INACTIVE")
+                          ? t(statusLabelKey(service.isActive ? "ACTIVE" : "INACTIVE")!)
+                          : service.isActive
+                            ? "ACTIVE"
+                            : "INACTIVE"}
+                      </span>
+                    </div>
+                    {staff.map((member) => (
+                      <div
+                        key={`${service.id}-${member.id}`}
+                        className={
+                          assigned.has(member.id)
+                            ? "service-matrix-cell service-matrix-cell-on"
+                            : "service-matrix-cell"
+                        }
+                      >
+                        {assigned.has(member.id) ? t("services.canPerform") : t("common.none")}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : (
+          <EmptyBlock message={services.length ? t("appointments.noStaffColumns") : t("services.empty")} />
+        )}
       </section>
 
       <section className="card">

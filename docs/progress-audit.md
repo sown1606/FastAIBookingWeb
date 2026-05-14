@@ -4,8 +4,9 @@
 
 One clean demo salon only:
 
-- Salon: `Inails Demo Salon`
+- Salon: `Kiet Nails & Beauty`
 - Original business number: `848-702-9493`
+- Carrier setup: T-Mobile no-answer forwarding code `**61*18483487681**10#`
 - Primary telephony layer: Amazon Connect
 - Primary AI layer: Amazon Lex / Amazon AI
 - Demo flow: `848-702-9493 -> Amazon Connect phone number -> Amazon Connect Contact Flow -> Amazon Lex Booking Bot -> Booking Lambda or FastAIBooking Backend API -> real appointment -> Owner/Staff dashboard`

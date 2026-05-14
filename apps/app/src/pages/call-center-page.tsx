@@ -118,6 +118,7 @@ interface QueueItem {
   callSession: {
     id: string;
     callerPhone: string | null;
+    providerCallId?: string;
     status: string;
     routingOutcome: string | null;
     aiSummary: unknown;
@@ -154,6 +155,7 @@ interface EscalationDetail {
   callSession: {
     id: string;
     callerPhone: string | null;
+    providerCallId: string;
     status: string;
     routingOutcome: string | null;
     aiSummary: unknown;
@@ -641,6 +643,41 @@ export const CallCenterPage = () => {
       notify("success", t("callCenter.accepted"));
     } catch (acceptError) {
       notify("error", extractErrorMessage(acceptError));
+    }
+  };
+
+  const matchActiveContact = async () => {
+    if (!activeCallerPhone && !activeAmazonConnectContactId) {
+      notify("info", t("callCenter.matchContactMissing"));
+      return;
+    }
+
+    const query = new URLSearchParams();
+    if (activeCallerPhone) {
+      query.set("callerPhone", activeCallerPhone);
+    }
+    if (activeAmazonConnectContactId) {
+      query.set("amazonConnectContactId", activeAmazonConnectContactId);
+    }
+
+    try {
+      const match = await apiGet<QueueItem | null>(`/api/v1/call-center/queue/match?${query.toString()}`);
+      if (!match) {
+        notify("info", t("callCenter.matchContactNotFound"));
+        return;
+      }
+
+      setSelectedEscalationId(match.id);
+      setQueue((prev) => {
+        if (prev.some((item) => item.id === match.id)) {
+          return prev.map((item) => (item.id === match.id ? match : item));
+        }
+        return [match, ...prev];
+      });
+      await loadEscalationDetail(match.id);
+      notify("success", t("callCenter.matchContactSelected"));
+    } catch (matchError) {
+      notify("error", extractErrorMessage(matchError));
     }
   };
 
@@ -1367,6 +1404,14 @@ export const CallCenterPage = () => {
               <span>{activeCallerPhone ?? selectedEscalation?.callSession.callerPhone ?? t("common.none")}</span>
             </article>
             <article className="mobile-item">
+              <strong>{t("callCenter.contactId")}</strong>
+              <span>
+                {activeAmazonConnectContactId ??
+                  selectedEscalation?.callSession.providerCallId ??
+                  t("common.none")}
+              </span>
+            </article>
+            <article className="mobile-item">
               <strong>{t("callCenter.currentSalon")}</strong>
               <span>{selectedSalonName}</span>
             </article>
@@ -1451,6 +1496,14 @@ export const CallCenterPage = () => {
           <div className="inline-actions">
             <button type="button" className="button-secondary" onClick={() => void loadQueue()}>
               {t("callCenter.refreshQueue")}
+            </button>
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={() => void matchActiveContact()}
+              disabled={!activeCallerPhone && !activeAmazonConnectContactId}
+            >
+              {t("callCenter.matchActiveContact")}
             </button>
             <button
               type="button"

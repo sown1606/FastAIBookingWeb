@@ -19,9 +19,16 @@ export const LoginPage = () => {
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError("");
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail || !password) {
+      const message = t("login.missingCredentials");
+      setError(message);
+      notify("error", message);
+      return;
+    }
     setSubmitting(true);
     try {
-      await login(email, password);
+      await login(normalizedEmail, password);
       notify("success", t("login.success"));
       navigate("/dashboard");
     } catch (submitError) {
@@ -47,7 +54,7 @@ export const LoginPage = () => {
             <input
               type="email"
               value={email}
-              onChange={(event) => setEmail(event.target.value)}
+              onChange={(event) => setEmail(event.target.value.trimStart())}
               required
               autoComplete="email"
             />

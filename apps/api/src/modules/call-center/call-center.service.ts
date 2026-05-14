@@ -19,6 +19,7 @@ import {
   rescheduleAppointment,
   updateAppointment
 } from "../appointments/appointments.service";
+import { normalizePhoneForMatching } from "../calls/providers/callrail.provider";
 import { createCustomer, searchCustomers } from "../customers/customers.service";
 import { listServices } from "../services/services.service";
 import { listStaff } from "../staff/staff.service";
@@ -110,6 +111,48 @@ const salonWorkspaceInclude = {
       }
     }
   }
+};
+
+const escalationQueueInclude = {
+  salon: {
+    select: {
+      id: true,
+      name: true
+    }
+  },
+  callSession: {
+    select: {
+      id: true,
+      callerPhone: true,
+      providerCallId: true,
+      status: true,
+      routingOutcome: true,
+      aiSummary: true,
+      createdAt: true
+    }
+  }
+};
+
+const buildPhoneLookupValues = (phone?: string): string[] => {
+  const normalized = normalizePhoneForMatching(phone);
+  const digits = phone?.replace(/\D/g, "");
+  const values = new Set<string>();
+
+  [phone?.trim(), normalized, digits].forEach((candidate) => {
+    if (candidate) {
+      values.add(candidate);
+    }
+  });
+  if (digits?.length === 10) {
+    values.add(`1${digits}`);
+    values.add(`+1${digits}`);
+  }
+  if (digits?.length === 11 && digits.startsWith("1")) {
+    values.add(digits.slice(1));
+    values.add(`+${digits}`);
+  }
+
+  return Array.from(values.values());
 };
 
 export const listAssignedSalons = async (actor: CallCenterWorkspaceActor) => {
@@ -537,24 +580,71 @@ export const listEscalationQueue = async (
       }
     ],
     take: input.limit,
-    include: {
-      salon: {
-        select: {
-          id: true,
-          name: true
-        }
+    include: escalationQueueInclude
+  });
+};
+
+export const matchEscalationForContact = async (
+  actor: CallCenterWorkspaceActor,
+  input: {
+    callerPhone?: string;
+    amazonConnectContactId?: string;
+  }
+) => {
+  const salonIds = await getAccessibleSalonIds(actor);
+  if (!salonIds.length) {
+    return null;
+  }
+
+  const contactId = input.amazonConnectContactId?.trim();
+  const phoneLookupValues = buildPhoneLookupValues(input.callerPhone);
+  if (!contactId && phoneLookupValues.length === 0) {
+    throw new AppError("Provide callerPhone or amazonConnectContactId.", 400, "CONTACT_MATCH_INPUT_REQUIRED");
+  }
+
+  return prisma.callEscalation.findFirst({
+    where: {
+      salonId: {
+        in: salonIds
       },
-      callSession: {
-        select: {
-          id: true,
-          callerPhone: true,
-          status: true,
-          routingOutcome: true,
-          aiSummary: true,
-          createdAt: true
-        }
-      }
-    }
+      status: {
+        not: CallEscalationStatus.CLOSED
+      },
+      OR: [
+        ...(contactId
+          ? [
+              {
+                amazonConnectContactId: contactId
+              },
+              {
+                callSession: {
+                  providerCallId: contactId
+                }
+              }
+            ]
+          : []),
+        ...(phoneLookupValues.length
+          ? [
+              {
+                customerPhone: {
+                  in: phoneLookupValues
+                }
+              },
+              {
+                callSession: {
+                  callerPhone: {
+                    in: phoneLookupValues
+                  }
+                }
+              }
+            ]
+          : [])
+      ]
+    },
+    orderBy: {
+      requestedAt: "desc"
+    },
+    include: escalationQueueInclude
   });
 };
 

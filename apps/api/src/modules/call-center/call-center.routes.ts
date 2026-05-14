@@ -17,6 +17,7 @@ import {
   getAssignedSalonDetail,
   getEscalationDetail,
   listEscalationQueue,
+  matchEscalationForContact,
   listAssignedSalonAppointments,
   listAssignedSalonCustomers,
   listAssignedSalonServices,
@@ -102,6 +103,11 @@ const listQueueQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(100).default(50)
 });
 
+const matchQueueQuerySchema = z.object({
+  callerPhone: z.string().trim().min(3).max(40).optional(),
+  amazonConnectContactId: z.string().trim().min(1).max(160).optional()
+});
+
 const escalationIdSchema = z.object({
   id: z.string().uuid()
 });
@@ -168,6 +174,25 @@ callCenterRouter.get(
     );
     return sendSuccess(res, {
       data: queue
+    });
+  })
+);
+
+callCenterRouter.get(
+  "/queue/match",
+  validate(matchQueueQuerySchema, "query"),
+  asyncHandler(async (req, res) => {
+    const query = req.query as unknown as z.infer<typeof matchQueueQuerySchema>;
+    const match = await matchEscalationForContact(
+      {
+        userId: req.auth!.userId,
+        role: req.auth!.role,
+        salonId: req.auth!.salonId
+      },
+      query
+    );
+    return sendSuccess(res, {
+      data: match
     });
   })
 );

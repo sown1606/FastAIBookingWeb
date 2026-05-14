@@ -76,6 +76,7 @@ app.use(`${PUBLIC_API_PREFIX}/health`, healthRouter);
 
 app.use(`${PUBLIC_API_PREFIX}/auth`, authRouter);
 app.use(`${PUBLIC_API_PREFIX}/admin`, adminRouter);
+app.use(`${PUBLIC_API_PREFIX}/internal/ai`, aiInternalRouter);
 app.use(`${PUBLIC_API_PREFIX}/ai`, aiInternalRouter);
 app.use(`${PUBLIC_API_PREFIX}/integrations/callrail`, callrailWebhookRouter);
 app.use(`${PUBLIC_API_PREFIX}/feedback`, feedbackRouter);

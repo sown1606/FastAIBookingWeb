@@ -120,7 +120,7 @@ const envSchema = z.object({
   CALLRAIL_AI_FLOW_ID: nonEmptyStringOrUndefined,
   CALLRAIL_LIVE_PERSON_FLOW_ID: nonEmptyStringOrUndefined,
   CALL_CENTER_DEFAULT_PHONE: nonEmptyStringOrUndefined,
-  DEMO_SALON_NAME: z.string().default("Inails Demo Salon"),
+  DEMO_SALON_NAME: z.string().default("Kiet Nails & Beauty"),
   DEMO_ORIGINAL_PHONE_NUMBER: z.string().default("8487029493"),
   DEMO_FORWARDING_PHONE_NUMBER: z.string().default(""),
   DEMO_CARRIER: z.string().default("tmobile"),
@@ -176,7 +176,7 @@ const envSchema = z.object({
   VERTEX_CLIENT_ID: z.string().optional(),
   VERTEX_CLIENT_CERT_URL: z.string().optional(),
   TWILIO_PHONE_NUMBER: z.string().optional(),
-  AI_PROVIDER: z.enum(["amazon", "vertex"]).default("amazon"),
+  AI_PROVIDER: z.enum(["amazon", "lex", "vertex"]).default("amazon"),
   CALL_PROVIDER: z.enum(["amazon_connect", "callrail"]).default("amazon_connect")
 });
 

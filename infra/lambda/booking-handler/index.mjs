@@ -5,9 +5,9 @@ const DEFAULT_SALON_ID = process.env.DEFAULT_SALON_ID;
 const slotNames = {
   customerName: ["customerName", "CustomerName"],
   customerPhone: ["customerPhone", "CustomerPhone"],
-  serviceName: ["serviceName", "ServiceName"],
-  requestedDate: ["requestedDate", "RequestedDate"],
-  requestedTime: ["requestedTime", "RequestedTime"],
+  serviceName: ["serviceName", "ServiceName", "service", "Service"],
+  requestedDate: ["requestedDate", "RequestedDate", "preferredDate", "PreferredDate"],
+  requestedTime: ["requestedTime", "RequestedTime", "preferredTime", "PreferredTime"],
   staffPreference: ["staffPreference", "StaffPreference"]
 };
 
@@ -31,6 +31,7 @@ const attributeNames = {
     "CallerId",
     "ANI"
   ],
+  transcript: ["Transcript", "transcript", "inputTranscript"],
   salonId: ["salonId", "SalonId"]
 };
 
@@ -63,11 +64,14 @@ function getAttribute(event, names) {
   return "";
 }
 
-function buildLexResponse(event, message, state = "Fulfilled") {
+function buildLexResponse(event, message, state = "Fulfilled", sessionAttributes = {}) {
   const intent = event.sessionState?.intent || {};
   return {
     sessionState: {
-      sessionAttributes: event.sessionState?.sessionAttributes || {},
+      sessionAttributes: {
+        ...(event.sessionState?.sessionAttributes || {}),
+        ...sessionAttributes
+      },
       dialogAction: {
         type: "Close"
       },
@@ -85,7 +89,7 @@ function buildLexResponse(event, message, state = "Fulfilled") {
   };
 }
 
-async function createAppointment(payload) {
+async function postInternalAppointment(payload) {
   if (!API_BASE_URL || !INTERNAL_TOKEN) {
     return {
       ok: false,
@@ -93,7 +97,7 @@ async function createAppointment(payload) {
     };
   }
 
-  const response = await fetch(`${API_BASE_URL}/api/v1/ai/appointments`, {
+  const response = await fetch(`${API_BASE_URL}/api/v1/internal/ai/appointments`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -116,7 +120,7 @@ async function createAppointment(payload) {
   };
 }
 
-function buildAppointmentPayload(event) {
+function buildInternalPayload(event, intentName) {
   const slots = event.sessionState?.intent?.slots || {};
   const calledNumber = getAttribute(event, attributeNames.calledNumber);
   const amazonConnectContactId =
@@ -127,12 +131,15 @@ function buildAppointmentPayload(event) {
     getAttribute(event, attributeNames.customerNumber);
 
   const payload = {
+    intentName,
+    provider: "AMAZON_CONNECT",
     customerName: getSlotValue(slots, slotNames.customerName),
     customerPhone,
     serviceName: getSlotValue(slots, slotNames.serviceName),
     requestedDate: getSlotValue(slots, slotNames.requestedDate),
     requestedTime: getSlotValue(slots, slotNames.requestedTime),
     staffPreference: getSlotValue(slots, slotNames.staffPreference),
+    transcript: event.inputTranscript || getAttribute(event, attributeNames.transcript),
     source: "amazon_connect_ai",
     amazonConnectContactId,
     amazonConnectPhoneNumber,
@@ -151,28 +158,59 @@ function buildAppointmentPayload(event) {
   );
 }
 
+function extractResultPayload(result) {
+  const data = result?.data?.data || result?.data;
+  return data && typeof data === "object" ? data : {};
+}
+
+function buildSessionAttributesFromResult(data) {
+  return Object.fromEntries(
+    Object.entries({
+      bookingOutcome: data.outcome,
+      appointmentId: data.appointment?.id,
+      bookingAttemptId: data.bookingAttemptId,
+      callSessionId: data.callSessionId,
+      escalationId: data.escalationId
+    }).filter(([, value]) => value !== undefined && value !== null && value !== "")
+  );
+}
+
 export const handler = async (event) => {
   try {
     const intentName = event.sessionState?.intent?.name || "";
 
     if (intentName === "HumanEscalationIntent") {
+      const result = await postInternalAppointment(buildInternalPayload(event, intentName));
+      const data = extractResultPayload(result);
       return buildLexResponse(
         event,
-        "Please wait while I connect you to a real person."
+        data.lexResponse?.message || "Please wait while I connect you to a real person.",
+        data.lexResponse?.fulfillmentState || "Fulfilled",
+        buildSessionAttributesFromResult(data)
       );
     }
 
     if (intentName === "CancelAppointmentIntent") {
+      const result = await postInternalAppointment(buildInternalPayload(event, intentName));
+      const data = extractResultPayload(result);
       return buildLexResponse(
         event,
-        "I can help with cancellation by connecting you to our team. Please wait while I transfer you."
+        data.lexResponse?.message ||
+          "I can help with cancellation by connecting you to our team. Please wait while I transfer you.",
+        data.lexResponse?.fulfillmentState || "Fulfilled",
+        buildSessionAttributesFromResult(data)
       );
     }
 
     if (intentName === "RescheduleAppointmentIntent") {
+      const result = await postInternalAppointment(buildInternalPayload(event, intentName));
+      const data = extractResultPayload(result);
       return buildLexResponse(
         event,
-        "I can help reschedule by connecting you to our team. Please wait while I transfer you."
+        data.lexResponse?.message ||
+          "I can help reschedule by connecting you to our team. Please wait while I transfer you.",
+        data.lexResponse?.fulfillmentState || "Fulfilled",
+        buildSessionAttributesFromResult(data)
       );
     }
 
@@ -183,7 +221,7 @@ export const handler = async (event) => {
       );
     }
 
-    const result = await createAppointment(buildAppointmentPayload(event));
+    const result = await postInternalAppointment(buildInternalPayload(event, intentName));
 
     if (!result.ok) {
       console.error("Appointment API rejected request", result.message);
@@ -194,9 +232,19 @@ export const handler = async (event) => {
       );
     }
 
+    const data = extractResultPayload(result);
+    const state = data.lexResponse?.fulfillmentState || (data.outcome === "BOOKED" ? "Fulfilled" : "Failed");
+    const message =
+      data.lexResponse?.message ||
+      (data.outcome === "BOOKED"
+        ? "Your appointment is booked. You will receive a confirmation shortly. Thank you."
+        : "I could not confirm the booking yet. Please wait while I connect you to our team.");
+
     return buildLexResponse(
       event,
-      "Your appointment is booked. You will receive a confirmation shortly. Thank you."
+      message,
+      state,
+      buildSessionAttributesFromResult(data)
     );
   } catch (error) {
     console.error("Booking handler error", error);

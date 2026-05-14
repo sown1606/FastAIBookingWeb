@@ -35,19 +35,37 @@ const interactionsQuerySchema = z.object({
   callSessionId: z.string().uuid().optional()
 });
 
-const createAIAppointmentSchema = z.object({
-  salonId: z.string().trim().min(1).optional(),
-  customerName: z.string().trim().min(1).max(160),
-  customerPhone: z.string().trim().min(7).max(40),
-  serviceName: z.string().trim().min(1).max(160),
-  requestedDate: z.string().trim().min(1).max(80),
-  requestedTime: z.string().trim().min(1).max(40).optional(),
-  staffPreference: z.string().trim().min(1).max(160).optional(),
-  source: z.string().trim().min(1).max(80).optional(),
-  amazonConnectContactId: z.string().trim().min(1).max(160).optional(),
-  amazonConnectPhoneNumber: z.string().trim().min(1).max(40).optional(),
-  calledNumber: z.string().trim().min(1).max(40).optional()
-});
+const createAIAppointmentSchema = z
+  .object({
+    salonId: z.string().trim().min(1).optional(),
+    intentName: z.string().trim().min(1).max(160).optional(),
+    text: z.string().trim().min(1).max(15000).optional(),
+    transcript: z.string().trim().min(1).max(15000).optional(),
+    customer: z
+      .object({
+        name: z.string().trim().min(1).max(160).optional(),
+        phone: z.string().trim().min(3).max(40).optional()
+      })
+      .optional(),
+    customerName: z.string().trim().min(1).max(160).optional(),
+    customerPhone: z.string().trim().min(3).max(40).optional(),
+    callerPhone: z.string().trim().min(3).max(40).optional(),
+    service: z.string().trim().min(1).max(160).optional(),
+    serviceName: z.string().trim().min(1).max(160).optional(),
+    preferredDateTime: z.string().trim().min(1).max(120).optional(),
+    requestedDate: z.string().trim().min(1).max(120).optional(),
+    requestedTime: z.string().trim().min(1).max(40).optional(),
+    staffPreference: z.string().trim().min(1).max(160).optional(),
+    source: z.string().trim().min(1).max(80).optional(),
+    provider: z.string().trim().min(1).max(80).optional(),
+    contactId: z.string().trim().min(1).max(160).optional(),
+    callSessionId: z.string().trim().min(1).max(160).optional(),
+    amazonConnectContactId: z.string().trim().min(1).max(160).optional(),
+    amazonConnectPhoneNumber: z.string().trim().min(1).max(40).optional(),
+    calledNumber: z.string().trim().min(1).max(40).optional(),
+    attributes: z.record(z.unknown()).optional()
+  })
+  .passthrough();
 
 const extractInternalToken = (authorizationHeader?: string, internalHeader?: string | string[]) => {
   const headerToken = Array.isArray(internalHeader) ? internalHeader[0] : internalHeader;
@@ -99,12 +117,19 @@ aiInternalRouter.post(
     const payload = req.body as z.infer<typeof createAIAppointmentSchema>;
     const result = await createAmazonConnectAIAppointment(payload);
     return sendSuccess(res, {
-      statusCode: 201,
-      message: "AI appointment created.",
+      statusCode: result.outcome === "BOOKED" ? 201 : 200,
+      message: result.message,
       data: {
+        outcome: result.outcome,
+        lexResponse: result.lexResponse,
         appointment: result.appointment,
         bookingAttemptId: result.bookingAttempt.id,
         callSessionId: result.callSession?.id ?? null,
+        transcriptId: result.transcript?.id ?? null,
+        aiInteractionId: result.aiInteraction.id,
+        escalationId: result.escalation?.id ?? null,
+        missingFields: result.missingFields,
+        alternatives: result.alternatives,
         salonResolutionSource: result.salonResolutionSource
       }
     });

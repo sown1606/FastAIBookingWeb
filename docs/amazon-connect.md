@@ -62,3 +62,17 @@ FASTAIBOOKING_API_INTERNAL_TOKEN=
 ```
 
 Do not expose AWS credentials or internal backend tokens in frontend `VITE_*` env variables.
+
+## Live Contact Flow Checklist
+
+- Use `CALL_PROVIDER=amazon_connect` and `AI_PROVIDER=amazon` or `AI_PROVIDER=lex`.
+- The phone number for `848-702-9493` forwards to the Amazon Connect number in `AMAZON_CONNECT_PHONE_NUMBER`.
+- The phone number is assigned to the AI reception contact flow in `AMAZON_CONNECT_CONTACT_FLOW_ID_AI_RECEPTION`.
+- The Get customer input block uses the Lex bot alias in `AMAZON_LEX_BOT_ALIAS_ID`.
+- `BookAppointmentIntent` has Lambda fulfillment enabled and invokes `BOOKING_LAMBDA_FUNCTION_ARN`.
+- `BookAppointmentIntent` collects customer name, customer phone, service, preferred date/time, and optional staff preference before fulfillment.
+- The booking Lambda calls `POST /api/v1/internal/ai/appointments` with `FASTAIBOOKING_API_INTERNAL_TOKEN`.
+- The contact flow sets contact attributes where available: `salonId`, `callerPhone`, `contactId`, `callSessionId`, `provider=AMAZON_CONNECT`.
+- `HumanEscalationIntent` goes to Set working queue with `AMAZON_CONNECT_QUEUE_ID_DEFAULT`, then Transfer to queue.
+- The default/no-match path asks the caller to repeat once before sending the caller to the operator fallback.
+- Error paths play a clear fallback prompt, then retry once or disconnect safely.

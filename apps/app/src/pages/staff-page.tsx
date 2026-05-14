@@ -75,16 +75,24 @@ export const StaffPage = () => {
 
   const createStaffMember = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!validateOptionalUsPhone(form.phone)) {
+    const fullName = form.fullName.trim();
+    const email = form.email.trim().toLowerCase();
+    const phone = form.phone.trim();
+    const title = form.title.trim();
+    if (fullName.length < 2 || !email || !phone) {
+      notify("error", t("form.requiredAll"));
+      return;
+    }
+    if (!validateOptionalUsPhone(phone)) {
       notify("error", t("form.phoneInvalid"));
       return;
     }
     try {
       await apiPost<unknown, unknown>("/api/v1/staff", {
-        fullName: form.fullName,
-        email: form.email || undefined,
-        phone: form.phone || undefined,
-        title: form.title || undefined,
+        fullName,
+        email,
+        phone,
+        title: title || undefined,
         isBookable: form.isBookable,
         createLogin: true
       });
@@ -133,16 +141,24 @@ export const StaffPage = () => {
     if (!values) {
       return;
     }
-    if (!validateOptionalUsPhone(values.phone)) {
+    const fullName = values.fullName.trim();
+    const email = values.email.trim().toLowerCase();
+    const phone = values.phone.trim();
+    const title = values.title.trim();
+    if (fullName.length < 2 || !email || !phone) {
+      notify("error", t("form.requiredAll"));
+      return;
+    }
+    if (!validateOptionalUsPhone(phone)) {
       notify("error", t("form.phoneInvalid"));
       return;
     }
     try {
       await apiPatch<unknown, unknown>(`/api/v1/staff/${item.id}`, {
-        fullName: values.fullName,
-        email: values.email,
-        phone: values.phone,
-        title: values.title,
+        fullName,
+        email,
+        phone,
+        title: title || null,
         isBookable: values.isBookable === "true"
       });
       notify("success", t("staff.updated"));
@@ -182,6 +198,10 @@ export const StaffPage = () => {
       confirmLabel: t("staff.reset")
     });
     if (!values?.newPassword) {
+      return;
+    }
+    if (values.newPassword.length < 8) {
+      notify("error", t("auth.register.passwordHint"));
       return;
     }
     try {

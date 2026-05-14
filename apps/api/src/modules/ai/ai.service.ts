@@ -48,17 +48,45 @@ interface SuggestSlotsInput {
 
 interface CreateAmazonConnectAIAppointmentInput {
   salonId?: string;
-  customerName: string;
-  customerPhone: string;
-  serviceName: string;
-  requestedDate: string;
+  intentName?: string;
+  text?: string;
+  transcript?: string;
+  customer?: {
+    name?: string;
+    phone?: string;
+  };
+  customerName?: string;
+  customerPhone?: string;
+  callerPhone?: string;
+  service?: string;
+  serviceName?: string;
+  preferredDateTime?: string;
+  requestedDate?: string;
   requestedTime?: string;
   staffPreference?: string;
   source?: string;
+  contactId?: string;
+  callSessionId?: string;
   amazonConnectContactId?: string;
   amazonConnectPhoneNumber?: string;
   calledNumber?: string;
+  provider?: string;
+  attributes?: Record<string, unknown>;
 }
+
+type AmazonConnectAIAppointmentOutcome =
+  | "BOOKED"
+  | "MISSING_INFO"
+  | "NO_AVAILABILITY"
+  | "HUMAN_ESCALATION"
+  | "FAILED";
+
+type SuggestedSlot = {
+  staffId: string;
+  staffName: string;
+  startTime: string;
+  endTime: string;
+};
 
 type SalonResolutionSource =
   | "explicit_salon_id"
@@ -326,6 +354,8 @@ const createAIInteractionLog = async (input: {
   actorUserId?: string;
   callSessionId?: string;
   transcriptId?: string;
+  bookingAttemptId?: string;
+  provider?: ExternalProvider;
   model: string;
   taskType: string;
   requestText: string;
@@ -340,7 +370,7 @@ const createAIInteractionLog = async (input: {
   return prisma.aiInteractionLog.create({
     data: {
       salonId: input.salonId,
-      provider: ExternalProvider.VERTEX,
+      provider: input.provider ?? ExternalProvider.VERTEX,
       model: input.model,
       taskType: input.taskType,
       requestText: input.requestText,
@@ -354,6 +384,7 @@ const createAIInteractionLog = async (input: {
       confidence: input.confidence,
       callSessionId: input.callSessionId,
       transcriptId: input.transcriptId,
+      bookingAttemptId: input.bookingAttemptId,
       createdByUserId: input.actorUserId
     }
   });
@@ -808,14 +839,19 @@ const selectStaffForAIAppointment = async (input: {
 const upsertAmazonConnectCallSession = async (input: {
   salonId: string;
   contactId?: string;
-  customerPhone: string;
+  customerPhone?: string;
   amazonConnectPhoneNumber?: string;
   calledNumber?: string;
+  routingOutcome?: CallRoutingOutcome;
+  finalResolution?: string;
 }) => {
   const contactId = input.contactId?.trim();
   if (!contactId) {
     return null;
   }
+
+  const routingOutcome = input.routingOutcome ?? CallRoutingOutcome.AI_RECEPTION;
+  const finalResolution = input.finalResolution ?? "Amazon Connect AI reception in progress.";
 
   return prisma.callSession.upsert({
     where: {
@@ -831,8 +867,8 @@ const upsertAmazonConnectCallSession = async (input: {
       trackingNumber: normalizePhoneForMatching(input.amazonConnectPhoneNumber),
       dialedPhone: normalizePhoneForMatching(input.calledNumber),
       status: CallSessionStatus.IN_PROGRESS,
-      routingOutcome: CallRoutingOutcome.AI_RECEPTION,
-      finalResolution: "AI appointment created."
+      routingOutcome,
+      finalResolution
     },
     create: {
       salonId: input.salonId,
@@ -845,9 +881,9 @@ const upsertAmazonConnectCallSession = async (input: {
       direction: "inbound",
       sourceName: "amazon_connect_lex",
       status: CallSessionStatus.IN_PROGRESS,
-      routingOutcome: CallRoutingOutcome.AI_RECEPTION,
+      routingOutcome,
       startedAt: new Date(),
-      finalResolution: "AI appointment created."
+      finalResolution
     }
   });
 };
@@ -999,115 +1035,797 @@ const buildStructuredCallSummary = (input: {
   };
 };
 
+const asTrimmedString = (value?: string | null): string | undefined => {
+  const trimmed = value?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : undefined;
+};
+
+const hasTimeComponent = (value?: string): boolean => {
+  if (!value) {
+    return false;
+  }
+  return /T\d{1,2}:\d{2}|[^\d]\d{1,2}:\d{2}|\b\d{1,2}\s?(am|pm)\b/i.test(value);
+};
+
+const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppointmentInput) => {
+  const customerName = asTrimmedString(input.customerName) ?? asTrimmedString(input.customer?.name);
+  const customerPhone =
+    asTrimmedString(input.customerPhone) ??
+    asTrimmedString(input.customer?.phone) ??
+    asTrimmedString(input.callerPhone);
+  const serviceName = asTrimmedString(input.serviceName) ?? asTrimmedString(input.service);
+  const requestedDate =
+    asTrimmedString(input.requestedDate) ?? asTrimmedString(input.preferredDateTime);
+  const requestedTime = asTrimmedString(input.requestedTime);
+  const contactId =
+    asTrimmedString(input.amazonConnectContactId) ??
+    asTrimmedString(input.contactId) ??
+    asTrimmedString(input.callSessionId);
+  const transcriptText = asTrimmedString(input.transcript) ?? asTrimmedString(input.text);
+  const intentName = asTrimmedString(input.intentName);
+  const source = asTrimmedString(input.source) ?? "AMAZON_CONNECT_LEX";
+
+  return {
+    intentName,
+    customerName,
+    customerPhone,
+    serviceName,
+    requestedDate,
+    requestedTime,
+    staffPreference: asTrimmedString(input.staffPreference),
+    source,
+    contactId,
+    transcriptText,
+    amazonConnectPhoneNumber: asTrimmedString(input.amazonConnectPhoneNumber),
+    calledNumber: asTrimmedString(input.calledNumber),
+    provider: asTrimmedString(input.provider) ?? "AMAZON_CONNECT",
+    attributes: input.attributes
+  };
+};
+
+const shouldEscalateToHuman = (input: {
+  intentName?: string;
+  transcriptText?: string;
+}): boolean => {
+  const intent = input.intentName?.toLowerCase();
+  if (
+    intent === "humanescalationintent" ||
+    intent === "cancelappointmentintent" ||
+    intent === "rescheduleappointmentintent"
+  ) {
+    return true;
+  }
+
+  const text = input.transcriptText?.toLowerCase() ?? "";
+  return /\b(real person|live person|human|operator|representative|agent|cancel|reschedule)\b/.test(
+    text
+  );
+};
+
+const buildInternalParsedIntent = (input: {
+  intentType: BookingIntentResult["intentType"];
+  customerName?: string;
+  customerPhone?: string;
+  serviceName?: string;
+  staffPreference?: string;
+  requestedDateTime?: string;
+  missingFields: string[];
+  isReadyToBook: boolean;
+}): BookingIntentResult => ({
+  intentType: input.intentType,
+  customer: {
+    name: input.customerName,
+    phone: input.customerPhone
+  },
+  requestedService: input.serviceName,
+  requestedStaff: input.staffPreference,
+  requestedDateTime: input.requestedDateTime,
+  confidence: 1,
+  isReadyToBook: input.isReadyToBook,
+  missingFields: input.missingFields,
+  normalizedBookingRequest: {
+    customerName: input.customerName,
+    customerPhone: input.customerPhone,
+    serviceName: input.serviceName,
+    staffName: input.staffPreference,
+    startTimeIso: input.requestedDateTime,
+    timezone: undefined
+  }
+});
+
+const buildLexMessage = (input: {
+  outcome: AmazonConnectAIAppointmentOutcome;
+  missingFields?: string[];
+  appointmentStartTime?: Date;
+  salonTimezone?: string;
+  alternatives?: SuggestedSlot[];
+  failureReason?: string;
+}): string => {
+  if (input.outcome === "BOOKED") {
+    const appointmentTime = input.appointmentStartTime
+      ? DateTime.fromJSDate(input.appointmentStartTime, { zone: "utc" })
+          .setZone(input.salonTimezone ?? "America/New_York")
+          .toFormat("cccc, LLL d 'at' h:mm a")
+      : "the requested time";
+    return `Your appointment is booked for ${appointmentTime}. You will receive a confirmation shortly.`;
+  }
+
+  if (input.outcome === "HUMAN_ESCALATION") {
+    return "Please wait while I connect you to an operator.";
+  }
+
+  if (input.outcome === "MISSING_INFO") {
+    const readable = (input.missingFields ?? [])
+      .map((field) => {
+        if (field === "customerName") {
+          return "your name";
+        }
+        if (field === "customerPhone") {
+          return "your phone number";
+        }
+        if (field === "serviceName") {
+          return "the service";
+        }
+        if (field === "preferredDateTime") {
+          return "the date and time";
+        }
+        return field;
+      })
+      .join(", ");
+    return readable
+      ? `I still need ${readable} before I can book the appointment.`
+      : "I still need more appointment details before I can book it.";
+  }
+
+  if (input.outcome === "NO_AVAILABILITY") {
+    const alternatives = (input.alternatives ?? []).slice(0, 3);
+    if (!alternatives.length) {
+      return "I could not find an available appointment for that time. Please hold while I connect you to our team.";
+    }
+
+    const formattedAlternatives = alternatives
+      .map((slot) =>
+        DateTime.fromISO(slot.startTime, { zone: "utc" })
+          .setZone(input.salonTimezone ?? "America/New_York")
+          .toFormat("cccc, LLL d 'at' h:mm a")
+      )
+      .join(", ");
+    return `That time is not available. The next options I found are ${formattedAlternatives}. Please hold if you want an operator to help.`;
+  }
+
+  return (
+    input.failureReason ??
+    "I could not confirm the appointment right now. Please hold while I connect you to our team."
+  );
+};
+
 export const createAmazonConnectAIAppointment = async (
   input: CreateAmazonConnectAIAppointmentInput
 ) => {
+  const normalized = normalizeAmazonConnectAppointmentInput(input);
   const { salon, resolutionSource } = await resolveAmazonConnectSalon({
     salonId: input.salonId,
-    amazonConnectPhoneNumber: input.amazonConnectPhoneNumber,
-    calledNumber: input.calledNumber
+    amazonConnectPhoneNumber: normalized.amazonConnectPhoneNumber,
+    calledNumber: normalized.calledNumber
   });
   const actorUserId = await resolveActionActorUserId(salon.id);
-  const requestedStartTime = parseRequestedStartTime({
-    requestedDate: input.requestedDate,
-    requestedTime: input.requestedTime,
-    timezone: salon.timezone
+  const callSession = await upsertAmazonConnectCallSession({
+    salonId: salon.id,
+    contactId: normalized.contactId,
+    customerPhone: normalized.customerPhone,
+    amazonConnectPhoneNumber: normalized.amazonConnectPhoneNumber,
+    calledNumber: normalized.calledNumber
   });
 
-  const service = await resolveService(salon.id, input.serviceName);
+  const transcript =
+    callSession && normalized.transcriptText
+      ? await createTranscriptForSession(callSession.id, {
+          transcriptSource: "amazon_connect_lex",
+          transcriptText: normalized.transcriptText
+        })
+      : null;
+
+  const createAttempt = async (inputForAttempt: {
+    status: BookingAttemptStatus;
+    appointmentId?: string;
+    requestedStartTime?: Date;
+    normalizedRequest?: unknown;
+    alternativeSlots?: SuggestedSlot[];
+    failureReason?: string;
+  }) => {
+    return prisma.bookingAttempt.create({
+      data: {
+        salonId: salon.id,
+        callSessionId: callSession?.id,
+        transcriptId: transcript?.id,
+        appointmentId: inputForAttempt.appointmentId,
+        status: inputForAttempt.status,
+        source: normalized.source,
+        customerName: normalized.customerName,
+        customerPhone: normalizePhoneForMatching(normalized.customerPhone),
+        requestedService: normalized.serviceName,
+        requestedStaff: normalized.staffPreference,
+        requestedDateTimeText:
+          inputForAttempt.requestedStartTime?.toISOString() ?? normalized.requestedDate,
+        normalizedRequest: toJson({
+          salonId: salon.id,
+          salonResolutionSource: resolutionSource,
+          ...((inputForAttempt.normalizedRequest as Record<string, unknown> | undefined) ?? {})
+        }),
+        alternativeSlots:
+          inputForAttempt.alternativeSlots === undefined
+            ? undefined
+            : toJson(inputForAttempt.alternativeSlots),
+        failureReason: inputForAttempt.failureReason,
+        rawInput: toJson({
+          ...input,
+          normalizedProvider: normalized.provider
+        }),
+        createdByUserId: actorUserId
+      }
+    });
+  };
+
+  const finalizeCall = async (inputForCall: {
+    outcome: AmazonConnectAIAppointmentOutcome;
+    bookingAttemptId: string;
+    bookingStatus: BookingAttemptStatus;
+    parsed: BookingIntentResult;
+    message: string;
+    appointmentId?: string | null;
+    alternatives?: SuggestedSlot[];
+    escalation?: Awaited<ReturnType<typeof createOrUpdateCallEscalation>> | null;
+    routingOutcome?: CallRoutingOutcome;
+    failureReason?: string;
+  }) => {
+    if (!callSession) {
+      return;
+    }
+
+    await markBookingAttemptResultOnCall(callSession.id, inputForCall.bookingStatus, {
+      bookingAttemptId: inputForCall.bookingAttemptId,
+      appointmentId: inputForCall.appointmentId ?? undefined,
+      failureReason: inputForCall.failureReason
+    });
+    await updateCallAIState(callSession.id, {
+      aiSummary: buildStructuredCallSummary({
+        transcriptId: transcript?.id,
+        parsed: inputForCall.parsed,
+        bookingAttemptId: inputForCall.bookingAttemptId,
+        bookingStatus: inputForCall.bookingStatus,
+        appointmentId: inputForCall.appointmentId,
+        alternatives: inputForCall.alternatives,
+        escalation: inputForCall.escalation,
+        resolution: inputForCall.message
+      }),
+      routingOutcome: inputForCall.routingOutcome ?? CallRoutingOutcome.AI_RECEPTION,
+      finalResolution: inputForCall.message,
+      language: "en"
+    });
+  };
+
+  const createInteraction = async (inputForInteraction: {
+    outcome: AmazonConnectAIAppointmentOutcome;
+    message: string;
+    parsed: BookingIntentResult;
+    bookingAttemptId: string;
+    responsePayload: unknown;
+    isValid: boolean;
+  }) => {
+    return createAIInteractionLog({
+      salonId: salon.id,
+      actorUserId,
+      callSessionId: callSession?.id,
+      transcriptId: transcript?.id,
+      bookingAttemptId: inputForInteraction.bookingAttemptId,
+      provider: ExternalProvider.AMAZON_CONNECT,
+      model: env.AMAZON_LEX_BOT_ID ?? "amazon-lex",
+      taskType: "amazon_connect_booking_fulfillment",
+      requestText: normalized.transcriptText ?? "",
+      requestPayload: input,
+      responseText: inputForInteraction.message,
+      responsePayload: inputForInteraction.responsePayload,
+      parsedOutput: {
+        outcome: inputForInteraction.outcome,
+        parsed: inputForInteraction.parsed
+      },
+      isValid: inputForInteraction.isValid,
+      confidence: 1
+    });
+  };
+
+  const requestedDateTimeText = [normalized.requestedDate, normalized.requestedTime]
+    .filter((value): value is string => Boolean(value))
+    .join(" ");
+
+  if (shouldEscalateToHuman(normalized)) {
+    const bookingAttempt = await createAttempt({
+      status: BookingAttemptStatus.NEEDS_INPUT,
+      failureReason: "Caller requested a human operator.",
+      normalizedRequest: {
+        intentName: normalized.intentName,
+        requestedDateTimeText
+      }
+    });
+    const escalation = callSession
+      ? await createOrUpdateCallEscalation({
+          salonId: salon.id,
+          callSessionId: callSession.id,
+          requestedBy: "AMAZON_CONNECT_LEX",
+          escalationReason: "Caller requested a human operator.",
+          customerPhone: normalized.customerPhone ?? null,
+          messageToCaller: "Please wait while I connect you to an operator.",
+          metadata: {
+            bookingAttemptId: bookingAttempt.id,
+            transcriptId: transcript?.id,
+            intentName: normalized.intentName,
+            contactId: normalized.contactId
+          }
+        })
+      : null;
+    const message = buildLexMessage({ outcome: "HUMAN_ESCALATION" });
+    const parsed = buildInternalParsedIntent({
+      intentType: "LIVE_PERSON_REQUEST",
+      customerName: normalized.customerName,
+      customerPhone: normalized.customerPhone,
+      serviceName: normalized.serviceName,
+      staffPreference: normalized.staffPreference,
+      requestedDateTime: normalized.requestedDate,
+      missingFields: [],
+      isReadyToBook: false
+    });
+    const aiInteraction = await createInteraction({
+      outcome: "HUMAN_ESCALATION",
+      message,
+      parsed,
+      bookingAttemptId: bookingAttempt.id,
+      responsePayload: {
+        escalationId: escalation?.id ?? null
+      },
+      isValid: true
+    });
+    await finalizeCall({
+      outcome: "HUMAN_ESCALATION",
+      bookingAttemptId: bookingAttempt.id,
+      bookingStatus: bookingAttempt.status,
+      parsed,
+      message,
+      escalation,
+      routingOutcome:
+        escalation?.routingOutcome === "QUEUED"
+          ? CallRoutingOutcome.QUEUED
+          : CallRoutingOutcome.CALL_CENTER_ESCALATION,
+      failureReason: bookingAttempt.failureReason ?? undefined
+    });
+
+    return {
+      outcome: "HUMAN_ESCALATION" as const,
+      message,
+      lexResponse: {
+        fulfillmentState: "Fulfilled",
+        message
+      },
+      appointment: null,
+      bookingAttempt,
+      callSession,
+      transcript,
+      aiInteraction,
+      escalation,
+      alternatives: [],
+      missingFields: [],
+      salonResolutionSource: resolutionSource
+    };
+  }
+
+  const missingFields = new Set<string>();
+  if (!normalized.customerName) {
+    missingFields.add("customerName");
+  }
+  if (!normalized.customerPhone) {
+    missingFields.add("customerPhone");
+  }
+  if (!normalized.serviceName) {
+    missingFields.add("serviceName");
+  }
+  if (
+    !normalized.requestedDate ||
+    (!normalized.requestedTime && !hasTimeComponent(normalized.requestedDate))
+  ) {
+    missingFields.add("preferredDateTime");
+  }
+
+  let requestedStartTime: Date | null = null;
+  if (!missingFields.has("preferredDateTime") && normalized.requestedDate) {
+    try {
+      requestedStartTime = parseRequestedStartTime({
+        requestedDate: normalized.requestedDate,
+        requestedTime: normalized.requestedTime,
+        timezone: salon.timezone
+      });
+    } catch {
+      missingFields.add("preferredDateTime");
+    }
+  }
+
+  if (missingFields.size > 0 || !requestedStartTime) {
+    const message = buildLexMessage({
+      outcome: "MISSING_INFO",
+      missingFields: Array.from(missingFields.values())
+    });
+    const parsed = buildInternalParsedIntent({
+      intentType: "BOOK_APPOINTMENT",
+      customerName: normalized.customerName,
+      customerPhone: normalized.customerPhone,
+      serviceName: normalized.serviceName,
+      staffPreference: normalized.staffPreference,
+      requestedDateTime: normalized.requestedDate,
+      missingFields: Array.from(missingFields.values()),
+      isReadyToBook: false
+    });
+    const bookingAttempt = await createAttempt({
+      status: BookingAttemptStatus.NEEDS_INPUT,
+      failureReason: `Missing fields: ${Array.from(missingFields.values()).join(", ")}`,
+      normalizedRequest: {
+        requestedDateTimeText
+      }
+    });
+    const aiInteraction = await createInteraction({
+      outcome: "MISSING_INFO",
+      message,
+      parsed,
+      bookingAttemptId: bookingAttempt.id,
+      responsePayload: {
+        missingFields: Array.from(missingFields.values())
+      },
+      isValid: true
+    });
+    await finalizeCall({
+      outcome: "MISSING_INFO",
+      bookingAttemptId: bookingAttempt.id,
+      bookingStatus: bookingAttempt.status,
+      parsed,
+      message,
+      failureReason: bookingAttempt.failureReason ?? undefined
+    });
+
+    return {
+      outcome: "MISSING_INFO" as const,
+      message,
+      lexResponse: {
+        fulfillmentState: "Failed",
+        message
+      },
+      appointment: null,
+      bookingAttempt,
+      callSession,
+      transcript,
+      aiInteraction,
+      escalation: null,
+      alternatives: [],
+      missingFields: Array.from(missingFields.values()),
+      salonResolutionSource: resolutionSource
+    };
+  }
+
+  const service = await resolveService(salon.id, normalized.serviceName!);
   if (!service) {
-    throw new AppError("Service not found or inactive.", 400, "SERVICE_UNAVAILABLE");
+    const message = "I could not find that service. Please hold while I connect you to our team.";
+    const parsed = buildInternalParsedIntent({
+      intentType: "BOOK_APPOINTMENT",
+      customerName: normalized.customerName,
+      customerPhone: normalized.customerPhone,
+      serviceName: normalized.serviceName,
+      staffPreference: normalized.staffPreference,
+      requestedDateTime: requestedStartTime.toISOString(),
+      missingFields: [],
+      isReadyToBook: false
+    });
+    const bookingAttempt = await createAttempt({
+      status: BookingAttemptStatus.FAILED,
+      requestedStartTime,
+      failureReason: "Service not found or inactive.",
+      normalizedRequest: {
+        serviceName: normalized.serviceName,
+        startTimeIso: requestedStartTime.toISOString(),
+        timezone: salon.timezone
+      }
+    });
+    const aiInteraction = await createInteraction({
+      outcome: "FAILED",
+      message,
+      parsed,
+      bookingAttemptId: bookingAttempt.id,
+      responsePayload: {
+        reason: bookingAttempt.failureReason
+      },
+      isValid: false
+    });
+    await finalizeCall({
+      outcome: "FAILED",
+      bookingAttemptId: bookingAttempt.id,
+      bookingStatus: bookingAttempt.status,
+      parsed,
+      message,
+      failureReason: bookingAttempt.failureReason ?? undefined
+    });
+
+    return {
+      outcome: "FAILED" as const,
+      message,
+      lexResponse: {
+        fulfillmentState: "Failed",
+        message
+      },
+      appointment: null,
+      bookingAttempt,
+      callSession,
+      transcript,
+      aiInteraction,
+      escalation: null,
+      alternatives: [],
+      missingFields: [],
+      salonResolutionSource: resolutionSource
+    };
+  }
+
+  const preferredStaffCandidates = await getStaffCandidates({
+    salonId: salon.id,
+    requestedStaffName: normalized.staffPreference
+  });
+  const allStaffCandidates = normalized.staffPreference
+    ? await getStaffCandidates({ salonId: salon.id })
+    : preferredStaffCandidates;
+
+  let chosenStaff: { id: string; fullName: string } | null = null;
+  const rejectedReasons: string[] = [];
+  for (const staff of preferredStaffCandidates) {
+    try {
+      const slotValidation = await validateAppointmentSlot({
+        salonId: salon.id,
+        staffId: staff.id,
+        serviceIds: [service.id],
+        startTime: requestedStartTime
+      });
+      if (slotValidation.valid) {
+        chosenStaff = staff;
+        break;
+      }
+      rejectedReasons.push(slotValidation.reason ?? `Staff ${staff.fullName} is unavailable.`);
+    } catch (error) {
+      if (error instanceof AppError && error.statusCode < 500) {
+        rejectedReasons.push(error.message);
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  if (!chosenStaff) {
+    const alternatives = await getSuggestedSlotsForService({
+      salonId: salon.id,
+      serviceId: service.id,
+      staffCandidates: allStaffCandidates,
+      timezone: salon.timezone,
+      preferredStartTime: requestedStartTime,
+      daysAhead: 7,
+      maxSlots: 5
+    });
+    const message = buildLexMessage({
+      outcome: "NO_AVAILABILITY",
+      alternatives,
+      salonTimezone: salon.timezone
+    });
+    const parsed = buildInternalParsedIntent({
+      intentType: "BOOK_APPOINTMENT",
+      customerName: normalized.customerName,
+      customerPhone: normalized.customerPhone,
+      serviceName: normalized.serviceName,
+      staffPreference: normalized.staffPreference,
+      requestedDateTime: requestedStartTime.toISOString(),
+      missingFields: [],
+      isReadyToBook: false
+    });
+    const bookingAttempt = await createAttempt({
+      status: BookingAttemptStatus.NO_AVAILABILITY,
+      requestedStartTime,
+      alternativeSlots: alternatives,
+      failureReason:
+        Array.from(new Set(rejectedReasons)).slice(0, 3).join("; ") ||
+        "No available slot for the requested time.",
+      normalizedRequest: {
+        serviceId: service.id,
+        serviceName: normalized.serviceName,
+        staffPreference: normalized.staffPreference,
+        startTimeIso: requestedStartTime.toISOString(),
+        timezone: salon.timezone
+      }
+    });
+    const aiInteraction = await createInteraction({
+      outcome: "NO_AVAILABILITY",
+      message,
+      parsed,
+      bookingAttemptId: bookingAttempt.id,
+      responsePayload: {
+        alternatives
+      },
+      isValid: true
+    });
+    await finalizeCall({
+      outcome: "NO_AVAILABILITY",
+      bookingAttemptId: bookingAttempt.id,
+      bookingStatus: bookingAttempt.status,
+      parsed,
+      message,
+      alternatives,
+      failureReason: bookingAttempt.failureReason ?? undefined
+    });
+
+    return {
+      outcome: "NO_AVAILABILITY" as const,
+      message,
+      lexResponse: {
+        fulfillmentState: "Failed",
+        message
+      },
+      appointment: null,
+      bookingAttempt,
+      callSession,
+      transcript,
+      aiInteraction,
+      escalation: null,
+      alternatives,
+      missingFields: [],
+      salonResolutionSource: resolutionSource
+    };
   }
 
   const customer = await resolveCustomer({
     salonId: salon.id,
     actorUserId,
-    customerName: input.customerName,
-    customerPhone: input.customerPhone,
+    customerName: normalized.customerName,
+    customerPhone: normalized.customerPhone,
     createCustomerIfMissing: true
   });
   if (!customer) {
-    throw new AppError("Customer name and a valid phone are required.", 400, "CUSTOMER_REQUIRED");
+    const message = buildLexMessage({
+      outcome: "MISSING_INFO",
+      missingFields: ["customerName", "customerPhone"]
+    });
+    const parsed = buildInternalParsedIntent({
+      intentType: "BOOK_APPOINTMENT",
+      customerName: normalized.customerName,
+      customerPhone: normalized.customerPhone,
+      serviceName: normalized.serviceName,
+      staffPreference: normalized.staffPreference,
+      requestedDateTime: requestedStartTime.toISOString(),
+      missingFields: ["customerName", "customerPhone"],
+      isReadyToBook: false
+    });
+    const bookingAttempt = await createAttempt({
+      status: BookingAttemptStatus.NEEDS_INPUT,
+      requestedStartTime,
+      failureReason: "Customer name and a valid phone are required.",
+      normalizedRequest: {
+        serviceId: service.id,
+        staffId: chosenStaff.id,
+        startTimeIso: requestedStartTime.toISOString(),
+        timezone: salon.timezone
+      }
+    });
+    const aiInteraction = await createInteraction({
+      outcome: "MISSING_INFO",
+      message,
+      parsed,
+      bookingAttemptId: bookingAttempt.id,
+      responsePayload: {
+        missingFields: ["customerName", "customerPhone"]
+      },
+      isValid: true
+    });
+    await finalizeCall({
+      outcome: "MISSING_INFO",
+      bookingAttemptId: bookingAttempt.id,
+      bookingStatus: bookingAttempt.status,
+      parsed,
+      message,
+      failureReason: bookingAttempt.failureReason ?? undefined
+    });
+
+    return {
+      outcome: "MISSING_INFO" as const,
+      message,
+      lexResponse: {
+        fulfillmentState: "Failed",
+        message
+      },
+      appointment: null,
+      bookingAttempt,
+      callSession,
+      transcript,
+      aiInteraction,
+      escalation: null,
+      alternatives: [],
+      missingFields: ["customerName", "customerPhone"],
+      salonResolutionSource: resolutionSource
+    };
   }
-
-  const staff = await selectStaffForAIAppointment({
-    salonId: salon.id,
-    serviceId: service.id,
-    requestedStartTime,
-    staffPreference: input.staffPreference
-  });
-
-  const callSession = await upsertAmazonConnectCallSession({
-    salonId: salon.id,
-    contactId: input.amazonConnectContactId,
-    customerPhone: input.customerPhone,
-    amazonConnectPhoneNumber: input.amazonConnectPhoneNumber,
-    calledNumber: input.calledNumber
-  });
 
   const appointment = await createAppointmentFromAI(salon.id, actorUserId, {
     customerId: customer.id,
-    staffId: staff.id,
+    staffId: chosenStaff.id,
     serviceId: service.id,
     startTime: requestedStartTime,
     notes: [
       "Created by Amazon Connect AI Booking.",
-      input.source ? `Source: ${input.source}` : null,
-      input.amazonConnectContactId ? `Amazon Connect contact: ${input.amazonConnectContactId}` : null
+      normalized.source ? `Source: ${normalized.source}` : null,
+      normalized.contactId ? `Amazon Connect contact: ${normalized.contactId}` : null
     ]
       .filter((value): value is string => Boolean(value))
       .join("\n")
   });
 
-  const bookingAttempt = await prisma.bookingAttempt.create({
-    data: {
-      salonId: salon.id,
-      callSessionId: callSession?.id,
-      appointmentId: appointment.id,
-      status: BookingAttemptStatus.SUCCESS,
-      source: input.source?.trim() || "AMAZON_CONNECT_LEX",
-      customerName: input.customerName,
-      customerPhone: normalizePhoneForMatching(input.customerPhone),
-      requestedService: input.serviceName,
-      requestedStaff: input.staffPreference,
-      requestedDateTimeText: requestedStartTime.toISOString(),
-      normalizedRequest: toJson({
-        salonId: salon.id,
-        salonResolutionSource: resolutionSource,
-        serviceId: service.id,
-        staffId: staff.id,
-        customerId: customer.id,
-        startTimeIso: requestedStartTime.toISOString(),
-        timezone: salon.timezone
-      }),
-      rawInput: toJson({
-        source: input.source,
-        amazonConnectContactId: input.amazonConnectContactId,
-        amazonConnectPhoneNumber: input.amazonConnectPhoneNumber,
-        calledNumber: input.calledNumber
-      }),
-      createdByUserId: actorUserId
+  const bookingAttempt = await createAttempt({
+    status: BookingAttemptStatus.SUCCESS,
+    appointmentId: appointment.id,
+    requestedStartTime,
+    normalizedRequest: {
+      serviceId: service.id,
+      staffId: chosenStaff.id,
+      customerId: customer.id,
+      startTimeIso: requestedStartTime.toISOString(),
+      timezone: salon.timezone
     }
   });
+  const message = buildLexMessage({
+    outcome: "BOOKED",
+    appointmentStartTime: requestedStartTime,
+    salonTimezone: salon.timezone
+  });
+  const parsed = buildInternalParsedIntent({
+    intentType: "BOOK_APPOINTMENT",
+    customerName: normalized.customerName,
+    customerPhone: normalized.customerPhone,
+    serviceName: normalized.serviceName,
+    staffPreference: chosenStaff.fullName,
+    requestedDateTime: requestedStartTime.toISOString(),
+    missingFields: [],
+    isReadyToBook: true
+  });
+  const aiInteraction = await createInteraction({
+    outcome: "BOOKED",
+    message,
+    parsed,
+    bookingAttemptId: bookingAttempt.id,
+    responsePayload: {
+      appointmentId: appointment.id
+    },
+    isValid: true
+  });
 
-  if (callSession) {
-    await prisma.callSession.update({
-      where: { id: callSession.id },
-      data: {
-        bookingResult: toJson({
-          bookingAttemptId: bookingAttempt.id,
-          appointmentId: appointment.id,
-          status: BookingAttemptStatus.SUCCESS
-        }),
-        finalResolution: "AI appointment created."
-      }
-    });
-  }
+  await finalizeCall({
+    outcome: "BOOKED",
+    bookingAttemptId: bookingAttempt.id,
+    bookingStatus: bookingAttempt.status,
+    parsed,
+    message,
+    appointmentId: appointment.id
+  });
 
   return {
+    outcome: "BOOKED" as const,
+    message,
+    lexResponse: {
+      fulfillmentState: "Fulfilled",
+      message
+    },
     appointment,
     bookingAttempt,
     callSession,
+    transcript,
+    aiInteraction,
+    escalation: null,
+    alternatives: [],
+    missingFields: [],
     salonResolutionSource: resolutionSource
   };
 };

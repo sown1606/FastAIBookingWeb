@@ -1,9 +1,31 @@
 import { Router } from "express";
+import { ExternalProvider } from "@prisma/client";
+import { env } from "../../config/env";
 import { prisma } from "../../db/prisma";
 import { sendSuccess } from "../../utils/response";
 import { asyncHandler } from "../../middleware/async-handler";
 
 export const healthRouter = Router();
+
+const getAmazonConnectHealth = async () => {
+  const activeIntegrationConfigCount = await prisma.integrationConfig.count({
+    where: {
+      provider: ExternalProvider.AMAZON_CONNECT,
+      isActive: true
+    }
+  });
+  const missing = [
+    ...env.integrationStatuses.amazonConnect.missing,
+    activeIntegrationConfigCount === 0 ? "Active AMAZON_CONNECT IntegrationConfig" : null
+  ].filter((value): value is string => Boolean(value));
+
+  return {
+    configured: env.integrationStatuses.amazonConnect.configured,
+    activeIntegrationConfigCount,
+    ready: env.integrationStatuses.amazonConnect.configured && activeIntegrationConfigCount > 0,
+    missing
+  };
+};
 
 healthRouter.get(
   "/",
@@ -33,9 +55,13 @@ healthRouter.get(
   "/ready",
   asyncHandler(async (_req, res) => {
     await prisma.$queryRaw`SELECT 1`;
+    const amazonConnect = await getAmazonConnectHealth();
     return sendSuccess(res, {
       data: {
-        status: "ready",
+        status: amazonConnect.ready ? "ready" : "degraded",
+        integrations: {
+          amazonConnect
+        },
         timestamp: new Date().toISOString()
       }
     });
@@ -46,9 +72,13 @@ healthRouter.get(
   "/readiness",
   asyncHandler(async (_req, res) => {
     await prisma.$queryRaw`SELECT 1`;
+    const amazonConnect = await getAmazonConnectHealth();
     return sendSuccess(res, {
       data: {
-        status: "ready",
+        status: amazonConnect.ready ? "ready" : "degraded",
+        integrations: {
+          amazonConnect
+        },
         timestamp: new Date().toISOString()
       }
     });

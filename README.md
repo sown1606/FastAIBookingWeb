@@ -26,8 +26,9 @@ apps/
 
 Primary demo salon:
 
-- Salon: `Inails Demo Salon`
+- Salon: `Kiet Nails & Beauty`
 - Original business number: `848-702-9493`
+- Carrier setup: T-Mobile no-answer forwarding code `**61*18483487681**10#`
 - Primary telephony layer: Amazon Connect
 - AI layer: Amazon Lex / Amazon AI
 - Human escalation layer: Amazon Connect Operator Queue
@@ -54,7 +55,7 @@ Only `owner.demo@fastaibooking.local` is seeded as the primary owner of the sing
 
 ## Demo Seed Snapshot
 
-- One active demo salon: `Inails Demo Salon`
+- One active demo salon: `Kiet Nails & Beauty`
 - 7 staff records seeded:
   - 6 active
   - 1 inactive
@@ -224,7 +225,7 @@ docker compose exec -T postgres \
 
 Expected salon row:
 
-- `Inails Demo Salon`
+- `Kiet Nails & Beauty`
 - `+18487029493`
 - the Amazon Connect forwarding number configured in `AMAZON_CONNECT_PHONE_NUMBER`
 

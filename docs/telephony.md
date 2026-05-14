@@ -11,6 +11,8 @@ CALL_PROVIDER=amazon_connect
 AI_PROVIDER=amazon
 ```
 
+`AI_PROVIDER=lex` is accepted as an Amazon Lex alias for the same live demo path.
+
 ## Main Call Flow
 
 ```text

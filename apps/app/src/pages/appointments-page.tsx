@@ -1,4 +1,5 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { Fragment, FormEvent, useEffect, useMemo, useState } from "react";
+import type { CSSProperties } from "react";
 import { apiGet, apiPatch, apiPost, extractErrorMessage } from "../lib/api";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
 import { useToast } from "../components/toast";
@@ -7,6 +8,8 @@ import { formatDateTime } from "../lib/format";
 import type { Pagination } from "../types";
 import { toDateTimeLocalValue, useFormDialog } from "../components/form-dialog";
 import { statusLabelKey, useI18n } from "../lib/i18n";
+import { DemoAvatar } from "../components/avatar";
+import { requiredLabel } from "../lib/phone";
 
 interface AppointmentItem {
   id: string;
@@ -72,6 +75,41 @@ interface StaffReminder {
   appointment: AppointmentItem;
 }
 
+const formatHourLabel = (hour: number) => {
+  const date = new Date();
+  date.setHours(hour, 0, 0, 0);
+  return date.toLocaleTimeString([], {
+    hour: "numeric"
+  });
+};
+
+const formatTimeOnly = (value: string) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+  return date.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit"
+  });
+};
+
+const minutesFromDayStart = (value: string) => {
+  const date = new Date(value);
+  return date.getHours() * 60 + date.getMinutes();
+};
+
+const buildTimeSlots = (items: AppointmentItem[]) => {
+  if (!items.length) {
+    return Array.from({ length: 10 }, (_value, index) => index + 9);
+  }
+  const starts = items.map((item) => minutesFromDayStart(item.startTime));
+  const ends = items.map((item) => minutesFromDayStart(item.endTime));
+  const firstHour = Math.max(0, Math.min(9, Math.floor(Math.min(...starts) / 60)));
+  const lastHour = Math.min(23, Math.max(18, Math.ceil(Math.max(...ends) / 60)));
+  return Array.from({ length: lastHour - firstHour + 1 }, (_value, index) => firstHour + index);
+};
+
 export const AppointmentsPage = () => {
   const { session } = useAuth();
   const { notify } = useToast();
@@ -100,6 +138,8 @@ export const AppointmentsPage = () => {
   const appointmentStatusOptions = [
     { value: "SCHEDULED", label: t("status.SCHEDULED") },
     { value: "CONFIRMED", label: t("status.CONFIRMED") },
+    { value: "IN_PROGRESS", label: t("status.IN_PROGRESS") },
+    { value: "COMPLETED", label: t("status.COMPLETED") },
     { value: "CANCELED", label: t("status.CANCELED") },
     { value: "NO_SHOW", label: t("status.NO_SHOW") }
   ];
@@ -158,12 +198,21 @@ export const AppointmentsPage = () => {
     if (!isOwner) {
       return;
     }
+    if (!form.customerId || !form.staffId || !form.serviceId || !form.startTime) {
+      notify("error", t("form.requiredAll"));
+      return;
+    }
+    const startTime = new Date(form.startTime);
+    if (Number.isNaN(startTime.getTime())) {
+      notify("error", t("form.dateInvalid"));
+      return;
+    }
     try {
       await apiPost<unknown, unknown>("/api/v1/appointments", {
         customerId: form.customerId,
         staffId: form.staffId,
         serviceId: form.serviceId,
-        startTime: new Date(form.startTime).toISOString(),
+        startTime: startTime.toISOString(),
         source: "DASHBOARD"
       });
       setForm({
@@ -216,9 +265,14 @@ export const AppointmentsPage = () => {
     if (!values?.startTime) {
       return;
     }
+    const startTime = new Date(values.startTime);
+    if (Number.isNaN(startTime.getTime())) {
+      notify("error", t("form.dateInvalid"));
+      return;
+    }
     try {
       await apiPatch<unknown, { startTime: string }>(`/api/v1/appointments/${appointment.id}/reschedule`, {
-        startTime: new Date(values.startTime).toISOString()
+        startTime: startTime.toISOString()
       });
       notify("success", t("appointments.reschedule"));
       await load();
@@ -282,9 +336,14 @@ export const AppointmentsPage = () => {
     if (!values?.minutes) {
       return;
     }
+    const minutes = Number(values.minutes);
+    if (!Number.isInteger(minutes) || minutes < 1 || minutes > 180) {
+      notify("error", t("form.numberInvalid"));
+      return;
+    }
     try {
       await apiPost<unknown, { minutes: number }>(`/api/v1/appointments/${appointmentId}/extend`, {
-        minutes: Number(values.minutes)
+        minutes
       });
       notify("success", t("appointments.extend"));
       await load();
@@ -336,6 +395,30 @@ export const AppointmentsPage = () => {
     return [...byDay.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   }, [appointments]);
 
+  const scheduleStaff = useMemo(() => {
+    const byId = new Map<string, StaffItem>();
+    staff.forEach((member) => byId.set(member.id, member));
+    appointments.forEach((appointment) => {
+      if (!byId.has(appointment.staff.id)) {
+        byId.set(appointment.staff.id, appointment.staff);
+      }
+    });
+    return [...byId.values()].sort((a, b) => a.fullName.localeCompare(b.fullName));
+  }, [appointments, staff]);
+
+  const getAppointmentToneClass = (appointment: AppointmentItem) => {
+    if (appointment.status === "CANCELED" || appointment.status === "NO_SHOW") {
+      return "schedule-appointment muted-card";
+    }
+    if (appointment.status === "IN_PROGRESS") {
+      return "schedule-appointment active-card";
+    }
+    if (appointment.source === "AI" || appointment.source === "AMAZON_CONNECT") {
+      return "schedule-appointment ai-card";
+    }
+    return "schedule-appointment";
+  };
+
   if (loading) {
     return <LoadingBlock />;
   }
@@ -384,7 +467,7 @@ export const AppointmentsPage = () => {
           <h2>{t("appointments.createTitle")}</h2>
           <form className="form-grid two-columns" onSubmit={createAppointment}>
             <label className="field">
-              <span>{t("appointments.customer")}</span>
+              <span>{requiredLabel(t("appointments.customer"))}</span>
               <select
                 value={form.customerId}
                 onChange={(event) => setForm((prev) => ({ ...prev, customerId: event.target.value }))}
@@ -399,7 +482,7 @@ export const AppointmentsPage = () => {
               </select>
             </label>
             <label className="field">
-              <span>{t("appointments.staff")}</span>
+              <span>{requiredLabel(t("appointments.staff"))}</span>
               <select
                 value={form.staffId}
                 onChange={(event) => setForm((prev) => ({ ...prev, staffId: event.target.value }))}
@@ -414,7 +497,7 @@ export const AppointmentsPage = () => {
               </select>
             </label>
             <label className="field">
-              <span>{t("appointments.service")}</span>
+              <span>{requiredLabel(t("appointments.service"))}</span>
               <select
                 value={form.serviceId}
                 onChange={(event) => setForm((prev) => ({ ...prev, serviceId: event.target.value }))}
@@ -429,7 +512,7 @@ export const AppointmentsPage = () => {
               </select>
             </label>
             <label className="field">
-              <span>{t("appointments.start")}</span>
+              <span>{requiredLabel(t("appointments.start"))}</span>
               <input
                 type="datetime-local"
                 value={form.startTime}
@@ -443,6 +526,127 @@ export const AppointmentsPage = () => {
               </button>
             </div>
           </form>
+        </section>
+      ) : null}
+
+      {isOwner ? (
+        <section className="card">
+          <div className="section-header">
+            <div>
+              <h2>{t("appointments.scheduleBoard")}</h2>
+              <p className="muted">{t("appointments.scheduleBoardHint")}</p>
+            </div>
+            <span className="status-pill info">
+              {t("staff.directoryCount", { count: scheduleStaff.length })}
+            </span>
+          </div>
+          {groupedByDay.length && scheduleStaff.length ? (
+            groupedByDay.map(([day, items]) => {
+              const timeSlots = buildTimeSlots(items);
+              const firstHour = timeSlots[0] ?? 9;
+              return (
+                <div key={day} className="schedule-day">
+                  <div className="section-header">
+                    <h3>{day}</h3>
+                    <span className="summary-badge">{items.length} {t("nav.appointments")}</span>
+                  </div>
+                  <div className="schedule-board-wrap">
+                    <div
+                      className="schedule-board"
+                      style={
+                        {
+                          "--staff-count": scheduleStaff.length,
+                          "--slot-count": timeSlots.length
+                        } as CSSProperties
+                      }
+                    >
+                      <div className="schedule-corner">{t("appointments.time")}</div>
+                      {scheduleStaff.map((member, staffIndex) => (
+                        <div
+                          key={member.id}
+                          className="schedule-staff-header"
+                          style={{ gridColumn: staffIndex + 2, gridRow: 1 }}
+                        >
+                          <DemoAvatar name={member.fullName} variant="staff" size="sm" />
+                          <strong>{member.fullName}</strong>
+                        </div>
+                      ))}
+                      {timeSlots.map((hour, hourIndex) => (
+                        <Fragment key={hour}>
+                          <div
+                            className="schedule-time"
+                            style={{ gridColumn: 1, gridRow: hourIndex + 2 }}
+                          >
+                            {formatHourLabel(hour)}
+                          </div>
+                          {scheduleStaff.map((member, staffIndex) => (
+                            <div
+                              key={`${hour}-${member.id}`}
+                              className="schedule-lane-cell"
+                              style={{ gridColumn: staffIndex + 2, gridRow: hourIndex + 2 }}
+                            />
+                          ))}
+                        </Fragment>
+                      ))}
+                      {items.map((item) => {
+                        const staffIndex = scheduleStaff.findIndex((member) => member.id === item.staff.id);
+                        if (staffIndex < 0) {
+                          return null;
+                        }
+                        const startMinutes = minutesFromDayStart(item.startTime);
+                        const endMinutes = Math.max(minutesFromDayStart(item.endTime), startMinutes + 15);
+                        const startRow = Math.max(2, Math.floor((startMinutes - firstHour * 60) / 60) + 2);
+                        const span = Math.max(1, Math.ceil((endMinutes - startMinutes) / 60));
+                        const statusKey = statusLabelKey(item.status);
+                        return (
+                          <article
+                            key={item.id}
+                            className={getAppointmentToneClass(item)}
+                            style={{
+                              gridColumn: staffIndex + 2,
+                              gridRow: `${startRow} / span ${span}`
+                            }}
+                          >
+                            <div className="schedule-appointment-top">
+                              <span className={item.status === "COMPLETED" ? "status-pill success" : item.status === "IN_PROGRESS" ? "status-pill info" : "status-pill"}>
+                                {statusKey ? t(statusKey) : item.status}
+                              </span>
+                              <strong>
+                                {t("appointments.timeRange", {
+                                  start: formatTimeOnly(item.startTime),
+                                  end: formatTimeOnly(item.endTime)
+                                })}
+                              </strong>
+                            </div>
+                            <div className="schedule-appointment-copy">
+                              <strong>
+                                {item.customer.firstName} {item.customer.lastName}
+                              </strong>
+                              <span>{item.service.name}</span>
+                              {item.notes ? <small>{item.notes}</small> : null}
+                            </div>
+                            <div className="schedule-appointment-actions">
+                              <button type="button" className="button-secondary" onClick={() => void updateStatus(item)}>
+                                {t("appointments.updateStatus")}
+                              </button>
+                              <button type="button" className="button-secondary" onClick={() => void rescheduleAppointment(item)}>
+                                {t("appointments.reschedule")}
+                              </button>
+                              <button type="button" className="button-secondary" onClick={() => void cancelAppointment(item)}>
+                                {t("appointments.cancel")}
+                              </button>
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <EmptyBlock message={scheduleStaff.length ? t("appointments.noOwner") : t("appointments.noStaffColumns")} />
+          )}
         </section>
       ) : null}
 
@@ -464,7 +668,7 @@ export const AppointmentsPage = () => {
         </section>
       ) : null}
 
-      <section className="card">
+      {!isOwner ? <section className="card">
         {groupedByDay.length ? (
           groupedByDay.map(([day, items]) => (
             <div key={day} className="day-section">
@@ -543,7 +747,7 @@ export const AppointmentsPage = () => {
         ) : (
           <EmptyBlock message={isOwner ? t("appointments.noOwner") : t("appointments.noStaff")} />
         )}
-      </section>
+      </section> : null}
     </div>
   );
 };
