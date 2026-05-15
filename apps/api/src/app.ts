@@ -19,7 +19,10 @@ import { billingRouter } from "./modules/billing/billing.routes";
 import { businessHoursRouter } from "./modules/business-hours/business-hours.routes";
 import { aiInternalRouter, aiRouter } from "./modules/ai/ai.routes";
 import { callCenterRouter } from "./modules/call-center/call-center.routes";
-import { callrailWebhookRouter } from "./modules/calls/callrail-webhook.routes";
+import {
+  amazonConnectIntegrationRouter,
+  callrailWebhookRouter
+} from "./modules/calls/callrail-webhook.routes";
 import { callsRouter } from "./modules/calls/calls.routes";
 import { customersRouter } from "./modules/customers/customers.routes";
 import { feedbackRouter } from "./modules/feedback/feedback.routes";
@@ -78,6 +81,7 @@ app.use(`${PUBLIC_API_PREFIX}/auth`, authRouter);
 app.use(`${PUBLIC_API_PREFIX}/admin`, adminRouter);
 app.use(`${PUBLIC_API_PREFIX}/internal/ai`, aiInternalRouter);
 app.use(`${PUBLIC_API_PREFIX}/ai`, aiInternalRouter);
+app.use(`${PUBLIC_API_PREFIX}/integrations/amazon-connect`, amazonConnectIntegrationRouter);
 app.use(`${PUBLIC_API_PREFIX}/integrations/callrail`, callrailWebhookRouter);
 app.use(`${PUBLIC_API_PREFIX}/feedback`, feedbackRouter);
 

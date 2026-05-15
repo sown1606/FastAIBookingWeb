@@ -336,9 +336,7 @@ interface CallRailHealthStatus {
 }
 
 const integrationProviderOptions: Array<IntegrationConfig["provider"]> = [
-  "CALLRAIL",
-  "AMAZON_CONNECT",
-  "VERTEX"
+  "AMAZON_CONNECT"
 ];
 
 const appointmentStatusOptions = [
@@ -571,7 +569,7 @@ export const SalonDetailPage = () => {
         apiGet<BillingUsageResponse>(`/api/v1/admin/salons/${salonId}/billing/usage?historyLimit=6`),
         apiGet<AiReceptionConfig>(`/api/v1/admin/salons/${salonId}/ai-reception`),
         apiGet<AiReceptionCallLogsResponse>(`/api/v1/admin/salons/${salonId}/call-logs?page=1&limit=10`),
-        apiGet<CallRailHealthStatus>("/api/v1/integrations/callrail/health"),
+        apiGet<CallRailHealthStatus>("/api/v1/integrations/amazon-connect/health"),
         apiGet<CallCenterAgent[]>("/api/v1/admin/call-center/agents"),
         apiGet<CallCenterAssignment[]>(`/api/v1/admin/salons/${salonId}/call-center-assignments`)
       ]);
@@ -727,7 +725,7 @@ export const SalonDetailPage = () => {
     setIntegrations((prev) => [
       ...prev,
       {
-        provider: "CALLRAIL",
+        provider: "AMAZON_CONNECT",
         configKey: "",
         configValue: "",
         isActive: true
@@ -1289,8 +1287,6 @@ export const SalonDetailPage = () => {
                 : t("status.NEEDS_SETUP")}
             </span>
           </div>
-          <span className="muted">Optional attribution {t("salonDetail.activeConfigCount")}: {salon.integrationStatuses.callRail.activeConfigCount}</span>
-          <span className="muted">Optional legacy AI {t("salonDetail.activeConfigCount")}: {salon.integrationStatuses.vertex.activeConfigCount}</span>
           <span className="muted">
             Amazon Connect {t("salonDetail.activeConfigCount")}: {salon.integrationStatuses.amazonConnect.activeConfigCount}
           </span>
@@ -1494,34 +1490,6 @@ export const SalonDetailPage = () => {
         <article className="card">
           <h3>{t("salonDetail.integrationStatusTitle")}</h3>
           <div className="mobile-list">
-            <article className="mobile-item">
-              <strong>Optional attribution</strong>
-              <span>
-                {salon.integrationStatuses.callRail.configured
-                  ? t("salonDetail.configured")
-                  : t("salonDetail.optional")}
-              </span>
-              <small>
-                {t("salonDetail.activeConfigCount")}: {salon.integrationStatuses.callRail.activeConfigCount}
-                {salon.integrationStatuses.callRail.missing.length
-                  ? ` · ${t("dashboard.integrationMissing", { items: salon.integrationStatuses.callRail.missing.join(", ") })}`
-                  : ""}
-              </small>
-            </article>
-            <article className="mobile-item">
-              <strong>Optional legacy AI</strong>
-              <span>
-                {salon.integrationStatuses.vertex.configured
-                  ? t("salonDetail.configured")
-                  : t("salonDetail.optional")}
-              </span>
-              <small>
-                {t("salonDetail.activeConfigCount")}: {salon.integrationStatuses.vertex.activeConfigCount}
-                {salon.integrationStatuses.vertex.missing.length
-                  ? ` · ${t("dashboard.integrationMissing", { items: salon.integrationStatuses.vertex.missing.join(", ") })}`
-                  : ""}
-              </small>
-            </article>
             <article className="mobile-item">
               <strong>Amazon Connect</strong>
               <span>

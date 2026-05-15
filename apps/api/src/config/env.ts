@@ -129,6 +129,7 @@ const envSchema = z.object({
   DEMO_FORWARDING_DEACTIVATION_CODE: z.string().default("##61#"),
   DEMO_FORWARDING_STATUS_CODE: z.string().default("*#61#"),
   AWS_REGION: z.string().optional(),
+  AWS_DEFAULT_REGION: z.string().optional(),
   AWS_ACCESS_KEY_ID: z.string().optional(),
   AWS_SECRET_ACCESS_KEY: z.string().optional(),
   AWS_END_USER_MESSAGING_REGION: z.string().optional(),
@@ -151,10 +152,14 @@ const envSchema = z.object({
   AMAZON_CONNECT_RECORDING_PREFIX: z.string().optional(),
   AMAZON_LEX_BOT_ID: z.string().optional(),
   AMAZON_LEX_BOT_ALIAS_ID: z.string().optional(),
-  AMAZON_LEX_LOCALE_ID: z.string().default("en_US"),
+  AMAZON_LEX_LOCALE_ID: z.string().optional(),
+  LEX_BOT_ID: z.string().optional(),
+  LEX_BOT_ALIAS_ID: z.string().optional(),
+  LEX_BOT_LOCALE_ID: z.string().optional(),
   AMAZON_LEX_BOOKING_INTENT_NAME: z.string().optional(),
   AMAZON_LEX_HUMAN_ESCALATION_INTENT_NAME: z.string().optional(),
   BOOKING_LAMBDA_FUNCTION_NAME: z.string().optional(),
+  LAMBDA_BOOKING_HANDLER_NAME: z.string().optional(),
   BOOKING_LAMBDA_FUNCTION_ARN: z.string().optional(),
   FASTAIBOOKING_API_BASE_URL: z.string().optional(),
   FASTAIBOOKING_API_INTERNAL_TOKEN: z.string().optional(),
@@ -275,6 +280,14 @@ const resolvedVertexLocation =
 const resolvedVertexModel =
   asNonEmpty(base.VERTEX_AI_MODEL) ?? asNonEmpty(base.VERTEX_MODEL) ?? "gemini-1.5-flash-002";
 const resolvedGeminiApiKey = asNonEmpty(base.GEMINI_API_KEY) ?? asNonEmpty(base.VERTEX_API_KEY);
+const resolvedAwsRegion = asNonEmpty(base.AWS_REGION) ?? asNonEmpty(base.AWS_DEFAULT_REGION);
+const resolvedLexBotId = asNonEmpty(base.AMAZON_LEX_BOT_ID) ?? asNonEmpty(base.LEX_BOT_ID);
+const resolvedLexBotAliasId =
+  asNonEmpty(base.AMAZON_LEX_BOT_ALIAS_ID) ?? asNonEmpty(base.LEX_BOT_ALIAS_ID);
+const resolvedLexLocaleId =
+  asNonEmpty(base.AMAZON_LEX_LOCALE_ID) ?? asNonEmpty(base.LEX_BOT_LOCALE_ID) ?? "en_US";
+const resolvedBookingLambdaFunctionName =
+  asNonEmpty(base.BOOKING_LAMBDA_FUNCTION_NAME) ?? asNonEmpty(base.LAMBDA_BOOKING_HANDLER_NAME);
 
 const integrationStatuses = {
   callRail: {
@@ -292,7 +305,7 @@ const integrationStatuses = {
   },
   amazonConnect: {
     configured: Boolean(
-      asNonEmpty(base.AWS_REGION) &&
+      resolvedAwsRegion &&
         asNonEmpty(base.AMAZON_CONNECT_INSTANCE_ID) &&
         asNonEmpty(base.AMAZON_CONNECT_INSTANCE_ARN) &&
         asNonEmpty(base.AMAZON_CONNECT_INSTANCE_URL) &&
@@ -304,17 +317,17 @@ const integrationStatuses = {
         asNonEmpty(base.AMAZON_CONNECT_QUEUE_ID_DEFAULT) &&
         asNonEmpty(base.AMAZON_CONNECT_ROUTING_PROFILE_ID) &&
         asNonEmpty(base.AMAZON_CONNECT_OPERATOR_SECURITY_PROFILE_ID) &&
-        asNonEmpty(base.AMAZON_LEX_BOT_ID) &&
-        asNonEmpty(base.AMAZON_LEX_BOT_ALIAS_ID) &&
+        resolvedLexBotId &&
+        resolvedLexBotAliasId &&
         asNonEmpty(base.AMAZON_LEX_BOOKING_INTENT_NAME) &&
         asNonEmpty(base.AMAZON_LEX_HUMAN_ESCALATION_INTENT_NAME) &&
-        asNonEmpty(base.BOOKING_LAMBDA_FUNCTION_NAME) &&
+        resolvedBookingLambdaFunctionName &&
         asNonEmpty(base.BOOKING_LAMBDA_FUNCTION_ARN) &&
         asNonEmpty(base.FASTAIBOOKING_API_BASE_URL) &&
         asNonEmpty(base.FASTAIBOOKING_API_INTERNAL_TOKEN)
     ),
     missing: [
-      !asNonEmpty(base.AWS_REGION) ? "AWS_REGION" : null,
+      !resolvedAwsRegion ? "AWS_REGION" : null,
       !asNonEmpty(base.AMAZON_CONNECT_INSTANCE_ID) ? "AMAZON_CONNECT_INSTANCE_ID" : null,
       !asNonEmpty(base.AMAZON_CONNECT_INSTANCE_ARN) ? "AMAZON_CONNECT_INSTANCE_ARN" : null,
       !asNonEmpty(base.AMAZON_CONNECT_INSTANCE_URL) ? "AMAZON_CONNECT_INSTANCE_URL" : null,
@@ -338,15 +351,17 @@ const integrationStatuses = {
       !asNonEmpty(base.AMAZON_CONNECT_OPERATOR_SECURITY_PROFILE_ID)
         ? "AMAZON_CONNECT_OPERATOR_SECURITY_PROFILE_ID"
         : null,
-      !asNonEmpty(base.AMAZON_LEX_BOT_ID) ? "AMAZON_LEX_BOT_ID" : null,
-      !asNonEmpty(base.AMAZON_LEX_BOT_ALIAS_ID) ? "AMAZON_LEX_BOT_ALIAS_ID" : null,
+      !resolvedLexBotId ? "AMAZON_LEX_BOT_ID or LEX_BOT_ID" : null,
+      !resolvedLexBotAliasId ? "AMAZON_LEX_BOT_ALIAS_ID or LEX_BOT_ALIAS_ID" : null,
       !asNonEmpty(base.AMAZON_LEX_BOOKING_INTENT_NAME)
         ? "AMAZON_LEX_BOOKING_INTENT_NAME"
         : null,
       !asNonEmpty(base.AMAZON_LEX_HUMAN_ESCALATION_INTENT_NAME)
         ? "AMAZON_LEX_HUMAN_ESCALATION_INTENT_NAME"
         : null,
-      !asNonEmpty(base.BOOKING_LAMBDA_FUNCTION_NAME) ? "BOOKING_LAMBDA_FUNCTION_NAME" : null,
+      !resolvedBookingLambdaFunctionName
+        ? "BOOKING_LAMBDA_FUNCTION_NAME or LAMBDA_BOOKING_HANDLER_NAME"
+        : null,
       !asNonEmpty(base.BOOKING_LAMBDA_FUNCTION_ARN) ? "BOOKING_LAMBDA_FUNCTION_ARN" : null,
       !asNonEmpty(base.FASTAIBOOKING_API_BASE_URL) ? "FASTAIBOOKING_API_BASE_URL" : null,
       !asNonEmpty(base.FASTAIBOOKING_API_INTERNAL_TOKEN) ? "FASTAIBOOKING_API_INTERNAL_TOKEN" : null
@@ -387,9 +402,20 @@ export const env = {
   AWS_SES_REGION: asNonEmpty(base.AWS_SES_REGION),
   AWS_SES_FROM_EMAIL: asNonEmpty(base.AWS_SES_FROM_EMAIL),
   AWS_SES_CONFIGURATION_SET: asNonEmpty(base.AWS_SES_CONFIGURATION_SET),
+  AWS_REGION: resolvedAwsRegion,
+  AWS_DEFAULT_REGION: asNonEmpty(base.AWS_DEFAULT_REGION) ?? resolvedAwsRegion,
   AWS_END_USER_MESSAGING_REGION: asNonEmpty(base.AWS_END_USER_MESSAGING_REGION),
   AWS_SMS_ORIGINATION_NUMBER: asNonEmpty(base.AWS_SMS_ORIGINATION_NUMBER),
   AWS_SMS_CONFIGURATION_SET: asNonEmpty(base.AWS_SMS_CONFIGURATION_SET),
+  AMAZON_LEX_BOT_ID: resolvedLexBotId,
+  AMAZON_LEX_BOT_ALIAS_ID: resolvedLexBotAliasId,
+  AMAZON_LEX_LOCALE_ID: resolvedLexLocaleId,
+  LEX_BOT_ID: asNonEmpty(base.LEX_BOT_ID) ?? resolvedLexBotId,
+  LEX_BOT_ALIAS_ID: asNonEmpty(base.LEX_BOT_ALIAS_ID) ?? resolvedLexBotAliasId,
+  LEX_BOT_LOCALE_ID: asNonEmpty(base.LEX_BOT_LOCALE_ID) ?? resolvedLexLocaleId,
+  BOOKING_LAMBDA_FUNCTION_NAME: resolvedBookingLambdaFunctionName,
+  LAMBDA_BOOKING_HANDLER_NAME:
+    asNonEmpty(base.LAMBDA_BOOKING_HANDLER_NAME) ?? resolvedBookingLambdaFunctionName,
   DATABASE_URL: databaseUrl,
   DATABASE_HOST: resolvedDatabaseHost,
   DATABASE_PORT: resolvedDatabasePort,

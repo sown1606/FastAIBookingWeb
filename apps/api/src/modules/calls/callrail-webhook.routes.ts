@@ -5,7 +5,7 @@ import { logger } from "../../lib/logger";
 import { asyncHandler } from "../../middleware/async-handler";
 import { validate } from "../../middleware/validate";
 import { sendSuccess } from "../../utils/response";
-import { getCallRailHealthStatus } from "../ai-reception/ai-reception.service";
+import { getAmazonConnectHealthStatus } from "../ai-reception/ai-reception.service";
 import { runCallAutomationForSession } from "./call-automation.service";
 import { buildCallRoutingPlan, processCallRailWebhook } from "./calls.service";
 
@@ -18,11 +18,22 @@ const routingPlanSchema = z.object({
 });
 
 export const callrailWebhookRouter = Router();
+export const amazonConnectIntegrationRouter = Router();
 
 callrailWebhookRouter.get(
   "/health",
   asyncHandler(async (_req, res) => {
-    const health = await getCallRailHealthStatus();
+    const health = await getAmazonConnectHealthStatus();
+    return sendSuccess(res, {
+      data: health
+    });
+  })
+);
+
+amazonConnectIntegrationRouter.get(
+  "/health",
+  asyncHandler(async (_req, res) => {
+    const health = await getAmazonConnectHealthStatus();
     return sendSuccess(res, {
       data: health
     });
@@ -92,6 +103,18 @@ callrailWebhookRouter.post(
 );
 
 callrailWebhookRouter.post(
+  "/route",
+  validate(routingPlanSchema),
+  asyncHandler(async (req, res) => {
+    const payload = req.body as z.infer<typeof routingPlanSchema>;
+    const result = await buildCallRoutingPlan(payload);
+    return sendSuccess(res, {
+      data: result
+    });
+  })
+);
+
+amazonConnectIntegrationRouter.post(
   "/route",
   validate(routingPlanSchema),
   asyncHandler(async (req, res) => {

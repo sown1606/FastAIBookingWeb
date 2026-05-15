@@ -54,9 +54,12 @@ const DEMO_CONNECT_INSTANCE_ID =
 const DEMO_CONNECT_QUEUE_ID = process.env.AMAZON_CONNECT_QUEUE_ID_DEFAULT ?? "demo-shared-queue";
 const DEMO_CONNECT_ROUTING_PROFILE_ID =
   process.env.AMAZON_CONNECT_ROUTING_PROFILE_ID ?? "demo-routing-profile";
-const DEMO_LEX_BOT_ID = process.env.AMAZON_LEX_BOT_ID ?? "demo-lex-booking-bot";
+const DEMO_LEX_BOT_ID =
+  process.env.AMAZON_LEX_BOT_ID ?? process.env.LEX_BOT_ID ?? "demo-lex-booking-bot";
 const DEMO_LEX_BOT_ALIAS_ID =
-  process.env.AMAZON_LEX_BOT_ALIAS_ID ?? "demo-lex-booking-bot-alias";
+  process.env.AMAZON_LEX_BOT_ALIAS_ID ??
+  process.env.LEX_BOT_ALIAS_ID ??
+  "demo-lex-booking-bot-alias";
 const DEMO_FORWARDING_ACTIVATION_CODE =
   process.env.DEMO_FORWARDING_ACTIVATION_CODE?.trim() || `**61*${DEMO_TRACKING_PHONE_DIGITS}**10#`;
 const DEMO_FORWARDING_FALLBACK_CODE = `**61*${DEMO_TRACKING_PHONE_DIGITS}#`;
@@ -1044,7 +1047,10 @@ const run = async (): Promise<void> => {
         salonId: salon.id,
         provider: ExternalProvider.AMAZON_CONNECT,
         configKey: "booking_lambda_function_name",
-        configValue: process.env.BOOKING_LAMBDA_FUNCTION_NAME ?? "demo-booking-handler"
+        configValue:
+          process.env.BOOKING_LAMBDA_FUNCTION_NAME ??
+          process.env.LAMBDA_BOOKING_HANDLER_NAME ??
+          "demo-booking-handler"
       }
     ]
   });

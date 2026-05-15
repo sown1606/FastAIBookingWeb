@@ -199,7 +199,7 @@ const buildAiReceptionResponse = (input: Awaited<ReturnType<typeof getSalonAiRec
     status: mapStatusToApi(setup?.status),
     lastTestedAt: setup?.lastTestedAt ?? null,
     lastVerifiedAt: setup?.lastVerifiedAt ?? null,
-    webhookVerificationEnabled: Boolean(env.CALLRAIL_WEBHOOK_SECRET?.trim()),
+    webhookVerificationEnabled: Boolean(env.FASTAIBOOKING_API_INTERNAL_TOKEN?.trim()),
     setupInstructions: buildSetupInstructions({
       ...codes,
       originalPhoneNumberFormatted: originalPhoneNumberFormatted ?? "the original salon line",
@@ -263,7 +263,7 @@ export const updateAiReceptionConfigForSalon = async (
     where: { salonId },
     create: {
       salonId,
-      provider: ExternalProvider.CALLRAIL,
+      provider: ExternalProvider.AMAZON_CONNECT,
       carrier,
       originalPhoneNumber: nextOriginalPhoneDigits,
       forwardingPhoneNumber: forwardingDigits,
@@ -273,7 +273,7 @@ export const updateAiReceptionConfigForSalon = async (
       status
     },
     update: {
-      provider: ExternalProvider.CALLRAIL,
+      provider: ExternalProvider.AMAZON_CONNECT,
       carrier,
       originalPhoneNumber: nextOriginalPhoneDigits,
       forwardingPhoneNumber: forwardingDigits,
@@ -352,7 +352,7 @@ export const generateAiReceptionForwardingCodeForSalon = async (
     where: { salonId },
     create: {
       salonId,
-      provider: ExternalProvider.CALLRAIL,
+      provider: ExternalProvider.AMAZON_CONNECT,
       carrier,
       originalPhoneNumber: originalPhoneDigits,
       forwardingPhoneNumber: forwardingDigits,
@@ -362,7 +362,7 @@ export const generateAiReceptionForwardingCodeForSalon = async (
       status: nextStatus
     },
     update: {
-      provider: ExternalProvider.CALLRAIL,
+      provider: ExternalProvider.AMAZON_CONNECT,
       carrier,
       originalPhoneNumber: originalPhoneDigits,
       forwardingPhoneNumber: forwardingDigits,
@@ -415,7 +415,7 @@ export const markAiReceptionForwardingTestedForSalon = async (
     where: { salonId },
     create: {
       salonId,
-      provider: ExternalProvider.CALLRAIL,
+      provider: ExternalProvider.AMAZON_CONNECT,
       carrier: DEFAULT_CARRIER,
       originalPhoneNumber: originalPhoneDigits,
       forwardingPhoneNumber: forwardingDigits,
@@ -427,7 +427,7 @@ export const markAiReceptionForwardingTestedForSalon = async (
       lastVerifiedAt: now
     },
     update: {
-      provider: ExternalProvider.CALLRAIL,
+      provider: ExternalProvider.AMAZON_CONNECT,
       originalPhoneNumber: originalPhoneDigits,
       forwardingPhoneNumber: forwardingDigits,
       activationCode: codes.activationCode,
@@ -464,7 +464,7 @@ export const listAiReceptionCallLogsForSalon = async (
   const skip = (input.page - 1) * input.limit;
   const where = {
     salonId,
-    provider: ExternalProvider.CALLRAIL
+    provider: ExternalProvider.AMAZON_CONNECT
   };
 
   const [items, total] = await Promise.all([
@@ -548,11 +548,11 @@ export const markAiReceptionWebhookVerifiedForSalon = async (salonId: string, ve
   });
 };
 
-export const getCallRailHealthStatus = async () => {
+export const getAmazonConnectHealthStatus = async () => {
   const [latestEvent, latestMappedCall, activeSetupCount] = await Promise.all([
     prisma.callEvent.findFirst({
       where: {
-        provider: ExternalProvider.CALLRAIL
+        provider: ExternalProvider.AMAZON_CONNECT
       },
       orderBy: {
         receivedAt: "desc"
@@ -563,7 +563,7 @@ export const getCallRailHealthStatus = async () => {
     }),
     prisma.callSession.findFirst({
       where: {
-        provider: ExternalProvider.CALLRAIL,
+        provider: ExternalProvider.AMAZON_CONNECT,
         salonId: {
           not: null
         },
@@ -587,7 +587,7 @@ export const getCallRailHealthStatus = async () => {
     }),
     prisma.salonAiReceptionSetup.count({
       where: {
-        provider: ExternalProvider.CALLRAIL,
+        provider: ExternalProvider.AMAZON_CONNECT,
         status: {
           in: [AiReceptionSetupStatus.PENDING, AiReceptionSetupStatus.ACTIVE]
         }
@@ -598,47 +598,49 @@ export const getCallRailHealthStatus = async () => {
   const trackingDigits = getConfiguredTrackingDigits();
   const demoOriginalPhoneNumber = getDemoOriginalPhoneDigits();
   const demoForwardingPhoneNumber = getDemoForwardingDigits() ?? trackingDigits;
-  const webhookSecretConfigured = Boolean(env.CALLRAIL_WEBHOOK_SECRET);
-  const apiKeyConfigured = Boolean(env.CALLRAIL_API_KEY);
-  const accountIdConfigured = Boolean(env.CALLRAIL_ACCOUNT_ID);
-  const companyIdConfigured = Boolean(env.CALLRAIL_COMPANY_ID);
+  const internalTokenConfigured = Boolean(env.FASTAIBOOKING_API_INTERNAL_TOKEN);
+  const awsRegionConfigured = Boolean(env.AWS_REGION);
+  const instanceIdConfigured = Boolean(env.AMAZON_CONNECT_INSTANCE_ID);
+  const instanceUrlConfigured = Boolean(env.AMAZON_CONNECT_INSTANCE_URL);
   const trackingNumberConfigured = Boolean(trackingDigits);
-  const trackingNumberIdConfigured = Boolean(env.CALLRAIL_TRACKING_NUMBER_ID);
-  const defaultSalonIdConfigured = Boolean(env.CALLRAIL_DEFAULT_SALON_ID);
-  const aiFlowIdConfigured = Boolean(env.CALLRAIL_AI_FLOW_ID);
-  const livePersonFlowIdConfigured = Boolean(env.CALLRAIL_LIVE_PERSON_FLOW_ID);
-  const configured = env.integrationStatuses.callRail.configured;
-  const status = !configured ? "missing_config" : latestEvent ? "ready" : "configured";
+  const trackingNumberIdConfigured = Boolean(env.AMAZON_CONNECT_PHONE_NUMBER_ID);
+  const defaultSalonIdConfigured = Boolean(env.DEFAULT_SALON_ID);
+  const aiFlowIdConfigured = Boolean(env.AMAZON_CONNECT_CONTACT_FLOW_ID_AI_RECEPTION);
+  const livePersonFlowIdConfigured = Boolean(env.AMAZON_CONNECT_CONTACT_FLOW_ID_HUMAN_ESCALATION);
+  const configured = env.integrationStatuses.amazonConnect.configured;
+  const status = !configured ? "missing_config" : latestEvent || latestMappedCall ? "ready" : "configured";
 
   return {
     provider: DEFAULT_PROVIDER,
     status,
     configured,
-    missing: env.integrationStatuses.callRail.missing,
-    webhookEndpoint: env.CALLRAIL_WEBHOOK_PATH,
-    webhookConfigured: webhookSecretConfigured,
-    webhookVerificationEnabled: webhookSecretConfigured,
-    webhookSecretConfigured,
-    apiKeyConfigured,
-    accountIdConfigured,
-    companyIdConfigured,
-    accountCompanyConfigured: accountIdConfigured && companyIdConfigured,
+    missing: env.integrationStatuses.amazonConnect.missing,
+    webhookEndpoint: "/api/v1/internal/ai/appointments",
+    webhookConfigured: internalTokenConfigured,
+    webhookVerificationEnabled: internalTokenConfigured,
+    webhookSecretConfigured: internalTokenConfigured,
+    apiKeyConfigured: awsRegionConfigured,
+    accountIdConfigured: instanceIdConfigured,
+    companyIdConfigured: instanceUrlConfigured,
+    accountCompanyConfigured: instanceIdConfigured && instanceUrlConfigured,
     trackingNumberConfigured,
     trackingNumberIdConfigured,
     defaultSalonIdConfigured,
     aiFlowIdConfigured,
     livePersonFlowIdConfigured,
-    livePersonFlowOptional: true,
+    livePersonFlowOptional: false,
     trackingNumber: trackingDigits ?? demoForwardingPhoneNumber ?? "",
     trackingNumberFormatted: formatPhoneDigits(trackingDigits ?? demoForwardingPhoneNumber),
-    callFlowName: env.CALLRAIL_CALL_FLOW_NAME ?? "",
+    callFlowName: env.AMAZON_LEX_BOOKING_INTENT_NAME ?? "BookAppointmentIntent",
     demoOriginalPhoneNumber: demoOriginalPhoneNumber ?? "",
     demoOriginalPhoneNumberFormatted: formatPhoneDigits(demoOriginalPhoneNumber),
     demoForwardingPhoneNumber: demoForwardingPhoneNumber ?? "",
     demoForwardingPhoneNumberFormatted: formatPhoneDigits(demoForwardingPhoneNumber),
     activeAiReceptionSetupCount: activeSetupCount,
-    lastReceivedWebhookAt: latestEvent?.receivedAt ?? null,
-    lastWebhookReceivedAt: latestEvent?.receivedAt ?? null,
+    lastReceivedWebhookAt: latestEvent?.receivedAt ?? latestMappedCall?.updatedAt ?? null,
+    lastWebhookReceivedAt: latestEvent?.receivedAt ?? latestMappedCall?.updatedAt ?? null,
     lastMappedCallAt: latestMappedCall?.updatedAt ?? null
   };
 };
+
+export const getCallRailHealthStatus = getAmazonConnectHealthStatus;

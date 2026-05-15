@@ -105,14 +105,6 @@ export const DashboardPage = () => {
 
   const integrations = [
     {
-      label: "Optional attribution",
-      value: integrationSummary.callRail
-    },
-    {
-      label: "Optional legacy AI",
-      value: integrationSummary.vertex
-    },
-    {
       label: "Amazon Connect",
       value: integrationSummary.amazonConnect
     }

@@ -116,24 +116,6 @@ export const HealthPage = () => {
           <div className="integration-grid">
           {[
             {
-              label: "Optional attribution",
-              value:
-                overview.integrationSummary?.callRail ?? {
-                  configured: false,
-                  missing: [t("health.missingSummary")],
-                  activeConfigCount: 0
-                }
-            },
-            {
-              label: "Optional legacy AI",
-              value:
-                overview.integrationSummary?.vertex ?? {
-                  configured: false,
-                  missing: [t("health.missingSummary")],
-                  activeConfigCount: 0
-                }
-            },
-            {
               label: "Amazon Connect",
               value:
                 overview.integrationSummary?.amazonConnect ?? {
