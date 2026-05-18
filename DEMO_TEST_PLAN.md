@@ -6,6 +6,14 @@
 - Platform admin: `https://admin-new-nail.kendemo.com/login`
 - API base: `https://api-new-nail.kendemo.com`
 
+## Live Amazon Connect Demo Number
+
+- Demo number: `+1 848-348-7681`
+- Expected first experience: Amazon Connect answers, sets voice, plays the AI greeting, then enters Amazon Lex `FastAIBookingBot`.
+- Caller should not hear queue or hold music at entry.
+- Queue music is expected only after the caller explicitly asks for a human and `HumanEscalationIntent` routes to `Set working queue -> Transfer to queue`.
+- Current web AI ON/OFF setting is saved in the backend/admin app, but the AWS Connect inbound flow does not read that setting before Lex yet.
+
 ## Demo Accounts
 
 - Platform admin: `admin@fastaibooking.local / Admin123!`
@@ -18,14 +26,16 @@
 
 ### Demo Scenario 1: Direct Call Into Amazon Connect
 
-1. Customer calls salon number `848-702-9493`.
-2. Carrier forwards directly to the Amazon Connect phone number.
-3. Amazon Connect Contact Flow answers the call.
-4. Dashboard records or displays the contact/call session if the backend integration exists.
+1. Customer calls demo number `+1 848-348-7681`.
+2. Amazon Connect Contact Flow answers the call.
+3. Flow sets text-to-speech voice.
+4. Flow plays the FastAIBooking AI greeting.
+5. Flow enters Lex `FastAIBookingBot`.
+6. Dashboard records or displays the contact/call session if the backend integration exists.
 
 ### Demo Scenario 2: AI Booking
 
-1. Customer calls salon number `848-702-9493`.
+1. Customer calls demo number `+1 848-348-7681`.
 2. Amazon Connect runs the AI Booking Reception flow.
 3. Amazon Lex Booking Bot collects:
    - customer name
@@ -33,19 +43,22 @@
    - service
    - requested date/time
    - staff preference if any
-4. Booking Lambda or FastAIBooking Backend API checks services, staff, business hours, and availability.
-5. Backend creates a real appointment.
-6. Owner sees the new appointment in the dashboard.
-7. Assigned Staff sees the appointment in their schedule.
+4. If the caller says all details at once, Lex may still ask follow-up questions for any missing slots.
+5. Booking Lambda or FastAIBooking Backend API checks services, staff, business hours, and availability.
+6. Backend creates a real appointment.
+7. Owner sees the new appointment in the dashboard.
+8. Assigned Staff sees the appointment in their schedule.
 
 ### Demo Scenario 3: Human Escalation
 
-1. Customer says they want to speak with a real person.
-2. AI says: "Please wait while I connect you."
-3. Amazon Connect transfers the call to the Operator Queue.
-4. Operator answers using Amazon Connect CCP/browser softphone.
-5. Operator manages the booking in the FastAIBooking operator dashboard.
-6. Owner/Admin can see call status and result.
+1. Customer calls demo number `+1 848-348-7681`.
+2. Customer first hears the AI greeting and Lex prompt, not queue music.
+3. Customer says they want to speak with a real person.
+4. AI says: "Please wait while I connect you."
+5. Amazon Connect transfers the call to the Operator Queue.
+6. Operator answers using Amazon Connect CCP/browser softphone.
+7. Operator manages the booking in the FastAIBooking operator dashboard.
+8. Owner/Admin can see call status and result.
 
 ### Demo Scenario 4: No Operator Available
 
@@ -76,6 +89,14 @@
 7. Open Call Center Agents and confirm the seeded agent appears.
 8. Open Calls and AI Logs and confirm list data is visible.
 9. Open Health and confirm readiness cards show truthful provider state.
+
+## Kịch bản demo Admin
+
+1. Đăng nhập Admin tại `https://admin-new-nail.kendemo.com/login`.
+2. Mở Dashboard và kiểm tra số liệu tổng quan.
+3. Mở Salons, chọn salon demo, kiểm tra hồ sơ, dịch vụ, nhân viên, lịch làm việc, appointments, integrations, AI Reception và Call Center.
+4. Mở Calls và AI Logs để xác nhận cuộc gọi/booking từ Amazon Connect được ghi nhận.
+5. Mở Health để xác nhận Amazon Connect, Lex, Lambda và API đang hiển thị đúng trạng thái cấu hình.
 
 ## Owner Smoke Test
 
@@ -120,6 +141,14 @@
    - selected escalation detail
 10. Open Calls and AI Logs and confirm seeded call records are visible.
 
+## Kịch bản demo Owner
+
+1. Đăng nhập Owner tại `https://app-new-nail.kendemo.com/login`.
+2. Mở Salon Profile, kiểm tra thông tin salon, dịch vụ, nhân viên và giờ làm việc.
+3. Mở Appointments để xác nhận appointment mới từ AI xuất hiện sau cuộc gọi demo.
+4. Mở Calls hoặc AI Logs để kiểm tra transcript, booking attempt, call session và kết quả booking.
+5. Mở Call Center để xem trạng thái escalation nếu khách yêu cầu gặp người thật.
+
 ## Staff Smoke Test
 
 1. Log in at `/login` with `staff.demo@fastaibooking.local`.
@@ -158,6 +187,14 @@
 11. Create a callback request.
 12. Capture voicemail metadata.
 13. Trigger SMS fallback and confirm the app shows request state, not fake delivery.
+
+## Kịch bản demo Operator
+
+1. Đăng nhập Operator tại `https://app-new-nail.kendemo.com/login`.
+2. Mở Call Center và để Amazon Connect CCP/browser softphone ở trạng thái Available.
+3. Khi khách nói muốn gặp người thật, xác nhận CCP đổ chuông sau khi AI nhận `HumanEscalationIntent`.
+4. Nhận cuộc gọi, mở escalation detail, kiểm tra transcript, AI summary, booking attempts và customer context.
+5. Ghi chú cuộc gọi, cập nhật trạng thái xử lý và hoàn tất escalation.
 
 ## Operator Appointment Workflow Test
 
@@ -198,6 +235,9 @@
 
 ## Expected Current External Limitations
 
-- Amazon Connect live softphone is unavailable until valid env vars, an assigned phone number, and an active `AMAZON_CONNECT` integration config are present.
-- Amazon Lex Booking Bot and Booking Lambda are unavailable until the bot, alias, intents, Lambda function, and backend internal token are configured.
+- Amazon Connect live demo number is `+1 848-348-7681`; it should enter AI reception first.
+- Amazon Connect live softphone requires valid env vars, an assigned phone number, and an active `AMAZON_CONNECT` integration config.
+- Amazon Lex Booking Bot and Booking Lambda require the bot, alias, intents, Lambda function, and backend internal token to stay configured.
+- Queue music should only happen after explicit human escalation.
+- Web AI ON/OFF is saved in the backend/admin app, but the AWS Connect inbound flow does not read it before Lex yet.
 - SMS fallback is currently stub/log-only.
