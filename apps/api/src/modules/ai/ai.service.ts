@@ -11,6 +11,7 @@ import { env } from "../../config/env";
 import { prisma } from "../../db/prisma";
 import { createAuditLog } from "../../lib/audit";
 import { AppError } from "../../lib/errors";
+import { logger } from "../../lib/logger";
 import { createAppointmentFromAI } from "../appointments/appointments.service";
 import { getAvailableSlots, validateAppointmentSlot } from "../availability/availability.service";
 import { createOrUpdateCallEscalation } from "../call-center/call-center.service";
@@ -88,6 +89,18 @@ type SuggestedSlot = {
   endTime: string;
 };
 
+type ServiceMatch = {
+  service: {
+    id: string;
+    name: string;
+    durationMinutes: number;
+    priceCents: number;
+  };
+  confidence: number;
+  exact: boolean;
+  matchedBy: "exact" | "alias" | "fuzzy";
+};
+
 type SalonResolutionSource =
   | "explicit_salon_id"
   | "amazon_connect_integration_config"
@@ -97,6 +110,120 @@ type SalonResolutionSource =
 
 const toJson = (value: unknown): Prisma.InputJsonValue => {
   return JSON.parse(JSON.stringify(value ?? null)) as Prisma.InputJsonValue;
+};
+
+const NUMBER_WORDS: Record<string, number> = {
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
+  eleven: 11,
+  twelve: 12
+};
+
+const WEEKDAY_INDEXES: Record<string, number> = {
+  sunday: 7,
+  monday: 1,
+  tuesday: 2,
+  wednesday: 3,
+  thursday: 4,
+  friday: 5,
+  saturday: 6
+};
+
+const SERVICE_ALIASES: Record<string, string[]> = {
+  pedicure: ["bettercure", "pedic care", "petty cure", "pedi cure", "peddy cure", "pedicure"],
+  manicure: ["many cure", "manny cure", "mani cure", "manicure"],
+  "gel manicure": ["gel many cure", "gel manny cure", "gel mani cure", "gel manicure"],
+  "acrylic full set": ["acrilic", "acyclic", "acrylic", "acrylic set", "acrylic full set"],
+  "dip powder": ["dip", "deep powder", "dip power", "dip powder"]
+};
+
+const normalizeForMatch = (value?: string | null): string => {
+  return (value ?? "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+};
+
+const compactForMatch = (value?: string | null): string => normalizeForMatch(value).replace(/\s/g, "");
+
+const levenshteinDistance = (left: string, right: string): number => {
+  if (left === right) {
+    return 0;
+  }
+  if (!left.length) {
+    return right.length;
+  }
+  if (!right.length) {
+    return left.length;
+  }
+
+  const previous = Array.from({ length: right.length + 1 }, (_value, index) => index);
+  const current = Array.from({ length: right.length + 1 }, () => 0);
+
+  for (let leftIndex = 0; leftIndex < left.length; leftIndex += 1) {
+    current[0] = leftIndex + 1;
+    for (let rightIndex = 0; rightIndex < right.length; rightIndex += 1) {
+      const substitutionCost = left[leftIndex] === right[rightIndex] ? 0 : 1;
+      current[rightIndex + 1] = Math.min(
+        current[rightIndex] + 1,
+        previous[rightIndex + 1] + 1,
+        previous[rightIndex] + substitutionCost
+      );
+    }
+    previous.splice(0, previous.length, ...current);
+  }
+
+  return previous[right.length] ?? Math.max(left.length, right.length);
+};
+
+const similarityScore = (left: string, right: string): number => {
+  const normalizedLeft = compactForMatch(left);
+  const normalizedRight = compactForMatch(right);
+  const longest = Math.max(normalizedLeft.length, normalizedRight.length);
+  if (!longest) {
+    return 0;
+  }
+  return 1 - levenshteinDistance(normalizedLeft, normalizedRight) / longest;
+};
+
+const isAffirmative = (value?: string | null): boolean => {
+  return /^(yes|yeah|yep|correct|right|that is right|that's right|sure|ok|okay)$/i.test(
+    normalizeForMatch(value)
+  );
+};
+
+const isNegative = (value?: string | null): boolean => {
+  return /^(no|nope|not that|wrong)$/i.test(normalizeForMatch(value));
+};
+
+const readStringAttribute = (
+  attributes: Record<string, unknown> | undefined,
+  names: string[]
+): string | undefined => {
+  for (const name of names) {
+    const value = attributes?.[name];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return undefined;
+};
+
+const parseAttemptCount = (value?: string): number => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 };
 
 const extractJsonObject = (rawText: string): unknown => {
@@ -113,65 +240,172 @@ const extractJsonObject = (rawText: string): unknown => {
   return JSON.parse(jsonCandidate);
 };
 
-const parseDateTimeFromText = (text: string, timezone: string): string | undefined => {
-  const isoMatch = text.match(
-    /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})/i
+const normalizeSpokenNumbers = (value: string): string => {
+  return value.replace(
+    /\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b/gi,
+    (match) => String(NUMBER_WORDS[match.toLowerCase()] ?? match)
   );
-  if (isoMatch?.[0]) {
-    const date = DateTime.fromISO(isoMatch[0], { setZone: true });
-    if (date.isValid) {
-      return date.toUTC().toISO() ?? undefined;
+};
+
+const parseLocalDateText = (value: string, timezone: string): DateTime | null => {
+  const cleaned = normalizeForMatch(value);
+  const now = DateTime.now().setZone(timezone);
+
+  if (cleaned === "today") {
+    return now.startOf("day");
+  }
+  if (cleaned === "tomorrow") {
+    return now.plus({ days: 1 }).startOf("day");
+  }
+
+  const weekday = WEEKDAY_INDEXES[cleaned];
+  if (weekday) {
+    let daysUntil = weekday - now.weekday;
+    if (daysUntil <= 0) {
+      daysUntil += 7;
+    }
+    return now.plus({ days: daysUntil }).startOf("day");
+  }
+
+  const isoDate = DateTime.fromISO(value.trim(), { zone: timezone });
+  if (isoDate.isValid) {
+    return isoDate.startOf("day");
+  }
+
+  const formats = ["M/d/yyyy", "M-d-yyyy", "LLLL d yyyy", "LLL d yyyy", "LLLL d", "LLL d"];
+  for (const format of formats) {
+    const parsed = DateTime.fromFormat(value.trim(), format, { zone: timezone });
+    if (parsed.isValid) {
+      const withYear = parsed.year === now.year ? parsed : parsed.set({ year: now.year });
+      return withYear.startOf("day");
     }
   }
 
-  const localMatch = text.match(
-    /(\d{4}-\d{2}-\d{2})[ T](\d{1,2}):(\d{2})(?:\s?(am|pm))?/i
-  );
-  if (localMatch) {
-    const [_, datePart, hourPart, minutePart, periodPart] = localMatch;
-    let hour = Number(hourPart);
-    if (periodPart?.toLowerCase() === "pm" && hour < 12) {
-      hour += 12;
-    }
-    if (periodPart?.toLowerCase() === "am" && hour === 12) {
-      hour = 0;
-    }
+  return null;
+};
 
-    const local = DateTime.fromISO(`${datePart}T00:00:00`, { zone: timezone }).set({
-      hour,
-      minute: Number(minutePart),
-      second: 0,
-      millisecond: 0
-    });
-    if (local.isValid) {
-      return local.toUTC().toISO() ?? undefined;
-    }
-  }
+const parseLocalTimeText = (value: string): { hour: number; minute: number; ambiguous: boolean } | null => {
+  const normalized = normalizeSpokenNumbers(value)
+    .replace(/\ba\.?m\.?\b/gi, "am")
+    .replace(/\bp\.?m\.?\b/gi, "pm")
+    .trim();
 
-  const tomorrowMatch = text.match(/tomorrow\s+at\s+(\d{1,2})(?::(\d{2}))?\s?(am|pm)?/i);
-  if (tomorrowMatch) {
-    let hour = Number(tomorrowMatch[1]);
-    const minute = Number(tomorrowMatch[2] ?? 0);
-    const period = tomorrowMatch[3]?.toLowerCase();
+  const periodMatch = normalized.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i);
+  if (periodMatch) {
+    let hour = Number(periodMatch[1]);
+    const minute = Number(periodMatch[2] ?? 0);
+    const period = periodMatch[3]?.toLowerCase();
+    if (hour < 1 || hour > 12 || minute > 59) {
+      return null;
+    }
     if (period === "pm" && hour < 12) {
       hour += 12;
     }
     if (period === "am" && hour === 12) {
       hour = 0;
     }
+    return { hour, minute, ambiguous: false };
+  }
 
-    const local = DateTime.now().setZone(timezone).plus({ days: 1 }).set({
-      hour,
-      minute,
-      second: 0,
-      millisecond: 0
-    });
-    if (local.isValid) {
-      return local.toUTC().toISO() ?? undefined;
+  const twentyFourHourMatch = normalized.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
+  if (twentyFourHourMatch) {
+    const hour = Number(twentyFourHourMatch[1]);
+    const minute = Number(twentyFourHourMatch[2]);
+    return { hour, minute, ambiguous: hour > 0 && hour < 12 };
+  }
+
+  const bareHourMatch = normalized.match(/\b(\d{1,2})\b/);
+  if (bareHourMatch) {
+    const hour = Number(bareHourMatch[1]);
+    if (hour >= 1 && hour <= 12) {
+      return { hour, minute: 0, ambiguous: true };
+    }
+    if (hour >= 13 && hour <= 23) {
+      return { hour, minute: 0, ambiguous: false };
     }
   }
 
-  return undefined;
+  return null;
+};
+
+const parseDateTimeText = (
+  text: string,
+  timezone: string
+): { local: DateTime; sourceText: string; ambiguousTime: boolean } | null => {
+  const raw = text.trim();
+  const isoDateTimeMatch = raw.match(
+    /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})/i
+  );
+  if (isoDateTimeMatch?.[0]) {
+    const parsed = DateTime.fromISO(isoDateTimeMatch[0], { setZone: true });
+    if (parsed.isValid) {
+      return {
+        local: parsed.setZone(timezone),
+        sourceText: isoDateTimeMatch[0],
+        ambiguousTime: false
+      };
+    }
+  }
+
+  const explicitLocalMatch = raw.match(
+    /(\d{4}-\d{2}-\d{2}|[01]?\d\/[0-3]?\d\/\d{4}|today|tomorrow|sunday|monday|tuesday|wednesday|thursday|friday|saturday)(?:\s+|.*?\s+at\s+)([a-z0-9:.\s]+?(?:am|pm)?)(?:$|[,.])/i
+  );
+  if (explicitLocalMatch) {
+    const localDate = parseLocalDateText(explicitLocalMatch[1] ?? "", timezone);
+    const localTime = parseLocalTimeText(explicitLocalMatch[2] ?? "");
+    if (localDate && localTime && !localTime.ambiguous) {
+      return {
+        local: localDate.set({
+          hour: localTime.hour,
+          minute: localTime.minute,
+          second: 0,
+          millisecond: 0
+        }),
+        sourceText: explicitLocalMatch[0],
+        ambiguousTime: false
+      };
+    }
+    if (localDate && localTime?.ambiguous) {
+      return {
+        local: localDate.set({
+          hour: localTime.hour,
+          minute: localTime.minute,
+          second: 0,
+          millisecond: 0
+        }),
+        sourceText: explicitLocalMatch[0],
+        ambiguousTime: true
+      };
+    }
+  }
+
+  const tomorrowMatch = raw.match(/tomorrow(?:\s+at)?\s+([a-z0-9:.\s]+?(?:am|pm)?)(?:$|[,.])/i);
+  if (tomorrowMatch) {
+    const localDate = parseLocalDateText("tomorrow", timezone);
+    const localTime = parseLocalTimeText(tomorrowMatch[1] ?? "");
+    if (localDate && localTime) {
+      return {
+        local: localDate.set({
+          hour: localTime.hour,
+          minute: localTime.minute,
+          second: 0,
+          millisecond: 0
+        }),
+        sourceText: tomorrowMatch[0],
+        ambiguousTime: localTime.ambiguous
+      };
+    }
+  }
+
+  return null;
+};
+
+const parseDateTimeFromText = (text: string, timezone: string): string | undefined => {
+  const parsed = parseDateTimeText(text, timezone);
+  if (!parsed || parsed.ambiguousTime || !parsed.local.isValid) {
+    return undefined;
+  }
+  return parsed.local.toUTC().toISO() ?? undefined;
 };
 
 const inferFallbackIntent = (input: {
@@ -464,21 +698,168 @@ const parseBookingIntentInternal = async (input: ParseBookingInput) => {
   };
 };
 
-const resolveService = async (salonId: string, serviceName: string) => {
-  const service = await prisma.service.findFirst({
+const getServiceAliasPhrases = (serviceName: string): string[] => {
+  const normalized = normalizeForMatch(serviceName);
+  const aliases = new Set<string>([serviceName, normalized]);
+  Object.entries(SERVICE_ALIASES).forEach(([canonical, phrases]) => {
+    const normalizedCanonical = normalizeForMatch(canonical);
+    if (normalized === normalizedCanonical || normalized.includes(normalizedCanonical)) {
+      phrases.forEach((phrase) => aliases.add(phrase));
+    }
+  });
+  return Array.from(aliases.values());
+};
+
+const rankServiceMatch = (
+  service: ServiceMatch["service"],
+  requestedServiceName: string
+): ServiceMatch | null => {
+  const requested = normalizeForMatch(requestedServiceName);
+  if (!requested) {
+    return null;
+  }
+
+  const serviceName = normalizeForMatch(service.name);
+  const requestedCompact = compactForMatch(requested);
+  const serviceCompact = compactForMatch(serviceName);
+
+  if (requestedCompact === serviceCompact) {
+    return { service, confidence: 1, exact: true, matchedBy: "exact" };
+  }
+
+  if (
+    requestedCompact.length >= 4 &&
+    (serviceCompact.includes(requestedCompact) || requestedCompact.includes(serviceCompact))
+  ) {
+    return { service, confidence: 0.94, exact: true, matchedBy: "exact" };
+  }
+
+  const aliasScore = getServiceAliasPhrases(service.name).reduce((best, phrase) => {
+    const alias = compactForMatch(phrase);
+    if (!alias) {
+      return best;
+    }
+    if (alias === requestedCompact) {
+      return Math.max(best, 0.96);
+    }
+    return Math.max(best, similarityScore(alias, requestedCompact));
+  }, 0);
+
+  if (aliasScore >= 0.88) {
+    return { service, confidence: aliasScore, exact: false, matchedBy: "alias" };
+  }
+
+  const fuzzyScore = similarityScore(serviceName, requested);
+  if (fuzzyScore >= 0.74) {
+    return { service, confidence: fuzzyScore, exact: false, matchedBy: "fuzzy" };
+  }
+
+  return null;
+};
+
+const resolveServiceMatch = async (
+  salonId: string,
+  serviceName: string
+): Promise<ServiceMatch | null> => {
+  const services = await prisma.service.findMany({
     where: {
       salonId,
-      isActive: true,
-      name: {
-        contains: serviceName,
-        mode: "insensitive"
-      }
+      isActive: true
+    },
+    select: {
+      id: true,
+      name: true,
+      durationMinutes: true,
+      priceCents: true
     },
     orderBy: {
       createdAt: "asc"
     }
   });
-  return service;
+
+  return services
+    .map((service) => rankServiceMatch(service, serviceName))
+    .filter((match): match is ServiceMatch => Boolean(match))
+    .sort(
+      (left, right) =>
+        right.confidence - left.confidence ||
+        Number(right.exact) - Number(left.exact) ||
+        left.service.name.length - right.service.name.length
+    )[0] ?? null;
+};
+
+const resolveService = async (salonId: string, serviceName: string) => {
+  return (await resolveServiceMatch(salonId, serviceName))?.service ?? null;
+};
+
+const findServiceMentionInText = async (
+  salonId: string,
+  text?: string
+): Promise<ServiceMatch | null> => {
+  const normalizedText = compactForMatch(text);
+  if (!normalizedText) {
+    return null;
+  }
+
+  const services = await prisma.service.findMany({
+    where: {
+      salonId,
+      isActive: true
+    },
+    select: {
+      id: true,
+      name: true,
+      durationMinutes: true,
+      priceCents: true
+    },
+    orderBy: {
+      createdAt: "asc"
+    }
+  });
+
+  const matches = services
+    .map<ServiceMatch | null>((service) => {
+      const phrases = getServiceAliasPhrases(service.name);
+      const phrase = phrases.find((candidate) => {
+        const compact = compactForMatch(candidate);
+        return compact.length >= 3 && normalizedText.includes(compact);
+      });
+      return phrase
+        ? ({
+            service,
+            confidence: compactForMatch(phrase) === compactForMatch(service.name) ? 1 : 0.94,
+            exact: compactForMatch(phrase) === compactForMatch(service.name),
+            matchedBy: compactForMatch(phrase) === compactForMatch(service.name) ? "exact" : "alias"
+          })
+        : null;
+    })
+    .filter((match): match is ServiceMatch => Boolean(match));
+
+  return (
+    matches.sort(
+      (left, right) =>
+        right.confidence - left.confidence ||
+        Number(right.exact) - Number(left.exact) ||
+        left.service.name.length - right.service.name.length
+    )[0] ?? null
+  );
+};
+
+const findStaffMentionInText = async (
+  salonId: string,
+  text?: string
+): Promise<string | undefined> => {
+  const normalizedText = normalizeForMatch(text);
+  if (!normalizedText) {
+    return undefined;
+  }
+
+  const staff = await getStaffCandidates({ salonId });
+  return staff.find((member) => {
+    const fullName = normalizeForMatch(member.fullName);
+    const firstName = normalizeForMatch(member.fullName.split(/\s+/)[0]);
+    return normalizedText.includes(fullName) || normalizedText.includes(firstName);
+  })?.fullName;
 };
 
 const resolveCustomer = async (input: {
@@ -561,15 +942,7 @@ const getStaffCandidates = async (input: {
     where: {
       salonId: input.salonId,
       status: StaffStatus.ACTIVE,
-      isBookable: true,
-      ...(input.requestedStaffName
-        ? {
-            fullName: {
-              contains: input.requestedStaffName,
-              mode: "insensitive"
-            }
-          }
-        : {})
+      isBookable: true
     },
     select: {
       id: true,
@@ -579,7 +952,31 @@ const getStaffCandidates = async (input: {
       createdAt: "asc"
     }
   });
-  return staff;
+
+  const requested = normalizeForMatch(input.requestedStaffName);
+  if (!requested) {
+    return staff;
+  }
+
+  const ranked = staff
+    .map((member) => {
+      const fullName = normalizeForMatch(member.fullName);
+      const firstName = normalizeForMatch(member.fullName.split(/\s+/)[0]);
+      const exact =
+        fullName.includes(requested) ||
+        requested.includes(fullName) ||
+        firstName === requested ||
+        requested.includes(firstName);
+      const score = exact
+        ? 1
+        : Math.max(similarityScore(fullName, requested), similarityScore(firstName, requested));
+      return { member, score };
+    })
+    .filter((item) => item.score >= 0.74)
+    .sort((left, right) => right.score - left.score)
+    .map((item) => item.member);
+
+  return ranked;
 };
 
 const normalizePhoneDigitsForLookup = (value?: string | null): string | undefined => {
@@ -617,42 +1014,75 @@ const buildPhoneLookupValues = (value?: string | null): string[] => {
   return Array.from(values.values());
 };
 
+const parseRequestedStartTimeDetailed = (input: {
+  requestedDate: string;
+  requestedTime?: string;
+  timezone: string;
+}): { utcDate: Date; localDateTime: DateTime; originalText: string } => {
+  const requestedDate = input.requestedDate.trim();
+  const requestedTime = input.requestedTime?.trim();
+  const originalText = [requestedDate, requestedTime].filter(Boolean).join(" ");
+
+  if (!requestedTime) {
+    const parsedDateTime = parseDateTimeText(requestedDate, input.timezone);
+    if (parsedDateTime?.ambiguousTime) {
+      throw new AppError("Did you mean 5 PM?", 400, "AMBIGUOUS_REQUESTED_TIME");
+    }
+    if (parsedDateTime?.local.isValid) {
+      return {
+        utcDate: parsedDateTime.local.toUTC().toJSDate(),
+        localDateTime: parsedDateTime.local,
+        originalText
+      };
+    }
+
+    const iso = DateTime.fromISO(requestedDate, { setZone: true });
+    if (iso.isValid && /T\d{2}:\d{2}/.test(requestedDate)) {
+      const localDateTime = iso.setZone(input.timezone);
+      return {
+        utcDate: localDateTime.toUTC().toJSDate(),
+        localDateTime,
+        originalText
+      };
+    }
+    throw new AppError("requestedDate must be a valid ISO date or datetime.", 400, "INVALID_REQUESTED_DATE");
+  }
+
+  const localDate = parseLocalDateText(requestedDate, input.timezone);
+  const localTime = parseLocalTimeText(requestedTime);
+  if (!localDate) {
+    throw new AppError("requestedDate must be a valid date.", 400, "INVALID_REQUESTED_DATE");
+  }
+  if (!localTime) {
+    throw new AppError("requestedTime must be a valid appointment time.", 400, "INVALID_REQUESTED_TIME");
+  }
+  if (localTime.ambiguous) {
+    throw new AppError(`Did you mean ${localTime.hour} PM?`, 400, "AMBIGUOUS_REQUESTED_TIME");
+  }
+
+  const localDateTime = localDate.set({
+    hour: localTime.hour,
+    minute: localTime.minute,
+    second: 0,
+    millisecond: 0
+  });
+  if (!localDateTime.isValid) {
+    throw new AppError("requestedDate and requestedTime do not form a valid appointment time.", 400, "INVALID_REQUESTED_TIME");
+  }
+
+  return {
+    utcDate: localDateTime.toUTC().toJSDate(),
+    localDateTime,
+    originalText
+  };
+};
+
 const parseRequestedStartTime = (input: {
   requestedDate: string;
   requestedTime?: string;
   timezone: string;
 }): Date => {
-  const requestedDate = input.requestedDate.trim();
-  const requestedTime = input.requestedTime?.trim();
-
-  if (!requestedTime) {
-    const iso = DateTime.fromISO(requestedDate, { zone: input.timezone });
-    if (iso.isValid) {
-      return iso.toUTC().toJSDate();
-    }
-    throw new AppError("requestedDate must be a valid ISO date or datetime.", 400, "INVALID_REQUESTED_DATE");
-  }
-
-  const combined = `${requestedDate} ${requestedTime}`;
-  const formats = [
-    "yyyy-MM-dd HH:mm",
-    "yyyy-MM-dd H:mm",
-    "yyyy-MM-dd h:mm a",
-    "yyyy-MM-dd h a",
-    "M/d/yyyy HH:mm",
-    "M/d/yyyy H:mm",
-    "M/d/yyyy h:mm a",
-    "M/d/yyyy h a"
-  ];
-
-  for (const format of formats) {
-    const parsed = DateTime.fromFormat(combined, format, { zone: input.timezone });
-    if (parsed.isValid) {
-      return parsed.toUTC().toJSDate();
-    }
-  }
-
-  throw new AppError("requestedDate and requestedTime do not form a valid appointment time.", 400, "INVALID_REQUESTED_TIME");
+  return parseRequestedStartTimeDetailed(input).utcDate;
 };
 
 const salonSelect = {
@@ -1044,16 +1474,27 @@ const hasTimeComponent = (value?: string): boolean => {
   if (!value) {
     return false;
   }
-  return /T\d{1,2}:\d{2}|[^\d]\d{1,2}:\d{2}|\b\d{1,2}\s?(am|pm)\b/i.test(value);
+  return /T\d{1,2}:\d{2}|[^\d]\d{1,2}:\d{2}|\b\d{1,2}\s?(am|pm)\b|\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s?(am|pm)\b/i.test(
+    value
+  );
 };
 
 const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppointmentInput) => {
+  const attributes = input.attributes ?? {};
+  const suggestedServiceName = readStringAttribute(attributes, [
+    "serviceSuggestionName",
+    "aiSuggestedServiceName"
+  ]);
   const customerName = asTrimmedString(input.customerName) ?? asTrimmedString(input.customer?.name);
   const customerPhone =
     asTrimmedString(input.customerPhone) ??
     asTrimmedString(input.customer?.phone) ??
     asTrimmedString(input.callerPhone);
-  const serviceName = asTrimmedString(input.serviceName) ?? asTrimmedString(input.service);
+  const rawServiceName = asTrimmedString(input.serviceName) ?? asTrimmedString(input.service);
+  const serviceName =
+    rawServiceName && isAffirmative(rawServiceName) && suggestedServiceName
+      ? suggestedServiceName
+      : rawServiceName;
   const requestedDate =
     asTrimmedString(input.requestedDate) ?? asTrimmedString(input.preferredDateTime);
   const requestedTime = asTrimmedString(input.requestedTime);
@@ -1079,7 +1520,7 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
     amazonConnectPhoneNumber: asTrimmedString(input.amazonConnectPhoneNumber),
     calledNumber: asTrimmedString(input.calledNumber),
     provider: asTrimmedString(input.provider) ?? "AMAZON_CONNECT",
-    attributes: input.attributes
+    attributes
   };
 };
 
@@ -1138,6 +1579,9 @@ const buildLexMessage = (input: {
   missingFields?: string[];
   appointmentStartTime?: Date;
   salonTimezone?: string;
+  serviceName?: string;
+  staffName?: string;
+  requestedStaffName?: string;
   alternatives?: SuggestedSlot[];
   failureReason?: string;
 }): string => {
@@ -1147,11 +1591,13 @@ const buildLexMessage = (input: {
           .setZone(input.salonTimezone ?? "America/New_York")
           .toFormat("cccc, LLL d 'at' h:mm a")
       : "the requested time";
-    return `Your appointment is booked for ${appointmentTime}. You will receive a confirmation shortly.`;
+    const service = input.serviceName ? `${input.serviceName} ` : "";
+    const staff = input.staffName ? ` with ${input.staffName}` : "";
+    return `You're all set. Your ${service}appointment is booked for ${appointmentTime}${staff}. You will receive a confirmation shortly. Thank you for calling.`;
   }
 
   if (input.outcome === "HUMAN_ESCALATION") {
-    return "Please wait while I connect you to an operator.";
+    return "No problem. Please hold while I connect you to our team.";
   }
 
   if (input.outcome === "MISSING_INFO") {
@@ -1180,23 +1626,67 @@ const buildLexMessage = (input: {
   if (input.outcome === "NO_AVAILABILITY") {
     const alternatives = (input.alternatives ?? []).slice(0, 3);
     if (!alternatives.length) {
-      return "I could not find an available appointment for that time. Please hold while I connect you to our team.";
+      return "That time is not available. Would you like another time or a different staff member?";
     }
 
     const formattedAlternatives = alternatives
-      .map((slot) =>
-        DateTime.fromISO(slot.startTime, { zone: "utc" })
+      .map((slot) => {
+        const time = DateTime.fromISO(slot.startTime, { zone: "utc" })
           .setZone(input.salonTimezone ?? "America/New_York")
-          .toFormat("cccc, LLL d 'at' h:mm a")
-      )
+          .toFormat("h:mm a");
+        return `${time} with ${slot.staffName}`;
+      })
       .join(", ");
-    return `That time is not available. The next options I found are ${formattedAlternatives}. Please hold if you want an operator to help.`;
+    if (input.requestedStaffName && input.appointmentStartTime) {
+      const requestedTime = DateTime.fromJSDate(input.appointmentStartTime, { zone: "utc" })
+        .setZone(input.salonTimezone ?? "America/New_York")
+        .toFormat("h:mm a");
+      return `${input.requestedStaffName} is not available at ${requestedTime}. I have ${formattedAlternatives}. Which one works better?`;
+    }
+    return `That time is not available. I have ${formattedAlternatives}. Which one works better?`;
   }
 
   return (
     input.failureReason ??
     "I could not confirm the appointment right now. Please hold while I connect you to our team."
   );
+};
+
+const getElicitSlotForMissingFields = (
+  missingFields: Set<string>,
+  normalized: ReturnType<typeof normalizeAmazonConnectAppointmentInput>
+): string => {
+  if (missingFields.has("serviceName")) {
+    return "serviceName";
+  }
+  if (missingFields.has("preferredDateTime")) {
+    return normalized.requestedDate ? "requestedTime" : "requestedDate";
+  }
+  if (missingFields.has("customerName")) {
+    return "customerName";
+  }
+  if (missingFields.has("customerPhone")) {
+    return "customerPhone";
+  }
+  return "serviceName";
+};
+
+const buildServiceClarificationMessage = (input: {
+  heardServiceName: string;
+  suggestedServiceName?: string;
+  availableServiceNames: string[];
+  attempts: number;
+}): string => {
+  if (input.attempts >= 2) {
+    return "I still could not confirm the service. Would you like me to connect you to our team?";
+  }
+  if (input.suggestedServiceName) {
+    return `I heard ${input.heardServiceName}. Did you mean ${input.suggestedServiceName}?`;
+  }
+  const options = input.availableServiceNames.slice(0, 3).join(", ");
+  return options
+    ? `I heard ${input.heardServiceName}. Did you mean ${options}, or another service?`
+    : `I heard ${input.heardServiceName}. Which service would you like?`;
 };
 
 export const createAmazonConnectAIAppointment = async (
@@ -1224,6 +1714,26 @@ export const createAmazonConnectAIAppointment = async (
           transcriptText: normalized.transcriptText
         })
       : null;
+
+  const transcriptDateTime =
+    normalized.transcriptText && (!normalized.requestedDate || !normalized.requestedTime)
+      ? parseDateTimeText(normalized.transcriptText, salon.timezone)
+      : null;
+  if (transcriptDateTime?.local.isValid && !transcriptDateTime.ambiguousTime) {
+    normalized.requestedDate ??= transcriptDateTime.local.toFormat("yyyy-MM-dd");
+    normalized.requestedTime ??= transcriptDateTime.local.toFormat("HH:mm");
+  }
+
+  if (!normalized.serviceName && normalized.transcriptText) {
+    const serviceMention = await findServiceMentionInText(salon.id, normalized.transcriptText);
+    if (serviceMention) {
+      normalized.serviceName = serviceMention.service.name;
+    }
+  }
+
+  if (!normalized.staffPreference && normalized.transcriptText) {
+    normalized.staffPreference = await findStaffMentionInText(salon.id, normalized.transcriptText);
+  }
 
   const createAttempt = async (inputForAttempt: {
     status: BookingAttemptStatus;
@@ -1354,7 +1864,7 @@ export const createAmazonConnectAIAppointment = async (
           requestedBy: "AMAZON_CONNECT_LEX",
           escalationReason: "Caller requested a human operator.",
           customerPhone: normalized.customerPhone ?? null,
-          messageToCaller: "Please wait while I connect you to an operator.",
+          messageToCaller: "No problem. Please hold while I connect you to our team.",
           metadata: {
             bookingAttemptId: bookingAttempt.id,
             transcriptId: transcript?.id,
@@ -1437,12 +1947,84 @@ export const createAmazonConnectAIAppointment = async (
   let requestedStartTime: Date | null = null;
   if (!missingFields.has("preferredDateTime") && normalized.requestedDate) {
     try {
-      requestedStartTime = parseRequestedStartTime({
+      const parsedStartTime = parseRequestedStartTimeDetailed({
         requestedDate: normalized.requestedDate,
         requestedTime: normalized.requestedTime,
         timezone: salon.timezone
       });
-    } catch {
+      requestedStartTime = parsedStartTime.utcDate;
+      logger.info(
+        {
+          originalText: parsedStartTime.originalText,
+          interpretedLocalTime: parsedStartTime.localDateTime.toISO(),
+          salonTimezone: salon.timezone,
+          utcTime: parsedStartTime.utcDate.toISOString()
+        },
+        "Amazon Connect AI appointment time interpreted."
+      );
+    } catch (error) {
+      if (error instanceof AppError && error.code === "AMBIGUOUS_REQUESTED_TIME") {
+        const message = error.message;
+        const parsed = buildInternalParsedIntent({
+          intentType: "BOOK_APPOINTMENT",
+          customerName: normalized.customerName,
+          customerPhone: normalized.customerPhone,
+          serviceName: normalized.serviceName,
+          staffPreference: normalized.staffPreference,
+          requestedDateTime: normalized.requestedDate,
+          missingFields: ["preferredDateTime"],
+          isReadyToBook: false
+        });
+        const bookingAttempt = await createAttempt({
+          status: BookingAttemptStatus.NEEDS_INPUT,
+          failureReason: "Ambiguous requested time.",
+          normalizedRequest: {
+            requestedDateTimeText,
+            timezone: salon.timezone
+          }
+        });
+        const aiInteraction = await createInteraction({
+          outcome: "MISSING_INFO",
+          message,
+          parsed,
+          bookingAttemptId: bookingAttempt.id,
+          responsePayload: {
+            missingFields: ["preferredDateTime"],
+            reason: "AMBIGUOUS_REQUESTED_TIME"
+          },
+          isValid: true
+        });
+        await finalizeCall({
+          outcome: "MISSING_INFO",
+          bookingAttemptId: bookingAttempt.id,
+          bookingStatus: bookingAttempt.status,
+          parsed,
+          message,
+          failureReason: bookingAttempt.failureReason ?? undefined
+        });
+
+        return {
+          outcome: "MISSING_INFO" as const,
+          message,
+          lexResponse: {
+            fulfillmentState: "InProgress",
+            message,
+            dialogAction: {
+              type: "ElicitSlot",
+              slotToElicit: "requestedTime"
+            }
+          },
+          appointment: null,
+          bookingAttempt,
+          callSession,
+          transcript,
+          aiInteraction,
+          escalation: null,
+          alternatives: [],
+          missingFields: ["preferredDateTime"],
+          salonResolutionSource: resolutionSource
+        };
+      }
       missingFields.add("preferredDateTime");
     }
   }
@@ -1492,8 +2074,12 @@ export const createAmazonConnectAIAppointment = async (
       outcome: "MISSING_INFO" as const,
       message,
       lexResponse: {
-        fulfillmentState: "Failed",
-        message
+        fulfillmentState: "InProgress",
+        message,
+        dialogAction: {
+          type: "ElicitSlot",
+          slotToElicit: getElicitSlotForMissingFields(missingFields, normalized)
+        }
       },
       appointment: null,
       bookingAttempt,
@@ -1507,9 +2093,25 @@ export const createAmazonConnectAIAppointment = async (
     };
   }
 
-  const service = await resolveService(salon.id, normalized.serviceName!);
-  if (!service) {
-    const message = "I could not find that service. Please hold while I connect you to our team.";
+  const serviceMatch = await resolveServiceMatch(salon.id, normalized.serviceName!);
+  if (serviceMatch && !serviceMatch.exact && !isAffirmative(normalized.serviceName)) {
+    const attempts = parseAttemptCount(
+      readStringAttribute(normalized.attributes, ["serviceClarificationAttempts"])
+    );
+    const services = await prisma.service.findMany({
+      where: {
+        salonId: salon.id,
+        isActive: true
+      },
+      select: { name: true },
+      orderBy: { createdAt: "asc" }
+    });
+    const message = buildServiceClarificationMessage({
+      heardServiceName: normalized.serviceName!,
+      suggestedServiceName: serviceMatch.service.name,
+      availableServiceNames: services.map((service) => service.name),
+      attempts
+    });
     const parsed = buildInternalParsedIntent({
       intentType: "BOOK_APPOINTMENT",
       customerName: normalized.customerName,
@@ -1521,27 +2123,32 @@ export const createAmazonConnectAIAppointment = async (
       isReadyToBook: false
     });
     const bookingAttempt = await createAttempt({
-      status: BookingAttemptStatus.FAILED,
+      status: BookingAttemptStatus.NEEDS_INPUT,
       requestedStartTime,
-      failureReason: "Service not found or inactive.",
+      failureReason: "Service confirmation required.",
       normalizedRequest: {
         serviceName: normalized.serviceName,
+        suggestedServiceName: serviceMatch.service.name,
+        serviceMatchConfidence: serviceMatch.confidence,
+        serviceMatchStrategy: serviceMatch.matchedBy,
         startTimeIso: requestedStartTime.toISOString(),
         timezone: salon.timezone
       }
     });
     const aiInteraction = await createInteraction({
-      outcome: "FAILED",
+      outcome: "MISSING_INFO",
       message,
       parsed,
       bookingAttemptId: bookingAttempt.id,
       responsePayload: {
-        reason: bookingAttempt.failureReason
+        reason: bookingAttempt.failureReason,
+        suggestedServiceName: serviceMatch.service.name,
+        serviceMatchConfidence: serviceMatch.confidence
       },
-      isValid: false
+      isValid: true
     });
     await finalizeCall({
-      outcome: "FAILED",
+      outcome: "MISSING_INFO",
       bookingAttemptId: bookingAttempt.id,
       bookingStatus: bookingAttempt.status,
       parsed,
@@ -1550,11 +2157,24 @@ export const createAmazonConnectAIAppointment = async (
     });
 
     return {
-      outcome: "FAILED" as const,
+      outcome: "MISSING_INFO" as const,
       message,
       lexResponse: {
-        fulfillmentState: "Failed",
-        message
+        fulfillmentState: "InProgress",
+        message,
+        dialogAction:
+          attempts >= 2
+            ? {
+                type: "ElicitIntent"
+              }
+            : {
+                type: "ElicitSlot",
+                slotToElicit: "serviceName"
+              },
+        sessionAttributes: {
+          serviceSuggestionName: serviceMatch.service.name,
+          serviceClarificationAttempts: String(attempts + 1)
+        }
       },
       appointment: null,
       bookingAttempt,
@@ -1567,6 +2187,98 @@ export const createAmazonConnectAIAppointment = async (
       salonResolutionSource: resolutionSource
     };
   }
+
+  if (!serviceMatch) {
+    const attempts = parseAttemptCount(
+      readStringAttribute(normalized.attributes, ["serviceClarificationAttempts"])
+    );
+    const services = await prisma.service.findMany({
+      where: {
+        salonId: salon.id,
+        isActive: true
+      },
+      select: { name: true },
+      orderBy: { createdAt: "asc" }
+    });
+    const message = buildServiceClarificationMessage({
+      heardServiceName: normalized.serviceName!,
+      availableServiceNames: services.map((service) => service.name),
+      attempts
+    });
+    const parsed = buildInternalParsedIntent({
+      intentType: "BOOK_APPOINTMENT",
+      customerName: normalized.customerName,
+      customerPhone: normalized.customerPhone,
+      serviceName: normalized.serviceName,
+      staffPreference: normalized.staffPreference,
+      requestedDateTime: requestedStartTime.toISOString(),
+      missingFields: ["serviceName"],
+      isReadyToBook: false
+    });
+    const bookingAttempt = await createAttempt({
+      status: attempts >= 2 ? BookingAttemptStatus.FAILED : BookingAttemptStatus.NEEDS_INPUT,
+      requestedStartTime,
+      failureReason:
+        attempts >= 2 ? "Service not found after repeated attempts." : "Service not found or inactive.",
+      normalizedRequest: {
+        serviceName: normalized.serviceName,
+        availableServiceNames: services.map((service) => service.name),
+        startTimeIso: requestedStartTime.toISOString(),
+        timezone: salon.timezone
+      }
+    });
+    const aiInteraction = await createInteraction({
+      outcome: attempts >= 2 ? "FAILED" : "MISSING_INFO",
+      message,
+      parsed,
+      bookingAttemptId: bookingAttempt.id,
+      responsePayload: {
+        reason: bookingAttempt.failureReason,
+        availableServiceNames: services.map((service) => service.name)
+      },
+      isValid: attempts < 2
+    });
+    await finalizeCall({
+      outcome: attempts >= 2 ? "FAILED" : "MISSING_INFO",
+      bookingAttemptId: bookingAttempt.id,
+      bookingStatus: bookingAttempt.status,
+      parsed,
+      message,
+      failureReason: bookingAttempt.failureReason ?? undefined
+    });
+
+    return {
+      outcome: attempts >= 2 ? ("FAILED" as const) : ("MISSING_INFO" as const),
+      message,
+      lexResponse: {
+        fulfillmentState: attempts >= 2 ? "Failed" : "InProgress",
+        message,
+        dialogAction:
+          attempts >= 2
+            ? {
+                type: "ElicitIntent"
+              }
+            : {
+                type: "ElicitSlot",
+                slotToElicit: "serviceName"
+              },
+        sessionAttributes: {
+          serviceClarificationAttempts: String(attempts + 1)
+        }
+      },
+      appointment: null,
+      bookingAttempt,
+      callSession,
+      transcript,
+      aiInteraction,
+      escalation: null,
+      alternatives: [],
+      missingFields: attempts >= 2 ? [] : ["serviceName"],
+      salonResolutionSource: resolutionSource
+    };
+  }
+
+  const service = serviceMatch.service;
 
   const preferredStaffCandidates = await getStaffCandidates({
     salonId: salon.id,
@@ -1610,10 +2322,15 @@ export const createAmazonConnectAIAppointment = async (
       daysAhead: 7,
       maxSlots: 5
     });
+    const requestedStaffDisplayName = normalized.staffPreference
+      ? preferredStaffCandidates[0]?.fullName ?? normalized.staffPreference
+      : undefined;
     const message = buildLexMessage({
       outcome: "NO_AVAILABILITY",
       alternatives,
-      salonTimezone: salon.timezone
+      salonTimezone: salon.timezone,
+      appointmentStartTime: requestedStartTime,
+      requestedStaffName: requestedStaffDisplayName
     });
     const parsed = buildInternalParsedIntent({
       intentType: "BOOK_APPOINTMENT",
@@ -1664,8 +2381,12 @@ export const createAmazonConnectAIAppointment = async (
       outcome: "NO_AVAILABILITY" as const,
       message,
       lexResponse: {
-        fulfillmentState: "Failed",
-        message
+        fulfillmentState: "InProgress",
+        message,
+        dialogAction: {
+          type: "ElicitSlot",
+          slotToElicit: normalized.staffPreference ? "staffPreference" : "requestedTime"
+        }
       },
       appointment: null,
       bookingAttempt,
@@ -1779,7 +2500,9 @@ export const createAmazonConnectAIAppointment = async (
   const message = buildLexMessage({
     outcome: "BOOKED",
     appointmentStartTime: requestedStartTime,
-    salonTimezone: salon.timezone
+    salonTimezone: salon.timezone,
+    serviceName: service.name,
+    staffName: chosenStaff.fullName
   });
   const parsed = buildInternalParsedIntent({
     intentType: "BOOK_APPOINTMENT",

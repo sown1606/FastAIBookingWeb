@@ -37,24 +37,43 @@
 
 1. Customer calls demo number `+1 848-348-7681`.
 2. Amazon Connect runs the AI Booking Reception flow.
-3. Amazon Lex Booking Bot collects:
+3. Customer can start with: "Hi, I want to book a pedicure appointment tomorrow at five PM."
+4. Amazon Lex Booking Bot and the booking backend collect only missing details:
    - customer name
    - customer phone
    - service
    - requested date/time
    - staff preference if any
-4. If the caller says all details at once, Lex may still ask follow-up questions for any missing slots.
-5. Booking Lambda or FastAIBooking Backend API checks services, staff, business hours, and availability.
-6. Backend creates a real appointment.
-7. Owner sees the new appointment in the dashboard.
-8. Assigned Staff sees the appointment in their schedule.
+5. "Tomorrow" and "five PM" are interpreted in the salon timezone. For the New Jersey demo salon, this is `America/New_York`.
+6. If the caller says "pedicure" or a close ASR variant such as "bettercure", the backend should match or confirm the closest active service instead of transferring immediately.
+7. If the caller asks for a staff member, for example "Trang", the backend checks that staff member's availability before booking.
+8. Booking Lambda or FastAIBooking Backend API checks services, staff, business hours, and availability.
+9. Backend creates a real appointment, sends SMS confirmation when SMS is configured, and safely logs a skipped SMS when config is missing.
+10. Owner sees the new appointment in the dashboard at the local salon time.
+11. Assigned Staff sees the appointment in their schedule.
+
+### Demo Scenario 2A: Staff Preference
+
+1. Customer says: "Hi, I want to book a pedicure with Trang tomorrow at five PM."
+2. Expected result:
+   - service resolves to `Pedicure`
+   - staff preference resolves to `Trang`
+   - requested time resolves to 5:00 PM in `America/New_York`
+   - if Trang is available, the appointment is booked with Trang
+   - if Trang is busy, AI suggests a short alternative such as another staff member at 5:00 PM or Trang's nearest available time
+
+### Demo Scenario 2B: Misheard Service
+
+1. Simulate or say: "bettercure tomorrow at five PM."
+2. Expected result: AI asks a service clarification such as "Did you mean Pedicure?"
+3. Caller should not be transferred to the operator queue after the first service mismatch.
 
 ### Demo Scenario 3: Human Escalation
 
 1. Customer calls demo number `+1 848-348-7681`.
 2. Customer first hears the AI greeting and Lex prompt, not queue music.
 3. Customer says they want to speak with a real person.
-4. AI says: "Please wait while I connect you."
+4. AI says: "No problem. Please hold while I connect you to our team."
 5. Amazon Connect transfers the call to the Operator Queue.
 6. Operator answers using Amazon Connect CCP/browser softphone.
 7. Operator manages the booking in the FastAIBooking operator dashboard.
@@ -240,4 +259,4 @@
 - Amazon Lex Booking Bot and Booking Lambda require the bot, alias, intents, Lambda function, and backend internal token to stay configured.
 - Queue music should only happen after explicit human escalation.
 - Web AI ON/OFF is saved in the backend/admin app, but the AWS Connect inbound flow does not read it before Lex yet.
-- SMS fallback is currently stub/log-only.
+- SMS confirmation sends only when SMS provider config is available; booking should still succeed and log a safe skip when config is missing.

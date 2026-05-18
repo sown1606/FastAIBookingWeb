@@ -1,4 +1,9 @@
-export const formatDateTime = (value: string | Date | null | undefined): string => {
+const DEFAULT_SALON_TIMEZONE = "America/New_York";
+
+export const formatDateTime = (
+  value: string | Date | null | undefined,
+  timezone = DEFAULT_SALON_TIMEZONE
+): string => {
   if (!value) {
     return "-";
   }
@@ -8,7 +13,8 @@ export const formatDateTime = (value: string | Date | null | undefined): string 
   }
   return new Intl.DateTimeFormat("vi-VN", {
     dateStyle: "medium",
-    timeStyle: "short"
+    timeStyle: "short",
+    timeZone: timezone
   }).format(date);
 };
 

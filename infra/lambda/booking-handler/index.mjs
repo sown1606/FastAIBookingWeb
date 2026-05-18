@@ -64,20 +64,31 @@ function getAttribute(event, names) {
   return "";
 }
 
-function buildLexResponse(event, message, state = "Fulfilled", sessionAttributes = {}) {
+function normalizeDialogAction(lexResponse) {
+  const action = lexResponse?.dialogAction;
+  if (action?.type) {
+    return action;
+  }
+  return {
+    type: "Close"
+  };
+}
+
+function buildLexResponse(event, message, state = "Fulfilled", sessionAttributes = {}, lexResponse = {}) {
   const intent = event.sessionState?.intent || {};
+  const dialogAction = normalizeDialogAction(lexResponse);
+  const nextState = dialogAction.type === "Close" ? state : "InProgress";
   return {
     sessionState: {
       sessionAttributes: {
         ...(event.sessionState?.sessionAttributes || {}),
-        ...sessionAttributes
+        ...sessionAttributes,
+        ...(lexResponse.sessionAttributes || {})
       },
-      dialogAction: {
-        type: "Close"
-      },
+      dialogAction,
       intent: {
         ...intent,
-        state
+        state: nextState
       }
     },
     messages: [
@@ -86,6 +97,23 @@ function buildLexResponse(event, message, state = "Fulfilled", sessionAttributes
         content: message
       }
     ]
+  };
+}
+
+function buildDelegateResponse(event) {
+  const previous = event.sessionState?.sessionAttributes || {};
+  const initial = previous.initialBookingUtterance || event.inputTranscript || "";
+  return {
+    sessionState: {
+      sessionAttributes: {
+        ...previous,
+        initialBookingUtterance: initial
+      },
+      dialogAction: {
+        type: "Delegate"
+      },
+      intent: event.sessionState?.intent || {}
+    }
   };
 }
 
@@ -129,6 +157,10 @@ function buildInternalPayload(event, intentName) {
   const customerPhone =
     getSlotValue(slots, slotNames.customerPhone) ||
     getAttribute(event, attributeNames.customerNumber);
+  const initialUtterance = getAttribute(event, ["initialBookingUtterance"]);
+  const transcript = [initialUtterance, event.inputTranscript || getAttribute(event, attributeNames.transcript)]
+    .filter((value, index, values) => value && values.indexOf(value) === index)
+    .join(" ");
 
   const payload = {
     intentName,
@@ -139,11 +171,12 @@ function buildInternalPayload(event, intentName) {
     requestedDate: getSlotValue(slots, slotNames.requestedDate),
     requestedTime: getSlotValue(slots, slotNames.requestedTime),
     staffPreference: getSlotValue(slots, slotNames.staffPreference),
-    transcript: event.inputTranscript || getAttribute(event, attributeNames.transcript),
+    transcript,
     source: "amazon_connect_ai",
     amazonConnectContactId,
     amazonConnectPhoneNumber,
-    calledNumber: calledNumber || undefined
+    calledNumber: calledNumber || undefined,
+    attributes: event.sessionState?.sessionAttributes || {}
   };
 
   const explicitSalonId = getAttribute(event, attributeNames.salonId);
@@ -170,7 +203,10 @@ function buildSessionAttributesFromResult(data) {
       appointmentId: data.appointment?.id,
       bookingAttemptId: data.bookingAttemptId,
       callSessionId: data.callSessionId,
-      escalationId: data.escalationId
+      escalationId: data.escalationId,
+      serviceSuggestionName: data.lexResponse?.sessionAttributes?.serviceSuggestionName,
+      serviceClarificationAttempts:
+        data.lexResponse?.sessionAttributes?.serviceClarificationAttempts
     }).filter(([, value]) => value !== undefined && value !== null && value !== "")
   );
 }
@@ -179,6 +215,10 @@ export const handler = async (event) => {
   try {
     const intentName = event.sessionState?.intent?.name || "";
 
+    if (event.invocationSource === "DialogCodeHook") {
+      return buildDelegateResponse(event);
+    }
+
     if (intentName === "HumanEscalationIntent") {
       const result = await postInternalAppointment(buildInternalPayload(event, intentName));
       const data = extractResultPayload(result);
@@ -186,7 +226,8 @@ export const handler = async (event) => {
         event,
         data.lexResponse?.message || "Please wait while I connect you to a real person.",
         data.lexResponse?.fulfillmentState || "Fulfilled",
-        buildSessionAttributesFromResult(data)
+        buildSessionAttributesFromResult(data),
+        data.lexResponse
       );
     }
 
@@ -198,7 +239,8 @@ export const handler = async (event) => {
         data.lexResponse?.message ||
           "I can help with cancellation by connecting you to our team. Please wait while I transfer you.",
         data.lexResponse?.fulfillmentState || "Fulfilled",
-        buildSessionAttributesFromResult(data)
+        buildSessionAttributesFromResult(data),
+        data.lexResponse
       );
     }
 
@@ -210,7 +252,8 @@ export const handler = async (event) => {
         data.lexResponse?.message ||
           "I can help reschedule by connecting you to our team. Please wait while I transfer you.",
         data.lexResponse?.fulfillmentState || "Fulfilled",
-        buildSessionAttributesFromResult(data)
+        buildSessionAttributesFromResult(data),
+        data.lexResponse
       );
     }
 
@@ -244,7 +287,8 @@ export const handler = async (event) => {
       event,
       message,
       state,
-      buildSessionAttributesFromResult(data)
+      buildSessionAttributesFromResult(data),
+      data.lexResponse
     );
   } catch (error) {
     console.error("Booking handler error", error);

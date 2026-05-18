@@ -76,11 +76,8 @@ interface StaffReminder {
 }
 
 const formatHourLabel = (hour: number) => {
-  const date = new Date();
-  date.setHours(hour, 0, 0, 0);
-  return date.toLocaleTimeString([], {
-    hour: "numeric"
-  });
+  const displayHour = ((hour + 11) % 12) + 1;
+  return `${displayHour} ${hour >= 12 ? "PM" : "AM"}`;
 };
 
 const formatTimeOnly = (value: string) => {
@@ -90,13 +87,35 @@ const formatTimeOnly = (value: string) => {
   }
   return date.toLocaleTimeString([], {
     hour: "numeric",
-    minute: "2-digit"
+    minute: "2-digit",
+    timeZone: "America/New_York"
   });
 };
 
 const minutesFromDayStart = (value: string) => {
   const date = new Date(value);
-  return date.getHours() * 60 + date.getMinutes();
+  const parts = new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hourCycle: "h23",
+    timeZone: "America/New_York"
+  }).formatToParts(date);
+  const hour = Number(parts.find((part) => part.type === "hour")?.value ?? 0);
+  const minute = Number(parts.find((part) => part.type === "minute")?.value ?? 0);
+  return hour * 60 + minute;
+};
+
+const localDateKey = (value: string) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "unknown";
+  }
+  return new Intl.DateTimeFormat("en-CA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone: "America/New_York"
+  }).format(date);
 };
 
 const buildTimeSlots = (items: AppointmentItem[]) => {
@@ -387,7 +406,7 @@ export const AppointmentsPage = () => {
   const groupedByDay = useMemo(() => {
     const byDay = new Map<string, AppointmentItem[]>();
     appointments.forEach((appointment) => {
-      const dateKey = new Date(appointment.startTime).toISOString().split("T")[0] ?? "unknown";
+      const dateKey = localDateKey(appointment.startTime);
       const list = byDay.get(dateKey) ?? [];
       list.push(appointment);
       byDay.set(dateKey, list);

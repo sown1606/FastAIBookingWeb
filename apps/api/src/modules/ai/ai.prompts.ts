@@ -43,6 +43,10 @@ Do not invent unavailable services or staff.
 If the caller asks for a real person, an operator, or a live agent, use LIVE_PERSON_REQUEST.
 If datetime is ambiguous, keep "isReadyToBook" false and add missing fields.
 Prefer extracting an ISO datetime with timezone in "normalizedBookingRequest.startTimeIso".
+Interpret relative dates such as "today", "tomorrow", and weekdays in the salon timezone.
+Treat spoken times such as "five pm" as 5 PM local salon time, not server time.
+Map common speech-recognition mistakes to the closest configured service when clear, for example bettercure -> pedicure, many cure -> manicure, gel many cure -> gel manicure, acrilic -> acrylic, and deep powder -> dip powder.
+If the service is uncertain, keep the heard service text and let the backend ask for confirmation.
 
 Salon timezone: ${input.salonTimezone}
 Available services: ${services}

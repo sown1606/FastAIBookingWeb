@@ -155,6 +155,12 @@ const getAppointmentServicesForWrite = async (
 };
 
 const buildAppointmentInclude = () => ({
+  salon: {
+    select: {
+      name: true,
+      timezone: true
+    }
+  },
   customer: true,
   staff: true,
   service: true,
@@ -311,11 +317,11 @@ const createBookingAlert = async (appointment: Awaited<ReturnType<typeof getAppo
   });
 };
 
-const formatNotificationTime = (startTime: Date): string => {
+const formatNotificationTime = (startTime: Date, timezone: string): string => {
   return new Intl.DateTimeFormat("en-US", {
     dateStyle: "medium",
     timeStyle: "short",
-    timeZone: "UTC"
+    timeZone: timezone
   }).format(startTime);
 };
 
@@ -332,7 +338,7 @@ const sendAppointmentCustomerNotifications = async (
 ): Promise<void> => {
   try {
     const serviceName = getNotificationServiceLabel(appointment);
-    const appointmentTime = formatNotificationTime(appointment.startTime);
+    const appointmentTime = formatNotificationTime(appointment.startTime, appointment.salon.timezone);
     const actionText =
       eventType === "created" ? "booked" : eventType === "updated" ? "updated" : "canceled";
 
@@ -345,7 +351,7 @@ const sendAppointmentCustomerNotifications = async (
 
     const smsPromise = sendSms({
       to: appointment.customer.phone,
-      body: `FastAIBooking: your ${serviceName} appointment with ${appointment.staff.fullName} was ${actionText} for ${appointmentTime}.`,
+      body: `${appointment.salon.name}: your ${serviceName} appointment with ${appointment.staff.fullName} was ${actionText} for ${appointmentTime}.`,
       reason:
         eventType === "created"
           ? "APPOINTMENT_CONFIRMATION"
