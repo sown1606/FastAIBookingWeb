@@ -228,7 +228,7 @@ export const CallCenterPage = () => {
   const isOwner = session?.user.role === "SALON_OWNER";
   const configuredCcpUrl = import.meta.env.VITE_AMAZON_CONNECT_CCP_URL?.trim();
   const ccpUrl = configuredCcpUrl || runtime?.amazonConnect.ccpUrl || null;
-  const ccpSettingsUrl = `${(ccpUrl ?? "https://fastaibooking.my.connect.aws/ccp-v2/").replace(/\/+$/, "")}/settings`;
+  const ccpSettingsUrl = ccpUrl ? `${ccpUrl.replace(/\/+$/, "")}/settings` : null;
 
   const appointmentStatusOptions = useMemo(
     () => ["SCHEDULED", "CONFIRMED", "CANCELED", "NO_SHOW"].map((value) => ({
@@ -1045,12 +1045,24 @@ export const CallCenterPage = () => {
           </label>
 
           <div className="simple-action-panel">
-            <a href={ccpUrl ?? "https://fastaibooking.my.connect.aws/ccp-v2/"} target="_blank" rel="noreferrer" className="button-primary">
-              {t("callCenter.ccpLink")}
-            </a>
-            <a href={ccpSettingsUrl} target="_blank" rel="noreferrer" className="button-secondary">
-              {t("callCenter.ccpSettingsLink")}
-            </a>
+            {ccpUrl ? (
+              <a href={ccpUrl} target="_blank" rel="noreferrer" className="button-primary">
+                {t("callCenter.ccpLink")}
+              </a>
+            ) : (
+              <button type="button" className="button-primary" disabled>
+                {t("callCenter.amazonPending")}
+              </button>
+            )}
+            {ccpSettingsUrl ? (
+              <a href={ccpSettingsUrl} target="_blank" rel="noreferrer" className="button-secondary">
+                {t("callCenter.ccpSettingsLink")}
+              </a>
+            ) : (
+              <button type="button" className="button-secondary" disabled>
+                {t("callCenter.ccpSettingsLink")}
+              </button>
+            )}
             <button type="button" className="button-secondary" onClick={() => void loadQueue()}>
               {t("callCenter.refreshQueue")}
             </button>
@@ -1229,12 +1241,24 @@ export const CallCenterPage = () => {
           </div>
           {ccpError ? <div className="form-error">{ccpError}</div> : null}
           <div className="inline-actions">
-            <a href={ccpUrl ?? "https://fastaibooking.my.connect.aws/ccp-v2/"} target="_blank" rel="noreferrer" className="button-primary">
-              {t("callCenter.ccpLink")}
-            </a>
-            <a href={ccpSettingsUrl} target="_blank" rel="noreferrer" className="button-secondary">
-              {t("callCenter.ccpSettingsLink")}
-            </a>
+            {ccpUrl ? (
+              <a href={ccpUrl} target="_blank" rel="noreferrer" className="button-primary">
+                {t("callCenter.ccpLink")}
+              </a>
+            ) : (
+              <button type="button" className="button-primary" disabled>
+                {t("callCenter.amazonPending")}
+              </button>
+            )}
+            {ccpSettingsUrl ? (
+              <a href={ccpSettingsUrl} target="_blank" rel="noreferrer" className="button-secondary">
+                {t("callCenter.ccpSettingsLink")}
+              </a>
+            ) : (
+              <button type="button" className="button-secondary" disabled>
+                {t("callCenter.ccpSettingsLink")}
+              </button>
+            )}
           </div>
           {missingAmazonConnectItems.length ? (
             <ul className="config-checklist compact">

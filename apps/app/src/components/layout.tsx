@@ -23,15 +23,11 @@ const ownerNav = [
 
 const staffNav = [
   { to: "/dashboard", labelKey: "nav.today" },
-  { to: "/appointments", labelKey: "nav.appointments" },
-  { to: "/availability", labelKey: "nav.availability" },
-  { to: "/messages", labelKey: "nav.messages" },
-  { to: "/my-profile", labelKey: "nav.profile" }
+  { to: "/appointments", labelKey: "nav.appointments" }
 ];
 
 const callCenterNav = [
-  { to: "/call-center", labelKey: "nav.callCenter" },
-  { to: "/dashboard", labelKey: "nav.dashboard" }
+  { to: "/call-center", labelKey: "nav.callCenter" }
 ];
 
 const resolveTitleKey = (pathname: string): TranslationKey => {

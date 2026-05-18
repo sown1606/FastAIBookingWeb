@@ -17,7 +17,6 @@ import { AvailabilityPage } from "./pages/availability-page";
 import { BillingPage } from "./pages/billing-page";
 import { CallsPage } from "./pages/calls-page";
 import { AiLogsPage } from "./pages/ai-logs-page";
-import { MyProfilePage } from "./pages/my-profile-page";
 import { MessagesPage } from "./pages/messages-page";
 import { AlertsPage } from "./pages/alerts-page";
 import { FeedbackPage } from "./pages/feedback-page";
@@ -41,9 +40,14 @@ const LoginRoute = () => {
     return null;
   }
   if (session) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to={session.user.role === "CALL_CENTER_AGENT" ? "/call-center" : "/dashboard"} replace />;
   }
   return <LoginPage />;
+};
+
+const DefaultRoute = () => {
+  const { session } = useAuth();
+  return <Navigate to={session?.user.role === "CALL_CENTER_AGENT" ? "/call-center" : "/dashboard"} replace />;
 };
 
 export const App = () => {
@@ -63,7 +67,7 @@ export const App = () => {
           </RequireAuth>
         }
       >
-        <Route index element={<Navigate to="/dashboard" replace />} />
+        <Route index element={<DefaultRoute />} />
         <Route path="dashboard" element={<DashboardPage />} />
         <Route
           path="salon-profile"
@@ -116,7 +120,7 @@ export const App = () => {
         <Route
           path="messages"
           element={
-            <RequireRole roles={["SALON_OWNER", "STAFF"]}>
+            <RequireRole roles={["SALON_OWNER"]}>
               <MessagesPage />
             </RequireRole>
           }
@@ -140,7 +144,7 @@ export const App = () => {
         <Route
           path="availability"
           element={
-            <RequireRole roles={["SALON_OWNER", "STAFF"]}>
+            <RequireRole roles={["SALON_OWNER"]}>
               <AvailabilityPage />
             </RequireRole>
           }
@@ -166,14 +170,6 @@ export const App = () => {
           element={
             <RequireRole roles={["SALON_OWNER"]}>
               <AiLogsPage />
-            </RequireRole>
-          }
-        />
-        <Route
-          path="my-profile"
-          element={
-            <RequireRole roles={["STAFF"]}>
-              <MyProfilePage />
             </RequireRole>
           }
         />
