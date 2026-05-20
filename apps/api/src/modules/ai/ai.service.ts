@@ -65,6 +65,7 @@ interface CreateAmazonConnectAIAppointmentInput {
   requestedDate?: string;
   requestedTime?: string;
   staffPreference?: string;
+  confirmationState?: string;
   source?: string;
   contactId?: string;
   callSessionId?: string;
@@ -145,6 +146,21 @@ const SERVICE_ALIASES: Record<string, string[]> = {
   "dip powder": ["dip", "deep powder", "dip power", "dip powder"]
 };
 
+const ANY_STAFF_PHRASES = new Set([
+  "anyone",
+  "any one",
+  "any staff",
+  "any technician",
+  "no preference",
+  "no staff preference",
+  "whoever",
+  "whoever is available",
+  "anybody"
+]);
+
+const DEMO_STAFF_NAMES = ["Trang", "Amy", "Kelly"];
+const DEMO_SERVICE_NAMES = ["Manicure", "Pedicure", "Gel Manicure", "Acrylic Full Set", "Dip Powder"];
+
 const normalizeForMatch = (value?: string | null): string => {
   return (value ?? "")
     .normalize("NFKD")
@@ -206,6 +222,24 @@ const isAffirmative = (value?: string | null): boolean => {
 
 const isNegative = (value?: string | null): boolean => {
   return /^(no|nope|not that|wrong)$/i.test(normalizeForMatch(value));
+};
+
+const isAnyStaffPreference = (value?: string | null): boolean => {
+  const normalized = normalizeForMatch(value);
+  return Boolean(normalized && ANY_STAFF_PHRASES.has(normalized));
+};
+
+const isConfirmationAccepted = (value?: string | null): boolean => {
+  return normalizeForMatch(value) === "confirmed";
+};
+
+const isConfirmationDenied = (value?: string | null): boolean => {
+  return normalizeForMatch(value) === "denied";
+};
+
+const stripLeadingCountryCode = (value?: string | null): string => {
+  const digits = (value ?? "").replace(/\D/g, "");
+  return digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
 };
 
 const readStringAttribute = (
@@ -938,7 +972,7 @@ const getStaffCandidates = async (input: {
   salonId: string;
   requestedStaffName?: string;
 }) => {
-  const staff = await prisma.staff.findMany({
+  const staff = orderStaffForDemo(await prisma.staff.findMany({
     where: {
       salonId: input.salonId,
       status: StaffStatus.ACTIVE,
@@ -951,10 +985,13 @@ const getStaffCandidates = async (input: {
     orderBy: {
       createdAt: "asc"
     }
-  });
+  }));
 
   const requested = normalizeForMatch(input.requestedStaffName);
   if (!requested) {
+    return staff;
+  }
+  if (isAnyStaffPreference(requested)) {
     return staff;
   }
 
@@ -1377,6 +1414,73 @@ const getSuggestedSlotsForService = async (input: {
   return suggestions;
 };
 
+const getRequestedStaffBusyAlternatives = async (input: {
+  salonId: string;
+  serviceId: string;
+  requestedStaff: { id: string; fullName: string };
+  allStaffCandidates: Array<{ id: string; fullName: string }>;
+  timezone: string;
+  preferredStartTime: Date;
+}): Promise<SuggestedSlot[]> => {
+  const suggestions: SuggestedSlot[] = [];
+
+  for (const staff of input.allStaffCandidates) {
+    if (staff.id === input.requestedStaff.id) {
+      continue;
+    }
+    try {
+      const slotValidation = await validateAppointmentSlot({
+        salonId: input.salonId,
+        staffId: staff.id,
+        serviceIds: [input.serviceId],
+        startTime: input.preferredStartTime
+      });
+      if (slotValidation.valid) {
+        suggestions.push({
+          staffId: staff.id,
+          staffName: staff.fullName,
+          startTime: input.preferredStartTime.toISOString(),
+          endTime: slotValidation.endTime.toISOString()
+        });
+        break;
+      }
+    } catch (error) {
+      if (error instanceof AppError && error.statusCode < 500) {
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  const preferredUtc = DateTime.fromJSDate(input.preferredStartTime, { zone: "utc" });
+  const localStart = preferredUtc.setZone(input.timezone);
+  for (let offset = 0; offset < 7; offset += 1) {
+    const localDate = localStart.plus({ days: offset }).toFormat("yyyy-MM-dd");
+    const available = await getAvailableSlots({
+      salonId: input.salonId,
+      serviceId: input.serviceId,
+      staffId: input.requestedStaff.id,
+      date: localDate,
+      intervalMinutes: 15
+    });
+    const nextSlot = available.slots.find((slot) => {
+      const slotStart = DateTime.fromISO(slot.startTime, { zone: "utc" });
+      return slotStart.toMillis() > preferredUtc.toMillis();
+    });
+    if (nextSlot) {
+      suggestions.push({
+        staffId: input.requestedStaff.id,
+        staffName: input.requestedStaff.fullName,
+        startTime: nextSlot.startTime,
+        endTime: nextSlot.endTime
+      });
+      break;
+    }
+  }
+
+  return suggestions.slice(0, 2);
+};
+
 const attachBookingAttemptToInteraction = async (
   interactionId: string,
   bookingAttemptId: string
@@ -1514,6 +1618,7 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
     requestedDate,
     requestedTime,
     staffPreference: asTrimmedString(input.staffPreference),
+    confirmationState: asTrimmedString(input.confirmationState),
     source,
     contactId,
     transcriptText,
@@ -1527,12 +1632,21 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
 const shouldEscalateToHuman = (input: {
   intentName?: string;
   transcriptText?: string;
+  serviceName?: string;
+  attributes?: Record<string, unknown>;
 }): boolean => {
   const intent = input.intentName?.toLowerCase();
   if (
     intent === "humanescalationintent" ||
     intent === "cancelappointmentintent" ||
     intent === "rescheduleappointmentintent"
+  ) {
+    return true;
+  }
+
+  if (
+    readStringAttribute(input.attributes, ["humanEscalationOffer"]) &&
+    (isAffirmative(input.transcriptText) || isAffirmative(input.serviceName))
   ) {
     return true;
   }
@@ -1574,6 +1688,91 @@ const buildInternalParsedIntent = (input: {
   }
 });
 
+const formatNameList = (values: string[]): string => {
+  if (values.length <= 2) {
+    return values.join(" and ");
+  }
+  return `${values.slice(0, -1).join(", ")}, and ${values[values.length - 1]}`;
+};
+
+const orderStaffForDemo = <T extends { fullName: string }>(staff: T[]): T[] => {
+  return [...staff].sort((left, right) => {
+    const leftPriority = DEMO_STAFF_NAMES.findIndex(
+      (name) => normalizeForMatch(name) === normalizeForMatch(left.fullName)
+    );
+    const rightPriority = DEMO_STAFF_NAMES.findIndex(
+      (name) => normalizeForMatch(name) === normalizeForMatch(right.fullName)
+    );
+    const normalizedLeftPriority = leftPriority === -1 ? Number.MAX_SAFE_INTEGER : leftPriority;
+    const normalizedRightPriority = rightPriority === -1 ? Number.MAX_SAFE_INTEGER : rightPriority;
+    return normalizedLeftPriority - normalizedRightPriority;
+  });
+};
+
+const getStaffPromptNames = (staffNames: string[]): string[] => {
+  const available = new Set(staffNames.map((name) => normalizeForMatch(name)));
+  const demoNames = DEMO_STAFF_NAMES.filter((name) => available.has(normalizeForMatch(name)));
+  return demoNames.length === DEMO_STAFF_NAMES.length ? demoNames : staffNames.slice(0, 5);
+};
+
+const getServicePromptNames = (serviceNames: string[]): string[] => {
+  const available = new Set(serviceNames.map((name) => normalizeForMatch(name)));
+  const demoNames = DEMO_SERVICE_NAMES.filter((name) => available.has(normalizeForMatch(name)));
+  return demoNames.length === DEMO_SERVICE_NAMES.length ? demoNames : serviceNames.slice(0, 5);
+};
+
+const formatLocalTimeForSpeech = (value: Date | string, timezone: string): string => {
+  const dateTime =
+    value instanceof Date
+      ? DateTime.fromJSDate(value, { zone: "utc" }).setZone(timezone)
+      : DateTime.fromISO(value, { zone: "utc" }).setZone(timezone);
+  return dateTime.minute === 0 ? dateTime.toFormat("h a") : dateTime.toFormat("h:mm a");
+};
+
+const formatLocalDateTimeForSpeech = (value: Date, timezone: string): string => {
+  const local = DateTime.fromJSDate(value, { zone: "utc" }).setZone(timezone);
+  const now = DateTime.now().setZone(timezone);
+  const date =
+    local.hasSame(now, "day")
+      ? "today"
+      : local.hasSame(now.plus({ days: 1 }), "day")
+        ? "tomorrow"
+        : local.toFormat("cccc, LLL d");
+  return `${date} at ${formatLocalTimeForSpeech(value, timezone)}`;
+};
+
+const formatAlternativeSentence = (alternatives: SuggestedSlot[], timezone: string): string => {
+  const readable = alternatives.slice(0, 2).map((slot) => {
+    const time = formatLocalTimeForSpeech(slot.startTime, timezone);
+    return `${slot.staffName} is available at ${time}`;
+  });
+  if (readable.length === 2) {
+    return `${readable[0]}, or ${readable[1]}.`;
+  }
+  if (readable.length === 1) {
+    return `${readable[0]}.`;
+  }
+  return "";
+};
+
+const buildBookingConfirmationMessage = (input: {
+  serviceName: string;
+  appointmentStartTime: Date;
+  salonTimezone: string;
+  staffName: string;
+  customerName: string;
+  customerPhone?: string;
+}): string => {
+  const service = input.serviceName.toLowerCase();
+  const appointmentTime = formatLocalDateTimeForSpeech(
+    input.appointmentStartTime,
+    input.salonTimezone
+  );
+  const phone = stripLeadingCountryCode(input.customerPhone);
+  const phoneText = phone ? `, phone number ${phone}` : "";
+  return `Just to confirm, you want to book a ${service} ${appointmentTime} with ${input.staffName}, under ${input.customerName}${phoneText}. Is that correct?`;
+};
+
 const buildLexMessage = (input: {
   outcome: AmazonConnectAIAppointmentOutcome;
   missingFields?: string[];
@@ -1581,19 +1780,21 @@ const buildLexMessage = (input: {
   salonTimezone?: string;
   serviceName?: string;
   staffName?: string;
+  staffNames?: string[];
   requestedStaffName?: string;
   alternatives?: SuggestedSlot[];
   failureReason?: string;
 }): string => {
   if (input.outcome === "BOOKED") {
     const appointmentTime = input.appointmentStartTime
-      ? DateTime.fromJSDate(input.appointmentStartTime, { zone: "utc" })
-          .setZone(input.salonTimezone ?? "America/New_York")
-          .toFormat("cccc, LLL d 'at' h:mm a")
+      ? formatLocalDateTimeForSpeech(
+          input.appointmentStartTime,
+          input.salonTimezone ?? "America/New_York"
+        )
       : "the requested time";
-    const service = input.serviceName ? `${input.serviceName} ` : "";
+    const service = input.serviceName ? input.serviceName.toLowerCase() : "appointment";
     const staff = input.staffName ? ` with ${input.staffName}` : "";
-    return `You're all set. Your ${service}appointment is booked for ${appointmentTime}${staff}. You will receive a confirmation shortly. Thank you for calling.`;
+    return `You're all set. Your ${service} is booked for ${appointmentTime}${staff}. Thank you for calling.`;
   }
 
   if (input.outcome === "HUMAN_ESCALATION") {
@@ -1601,6 +1802,12 @@ const buildLexMessage = (input: {
   }
 
   if (input.outcome === "MISSING_INFO") {
+    if (input.missingFields?.includes("staffPreference")) {
+      const staffList = formatNameList(getStaffPromptNames(input.staffNames ?? []));
+      return staffList
+        ? `Do you prefer a specific staff member? We have ${staffList} available in our demo salon.`
+        : "Do you prefer a specific staff member, or is anyone okay?";
+    }
     const readable = (input.missingFields ?? [])
       .map((field) => {
         if (field === "customerName") {
@@ -1615,6 +1822,9 @@ const buildLexMessage = (input: {
         if (field === "preferredDateTime") {
           return "the date and time";
         }
+        if (field === "staffPreference") {
+          return "your staff preference";
+        }
         return field;
       })
       .join(", ");
@@ -1624,26 +1834,18 @@ const buildLexMessage = (input: {
   }
 
   if (input.outcome === "NO_AVAILABILITY") {
-    const alternatives = (input.alternatives ?? []).slice(0, 3);
+    const alternatives = (input.alternatives ?? []).slice(0, 2);
     if (!alternatives.length) {
       return "That time is not available. Would you like another time or a different staff member?";
     }
 
-    const formattedAlternatives = alternatives
-      .map((slot) => {
-        const time = DateTime.fromISO(slot.startTime, { zone: "utc" })
-          .setZone(input.salonTimezone ?? "America/New_York")
-          .toFormat("h:mm a");
-        return `${time} with ${slot.staffName}`;
-      })
-      .join(", ");
+    const timezone = input.salonTimezone ?? "America/New_York";
+    const formattedAlternatives = formatAlternativeSentence(alternatives, timezone);
     if (input.requestedStaffName && input.appointmentStartTime) {
-      const requestedTime = DateTime.fromJSDate(input.appointmentStartTime, { zone: "utc" })
-        .setZone(input.salonTimezone ?? "America/New_York")
-        .toFormat("h:mm a");
-      return `${input.requestedStaffName} is not available at ${requestedTime}. I have ${formattedAlternatives}. Which one works better?`;
+      const requestedTime = formatLocalTimeForSpeech(input.appointmentStartTime, timezone);
+      return `${input.requestedStaffName} is not available at ${requestedTime}. ${formattedAlternatives} Which one works better?`;
     }
-    return `That time is not available. I have ${formattedAlternatives}. Which one works better?`;
+    return `That time is not available. ${formattedAlternatives} Which one works better?`;
   }
 
   return (
@@ -1668,6 +1870,9 @@ const getElicitSlotForMissingFields = (
   if (missingFields.has("customerPhone")) {
     return "customerPhone";
   }
+  if (missingFields.has("staffPreference")) {
+    return "staffPreference";
+  }
   return "serviceName";
 };
 
@@ -1683,10 +1888,108 @@ const buildServiceClarificationMessage = (input: {
   if (input.suggestedServiceName) {
     return `I heard ${input.heardServiceName}. Did you mean ${input.suggestedServiceName}?`;
   }
-  const options = input.availableServiceNames.slice(0, 3).join(", ");
+  const options = formatNameList(getServicePromptNames(input.availableServiceNames));
   return options
-    ? `I heard ${input.heardServiceName}. Did you mean ${options}, or another service?`
+    ? `I could not clearly match the service. We have ${options}. Which one would you like?`
     : `I heard ${input.heardServiceName}. Which service would you like?`;
+};
+
+const parseAlternativeSlotsAttribute = (
+  attributes: Record<string, unknown> | undefined
+): SuggestedSlot[] => {
+  const raw = readStringAttribute(attributes, ["aiAlternativeSlots"]);
+  if (!raw) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed
+      .map((item) => {
+        if (!item || typeof item !== "object") {
+          return null;
+        }
+        const candidate = item as Partial<SuggestedSlot>;
+        if (
+          !candidate.staffId ||
+          !candidate.staffName ||
+          !candidate.startTime ||
+          !candidate.endTime
+        ) {
+          return null;
+        }
+        return {
+          staffId: candidate.staffId,
+          staffName: candidate.staffName,
+          startTime: candidate.startTime,
+          endTime: candidate.endTime
+        };
+      })
+      .filter((item): item is SuggestedSlot => Boolean(item))
+      .slice(0, 2);
+  } catch {
+    return [];
+  }
+};
+
+const textMentionsSlotTime = (text: string, slot: SuggestedSlot, timezone: string): boolean => {
+  const normalizedText = normalizeForMatch(normalizeSpokenNumbers(text));
+  const local = DateTime.fromISO(slot.startTime, { zone: "utc" }).setZone(timezone);
+  const candidates = [
+    local.toFormat("h:mm a"),
+    local.toFormat("h:mm"),
+    local.toFormat("h a"),
+    local.toFormat("H:mm")
+  ].map((value) => normalizeForMatch(value));
+  return candidates.some((candidate) => normalizedText.includes(candidate));
+};
+
+const selectAlternativeSlotFromText = (input: {
+  alternatives: SuggestedSlot[];
+  transcriptText?: string;
+  staffPreference?: string;
+  timezone: string;
+}): SuggestedSlot | null => {
+  if (!input.alternatives.length) {
+    return null;
+  }
+
+  const selectionText = [input.transcriptText, input.staffPreference].filter(Boolean).join(" ");
+  const normalizedText = normalizeForMatch(selectionText);
+  if (!normalizedText) {
+    return null;
+  }
+
+  if (/\b(first|option one|number one)\b/.test(normalizedText)) {
+    return input.alternatives[0] ?? null;
+  }
+  if (/\b(second|option two|number two)\b/.test(normalizedText)) {
+    return input.alternatives[1] ?? null;
+  }
+
+  const staffMatch = input.alternatives.find((slot) => {
+    const fullName = normalizeForMatch(slot.staffName);
+    const firstName = normalizeForMatch(slot.staffName.split(/\s+/)[0]);
+    return (
+      normalizedText.includes(fullName) ||
+      normalizedText.includes(firstName)
+    );
+  });
+  if (staffMatch && textMentionsSlotTime(selectionText, staffMatch, input.timezone)) {
+    return staffMatch;
+  }
+
+  const exactTimeMatch = input.alternatives.find((slot) =>
+    textMentionsSlotTime(selectionText, slot, input.timezone)
+  );
+  if (exactTimeMatch) {
+    return exactTimeMatch;
+  }
+
+  return staffMatch ?? null;
 };
 
 export const createAmazonConnectAIAppointment = async (
@@ -1733,6 +2036,21 @@ export const createAmazonConnectAIAppointment = async (
 
   if (!normalized.staffPreference && normalized.transcriptText) {
     normalized.staffPreference = await findStaffMentionInText(salon.id, normalized.transcriptText);
+  }
+
+  const selectedAlternative = selectAlternativeSlotFromText({
+    alternatives: parseAlternativeSlotsAttribute(normalized.attributes),
+    transcriptText: normalized.transcriptText,
+    staffPreference: normalized.staffPreference,
+    timezone: salon.timezone
+  });
+  if (selectedAlternative) {
+    const selectedLocalStart = DateTime.fromISO(selectedAlternative.startTime, { zone: "utc" }).setZone(
+      salon.timezone
+    );
+    normalized.requestedDate = selectedLocalStart.toFormat("yyyy-MM-dd");
+    normalized.requestedTime = selectedLocalStart.toFormat("HH:mm");
+    normalized.staffPreference = selectedAlternative.staffName;
   }
 
   const createAttempt = async (inputForAttempt: {
@@ -1943,6 +2261,9 @@ export const createAmazonConnectAIAppointment = async (
   ) {
     missingFields.add("preferredDateTime");
   }
+  if (!normalized.staffPreference) {
+    missingFields.add("staffPreference");
+  }
 
   let requestedStartTime: Date | null = null;
   if (!missingFields.has("preferredDateTime") && normalized.requestedDate) {
@@ -2030,9 +2351,18 @@ export const createAmazonConnectAIAppointment = async (
   }
 
   if (missingFields.size > 0 || !requestedStartTime) {
+    const slotToElicit = getElicitSlotForMissingFields(missingFields, normalized);
+    const promptMissingFields =
+      slotToElicit === "requestedDate" || slotToElicit === "requestedTime"
+        ? ["preferredDateTime"]
+        : [slotToElicit];
+    const staffNames = promptMissingFields.includes("staffPreference")
+      ? (await getStaffCandidates({ salonId: salon.id })).map((member) => member.fullName)
+      : [];
     const message = buildLexMessage({
       outcome: "MISSING_INFO",
-      missingFields: Array.from(missingFields.values())
+      missingFields: promptMissingFields,
+      staffNames
     });
     const parsed = buildInternalParsedIntent({
       intentType: "BOOK_APPOINTMENT",
@@ -2078,7 +2408,7 @@ export const createAmazonConnectAIAppointment = async (
         message,
         dialogAction: {
           type: "ElicitSlot",
-          slotToElicit: getElicitSlotForMissingFields(missingFields, normalized)
+          slotToElicit
         }
       },
       appointment: null,
@@ -2173,7 +2503,8 @@ export const createAmazonConnectAIAppointment = async (
               },
         sessionAttributes: {
           serviceSuggestionName: serviceMatch.service.name,
-          serviceClarificationAttempts: String(attempts + 1)
+          serviceClarificationAttempts: String(attempts + 1),
+          ...(attempts >= 2 ? { humanEscalationOffer: "service_clarification_failed" } : {})
         }
       },
       appointment: null,
@@ -2263,7 +2594,8 @@ export const createAmazonConnectAIAppointment = async (
                 slotToElicit: "serviceName"
               },
         sessionAttributes: {
-          serviceClarificationAttempts: String(attempts + 1)
+          serviceClarificationAttempts: String(attempts + 1),
+          ...(attempts >= 2 ? { humanEscalationOffer: "service_clarification_failed" } : {})
         }
       },
       appointment: null,
@@ -2313,15 +2645,28 @@ export const createAmazonConnectAIAppointment = async (
   }
 
   if (!chosenStaff) {
-    const alternatives = await getSuggestedSlotsForService({
-      salonId: salon.id,
-      serviceId: service.id,
-      staffCandidates: allStaffCandidates,
-      timezone: salon.timezone,
-      preferredStartTime: requestedStartTime,
-      daysAhead: 7,
-      maxSlots: 5
-    });
+    const requestedSpecificStaff = Boolean(
+      normalized.staffPreference && !isAnyStaffPreference(normalized.staffPreference)
+    );
+    const alternatives =
+      requestedSpecificStaff && preferredStaffCandidates[0]
+        ? await getRequestedStaffBusyAlternatives({
+            salonId: salon.id,
+            serviceId: service.id,
+            requestedStaff: preferredStaffCandidates[0],
+            allStaffCandidates,
+            timezone: salon.timezone,
+            preferredStartTime: requestedStartTime
+          })
+        : await getSuggestedSlotsForService({
+            salonId: salon.id,
+            serviceId: service.id,
+            staffCandidates: allStaffCandidates,
+            timezone: salon.timezone,
+            preferredStartTime: requestedStartTime,
+            daysAhead: 7,
+            maxSlots: 2
+          });
     const requestedStaffDisplayName = normalized.staffPreference
       ? preferredStaffCandidates[0]?.fullName ?? normalized.staffPreference
       : undefined;
@@ -2386,6 +2731,9 @@ export const createAmazonConnectAIAppointment = async (
         dialogAction: {
           type: "ElicitSlot",
           slotToElicit: normalized.staffPreference ? "staffPreference" : "requestedTime"
+        },
+        sessionAttributes: {
+          aiAlternativeSlots: JSON.stringify(alternatives.slice(0, 2))
         }
       },
       appointment: null,
@@ -2395,6 +2743,145 @@ export const createAmazonConnectAIAppointment = async (
       aiInteraction,
       escalation: null,
       alternatives,
+      missingFields: [],
+      salonResolutionSource: resolutionSource
+    };
+  }
+
+  if (isConfirmationDenied(normalized.confirmationState)) {
+    const message = "No problem. Which detail would you like to change?";
+    const parsed = buildInternalParsedIntent({
+      intentType: "BOOK_APPOINTMENT",
+      customerName: normalized.customerName,
+      customerPhone: normalized.customerPhone,
+      serviceName: service.name,
+      staffPreference: chosenStaff.fullName,
+      requestedDateTime: requestedStartTime.toISOString(),
+      missingFields: [],
+      isReadyToBook: false
+    });
+    const bookingAttempt = await createAttempt({
+      status: BookingAttemptStatus.NEEDS_INPUT,
+      requestedStartTime,
+      failureReason: "Caller rejected booking confirmation.",
+      normalizedRequest: {
+        serviceId: service.id,
+        staffId: chosenStaff.id,
+        serviceName: service.name,
+        staffName: chosenStaff.fullName,
+        startTimeIso: requestedStartTime.toISOString(),
+        timezone: salon.timezone
+      }
+    });
+    const aiInteraction = await createInteraction({
+      outcome: "MISSING_INFO",
+      message,
+      parsed,
+      bookingAttemptId: bookingAttempt.id,
+      responsePayload: {
+        reason: bookingAttempt.failureReason
+      },
+      isValid: true
+    });
+    await finalizeCall({
+      outcome: "MISSING_INFO",
+      bookingAttemptId: bookingAttempt.id,
+      bookingStatus: bookingAttempt.status,
+      parsed,
+      message,
+      failureReason: bookingAttempt.failureReason ?? undefined
+    });
+
+    return {
+      outcome: "MISSING_INFO" as const,
+      message,
+      lexResponse: {
+        fulfillmentState: "InProgress",
+        message,
+        dialogAction: {
+          type: "ElicitIntent"
+        }
+      },
+      appointment: null,
+      bookingAttempt,
+      callSession,
+      transcript,
+      aiInteraction,
+      escalation: null,
+      alternatives: [],
+      missingFields: [],
+      salonResolutionSource: resolutionSource
+    };
+  }
+
+  if (!isConfirmationAccepted(normalized.confirmationState)) {
+    const message = buildBookingConfirmationMessage({
+      serviceName: service.name,
+      appointmentStartTime: requestedStartTime,
+      salonTimezone: salon.timezone,
+      staffName: chosenStaff.fullName,
+      customerName: normalized.customerName!,
+      customerPhone: normalized.customerPhone
+    });
+    const parsed = buildInternalParsedIntent({
+      intentType: "BOOK_APPOINTMENT",
+      customerName: normalized.customerName,
+      customerPhone: normalized.customerPhone,
+      serviceName: service.name,
+      staffPreference: chosenStaff.fullName,
+      requestedDateTime: requestedStartTime.toISOString(),
+      missingFields: [],
+      isReadyToBook: false
+    });
+    const bookingAttempt = await createAttempt({
+      status: BookingAttemptStatus.NEEDS_INPUT,
+      requestedStartTime,
+      failureReason: "Booking confirmation required before creating appointment.",
+      normalizedRequest: {
+        serviceId: service.id,
+        staffId: chosenStaff.id,
+        serviceName: service.name,
+        staffName: chosenStaff.fullName,
+        startTimeIso: requestedStartTime.toISOString(),
+        timezone: salon.timezone
+      }
+    });
+    const aiInteraction = await createInteraction({
+      outcome: "MISSING_INFO",
+      message,
+      parsed,
+      bookingAttemptId: bookingAttempt.id,
+      responsePayload: {
+        reason: bookingAttempt.failureReason
+      },
+      isValid: true
+    });
+    await finalizeCall({
+      outcome: "MISSING_INFO",
+      bookingAttemptId: bookingAttempt.id,
+      bookingStatus: bookingAttempt.status,
+      parsed,
+      message,
+      failureReason: bookingAttempt.failureReason ?? undefined
+    });
+
+    return {
+      outcome: "MISSING_INFO" as const,
+      message,
+      lexResponse: {
+        fulfillmentState: "InProgress",
+        message,
+        dialogAction: {
+          type: "ConfirmIntent"
+        }
+      },
+      appointment: null,
+      bookingAttempt,
+      callSession,
+      transcript,
+      aiInteraction,
+      escalation: null,
+      alternatives: [],
       missingFields: [],
       salonResolutionSource: resolutionSource
     };
@@ -2508,7 +2995,7 @@ export const createAmazonConnectAIAppointment = async (
     intentType: "BOOK_APPOINTMENT",
     customerName: normalized.customerName,
     customerPhone: normalized.customerPhone,
-    serviceName: normalized.serviceName,
+    serviceName: service.name,
     staffPreference: chosenStaff.fullName,
     requestedDateTime: requestedStartTime.toISOString(),
     missingFields: [],

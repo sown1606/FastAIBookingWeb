@@ -35,10 +35,12 @@ const attributeNames = {
   salonId: ["salonId", "SalonId"]
 };
 
-function getSlotValue(slots, names) {
+function getSlotValue(slots, names, options = {}) {
   for (const name of names) {
     const slot = slots?.[name];
-    const value = slot?.value?.interpretedValue || slot?.value?.originalValue;
+    const value = options.preferOriginal
+      ? slot?.value?.originalValue || slot?.value?.interpretedValue
+      : slot?.value?.interpretedValue || slot?.value?.originalValue;
     if (value) {
       return String(value).trim();
     }
@@ -169,8 +171,9 @@ function buildInternalPayload(event, intentName) {
     customerPhone,
     serviceName: getSlotValue(slots, slotNames.serviceName),
     requestedDate: getSlotValue(slots, slotNames.requestedDate),
-    requestedTime: getSlotValue(slots, slotNames.requestedTime),
+    requestedTime: getSlotValue(slots, slotNames.requestedTime, { preferOriginal: true }),
     staffPreference: getSlotValue(slots, slotNames.staffPreference),
+    confirmationState: event.sessionState?.intent?.confirmationState,
     transcript,
     source: "amazon_connect_ai",
     amazonConnectContactId,
@@ -206,7 +209,9 @@ function buildSessionAttributesFromResult(data) {
       escalationId: data.escalationId,
       serviceSuggestionName: data.lexResponse?.sessionAttributes?.serviceSuggestionName,
       serviceClarificationAttempts:
-        data.lexResponse?.sessionAttributes?.serviceClarificationAttempts
+        data.lexResponse?.sessionAttributes?.serviceClarificationAttempts,
+      humanEscalationOffer: data.lexResponse?.sessionAttributes?.humanEscalationOffer,
+      aiAlternativeSlots: data.lexResponse?.sessionAttributes?.aiAlternativeSlots
     }).filter(([, value]) => value !== undefined && value !== null && value !== "")
   );
 }
@@ -224,7 +229,7 @@ export const handler = async (event) => {
       const data = extractResultPayload(result);
       return buildLexResponse(
         event,
-        data.lexResponse?.message || "Please wait while I connect you to a real person.",
+        data.lexResponse?.message || "No problem. Please hold while I connect you to our team.",
         data.lexResponse?.fulfillmentState || "Fulfilled",
         buildSessionAttributesFromResult(data),
         data.lexResponse
@@ -280,7 +285,7 @@ export const handler = async (event) => {
     const message =
       data.lexResponse?.message ||
       (data.outcome === "BOOKED"
-        ? "Your appointment is booked. You will receive a confirmation shortly. Thank you."
+        ? "You're all set. Your appointment is booked. Thank you for calling."
         : "I could not confirm the booking yet. Please wait while I connect you to our team.");
 
     return buildLexResponse(

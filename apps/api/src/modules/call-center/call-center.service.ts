@@ -501,7 +501,7 @@ export const createOrUpdateCallEscalation = async (input: {
       routingOutcome,
       customerPhone: input.customerPhone
     },
-    sendSms: status !== CallEscalationStatus.SMS_SENT
+    sendSms: false
   });
 
   return escalation;

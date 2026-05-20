@@ -313,7 +313,7 @@ const createBookingAlert = async (appointment: Awaited<ReturnType<typeof getAppo
       customerPhone: appointment.customer.phone,
       source: appointment.source
     },
-    sendSms: true
+    sendSms: false
   });
 };
 
@@ -460,7 +460,9 @@ export const createAppointment = async (
   });
 
   await createBookingAlert(created);
-  await sendAppointmentCustomerNotifications(created, "created");
+  if (created.source !== AppointmentSource.AI) {
+    await sendAppointmentCustomerNotifications(created, "created");
+  }
   return created;
 };
 
