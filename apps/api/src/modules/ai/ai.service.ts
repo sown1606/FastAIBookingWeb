@@ -90,6 +90,34 @@ type SuggestedSlot = {
   endTime: string;
 };
 
+type StaffCandidate = {
+  id: string;
+  fullName: string;
+};
+
+type StaffPreferenceResolution =
+  | {
+      status: "all";
+      candidates: StaffCandidate[];
+      allStaff: StaffCandidate[];
+      rawStaffPreference?: string;
+      invalidReason?: "explicit_any" | "invalid_format" | "no_match" | "missing";
+    }
+  | {
+      status: "matched";
+      candidates: StaffCandidate[];
+      allStaff: StaffCandidate[];
+      rawStaffPreference: string;
+      matchedStaff: StaffCandidate;
+    }
+  | {
+      status: "ambiguous";
+      candidates: StaffCandidate[];
+      allStaff: StaffCandidate[];
+      rawStaffPreference: string;
+      ambiguousStaffNames: string[];
+    };
+
 type ServiceMatch = {
   service: {
     id: string;
@@ -147,18 +175,26 @@ const SERVICE_ALIASES: Record<string, string[]> = {
 };
 
 const ANY_STAFF_PHRASES = new Set([
+  "any",
   "anyone",
   "any one",
+  "any available staff",
   "any staff",
   "any technician",
+  "any tech",
   "no preference",
   "no staff preference",
+  "no specific staff",
+  "first available",
+  "someone available",
   "whoever",
   "whoever is available",
+  "whoever's available",
+  "who is available",
   "anybody"
 ]);
 
-const DEMO_STAFF_NAMES = ["Trang", "Amy", "Kelly"];
+const DEMO_STAFF_NAMES = ["Mia Carter", "Olivia Brooks", "Nora Evans"];
 const DEMO_SERVICE_NAMES = ["Manicure", "Pedicure", "Gel Manicure", "Acrylic Full Set", "Dip Powder"];
 
 const normalizeForMatch = (value?: string | null): string => {
@@ -227,6 +263,21 @@ const isNegative = (value?: string | null): boolean => {
 const isAnyStaffPreference = (value?: string | null): boolean => {
   const normalized = normalizeForMatch(value);
   return Boolean(normalized && ANY_STAFF_PHRASES.has(normalized));
+};
+
+const isClearlyInvalidStaffPreference = (value?: string | null): boolean => {
+  const normalized = normalizeForMatch(value);
+  const compact = compactForMatch(value);
+  if (!normalized || isAnyStaffPreference(normalized)) {
+    return false;
+  }
+  if (compact.length < 3) {
+    return true;
+  }
+  if (!/[a-z]/.test(normalized)) {
+    return true;
+  }
+  return /\d/.test(compact);
 };
 
 const isConfirmationAccepted = (value?: string | null): boolean => {
@@ -529,7 +580,9 @@ const normalizeIntentResult = (intent: BookingIntentResult): BookingIntentResult
     startTimeIso: intent.normalizedBookingRequest.startTimeIso ?? intent.requestedDateTime
   };
 
-  const missing = new Set<string>(intent.missingFields);
+  const missing = new Set<string>(
+    intent.missingFields.filter((field) => field !== "staffPreference")
+  );
   if (!normalizedBookingRequest.customerName) {
     missing.add("customerName");
   }
@@ -551,6 +604,50 @@ const normalizeIntentResult = (intent: BookingIntentResult): BookingIntentResult
     missingFields: Array.from(missing.values()),
     normalizedBookingRequest
   };
+};
+
+const sanitizeParsedIntentForConfiguredData = async (
+  salonId: string,
+  intent: BookingIntentResult,
+  staff: StaffCandidate[]
+): Promise<BookingIntentResult> => {
+  const staffValue = intent.normalizedBookingRequest.staffName ?? intent.requestedStaff;
+  const staffResolution = resolveStaffPreferenceFromCandidates(staff, staffValue);
+  const nextNormalizedRequest = {
+    ...intent.normalizedBookingRequest
+  };
+  let requestedStaff = intent.requestedStaff;
+
+  if (staffValue) {
+    if (staffResolution.status === "matched") {
+      requestedStaff = staffResolution.matchedStaff.fullName;
+      nextNormalizedRequest.staffName = staffResolution.matchedStaff.fullName;
+    } else if (staffResolution.status === "ambiguous") {
+      requestedStaff = staffResolution.rawStaffPreference;
+      nextNormalizedRequest.staffName = staffResolution.rawStaffPreference;
+    } else {
+      requestedStaff = undefined;
+      nextNormalizedRequest.staffName = undefined;
+    }
+  }
+
+  const serviceValue = nextNormalizedRequest.serviceName ?? intent.requestedService;
+  let requestedService = intent.requestedService;
+  if (serviceValue) {
+    const serviceMatch = await resolveServiceMatch(salonId, serviceValue);
+    if (serviceMatch && (serviceMatch.exact || serviceMatch.matchedBy === "alias")) {
+      requestedService = serviceMatch.service.name;
+      nextNormalizedRequest.serviceName = serviceMatch.service.name;
+    }
+  }
+
+  return normalizeIntentResult({
+    ...intent,
+    requestedService,
+    requestedStaff,
+    missingFields: intent.missingFields.filter((field) => field !== "staffPreference"),
+    normalizedBookingRequest: nextNormalizedRequest
+  });
 };
 
 const ensureCallSessionForSalon = async (
@@ -706,7 +803,11 @@ const parseBookingIntentInternal = async (input: ParseBookingInput) => {
     };
   }
 
-  const normalized = normalizeIntentResult(parsedIntent);
+  const normalized = await sanitizeParsedIntentForConfiguredData(
+    input.salonId,
+    normalizeIntentResult(parsedIntent),
+    context.staff
+  );
   const interaction = await createAIInteractionLog({
     salonId: input.salonId,
     actorUserId: input.actorUserId,
@@ -968,13 +1069,21 @@ const resolveCustomer = async (input: {
   });
 };
 
-const getStaffCandidates = async (input: {
-  salonId: string;
-  requestedStaffName?: string;
-}) => {
-  const staff = orderStaffForDemo(await prisma.staff.findMany({
+const dedupeStaffById = (staff: StaffCandidate[]): StaffCandidate[] => {
+  const seen = new Set<string>();
+  return staff.filter((member) => {
+    if (seen.has(member.id)) {
+      return false;
+    }
+    seen.add(member.id);
+    return true;
+  });
+};
+
+const getActiveBookableStaff = async (salonId: string): Promise<StaffCandidate[]> => {
+  return orderStaffForDemo(await prisma.staff.findMany({
     where: {
-      salonId: input.salonId,
+      salonId,
       status: StaffStatus.ACTIVE,
       isBookable: true
     },
@@ -986,34 +1095,153 @@ const getStaffCandidates = async (input: {
       createdAt: "asc"
     }
   }));
+};
 
-  const requested = normalizeForMatch(input.requestedStaffName);
+const resolveStaffPreferenceFromCandidates = (
+  staff: StaffCandidate[],
+  requestedStaffName?: string
+): StaffPreferenceResolution => {
+  const allStaff = orderStaffForDemo(dedupeStaffById(staff));
+  const rawStaffPreference = requestedStaffName?.trim();
+  const requested = normalizeForMatch(rawStaffPreference);
+
   if (!requested) {
-    return staff;
+    return {
+      status: "all",
+      candidates: allStaff,
+      allStaff,
+      invalidReason: "missing"
+    };
   }
   if (isAnyStaffPreference(requested)) {
-    return staff;
+    return {
+      status: "all",
+      candidates: allStaff,
+      allStaff,
+      rawStaffPreference,
+      invalidReason: "explicit_any"
+    };
+  }
+  if (isClearlyInvalidStaffPreference(requested)) {
+    return {
+      status: "all",
+      candidates: allStaff,
+      allStaff,
+      rawStaffPreference,
+      invalidReason: "invalid_format"
+    };
   }
 
-  const ranked = staff
+  const exactMatches = allStaff.filter((member) => {
+    const fullName = normalizeForMatch(member.fullName);
+    const firstName = normalizeForMatch(member.fullName.split(/\s+/)[0]);
+    return fullName === requested || firstName === requested;
+  });
+
+  if (exactMatches.length === 1) {
+    return {
+      status: "matched",
+      candidates: exactMatches,
+      allStaff,
+      rawStaffPreference: rawStaffPreference!,
+      matchedStaff: exactMatches[0]!
+    };
+  }
+  if (exactMatches.length > 1) {
+    return {
+      status: "ambiguous",
+      candidates: exactMatches,
+      allStaff,
+      rawStaffPreference: rawStaffPreference!,
+      ambiguousStaffNames: Array.from(new Set(exactMatches.map((member) => member.fullName)))
+    };
+  }
+
+  const containsMatches = allStaff.filter((member) => {
+    const fullName = normalizeForMatch(member.fullName);
+    const firstName = normalizeForMatch(member.fullName.split(/\s+/)[0]);
+    return (
+      requested.length >= 3 &&
+      (fullName.includes(requested) ||
+        requested.includes(fullName) ||
+        (firstName.length >= 3 && (firstName.includes(requested) || requested.includes(firstName))))
+    );
+  });
+
+  if (containsMatches.length === 1) {
+    return {
+      status: "matched",
+      candidates: containsMatches,
+      allStaff,
+      rawStaffPreference: rawStaffPreference!,
+      matchedStaff: containsMatches[0]!
+    };
+  }
+  if (containsMatches.length > 1) {
+    return {
+      status: "ambiguous",
+      candidates: containsMatches,
+      allStaff,
+      rawStaffPreference: rawStaffPreference!,
+      ambiguousStaffNames: Array.from(new Set(containsMatches.map((member) => member.fullName)))
+    };
+  }
+
+  const fuzzyMatches = allStaff
     .map((member) => {
       const fullName = normalizeForMatch(member.fullName);
       const firstName = normalizeForMatch(member.fullName.split(/\s+/)[0]);
-      const exact =
-        fullName.includes(requested) ||
-        requested.includes(fullName) ||
-        firstName === requested ||
-        requested.includes(firstName);
-      const score = exact
-        ? 1
-        : Math.max(similarityScore(fullName, requested), similarityScore(firstName, requested));
+      const score = Math.max(similarityScore(fullName, requested), similarityScore(firstName, requested));
       return { member, score };
     })
-    .filter((item) => item.score >= 0.74)
+    .filter((item) => item.score >= 0.84)
     .sort((left, right) => right.score - left.score)
     .map((item) => item.member);
 
-  return ranked;
+  if (fuzzyMatches.length === 1) {
+    return {
+      status: "matched",
+      candidates: fuzzyMatches,
+      allStaff,
+      rawStaffPreference: rawStaffPreference!,
+      matchedStaff: fuzzyMatches[0]!
+    };
+  }
+  if (fuzzyMatches.length > 1) {
+    return {
+      status: "ambiguous",
+      candidates: fuzzyMatches,
+      allStaff,
+      rawStaffPreference: rawStaffPreference!,
+      ambiguousStaffNames: Array.from(new Set(fuzzyMatches.map((member) => member.fullName)))
+    };
+  }
+
+  return {
+    status: "all",
+    candidates: allStaff,
+    allStaff,
+    rawStaffPreference,
+    invalidReason: "no_match"
+  };
+};
+
+const resolveStaffCandidates = async (input: {
+  salonId: string;
+  requestedStaffName?: string;
+}): Promise<StaffPreferenceResolution> => {
+  return resolveStaffPreferenceFromCandidates(
+    await getActiveBookableStaff(input.salonId),
+    input.requestedStaffName
+  );
+};
+
+const getStaffCandidates = async (input: {
+  salonId: string;
+  requestedStaffName?: string;
+}) => {
+  const resolution = await resolveStaffCandidates(input);
+  return resolution.status === "ambiguous" ? [] : resolution.candidates;
 };
 
 const normalizePhoneDigitsForLookup = (value?: string | null): string | undefined => {
@@ -1404,14 +1632,15 @@ const getSuggestedSlotsForService = async (input: {
           startTime: slot.startTime,
           endTime: slot.endTime
         });
-        if (suggestions.length >= input.maxSlots) {
-          return suggestions;
+        const deduped = dedupeSuggestedSlots(suggestions);
+        if (deduped.length >= input.maxSlots) {
+          return deduped;
         }
       }
     }
   }
 
-  return suggestions;
+  return dedupeSuggestedSlots(suggestions);
 };
 
 const getRequestedStaffBusyAlternatives = async (input: {
@@ -1478,7 +1707,7 @@ const getRequestedStaffBusyAlternatives = async (input: {
     }
   }
 
-  return suggestions.slice(0, 2);
+  return dedupeSuggestedSlots(suggestions).slice(0, 2);
 };
 
 const attachBookingAttemptToInteraction = async (
@@ -1741,8 +1970,23 @@ const formatLocalDateTimeForSpeech = (value: Date, timezone: string): string => 
   return `${date} at ${formatLocalTimeForSpeech(value, timezone)}`;
 };
 
+const dedupeSuggestedSlots = (slots: SuggestedSlot[]): SuggestedSlot[] => {
+  const seenNameTime = new Set<string>();
+  const seenStaffNames = new Set<string>();
+  return slots.filter((slot) => {
+    const staffName = normalizeForMatch(slot.staffName);
+    const slotKey = `${staffName}|${DateTime.fromISO(slot.startTime, { zone: "utc" }).toISO() ?? slot.startTime}`;
+    if (seenNameTime.has(slotKey) || seenStaffNames.has(staffName)) {
+      return false;
+    }
+    seenNameTime.add(slotKey);
+    seenStaffNames.add(staffName);
+    return true;
+  });
+};
+
 const formatAlternativeSentence = (alternatives: SuggestedSlot[], timezone: string): string => {
-  const readable = alternatives.slice(0, 2).map((slot) => {
+  const readable = dedupeSuggestedSlots(alternatives).slice(0, 2).map((slot) => {
     const time = formatLocalTimeForSpeech(slot.startTime, timezone);
     return `${slot.staffName} is available at ${time}`;
   });
@@ -1798,7 +2042,7 @@ const buildLexMessage = (input: {
   }
 
   if (input.outcome === "HUMAN_ESCALATION") {
-    return "No problem. Please hold while I connect you to our team.";
+    return "Please wait while I connect you.";
   }
 
   if (input.outcome === "MISSING_INFO") {
@@ -1894,6 +2138,15 @@ const buildServiceClarificationMessage = (input: {
     : `I heard ${input.heardServiceName}. Which service would you like?`;
 };
 
+const buildStaffClarificationMessage = (input: {
+  availableStaffNames: string[];
+}): string => {
+  const options = formatNameList(getStaffPromptNames(input.availableStaffNames));
+  return options
+    ? `Which staff member would you like? We have ${options} available, or I can check anyone.`
+    : "Which staff member would you like, or is anyone okay?";
+};
+
 const parseAlternativeSlotsAttribute = (
   attributes: Record<string, unknown> | undefined
 ): SuggestedSlot[] => {
@@ -1907,7 +2160,7 @@ const parseAlternativeSlotsAttribute = (
     if (!Array.isArray(parsed)) {
       return [];
     }
-    return parsed
+    const slots = parsed
       .map((item) => {
         if (!item || typeof item !== "object") {
           return null;
@@ -1928,8 +2181,8 @@ const parseAlternativeSlotsAttribute = (
           endTime: candidate.endTime
         };
       })
-      .filter((item): item is SuggestedSlot => Boolean(item))
-      .slice(0, 2);
+      .filter((item): item is SuggestedSlot => Boolean(item));
+    return dedupeSuggestedSlots(slots).slice(0, 2);
   } catch {
     return [];
   }
@@ -2051,6 +2304,16 @@ export const createAmazonConnectAIAppointment = async (
     normalized.requestedDate = selectedLocalStart.toFormat("yyyy-MM-dd");
     normalized.requestedTime = selectedLocalStart.toFormat("HH:mm");
     normalized.staffPreference = selectedAlternative.staffName;
+  }
+
+  let staffResolution = await resolveStaffCandidates({
+    salonId: salon.id,
+    requestedStaffName: normalized.staffPreference
+  });
+  if (staffResolution.status === "matched") {
+    normalized.staffPreference = staffResolution.matchedStaff.fullName;
+  } else if (staffResolution.status !== "ambiguous") {
+    normalized.staffPreference = undefined;
   }
 
   const createAttempt = async (inputForAttempt: {
@@ -2182,7 +2445,7 @@ export const createAmazonConnectAIAppointment = async (
           requestedBy: "AMAZON_CONNECT_LEX",
           escalationReason: "Caller requested a human operator.",
           customerPhone: normalized.customerPhone ?? null,
-          messageToCaller: "No problem. Please hold while I connect you to our team.",
+          messageToCaller: "Please wait while I connect you.",
           metadata: {
             bookingAttemptId: bookingAttempt.id,
             transcriptId: transcript?.id,
@@ -2261,10 +2524,6 @@ export const createAmazonConnectAIAppointment = async (
   ) {
     missingFields.add("preferredDateTime");
   }
-  if (!normalized.staffPreference) {
-    missingFields.add("staffPreference");
-  }
-
   let requestedStartTime: Date | null = null;
   if (!missingFields.has("preferredDateTime") && normalized.requestedDate) {
     try {
@@ -2611,14 +2870,92 @@ export const createAmazonConnectAIAppointment = async (
   }
 
   const service = serviceMatch.service;
+  normalized.serviceName = service.name;
 
-  const preferredStaffCandidates = await getStaffCandidates({
-    salonId: salon.id,
-    requestedStaffName: normalized.staffPreference
-  });
-  const allStaffCandidates = normalized.staffPreference
-    ? await getStaffCandidates({ salonId: salon.id })
-    : preferredStaffCandidates;
+  staffResolution =
+    staffResolution.rawStaffPreference === normalized.staffPreference
+      ? staffResolution
+      : await resolveStaffCandidates({
+          salonId: salon.id,
+          requestedStaffName: normalized.staffPreference
+        });
+
+  if (staffResolution.status === "ambiguous") {
+    const message = buildStaffClarificationMessage({
+      availableStaffNames: staffResolution.allStaff.map((member) => member.fullName)
+    });
+    const parsed = buildInternalParsedIntent({
+      intentType: "BOOK_APPOINTMENT",
+      customerName: normalized.customerName,
+      customerPhone: normalized.customerPhone,
+      serviceName: service.name,
+      staffPreference: staffResolution.rawStaffPreference,
+      requestedDateTime: requestedStartTime.toISOString(),
+      missingFields: ["staffPreference"],
+      isReadyToBook: false
+    });
+    const bookingAttempt = await createAttempt({
+      status: BookingAttemptStatus.NEEDS_INPUT,
+      requestedStartTime,
+      failureReason: "Staff preference matched multiple active bookable staff.",
+      normalizedRequest: {
+        serviceId: service.id,
+        serviceName: service.name,
+        staffPreference: staffResolution.rawStaffPreference,
+        ambiguousStaffNames: staffResolution.ambiguousStaffNames,
+        startTimeIso: requestedStartTime.toISOString(),
+        timezone: salon.timezone
+      }
+    });
+    const aiInteraction = await createInteraction({
+      outcome: "MISSING_INFO",
+      message,
+      parsed,
+      bookingAttemptId: bookingAttempt.id,
+      responsePayload: {
+        missingFields: ["staffPreference"],
+        ambiguousStaffNames: staffResolution.ambiguousStaffNames
+      },
+      isValid: true
+    });
+    await finalizeCall({
+      outcome: "MISSING_INFO",
+      bookingAttemptId: bookingAttempt.id,
+      bookingStatus: bookingAttempt.status,
+      parsed,
+      message,
+      failureReason: bookingAttempt.failureReason ?? undefined
+    });
+
+    return {
+      outcome: "MISSING_INFO" as const,
+      message,
+      lexResponse: {
+        fulfillmentState: "InProgress",
+        message,
+        dialogAction: {
+          type: "ElicitSlot",
+          slotToElicit: "staffPreference"
+        }
+      },
+      appointment: null,
+      bookingAttempt,
+      callSession,
+      transcript,
+      aiInteraction,
+      escalation: null,
+      alternatives: [],
+      missingFields: ["staffPreference"],
+      salonResolutionSource: resolutionSource
+    };
+  }
+
+  if (staffResolution.status === "matched") {
+    normalized.staffPreference = staffResolution.matchedStaff.fullName;
+  }
+
+  const preferredStaffCandidates = staffResolution.candidates;
+  const allStaffCandidates = staffResolution.allStaff;
 
   let chosenStaff: { id: string; fullName: string } | null = null;
   const rejectedReasons: string[] = [];
@@ -3219,12 +3556,12 @@ export const bookingFromText = async (input: BookingFromTextInput) => {
     throw new AppError("Invalid startTime in AI output.", 422, "AI_INVALID_START_TIME");
   }
 
-  const [salon, staffCandidates] = await Promise.all([
+  const [salon, staffResolutionForText] = await Promise.all([
     prisma.salon.findUnique({
       where: { id: input.salonId },
       select: { timezone: true }
     }),
-    getStaffCandidates({
+    resolveStaffCandidates({
       salonId: input.salonId,
       requestedStaffName: normalized.staffName
     })
@@ -3233,6 +3570,43 @@ export const bookingFromText = async (input: BookingFromTextInput) => {
   if (!salon) {
     throw new AppError("Salon not found.", 404, "SALON_NOT_FOUND");
   }
+
+  if (staffResolutionForText.status === "ambiguous") {
+    const updated = await prisma.bookingAttempt.update({
+      where: { id: bookingAttempt.id },
+      data: {
+        status: BookingAttemptStatus.NEEDS_INPUT,
+        failureReason: "Staff preference matched multiple active bookable staff."
+      }
+    });
+    if (input.callSessionId) {
+      await markBookingAttemptResultOnCall(input.callSessionId, updated.status, {
+        bookingAttemptId: updated.id,
+        failureReason: updated.failureReason ?? undefined
+      });
+      await updateCallAIState(input.callSessionId, {
+        aiSummary: buildStructuredCallSummary({
+          transcriptId: input.transcriptId,
+          parsed: parsed.parsedIntent,
+          bookingAttemptId: updated.id,
+          bookingStatus: updated.status,
+          resolution: updated.failureReason ?? "Staff preference needs clarification."
+        }),
+        routingOutcome: CallRoutingOutcome.AI_RECEPTION,
+        finalResolution: updated.failureReason ?? "Staff preference needs clarification.",
+        language: "en"
+      });
+    }
+    return {
+      bookingAttempt: updated,
+      parsed: parsed.parsedIntent,
+      appointment: null,
+      alternatives: [],
+      escalation: null
+    };
+  }
+
+  const staffCandidates = staffResolutionForText.candidates;
 
   if (!staffCandidates.length) {
     const updated = await prisma.bookingAttempt.update({

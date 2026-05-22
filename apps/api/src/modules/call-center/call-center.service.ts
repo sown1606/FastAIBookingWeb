@@ -28,6 +28,8 @@ const toJson = (value: unknown): Prisma.InputJsonValue => {
   return JSON.parse(JSON.stringify(value ?? null)) as Prisma.InputJsonValue;
 };
 
+const AMAZON_CONNECT_OPERATOR_QUEUE_NAME = "FastAIBooking Operator Queue";
+
 interface CallCenterWorkspaceActor {
   userId: string;
   role: Role;
@@ -455,7 +457,7 @@ export const createOrUpdateCallEscalation = async (input: {
       requestedBy: input.requestedBy,
       customerPhone: input.customerPhone ?? null,
       queueId: env.AMAZON_CONNECT_QUEUE_ID_DEFAULT ?? null,
-      queueName: env.AMAZON_CONNECT_QUEUE_ID_DEFAULT ? "Amazon Connect Shared Queue" : null,
+      queueName: env.AMAZON_CONNECT_QUEUE_ID_DEFAULT ? AMAZON_CONNECT_OPERATOR_QUEUE_NAME : null,
       messageToCaller: input.messageToCaller ?? "Please wait while I connect you.",
       callbackPhone,
       smsRecipientPhone,
@@ -470,7 +472,7 @@ export const createOrUpdateCallEscalation = async (input: {
       customerPhone: input.customerPhone ?? undefined,
       queueId: env.AMAZON_CONNECT_QUEUE_ID_DEFAULT ?? undefined,
       queueName: env.AMAZON_CONNECT_QUEUE_ID_DEFAULT
-        ? "Amazon Connect Shared Queue"
+        ? AMAZON_CONNECT_OPERATOR_QUEUE_NAME
         : undefined,
       messageToCaller: input.messageToCaller ?? "Please wait while I connect you.",
       callbackPhone,

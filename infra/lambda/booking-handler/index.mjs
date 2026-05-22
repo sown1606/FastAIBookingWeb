@@ -35,6 +35,15 @@ const attributeNames = {
   salonId: ["salonId", "SalonId"]
 };
 
+function isHumanEscalationRequest(intentName, text) {
+  if (intentName === "HumanEscalationIntent") {
+    return true;
+  }
+  return /\b(speak|talk|connect|transfer)\s+(to\s+)?(a\s+)?(real\s+person|live\s+person|human|operator|representative|agent)\b|\b(real\s+person|live\s+person|human\s+operator|live\s+agent)\b/i.test(
+    text || ""
+  );
+}
+
 function getSlotValue(slots, names, options = {}) {
   for (const name of names) {
     const slot = slots?.[name];
@@ -152,6 +161,9 @@ async function postInternalAppointment(payload) {
 
 function buildInternalPayload(event, intentName) {
   const slots = event.sessionState?.intent?.slots || {};
+  const backendIntentName = isHumanEscalationRequest(intentName, event.inputTranscript)
+    ? "HumanEscalationIntent"
+    : intentName;
   const calledNumber = getAttribute(event, attributeNames.calledNumber);
   const amazonConnectContactId =
     getAttribute(event, attributeNames.contactId) || event.sessionId || undefined;
@@ -165,7 +177,7 @@ function buildInternalPayload(event, intentName) {
     .join(" ");
 
   const payload = {
-    intentName,
+    intentName: backendIntentName,
     provider: "AMAZON_CONNECT",
     customerName: getSlotValue(slots, slotNames.customerName),
     customerPhone,
@@ -179,6 +191,7 @@ function buildInternalPayload(event, intentName) {
     amazonConnectContactId,
     amazonConnectPhoneNumber,
     calledNumber: calledNumber || undefined,
+    slots,
     attributes: event.sessionState?.sessionAttributes || {}
   };
 
@@ -219,17 +232,18 @@ function buildSessionAttributesFromResult(data) {
 export const handler = async (event) => {
   try {
     const intentName = event.sessionState?.intent?.name || "";
+    const shouldEscalate = isHumanEscalationRequest(intentName, event.inputTranscript);
 
-    if (event.invocationSource === "DialogCodeHook") {
+    if (event.invocationSource === "DialogCodeHook" && !shouldEscalate) {
       return buildDelegateResponse(event);
     }
 
-    if (intentName === "HumanEscalationIntent") {
+    if (shouldEscalate) {
       const result = await postInternalAppointment(buildInternalPayload(event, intentName));
       const data = extractResultPayload(result);
       return buildLexResponse(
         event,
-        data.lexResponse?.message || "No problem. Please hold while I connect you to our team.",
+        data.lexResponse?.message || "Please wait while I connect you.",
         data.lexResponse?.fulfillmentState || "Fulfilled",
         buildSessionAttributesFromResult(data),
         data.lexResponse
@@ -242,7 +256,7 @@ export const handler = async (event) => {
       return buildLexResponse(
         event,
         data.lexResponse?.message ||
-          "I can help with cancellation by connecting you to our team. Please wait while I transfer you.",
+          "Please wait while I connect you.",
         data.lexResponse?.fulfillmentState || "Fulfilled",
         buildSessionAttributesFromResult(data),
         data.lexResponse
@@ -255,7 +269,7 @@ export const handler = async (event) => {
       return buildLexResponse(
         event,
         data.lexResponse?.message ||
-          "I can help reschedule by connecting you to our team. Please wait while I transfer you.",
+          "Please wait while I connect you.",
         data.lexResponse?.fulfillmentState || "Fulfilled",
         buildSessionAttributesFromResult(data),
         data.lexResponse

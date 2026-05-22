@@ -16,6 +16,7 @@ import {
   SubscriptionStatus
 } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { DateTime } from "luxon";
 
 const prisma = new PrismaClient();
 const SALT_ROUNDS = 12;
@@ -39,6 +40,7 @@ const toDemoPhone = (value: string, fallbackDigits: string): string => {
 };
 
 const DEMO_SALON_NAME = process.env.DEMO_SALON_NAME?.trim() || "Kiet Nails & Beauty";
+const DEMO_TIMEZONE = "America/New_York";
 const DEMO_ORIGINAL_PHONE = toDemoPhone(process.env.DEMO_ORIGINAL_PHONE_NUMBER ?? "8487029493", "18487029493");
 const DEMO_TRACKING_PHONE = toDemoPhone(
   process.env.AMAZON_CONNECT_PHONE_NUMBER ??
@@ -79,11 +81,13 @@ const getCurrentBillingPeriod = (date = new Date()) => {
   return { periodStart, periodEnd };
 };
 
-const createFutureUtcDate = (dayOffset: number, hourUtc: number, minuteUtc = 0) => {
-  const date = new Date();
-  date.setUTCDate(date.getUTCDate() + dayOffset);
-  date.setUTCHours(hourUtc, minuteUtc, 0, 0);
-  return date;
+const createFutureLocalDate = (dayOffset: number, hour: number, minute = 0) => {
+  return DateTime.now()
+    .setZone(DEMO_TIMEZONE)
+    .plus({ days: dayOffset })
+    .set({ hour, minute, second: 0, millisecond: 0 })
+    .toUTC()
+    .toJSDate();
 };
 
 const upsertUser = async (input: {
@@ -178,7 +182,7 @@ const run = async (): Promise<void> => {
       data: {
         ownerId: ownerUser.id,
         name: DEMO_SALON_NAME,
-        timezone: "America/New_York",
+        timezone: DEMO_TIMEZONE,
         status: SalonStatus.ACTIVE,
         subscriptionStatus: SubscriptionStatus.ACTIVE,
         planName: "starter",
@@ -199,7 +203,7 @@ const run = async (): Promise<void> => {
       where: { id: salon.id },
       data: {
         name: DEMO_SALON_NAME,
-        timezone: "America/New_York",
+        timezone: DEMO_TIMEZONE,
         status: SalonStatus.ACTIVE,
         subscriptionStatus: SubscriptionStatus.ACTIVE,
         planName: "starter",
@@ -494,8 +498,8 @@ const run = async (): Promise<void> => {
     data: [
       {
         salonId: salon.id,
-        fullName: "Mai Tran",
-        email: "mai.demo@fastaibooking.local",
+        fullName: "Mia Carter",
+        email: "mia.demo@fastaibooking.local",
         phone: "+17325550101",
         title: "Senior Nail Technician",
         status: StaffStatus.ACTIVE,
@@ -503,8 +507,8 @@ const run = async (): Promise<void> => {
       },
       {
         salonId: salon.id,
-        fullName: "Vy Pham",
-        email: "vy.demo@fastaibooking.local",
+        fullName: "Olivia Brooks",
+        email: "olivia.demo@fastaibooking.local",
         phone: "+17325550102",
         title: "Nail Technician",
         status: StaffStatus.ACTIVE,
@@ -512,48 +516,12 @@ const run = async (): Promise<void> => {
       },
       {
         salonId: salon.id,
-        fullName: "Olivia Chen",
-        email: "olivia.demo@fastaibooking.local",
+        fullName: "Nora Evans",
+        email: "nora.demo@fastaibooking.local",
         phone: "+17325550103",
         title: "Pedicure Specialist",
         status: StaffStatus.ACTIVE,
         isBookable: true
-      },
-      {
-        salonId: salon.id,
-        fullName: "Jasmine Le",
-        email: "jasmine.demo@fastaibooking.local",
-        phone: "+17325550104",
-        title: "Senior Technician",
-        status: StaffStatus.ACTIVE,
-        isBookable: true
-      },
-      {
-        salonId: salon.id,
-        fullName: "Nora Martinez",
-        email: "nora.demo@fastaibooking.local",
-        phone: "+17325550105",
-        title: "Receptionist",
-        status: StaffStatus.ACTIVE,
-        isBookable: false
-      },
-      {
-        salonId: salon.id,
-        fullName: "Camila Diaz",
-        email: "camila.demo@fastaibooking.local",
-        phone: "+17325550106",
-        title: "Part-time Nail Technician",
-        status: StaffStatus.ACTIVE,
-        isBookable: true
-      },
-      {
-        salonId: salon.id,
-        fullName: "Hannah Bui",
-        email: "hannah.demo@fastaibooking.local",
-        phone: "+17325550107",
-        title: "Nail Technician",
-        status: StaffStatus.INACTIVE,
-        isBookable: false
       }
     ]
   });
@@ -572,18 +540,26 @@ const run = async (): Promise<void> => {
     data: [
       {
         salonId: salon.id,
-        name: "Gel Manicure",
-        description: "Cuticle care, shaping, gel color, and hand massage.",
-        durationMinutes: 60,
+        name: "Pedicure",
+        description: "Soak, scrub, callus care, mask, massage, and polish.",
+        durationMinutes: 45,
         priceCents: 4500,
         isActive: true
       },
       {
         salonId: salon.id,
-        name: "Organic Spa Pedicure",
-        description: "Soak, scrub, callus care, mask, massage, and polish.",
-        durationMinutes: 75,
-        priceCents: 6500,
+        name: "Manicure",
+        description: "Cuticle care, shaping, polish, and hand massage.",
+        durationMinutes: 40,
+        priceCents: 3500,
+        isActive: true
+      },
+      {
+        salonId: salon.id,
+        name: "Gel Manicure",
+        description: "Cuticle care, shaping, gel color, and hand massage.",
+        durationMinutes: 60,
+        priceCents: 5000,
         isActive: true
       },
       {
@@ -596,26 +572,10 @@ const run = async (): Promise<void> => {
       },
       {
         salonId: salon.id,
-        name: "Gel X Full Set",
-        description: "Soft gel extensions with a clean natural finish.",
-        durationMinutes: 90,
-        priceCents: 7800,
-        isActive: true
-      },
-      {
-        salonId: salon.id,
-        name: "Dipping Powder Manicure",
+        name: "Dip Powder",
         description: "Prep, dip color layers, shaping, and glossy top coat.",
         durationMinutes: 70,
         priceCents: 5800,
-        isActive: true
-      },
-      {
-        salonId: salon.id,
-        name: "Nail Art Add-on",
-        description: "Chrome, cat eye, gems, or accent designs.",
-        durationMinutes: 20,
-        priceCents: 1800,
         isActive: true
       }
     ]
@@ -631,27 +591,11 @@ const run = async (): Promise<void> => {
   >;
 
   await prisma.staffService.createMany({
-    data: [
-      ["Mai Tran", "Gel Manicure"],
-      ["Mai Tran", "Acrylic Full Set"],
-      ["Mai Tran", "Dipping Powder Manicure"],
-      ["Mai Tran", "Nail Art Add-on"],
-      ["Vy Pham", "Gel Manicure"],
-      ["Vy Pham", "Organic Spa Pedicure"],
-      ["Vy Pham", "Dipping Powder Manicure"],
-      ["Olivia Chen", "Organic Spa Pedicure"],
-      ["Olivia Chen", "Gel Manicure"],
-      ["Jasmine Le", "Gel X Full Set"],
-      ["Jasmine Le", "Acrylic Full Set"],
-      ["Jasmine Le", "Nail Art Add-on"],
-      ["Camila Diaz", "Gel Manicure"],
-      ["Camila Diaz", "Organic Spa Pedicure"],
-      ["Camila Diaz", "Dipping Powder Manicure"]
-    ].map(([staffName, serviceName]) => ({
+    data: staffMembers.flatMap((staff) => services.map((service) => ({
       salonId: salon.id,
-      serviceId: serviceByName[serviceName]!.id,
-      staffId: staffByName[staffName]!.id
-    })),
+      serviceId: service.id,
+      staffId: staff.id
+    }))),
     skipDuplicates: true
   });
 
@@ -724,16 +668,24 @@ const run = async (): Promise<void> => {
     ]
   });
 
+  const createAppointmentTiming = (serviceName: string, dayOffset: number, hour: number, minute = 0) => {
+    const service = serviceByName[serviceName]!;
+    const startTime = createFutureLocalDate(dayOffset, hour, minute);
+    return {
+      startTime,
+      endTime: new Date(startTime.getTime() + service.durationMinutes * 60 * 1000),
+      durationMinutes: service.durationMinutes
+    };
+  };
+
   const appointments = await prisma.appointment.createManyAndReturn({
     data: [
       {
         salonId: salon.id,
         customerId: customers[0]!.id,
-        staffId: staffByName["Olivia Chen"]!.id,
-        serviceId: serviceByName["Organic Spa Pedicure"]!.id,
-        startTime: createFutureUtcDate(0, 14, 0),
-        endTime: createFutureUtcDate(0, 15, 15),
-        durationMinutes: serviceByName["Organic Spa Pedicure"]!.durationMinutes,
+        staffId: staffByName["Mia Carter"]!.id,
+        serviceId: serviceByName["Pedicure"]!.id,
+        ...createAppointmentTiming("Pedicure", 0, 10, 0),
         status: AppointmentStatus.COMPLETED,
         source: AppointmentSource.DASHBOARD,
         notes: "Completed lunch-break pedicure for a returning guest.",
@@ -743,11 +695,9 @@ const run = async (): Promise<void> => {
       {
         salonId: salon.id,
         customerId: customers[1]!.id,
-        staffId: staffByName["Mai Tran"]!.id,
+        staffId: staffByName["Olivia Brooks"]!.id,
         serviceId: serviceByName["Gel Manicure"]!.id,
-        startTime: createFutureUtcDate(0, 16, 0),
-        endTime: createFutureUtcDate(0, 17, 0),
-        durationMinutes: serviceByName["Gel Manicure"]!.durationMinutes,
+        ...createAppointmentTiming("Gel Manicure", 0, 11, 30),
         status: AppointmentStatus.IN_PROGRESS,
         source: AppointmentSource.DASHBOARD,
         notes: "Walk-in upgrade to gel finish while team monitors inbound calls.",
@@ -756,11 +706,9 @@ const run = async (): Promise<void> => {
       {
         salonId: salon.id,
         customerId: customers[7]!.id,
-        staffId: staffByName["Jasmine Le"]!.id,
-        serviceId: serviceByName["Gel X Full Set"]!.id,
-        startTime: createFutureUtcDate(0, 19, 0),
-        endTime: createFutureUtcDate(0, 20, 30),
-        durationMinutes: serviceByName["Gel X Full Set"]!.durationMinutes,
+        staffId: staffByName["Nora Evans"]!.id,
+        serviceId: serviceByName["Acrylic Full Set"]!.id,
+        ...createAppointmentTiming("Acrylic Full Set", 0, 15, 0),
         status: AppointmentStatus.CONFIRMED,
         source: AppointmentSource.CALL_CENTER,
         notes: "Operator confirmed same-day VIP reschedule.",
@@ -769,11 +717,9 @@ const run = async (): Promise<void> => {
       {
         salonId: salon.id,
         customerId: customers[4]!.id,
-        staffId: staffByName["Mai Tran"]!.id,
+        staffId: staffByName["Mia Carter"]!.id,
         serviceId: serviceByName["Gel Manicure"]!.id,
-        startTime: createFutureUtcDate(1, 15, 0),
-        endTime: createFutureUtcDate(1, 16, 0),
-        durationMinutes: serviceByName["Gel Manicure"]!.durationMinutes,
+        ...createAppointmentTiming("Gel Manicure", 1, 11, 0),
         status: AppointmentStatus.CONFIRMED,
         source: AppointmentSource.AI,
         notes: "Booked after no-answer forwarding test call.",
@@ -782,11 +728,9 @@ const run = async (): Promise<void> => {
       {
         salonId: salon.id,
         customerId: customers[3]!.id,
-        staffId: staffByName["Olivia Chen"]!.id,
-        serviceId: serviceByName["Organic Spa Pedicure"]!.id,
-        startTime: createFutureUtcDate(1, 17, 30),
-        endTime: createFutureUtcDate(1, 18, 45),
-        durationMinutes: serviceByName["Organic Spa Pedicure"]!.durationMinutes,
+        staffId: staffByName["Olivia Brooks"]!.id,
+        serviceId: serviceByName["Pedicure"]!.id,
+        ...createAppointmentTiming("Pedicure", 1, 14, 30),
         status: AppointmentStatus.SCHEDULED,
         source: AppointmentSource.DASHBOARD,
         notes: "Requested late afternoon spa pedicure slot.",
@@ -795,24 +739,20 @@ const run = async (): Promise<void> => {
       {
         salonId: salon.id,
         customerId: customers[2]!.id,
-        staffId: staffByName["Jasmine Le"]!.id,
-        serviceId: serviceByName["Gel X Full Set"]!.id,
-        startTime: createFutureUtcDate(2, 16, 0),
-        endTime: createFutureUtcDate(2, 17, 30),
-        durationMinutes: serviceByName["Gel X Full Set"]!.durationMinutes,
+        staffId: staffByName["Nora Evans"]!.id,
+        serviceId: serviceByName["Acrylic Full Set"]!.id,
+        ...createAppointmentTiming("Acrylic Full Set", 2, 11, 0),
         status: AppointmentStatus.CONFIRMED,
         source: AppointmentSource.AI,
-        notes: "Returning guest asked for Gel X full set.",
+        notes: "Returning guest asked for an acrylic full set.",
         createdByUserId: ownerUser.id
       },
       {
         salonId: salon.id,
         customerId: customers[5]!.id,
-        staffId: staffByName["Vy Pham"]!.id,
-        serviceId: serviceByName["Dipping Powder Manicure"]!.id,
-        startTime: createFutureUtcDate(2, 18, 30),
-        endTime: createFutureUtcDate(2, 19, 40),
-        durationMinutes: serviceByName["Dipping Powder Manicure"]!.durationMinutes,
+        staffId: staffByName["Olivia Brooks"]!.id,
+        serviceId: serviceByName["Dip Powder"]!.id,
+        ...createAppointmentTiming("Dip Powder", 2, 15, 0),
         status: AppointmentStatus.CONFIRMED,
         source: AppointmentSource.AI,
         notes: "AI booked a lunch-break dip powder service.",
@@ -821,11 +761,9 @@ const run = async (): Promise<void> => {
       {
         salonId: salon.id,
         customerId: customers[6]!.id,
-        staffId: staffByName["Camila Diaz"]!.id,
+        staffId: staffByName["Nora Evans"]!.id,
         serviceId: serviceByName["Gel Manicure"]!.id,
-        startTime: createFutureUtcDate(3, 18, 0),
-        endTime: createFutureUtcDate(3, 19, 0),
-        durationMinutes: serviceByName["Gel Manicure"]!.durationMinutes,
+        ...createAppointmentTiming("Gel Manicure", 3, 15, 30),
         status: AppointmentStatus.SCHEDULED,
         source: AppointmentSource.DASHBOARD,
         notes: "Friday appointment held for a frequent after-work guest.",
@@ -834,11 +772,9 @@ const run = async (): Promise<void> => {
       {
         salonId: salon.id,
         customerId: customers[7]!.id,
-        staffId: staffByName["Mai Tran"]!.id,
+        staffId: staffByName["Mia Carter"]!.id,
         serviceId: serviceByName["Acrylic Full Set"]!.id,
-        startTime: createFutureUtcDate(4, 17, 0),
-        endTime: createFutureUtcDate(4, 18, 40),
-        durationMinutes: serviceByName["Acrylic Full Set"]!.durationMinutes,
+        ...createAppointmentTiming("Acrylic Full Set", 4, 15, 0),
         status: AppointmentStatus.CONFIRMED,
         source: AppointmentSource.CALL_CENTER,
         notes: "Operator confirmed a reschedule for a full acrylic set.",
@@ -1151,13 +1087,13 @@ const run = async (): Promise<void> => {
       source: "AI_TRANSCRIPT",
       customerName: `${customers[4]!.firstName} ${customers[4]!.lastName}`,
       customerPhone: customers[4]!.phone,
-      requestedService: services[0]!.name,
+      requestedService: serviceByName["Gel Manicure"]!.name,
       requestedStaff: staffMembers[0]!.fullName,
       requestedDateTimeText: appointments[3]!.startTime.toISOString(),
       normalizedRequest: {
         customerName: `${customers[4]!.firstName} ${customers[4]!.lastName}`,
         customerPhone: customers[4]!.phone,
-        serviceName: services[0]!.name,
+        serviceName: serviceByName["Gel Manicure"]!.name,
         staffName: staffMembers[0]!.fullName,
         startTimeIso: appointments[3]!.startTime.toISOString(),
         forwardingType: "no_answer"
@@ -1191,7 +1127,7 @@ const run = async (): Promise<void> => {
       },
       parsedOutput: {
         intentType: "BOOK_APPOINTMENT",
-        serviceName: services[0]!.name,
+        serviceName: serviceByName["Gel Manicure"]!.name,
         staffName: staffMembers[0]!.fullName,
         appointmentId: appointments[3]!.id
       },
@@ -1262,7 +1198,7 @@ const run = async (): Promise<void> => {
       customerName: `${customers[7]!.firstName} ${customers[7]!.lastName}`,
       customerPhone: customers[7]!.phone,
       requestedService: serviceByName["Acrylic Full Set"]!.name,
-      requestedStaff: staffByName["Mai Tran"]!.fullName,
+      requestedStaff: staffByName["Mia Carter"]!.fullName,
       requestedDateTimeText: "Friday afternoon",
       failureReason: "Caller requested a real person before finalizing the reschedule.",
       normalizedRequest: {

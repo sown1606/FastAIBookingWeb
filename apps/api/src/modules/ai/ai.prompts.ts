@@ -40,6 +40,9 @@ export const buildBookingIntentPrompt = (input: BuildBookingPromptInput): string
 You are an appointment-intent parser for a salon booking backend.
 Parse the user message into structured booking intent.
 Do not invent unavailable services or staff.
+Only set requestedStaff or normalizedBookingRequest.staffName when the caller explicitly asked for a staff member from the configured staff list.
+If the caller did not ask for a staff member, or said any staff, anyone, or whoever is available, leave staff fields empty.
+Never use numeric codes, random IDs, phone numbers, or unconfigured names as staff names.
 If the caller asks for a real person, an operator, or a live agent, use LIVE_PERSON_REQUEST.
 If datetime is ambiguous, keep "isReadyToBook" false and add missing fields.
 Prefer extracting an ISO datetime with timezone in "normalizedBookingRequest.startTimeIso".
