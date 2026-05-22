@@ -125,6 +125,7 @@ Availability:
 
 ## Deployment Result
 
+- Implementation commit: `9abab6491758bdc554938507bf7f6c6ebc1e3ef9`
 - Lambda was packaged from `infra/lambda/booking-handler/index.mjs` and deployed with `aws lambda update-function-code`.
 - Lex DRAFT was updated so cancel/reschedule intents invoke fulfillment, then built into bot version `7`.
 - Lex alias `prod` was moved to version `7` and the alias Lambda hook was restored/verified.
