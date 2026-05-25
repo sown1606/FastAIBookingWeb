@@ -12,7 +12,7 @@
 - Expected first experience: Amazon Connect answers, sets voice, plays the AI greeting, then enters Amazon Lex `FastAIBookingBot`.
 - Caller should not hear queue or hold music at entry.
 - Queue music is expected only after the caller explicitly asks for a human and `HumanEscalationIntent` routes to `Set working queue -> Transfer to queue`.
-- Current web AI ON/OFF setting is saved in the backend/admin app, but the AWS Connect inbound flow does not read that setting before Lex yet.
+- AI Reception ON/OFF is handled before this flow at the external redirect/routing layer for the user/salon phone path.
 
 ## Demo Accounts
 
@@ -258,5 +258,5 @@
 - Amazon Connect live softphone requires valid env vars, an assigned phone number, and an active `AMAZON_CONNECT` integration config.
 - Amazon Lex Booking Bot and Booking Lambda require the bot, alias, intents, Lambda function, and backend internal token to stay configured.
 - Queue music should only happen after explicit human escalation.
-- Web AI ON/OFF is saved in the backend/admin app, but the AWS Connect inbound flow does not read it before Lex yet.
+- Web AI ON/OFF is intentionally handled at the external redirect/routing layer before calls enter Amazon Connect/Lex.
 - SMS confirmation sends only when SMS provider config is available; booking should still succeed and log a safe skip when config is missing.

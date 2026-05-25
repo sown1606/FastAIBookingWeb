@@ -1,6 +1,7 @@
 const API_BASE_URL = process.env.FASTAIBOOKING_API_BASE_URL;
 const INTERNAL_TOKEN = process.env.FASTAIBOOKING_API_INTERNAL_TOKEN;
 const DEFAULT_SALON_ID = process.env.DEFAULT_SALON_ID;
+const DEFAULT_QUEUE_ID = process.env.AMAZON_CONNECT_QUEUE_ID_DEFAULT;
 const API_TIMEOUT_MS = 6000;
 
 const slotNames = {
@@ -165,8 +166,25 @@ function buildForceHumanEscalationAttributes(reason, extra = {}) {
     transferToQueue: "true",
     escalationReason: reason,
     fallbackMode: "operator_queue",
+    ...(DEFAULT_QUEUE_ID ? { queueId: DEFAULT_QUEUE_ID } : {}),
     ...extra
   };
+}
+
+function normalizeBackendFailureReason(code) {
+  return code === "backend_timeout" ? "backend_timeout" : "backend_error";
+}
+
+function buildBackendFailureEscalationResponse(event, result) {
+  const reason = normalizeBackendFailureReason(result?.code);
+  return buildLexResponse(
+    event,
+    reason === "backend_timeout"
+      ? '<speak>The booking system is taking too long to respond. <break time="300ms"/> Please hold while I connect you with our team.</speak>'
+      : '<speak>I cannot reach the booking system right now. <break time="300ms"/> Please hold while I connect you with our team.</speak>',
+    "Failed",
+    buildForceHumanEscalationAttributes(reason)
+  );
 }
 
 function normalizeDialogAction(lexResponse) {
@@ -359,6 +377,10 @@ export const handler = async (event) => {
 
     if (shouldEscalate) {
       const result = await postInternalAppointment(buildInternalPayload(event, intentName));
+      if (!result.ok) {
+        console.error("Appointment API rejected escalation request", result.message);
+        return buildBackendFailureEscalationResponse(event, result);
+      }
       const data = extractResultPayload(result);
       return buildLexResponse(
         event,
@@ -371,6 +393,10 @@ export const handler = async (event) => {
 
     if (intentName === "CancelAppointmentIntent") {
       const result = await postInternalAppointment(buildInternalPayload(event, intentName));
+      if (!result.ok) {
+        console.error("Appointment API rejected cancel request", result.message);
+        return buildBackendFailureEscalationResponse(event, result);
+      }
       const data = extractResultPayload(result);
       return buildLexResponse(
         event,
@@ -384,6 +410,10 @@ export const handler = async (event) => {
 
     if (intentName === "RescheduleAppointmentIntent") {
       const result = await postInternalAppointment(buildInternalPayload(event, intentName));
+      if (!result.ok) {
+        console.error("Appointment API rejected reschedule request", result.message);
+        return buildBackendFailureEscalationResponse(event, result);
+      }
       const data = extractResultPayload(result);
       return buildLexResponse(
         event,
@@ -406,12 +436,7 @@ export const handler = async (event) => {
 
     if (!result.ok) {
       console.error("Appointment API rejected request", result.message);
-      return buildLexResponse(
-        event,
-        '<speak>I collected your appointment details, but I cannot reach the booking system right now. <break time="300ms"/> Please hold while I connect you with our team.</speak>',
-        "Failed",
-        buildForceHumanEscalationAttributes(result.code || "backend_error")
-      );
+      return buildBackendFailureEscalationResponse(event, result);
     }
 
     const data = extractResultPayload(result);
@@ -440,7 +465,7 @@ export const handler = async (event) => {
       event,
       '<speak>Something went wrong while creating the appointment. <break time="300ms"/> Please hold while I connect you with our team.</speak>',
       "Failed",
-      buildForceHumanEscalationAttributes("lambda_error")
+      buildForceHumanEscalationAttributes("backend_error")
     );
   }
 };

@@ -1,0 +1,154 @@
+{
+  "Version": "2019-10-30",
+  "StartAction": "1e4ddb16-2022-43cd-adef-1b263b08bcb4",
+  "Metadata": {
+    "entryPointPosition": {
+      "x": 40,
+      "y": 40
+    },
+    "ActionMetadata": {
+      "1e4ddb16-2022-43cd-adef-1b263b08bcb4": {
+        "position": {
+          "x": 200,
+          "y": 40
+        },
+        "parameters": {
+          "TextToSpeechVoice": {
+            "languageCode": "en-US"
+          }
+        }
+      },
+      "01253de2-7cc9-4992-945d-63910b9eb695": {
+        "position": {
+          "x": 420,
+          "y": 40
+        }
+      },
+      "8b1827c6-e89a-4794-87ad-3894cb4e2982": {
+        "position": {
+          "x": 640,
+          "y": 40
+        },
+        "parameters": {
+          "QueueId": {
+            "displayName": "FastAIBooking Operator Queue"
+          }
+        },
+        "queue": {
+          "text": "FastAIBooking Operator Queue"
+        }
+      },
+      "aa49aa8c-76f5-43f1-a8dd-d818f103fa62": {
+        "position": {
+          "x": 860,
+          "y": 40
+        }
+      },
+      "eab531ca-686c-470f-9ed2-426e5ead1400": {
+        "position": {
+          "x": 1300,
+          "y": 80
+        }
+      },
+      "queue-fallback-message": {
+        "position": {
+          "x": 1080,
+          "y": 160
+        }
+      }
+    },
+    "Annotations": []
+  },
+  "Actions": [
+    {
+      "Parameters": {
+        "TextToSpeechVoice": "Joanna"
+      },
+      "Identifier": "1e4ddb16-2022-43cd-adef-1b263b08bcb4",
+      "Type": "UpdateContactTextToSpeechVoice",
+      "Transitions": {
+        "NextAction": "01253de2-7cc9-4992-945d-63910b9eb695",
+        "Errors": [
+          {
+            "NextAction": "8b1827c6-e89a-4794-87ad-3894cb4e2982",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {
+        "SkipWhenDTMFBufferEnabled": "false",
+        "Text": "Please wait while I connect you to our team."
+      },
+      "Identifier": "01253de2-7cc9-4992-945d-63910b9eb695",
+      "Type": "MessageParticipant",
+      "Transitions": {
+        "NextAction": "8b1827c6-e89a-4794-87ad-3894cb4e2982",
+        "Errors": [
+          {
+            "NextAction": "8b1827c6-e89a-4794-87ad-3894cb4e2982",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {
+        "QueueId": "arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/queue/d0f2a5d8-e983-4609-9bbc-efb0881a465d"
+      },
+      "Identifier": "8b1827c6-e89a-4794-87ad-3894cb4e2982",
+      "Type": "UpdateContactTargetQueue",
+      "Transitions": {
+        "NextAction": "aa49aa8c-76f5-43f1-a8dd-d818f103fa62",
+        "Errors": [
+          {
+            "NextAction": "queue-fallback-message",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {},
+      "Identifier": "aa49aa8c-76f5-43f1-a8dd-d818f103fa62",
+      "Type": "TransferContactToQueue",
+      "Transitions": {
+        "NextAction": "eab531ca-686c-470f-9ed2-426e5ead1400",
+        "Errors": [
+          {
+            "NextAction": "queue-fallback-message",
+            "ErrorType": "QueueAtCapacity"
+          },
+          {
+            "NextAction": "queue-fallback-message",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {},
+      "Identifier": "eab531ca-686c-470f-9ed2-426e5ead1400",
+      "Type": "DisconnectParticipant",
+      "Transitions": {}
+    },
+    {
+      "Identifier": "queue-fallback-message",
+      "Type": "MessageParticipant",
+      "Parameters": {
+        "SkipWhenDTMFBufferEnabled": "false",
+        "Text": "I am sorry, we cannot connect you to an operator right now. Please call back later. Goodbye."
+      },
+      "Transitions": {
+        "NextAction": "eab531ca-686c-470f-9ed2-426e5ead1400",
+        "Errors": [
+          {
+            "NextAction": "eab531ca-686c-470f-9ed2-426e5ead1400",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    }
+  ]
+}

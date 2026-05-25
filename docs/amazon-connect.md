@@ -73,6 +73,24 @@ Do not expose AWS credentials or internal backend tokens in frontend `VITE_*` en
 - `BookAppointmentIntent` collects customer name, customer phone, service, preferred date/time, and optional staff preference before fulfillment.
 - The booking Lambda calls `POST /api/v1/internal/ai/appointments` with `FASTAIBOOKING_API_INTERNAL_TOKEN`.
 - The contact flow sets contact attributes where available: `salonId`, `callerPhone`, `contactId`, `callSessionId`, `provider=AMAZON_CONNECT`.
-- `HumanEscalationIntent` goes to Set working queue with `AMAZON_CONNECT_QUEUE_ID_DEFAULT`, then Transfer to queue.
+- After each Lex result, the AI reception flow checks `$.Lex.SessionAttributes.transferToQueue`.
+- If `transferToQueue == true`, the flow transfers to `FastAIBooking Human Escalation`.
+- `HumanEscalationIntent` and backend fallback responses set transfer attributes and route to the human escalation flow.
+- The human escalation flow sets the working queue with `AMAZON_CONNECT_QUEUE_ID_DEFAULT`, then transfers to queue.
+- Queue setup/transfer errors play a fallback message before disconnecting safely.
 - The default/no-match path asks the caller to repeat once before sending the caller to the operator fallback.
 - Error paths play a clear fallback prompt, then retry once or disconnect safely.
+
+## Versioned AWS Exports
+
+AWS configuration used by the demo is versioned in the repo for review and maintenance:
+
+- Lex V2 bot export: `infra/aws/lex/FastAIBookingBot-v7/`
+- AI reception Contact Flow content: `infra/aws/connect/contact-flows/ai-reception.json`
+- Human escalation Contact Flow content: `infra/aws/connect/contact-flows/human-escalation.json`
+
+Regenerate these exports with `AWS_PROFILE=nailnew` and `AWS_REGION=us-east-1` after changing Lex or Connect in AWS.
+
+## Out Of Scope
+
+AI Reception ON/OFF is handled at the external redirect/routing layer before calls enter this Amazon Connect/Lex flow. This backend and Contact Flow do not read the web AI Reception ON/OFF setting for routing decisions in the current production/demo setup.

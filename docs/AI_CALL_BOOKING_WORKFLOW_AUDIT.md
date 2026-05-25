@@ -1,6 +1,6 @@
 # AI Call Booking Workflow Audit
 
-Date: 2026-05-22
+Date: 2026-05-25
 
 ## Summary
 
@@ -15,8 +15,11 @@ The original demo failure mode is fixed:
 - Caller-facing responses use active/bookable staff names only.
 - No staff preference, "any staff", "anyone", and "whoever is available" search all active/bookable staff.
 - Alternative suggestions are deduped by staff/time before speech.
-- Human escalation says exactly: "Please wait while I connect you."
+- Lambda and backend responses preserve known customer/booking fields across turns and avoid asking again for already-known fields.
+- Missing-slot and service-clarification retries escalate to a human after the third failed attempt.
+- Backend timeout/non-OK/error paths return `forceHumanEscalation=true` and `transferToQueue=true`.
 - Human escalation records and AWS routing point to `FastAIBooking Operator Queue`.
+- The AI Reception Contact Flow checks `$.Lex.SessionAttributes.transferToQueue` after Lex and transfers to `FastAIBooking Human Escalation` when true.
 
 ## Files Changed
 
@@ -25,6 +28,9 @@ The original demo failure mode is fixed:
 - `apps/api/src/modules/ai/ai.service.ts`
 - `apps/api/src/modules/call-center/call-center.service.ts`
 - `infra/lambda/booking-handler/index.mjs`
+- `infra/aws/lex/FastAIBookingBot-v7/`
+- `infra/aws/connect/contact-flows/ai-reception.json`
+- `infra/aws/connect/contact-flows/human-escalation.json`
 - `docs/AI_CALL_BOOKING_WORKFLOW_AUDIT.md`
 
 ## Backend Fixes
@@ -37,15 +43,18 @@ The original demo failure mode is fixed:
 - Uses real staff records for confirmation, booking, no-availability, and alternative speech.
 - Dedupes alternatives before writing session attributes or speaking them.
 - Keeps booking attempts, transcripts, AI interaction logs, call sessions, and escalation metadata populated.
-- Human escalation now returns and stores `Please wait while I connect you.`
+- Human escalation returns SSML suitable for voice prompts and sets transfer attributes for Connect routing.
 - Escalation records now label the queue as `FastAIBooking Operator Queue` when the Amazon Connect queue id is configured.
 
 ## Lambda Fixes
 
 - Forwards Lex intent name, transcript, interpreted slots, session attributes, contact id, called number, customer phone, and salon id when available.
 - Sends `HumanEscalationIntent` to the backend when Lex gives that intent or when the utterance clearly asks to speak to a real person.
-- Keeps Lambda responses plain-text and speakable.
-- Uses `Please wait while I connect you.` as the fallback for human/cancel/reschedule handoff.
+- Merges captured slots into `sessionAttributes` on every `DialogCodeHook` before returning `Delegate`.
+- Hydrates known Lex slots from `sessionAttributes` so Lex does not elicit known fields again.
+- Wraps backend API calls with a 6-second `AbortController` timeout.
+- Uses one backend failure escalation path for book, cancel, reschedule, and human-escalation intents.
+- Sets `forceHumanEscalation=true`, `transferToQueue=true`, and `escalationReason=backend_error|backend_timeout` on backend failure.
 - Does not expose backend JSON/debug payloads to callers.
 
 ## AWS Verification
@@ -62,6 +71,8 @@ Profile used: `nailnew`
 - Operator routing profile: `FastAIBooking Operator Routing Profile`, id `40c00f91-f81f-4cec-9faa-da14e575b523`
 - Connect AI flow invokes Lex bot alias ARN `arn:aws:lex:us-east-1:197452633989:bot-alias/KHMIXGA2US/JVIPIZDYE3`
 - Human escalation flow sets and transfers to queue ARN ending `/queue/d0f2a5d8-e983-4609-9bbc-efb0881a465d`
+- AI Reception flow includes `Compare` on `$.Lex.SessionAttributes.transferToQueue` and `TransferToFlow` to `FastAIBooking Human Escalation`.
+- Human escalation flow has queue error fallback messaging before disconnect for queue-at-capacity/no-matching-error branches.
 - Lex bot: `FastAIBookingBot`, id `KHMIXGA2US`
 - Lex alias: `prod`, id `JVIPIZDYE3`, bot version `7`, status `Available`
 - Lex alias Lambda hook: `arn:aws:lambda:us-east-1:197452633989:function:fastaibooking-booking-handler`
@@ -75,8 +86,15 @@ Profile used: `nailnew`
 - Lambda last modified after deploy: `2026-05-22T12:38:39.000+0000`
 - Lambda env var names only: `FASTAIBOOKING_API_INTERNAL_TOKEN`, `DEFAULT_SALON_ID`, `FASTAIBOOKING_API_BASE_URL`
 - CloudWatch Lambda errors checked after deployment/smoke: none found
+- Versioned AWS exports live in `infra/aws/lex/FastAIBookingBot-v7/` and `infra/aws/connect/contact-flows/`.
 
 Note: the default AWS profile points at account `794673701212` and lacks Connect/Lex/Lambda permissions. Use profile `nailnew` for this demo account.
+
+## Intentional Out Of Scope
+
+- AI Reception ON/OFF is handled before this flow at the external redirect/routing layer for the user/salon phone path.
+- This backend/Lex/Connect flow assumes a call has already been routed to AI Reception and does not read the web AI Reception ON/OFF setting.
+- Queue wait-time policy after a caller is successfully transferred into the Amazon Connect queue remains an Amazon Connect queue/customer-queue-flow operations setting. This flow handles queue setup/transfer errors with fallback messaging.
 
 ## Demo Data State
 

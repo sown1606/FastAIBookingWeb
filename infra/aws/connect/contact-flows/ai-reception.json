@@ -1,0 +1,533 @@
+{
+  "Version": "2019-10-30",
+  "StartAction": "f06e4017-1de8-4fbd-a42a-ae434ddca6bf",
+  "Metadata": {
+    "entryPointPosition": {
+      "x": 40,
+      "y": 40
+    },
+    "ActionMetadata": {
+      "ef8d8054-77ea-40c7-aa4e-800ed784c49c": {
+        "position": {
+          "x": 560,
+          "y": 520
+        }
+      },
+      "1fd541b5-7764-41c5-870f-9017436dd5c6": {
+        "position": {
+          "x": 279.2,
+          "y": 259.2
+        }
+      },
+      "f06e4017-1de8-4fbd-a42a-ae434ddca6bf": {
+        "position": {
+          "x": 280,
+          "y": 0
+        },
+        "parameters": {
+          "TextToSpeechVoice": {
+            "languageCode": "en-US"
+          }
+        },
+        "overrideConsoleVoice": false
+      },
+      "67ada978-600a-4d39-9965-6230c52810a9": {
+        "position": {
+          "x": 560,
+          "y": 0
+        }
+      },
+      "15ce8184-4651-4d56-901b-1a789a2e572e": {
+        "position": {
+          "x": 1062.4,
+          "y": 297.6
+        },
+        "parameters": {
+          "QueueId": {
+            "displayName": "FastAIBooking Operator Queue"
+          }
+        },
+        "queue": {
+          "text": "FastAIBooking Operator Queue"
+        }
+      },
+      "3b2877ca-bc16-4019-a8e6-04200c0ded06": {
+        "position": {
+          "x": 780,
+          "y": 260
+        },
+        "parameters": {
+          "LexV2Bot": {
+            "AliasArn": {
+              "displayName": "prod",
+              "useLexBotDropdown": true,
+              "lexV2BotName": "FastAIBookingBot"
+            }
+          },
+          "Text": "How can I help with your appointment today?"
+        },
+        "promptName": "Text prompt",
+        "useLexBotDropdown": true,
+        "lexV2BotName": "FastAIBookingBot",
+        "lexV2BotAliasName": "prod",
+        "conditionMetadata": [
+          {
+            "id": "ae6a2c86-11d4-478e-b067-5e6dbb22657c",
+            "operator": {
+              "name": "Equals",
+              "value": "Equals",
+              "shortDisplay": "="
+            },
+            "value": "BookAppointmentIntent"
+          },
+          {
+            "id": "b8657d31-ce5a-400e-b346-a86622feae5a",
+            "operator": {
+              "name": "Equals",
+              "value": "Equals",
+              "shortDisplay": "="
+            },
+            "value": "HumanEscalationIntent"
+          }
+        ]
+      },
+      "05553b55-f227-4c66-b391-a3e068b01966": {
+        "position": {
+          "x": 560,
+          "y": 260
+        }
+      },
+      "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d": {
+        "position": {
+          "x": 276,
+          "y": 760
+        },
+        "parameters": {
+          "LexV2Bot": {
+            "AliasArn": {
+              "displayName": "prod",
+              "useLexBotDropdown": true,
+              "lexV2BotName": "FastAIBookingBot"
+            }
+          },
+          "Text": "Please tell me the appointment you want, or say operator."
+        },
+        "promptName": "Text prompt",
+        "useLexBotDropdown": true,
+        "lexV2BotName": "FastAIBookingBot",
+        "lexV2BotAliasName": "prod",
+        "conditionMetadata": [
+          {
+            "id": "3a871ecc-9219-45d0-b343-3892e5cf9e55",
+            "operator": {
+              "name": "Equals",
+              "value": "Equals",
+              "shortDisplay": "="
+            },
+            "value": "BookAppointmentIntent"
+          },
+          {
+            "id": "3a14af55-003a-4668-a8a2-d2e3a4d99634",
+            "operator": {
+              "name": "Equals",
+              "value": "Equals",
+              "shortDisplay": "="
+            },
+            "value": "HumanEscalationIntent"
+          }
+        ]
+      },
+      "41e3f239-5b57-4363-92fc-9d594579fa98": {
+        "position": {
+          "x": 800,
+          "y": 620
+        }
+      },
+      "37dbed23-a7c0-4259-a4f5-9be9db2f9c80": {
+        "position": {
+          "x": 1060,
+          "y": 520
+        }
+      },
+      "ai-greeting-prompt": {
+        "position": {
+          "x": 520,
+          "y": 260
+        }
+      },
+      "check-transfer-to-queue": {
+        "position": {
+          "x": 760,
+          "y": 260
+        }
+      },
+      "transfer-human-escalation-flow": {
+        "position": {
+          "x": 1040,
+          "y": 160
+        }
+      }
+    },
+    "Annotations": []
+  },
+  "Actions": [
+    {
+      "Parameters": {},
+      "Identifier": "ef8d8054-77ea-40c7-aa4e-800ed784c49c",
+      "Type": "DisconnectParticipant",
+      "Transitions": {}
+    },
+    {
+      "Parameters": {},
+      "Identifier": "1fd541b5-7764-41c5-870f-9017436dd5c6",
+      "Type": "TransferContactToQueue",
+      "Transitions": {
+        "NextAction": "ef8d8054-77ea-40c7-aa4e-800ed784c49c",
+        "Errors": [
+          {
+            "NextAction": "37dbed23-a7c0-4259-a4f5-9be9db2f9c80",
+            "ErrorType": "QueueAtCapacity"
+          },
+          {
+            "NextAction": "37dbed23-a7c0-4259-a4f5-9be9db2f9c80",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {
+        "TextToSpeechVoice": "Joanna"
+      },
+      "Identifier": "f06e4017-1de8-4fbd-a42a-ae434ddca6bf",
+      "Type": "UpdateContactTextToSpeechVoice",
+      "Transitions": {
+        "NextAction": "set-fastaibooking-runtime-attrs",
+        "Errors": [
+          {
+            "NextAction": "set-fastaibooking-runtime-attrs",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {
+        "SkipWhenDTMFBufferEnabled": "false",
+        "Text": "Thank you for calling FastAIBooking. Goodbye."
+      },
+      "Identifier": "67ada978-600a-4d39-9965-6230c52810a9",
+      "Type": "MessageParticipant",
+      "Transitions": {
+        "NextAction": "ef8d8054-77ea-40c7-aa4e-800ed784c49c",
+        "Errors": [
+          {
+            "NextAction": "ef8d8054-77ea-40c7-aa4e-800ed784c49c",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {
+        "QueueId": "arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/queue/d0f2a5d8-e983-4609-9bbc-efb0881a465d"
+      },
+      "Identifier": "15ce8184-4651-4d56-901b-1a789a2e572e",
+      "Type": "UpdateContactTargetQueue",
+      "Transitions": {
+        "NextAction": "1fd541b5-7764-41c5-870f-9017436dd5c6",
+        "Errors": [
+          {
+            "NextAction": "37dbed23-a7c0-4259-a4f5-9be9db2f9c80",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {
+        "LexV2Bot": {
+          "AliasArn": "arn:aws:lex:us-east-1:197452633989:bot-alias/KHMIXGA2US/JVIPIZDYE3"
+        },
+        "LexSessionAttributes": {
+          "provider": "AMAZON_CONNECT",
+          "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147",
+          "callerPhone": "$.CustomerEndpoint.Address",
+          "CustomerEndpointAddress": "$.CustomerEndpoint.Address",
+          "CallerId": "$.CustomerEndpoint.Address",
+          "calledNumber": "$.SystemEndpoint.Address",
+          "CalledNumber": "$.SystemEndpoint.Address",
+          "SystemEndpointAddress": "$.SystemEndpoint.Address",
+          "contactId": "$.ContactId",
+          "ContactId": "$.ContactId",
+          "AmazonConnectContactId": "$.ContactId",
+          "InitialContactId": "$.InitialContactId"
+        },
+        "Text": "How can I help with your appointment today?"
+      },
+      "Identifier": "3b2877ca-bc16-4019-a8e6-04200c0ded06",
+      "Type": "ConnectParticipantWithLexBot",
+      "Transitions": {
+        "NextAction": "05553b55-f227-4c66-b391-a3e068b01966",
+        "Conditions": [
+          {
+            "NextAction": "check-transfer-to-queue",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "BookAppointmentIntent"
+              ]
+            }
+          },
+          {
+            "NextAction": "check-transfer-to-queue",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "CancelAppointmentIntent"
+              ]
+            }
+          },
+          {
+            "NextAction": "check-transfer-to-queue",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "RescheduleAppointmentIntent"
+              ]
+            }
+          },
+          {
+            "NextAction": "check-transfer-to-queue",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "HumanEscalationIntent"
+              ]
+            }
+          }
+        ],
+        "Errors": [
+          {
+            "NextAction": "05553b55-f227-4c66-b391-a3e068b01966",
+            "ErrorType": "NoMatchingCondition"
+          },
+          {
+            "NextAction": "41e3f239-5b57-4363-92fc-9d594579fa98",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "05553b55-f227-4c66-b391-a3e068b01966",
+      "Type": "MessageParticipant",
+      "Parameters": {
+        "SkipWhenDTMFBufferEnabled": "false",
+        "Text": "Sorry, I did not catch that. Please tell me the appointment you want to book, cancel, or reschedule. You can also say operator."
+      },
+      "Transitions": {
+        "NextAction": "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d",
+        "Errors": [
+          {
+            "NextAction": "41e3f239-5b57-4363-92fc-9d594579fa98",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d",
+      "Type": "ConnectParticipantWithLexBot",
+      "Parameters": {
+        "LexV2Bot": {
+          "AliasArn": "arn:aws:lex:us-east-1:197452633989:bot-alias/KHMIXGA2US/JVIPIZDYE3"
+        },
+        "LexSessionAttributes": {
+          "provider": "AMAZON_CONNECT",
+          "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147",
+          "callerPhone": "$.CustomerEndpoint.Address",
+          "CustomerEndpointAddress": "$.CustomerEndpoint.Address",
+          "CallerId": "$.CustomerEndpoint.Address",
+          "calledNumber": "$.SystemEndpoint.Address",
+          "CalledNumber": "$.SystemEndpoint.Address",
+          "SystemEndpointAddress": "$.SystemEndpoint.Address",
+          "contactId": "$.ContactId",
+          "ContactId": "$.ContactId",
+          "AmazonConnectContactId": "$.ContactId",
+          "InitialContactId": "$.InitialContactId"
+        },
+        "Text": "Please tell me the appointment you want, or say operator."
+      },
+      "Transitions": {
+        "NextAction": "05553b55-f227-4c66-b391-a3e068b01966",
+        "Conditions": [
+          {
+            "NextAction": "check-transfer-to-queue",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "BookAppointmentIntent"
+              ]
+            }
+          },
+          {
+            "NextAction": "check-transfer-to-queue",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "CancelAppointmentIntent"
+              ]
+            }
+          },
+          {
+            "NextAction": "check-transfer-to-queue",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "RescheduleAppointmentIntent"
+              ]
+            }
+          },
+          {
+            "NextAction": "check-transfer-to-queue",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "HumanEscalationIntent"
+              ]
+            }
+          }
+        ],
+        "Errors": [
+          {
+            "NextAction": "05553b55-f227-4c66-b391-a3e068b01966",
+            "ErrorType": "NoMatchingCondition"
+          },
+          {
+            "NextAction": "41e3f239-5b57-4363-92fc-9d594579fa98",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "41e3f239-5b57-4363-92fc-9d594579fa98",
+      "Type": "MessageParticipant",
+      "Parameters": {
+        "SkipWhenDTMFBufferEnabled": "false",
+        "Text": "I am sorry, the AI receptionist is having trouble right now. Please call back later. Goodbye."
+      },
+      "Transitions": {
+        "NextAction": "ef8d8054-77ea-40c7-aa4e-800ed784c49c",
+        "Errors": [
+          {
+            "NextAction": "ef8d8054-77ea-40c7-aa4e-800ed784c49c",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "37dbed23-a7c0-4259-a4f5-9be9db2f9c80",
+      "Type": "MessageParticipant",
+      "Parameters": {
+        "SkipWhenDTMFBufferEnabled": "false",
+        "Text": "I am sorry, we cannot connect you to an operator right now. Please call back later. Goodbye."
+      },
+      "Transitions": {
+        "NextAction": "ef8d8054-77ea-40c7-aa4e-800ed784c49c",
+        "Errors": [
+          {
+            "NextAction": "ef8d8054-77ea-40c7-aa4e-800ed784c49c",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "set-fastaibooking-runtime-attrs",
+      "Type": "UpdateContactAttributes",
+      "Parameters": {
+        "Attributes": {
+          "provider": "AMAZON_CONNECT",
+          "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147",
+          "callerPhone": "$.CustomerEndpoint.Address",
+          "calledNumber": "$.SystemEndpoint.Address",
+          "contactId": "$.ContactId",
+          "initialContactId": "$.InitialContactId"
+        },
+        "TargetContact": "Current"
+      },
+      "Transitions": {
+        "NextAction": "ai-greeting-prompt",
+        "Errors": [
+          {
+            "NextAction": "ai-greeting-prompt",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "ai-greeting-prompt",
+      "Type": "MessageParticipant",
+      "Parameters": {
+        "SkipWhenDTMFBufferEnabled": "false",
+        "Text": "Hi, you have reached FastAIBooking AI reception. I can help with booking, canceling, or rescheduling an appointment."
+      },
+      "Transitions": {
+        "NextAction": "3b2877ca-bc16-4019-a8e6-04200c0ded06",
+        "Errors": [
+          {
+            "NextAction": "3b2877ca-bc16-4019-a8e6-04200c0ded06",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "check-transfer-to-queue",
+      "Type": "Compare",
+      "Parameters": {
+        "ComparisonValue": "$.Lex.SessionAttributes.transferToQueue"
+      },
+      "Transitions": {
+        "NextAction": "67ada978-600a-4d39-9965-6230c52810a9",
+        "Conditions": [
+          {
+            "NextAction": "transfer-human-escalation-flow",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "true"
+              ]
+            }
+          }
+        ],
+        "Errors": [
+          {
+            "NextAction": "67ada978-600a-4d39-9965-6230c52810a9",
+            "ErrorType": "NoMatchingCondition"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "transfer-human-escalation-flow",
+      "Type": "TransferToFlow",
+      "Parameters": {
+        "ContactFlowId": "arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/contact-flow/c7386b94-56bb-4382-b517-ee890bbacb51"
+      },
+      "Transitions": {
+        "NextAction": "ef8d8054-77ea-40c7-aa4e-800ed784c49c",
+        "Errors": [
+          {
+            "NextAction": "37dbed23-a7c0-4259-a4f5-9be9db2f9c80",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    }
+  ]
+}
