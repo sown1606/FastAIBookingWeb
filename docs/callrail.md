@@ -7,7 +7,7 @@ CallRail is not required for the current Amazon Connect-only demo.
 Do not use CallRail in the main call flow:
 
 ```text
-Salon original number -> Amazon Connect -> Amazon Lex Booking Bot -> Booking Lambda or FastAIBooking Backend API -> real appointment
+Salon original number -> Amazon Connect -> Amazon Lex Booking Bot -> Booking Lambda -> internal backend AI appointment endpoint -> real appointment
 ```
 
 ## Optional Future Marketing Attribution Only

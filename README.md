@@ -35,12 +35,14 @@ Primary demo salon:
 
 Live demo path:
 
-`848-702-9493` -> Amazon Connect phone number -> Amazon Connect Contact Flow -> Amazon Lex Booking Bot -> Booking Lambda or FastAIBooking Backend API -> real appointment -> Owner/Staff dashboard
+`848-702-9493` -> `+1 848-348-7681` Amazon Connect phone number -> Amazon Connect Contact Flow -> Amazon Lex `prod` alias -> Booking Lambda `infra/lambda/booking-handler/index.mjs` -> `POST /api/v1/internal/ai/appointments` -> backend booking/escalation flow -> real appointment or Operator Queue handoff
 
 Important:
 
 - The salon carrier should forward `848-702-9493` directly to the Amazon Connect phone number.
 - Do not use CallRail in the main call flow.
+- AI Reception ON/OFF is handled by the external routing/redirect layer before calls enter Amazon Connect.
+- Human Call Center remains a separate ON/OFF module.
 - If the caller asks for a real person or the AI cannot complete the booking, Amazon Connect transfers the call to the Operator Queue.
 
 ## Demo Accounts Preserved
@@ -56,11 +58,11 @@ Only `owner.demo@fastaibooking.local` is seeded as the primary owner of the sing
 ## Demo Seed Snapshot
 
 - One active demo salon: `Kiet Nails & Beauty`
-- 7 staff records seeded:
-  - 6 active
-  - 1 inactive
-  - first 5 active staff included
-  - 6th active staff billable
+- 3 active/bookable staff records seeded:
+  - `Mia Carter`
+  - `Olivia Brooks`
+  - `Nora Evans`
+  - `Trang` is not part of the current seeded bookable staff set
 - 8 customers
 - 9 appointments across today and upcoming dates
 - 7 demo call sessions covering:
@@ -82,6 +84,9 @@ npm run dev:app
 npm run build:api
 npm run build:admin
 npm run build:app
+npm run test
+npm run test:api
+npm run test:lambda
 npm run typecheck:api
 npm run typecheck:admin
 npm run typecheck:app
@@ -168,7 +173,9 @@ Still requires real values before a live Amazon Connect demo:
 - `FASTAIBOOKING_API_BASE_URL`
 - `FASTAIBOOKING_API_INTERNAL_TOKEN`
 - `SMTP_*` if email fallback or notifications are enabled
-- `TWILIO_*` if live SMS fallback is enabled
+- `AWS_SMS_ORIGINATION_NUMBER` if live AWS SMS delivery is enabled
+- `AWS_SMS_CONFIGURATION_SET` if AWS SMS delivery metrics are required
+- `TWILIO_*` only if Twilio SMS fallback is explicitly enabled later
 
 ## Database and Docker Reference
 
@@ -245,10 +252,49 @@ Seeded provider call IDs useful for demo verification:
 3. Call `848-702-9493` from another phone.
 4. Confirm Amazon Connect answers through the Amazon Connect Contact Flow.
 5. Complete an AI booking through the Amazon Lex Booking Bot.
-6. Confirm the Booking Lambda or FastAIBooking Backend API creates a real appointment.
+6. Confirm the Booking Lambda posts to the internal backend AI appointment endpoint and creates a real appointment.
 7. Confirm the Owner dashboard and assigned Staff schedule show the appointment.
 8. Ask for a real person and confirm Amazon Connect says, "Please wait while I connect you." before transferring to the Operator Queue.
 9. Confirm an operator can answer in Amazon Connect CCP and manage the booking in the FastAIBooking operator dashboard.
+
+## Current Production Readiness
+
+Ready:
+
+- Amazon Connect is the main demo path; CallRail is optional legacy/integration code only.
+- Lambda and backend internal AI endpoint have automated contract coverage for booking, missing input, staff resolution, busy alternatives, cancel/reschedule handoff, human escalation, and backend failure safety.
+- Owner/staff/operator/admin guard coverage verifies no cross-salon data leak in the current route contracts.
+- Safe env templates exist at `.env.example`, `apps/api/.env.example`, `apps/app/.env.example`, and `apps/admin/.env.example`.
+
+Needs manual AWS Console/setup verification:
+
+- Confirm the carrier forwards `848-702-9493` to `+1 848-348-7681`.
+- Confirm the AI Reception contact flow, Human Escalation contact flow, Operator Queue, Lex `prod` alias, and Lambda env var names are current in `us-east-1` under profile `nailnew`.
+- Log an operator into Amazon Connect CCP, set status to Available, and place one live customer call.
+
+Needs live SMS config:
+
+- `AWS_SMS_ORIGINATION_NUMBER` is not required for AI booking tests. It is required only for live AWS SMS delivery.
+- Missing SMS origination/config does not block real appointment creation or human escalation.
+
+Known limitations:
+
+- Cancel and reschedule by phone currently hand off safely to the backend/human flow; they do not self-serve full appointment mutation by voice.
+- Queue wait-time behavior after a successful transfer remains an Amazon Connect queue/customer-queue-flow operations setting.
+
+Exact commands to run for a production-readiness check:
+
+```bash
+npm run test
+npm run build:api
+npm run typecheck:api
+npm run build:app
+npm run typecheck:app
+npm run build:admin
+npm run typecheck:admin
+node --check infra/lambda/booking-handler/index.mjs
+git diff --check
+```
 
 ## Optional Future Marketing Attribution
 

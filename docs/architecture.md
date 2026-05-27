@@ -6,13 +6,13 @@ FastAIBooking now uses Amazon Connect directly as the main telephony, AI call fl
 
 ```text
 Salon original number: 848-702-9493
-  -> Amazon Connect phone number
+  -> Amazon Connect phone number +1 848-348-7681
   -> Amazon Connect Contact Flow
-  -> Amazon Lex Booking Bot
-  -> Booking Lambda or FastAIBooking Backend API
-  -> real appointment
-  -> Owner dashboard and assigned Staff schedule
-  -> Operator Queue if human help is requested or required
+  -> Amazon Lex prod alias
+  -> Booking Lambda
+  -> POST /api/v1/internal/ai/appointments
+  -> backend booking/escalation flow
+  -> real appointment or Operator Queue handoff
 ```
 
 CallRail is not part of the main call flow and is not required for the current demo.
@@ -24,7 +24,8 @@ CallRail is not part of the main call flow and is not required for the current d
 - Amazon Connect runs the inbound Amazon Connect Contact Flow.
 - Amazon Lex Booking Bot asks for booking details.
 - AI collects service, date, time, customer phone/name, and staff preference if any.
-- Booking Lambda or FastAIBooking Backend API checks real services, staff, business hours, and availability.
+- Booking Lambda posts to the internal backend AI appointment endpoint.
+- FastAIBooking Backend API checks real services, active/bookable staff, business hours, and availability.
 - FastAIBooking Backend API creates a real appointment.
 - Owner sees the appointment in the dashboard.
 - Assigned Staff sees the appointment in their schedule.

@@ -8,6 +8,8 @@ ADMIN_EMAIL="${ADMIN_EMAIL:-admin@fastaibooking.local}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-Admin123!}"
 CALL_PROVIDER="${CALL_PROVIDER:-amazon_connect}"
 INTERNAL_API_TOKEN="${FASTAIBOOKING_API_INTERNAL_TOKEN:-}"
+AWS_PROFILE="${AWS_PROFILE:-nailnew}"
+AWS_REGION="${AWS_REGION:-us-east-1}"
 
 timestamp="$(date +%s)"
 owner_email="owner.${timestamp}@fastaibooking.test"
@@ -105,6 +107,192 @@ assert_status() {
   echo "OK [$label] status=${http_code}"
 }
 
+assert_json_value() {
+  local path="$1"
+  local expected="$2"
+  local label="$3"
+  local actual
+  actual="$(json_get "$path")"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "FAILED [$label] expected ${expected} got ${actual}"
+    cat "$tmp_body"
+    exit 1
+  fi
+  echo "OK [$label] ${path}=${actual}"
+}
+
+aws_available() {
+  command -v aws >/dev/null 2>&1 && \
+    aws sts get-caller-identity --profile "$AWS_PROFILE" --region "$AWS_REGION" >/dev/null 2>&1
+}
+
+aws_json_value() {
+  local json="$1"
+  local path="$2"
+  python3 - "$json" "$path" <<'PY'
+import json
+import sys
+
+data = json.loads(sys.argv[1])
+cur = data
+for part in sys.argv[2].split("."):
+    if not part:
+        continue
+    if isinstance(cur, dict):
+        cur = cur.get(part)
+    else:
+        cur = None
+    if cur is None:
+        break
+print("" if cur is None else cur)
+PY
+}
+
+assert_aws_value() {
+  local actual="$1"
+  local expected="$2"
+  local label="$3"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "FAILED [$label] expected ${expected} got ${actual}"
+    exit 1
+  fi
+  echo "OK [$label] ${actual}"
+}
+
+verify_aws_resources() {
+  if ! aws_available; then
+    echo "SKIP [aws resource verification] AWS CLI/profile ${AWS_PROFILE} is not available."
+    return
+  fi
+
+  echo "Running AWS resource verification with profile ${AWS_PROFILE} in ${AWS_REGION}"
+
+  if [[ -n "${AMAZON_CONNECT_INSTANCE_ID:-}" ]]; then
+    local instance_json instance_status
+    instance_json="$(aws connect describe-instance --profile "$AWS_PROFILE" --region "$AWS_REGION" --instance-id "$AMAZON_CONNECT_INSTANCE_ID")"
+    instance_status="$(aws_json_value "$instance_json" "Instance.InstanceStatus")"
+    assert_aws_value "$instance_status" "ACTIVE" "connect instance active"
+  else
+    echo "SKIP [connect instance active] AMAZON_CONNECT_INSTANCE_ID is missing."
+  fi
+
+  if [[ -n "${AMAZON_CONNECT_INSTANCE_ID:-}" && -n "${AMAZON_CONNECT_CONTACT_FLOW_ID_AI_RECEPTION:-}" ]]; then
+    local ai_flow_json ai_flow_status ai_flow_state
+    ai_flow_json="$(aws connect describe-contact-flow --profile "$AWS_PROFILE" --region "$AWS_REGION" --instance-id "$AMAZON_CONNECT_INSTANCE_ID" --contact-flow-id "$AMAZON_CONNECT_CONTACT_FLOW_ID_AI_RECEPTION")"
+    ai_flow_status="$(aws_json_value "$ai_flow_json" "ContactFlow.Status")"
+    ai_flow_state="$(aws_json_value "$ai_flow_json" "ContactFlow.State")"
+    assert_aws_value "$ai_flow_status" "PUBLISHED" "ai reception contact flow published"
+    assert_aws_value "$ai_flow_state" "ACTIVE" "ai reception contact flow active"
+  else
+    echo "SKIP [ai reception contact flow] AMAZON_CONNECT_INSTANCE_ID or AMAZON_CONNECT_CONTACT_FLOW_ID_AI_RECEPTION is missing."
+  fi
+
+  if [[ -n "${AMAZON_CONNECT_INSTANCE_ID:-}" && -n "${AMAZON_CONNECT_CONTACT_FLOW_ID_HUMAN_ESCALATION:-}" ]]; then
+    local human_flow_json human_flow_status human_flow_state
+    human_flow_json="$(aws connect describe-contact-flow --profile "$AWS_PROFILE" --region "$AWS_REGION" --instance-id "$AMAZON_CONNECT_INSTANCE_ID" --contact-flow-id "$AMAZON_CONNECT_CONTACT_FLOW_ID_HUMAN_ESCALATION")"
+    human_flow_status="$(aws_json_value "$human_flow_json" "ContactFlow.Status")"
+    human_flow_state="$(aws_json_value "$human_flow_json" "ContactFlow.State")"
+    assert_aws_value "$human_flow_status" "PUBLISHED" "human escalation contact flow published"
+    assert_aws_value "$human_flow_state" "ACTIVE" "human escalation contact flow active"
+  else
+    echo "SKIP [human escalation contact flow] AMAZON_CONNECT_INSTANCE_ID or AMAZON_CONNECT_CONTACT_FLOW_ID_HUMAN_ESCALATION is missing."
+  fi
+
+  if [[ -n "${AMAZON_CONNECT_INSTANCE_ID:-}" && -n "${AMAZON_CONNECT_QUEUE_ID_DEFAULT:-}" ]]; then
+    local queue_json queue_status
+    queue_json="$(aws connect describe-queue --profile "$AWS_PROFILE" --region "$AWS_REGION" --instance-id "$AMAZON_CONNECT_INSTANCE_ID" --queue-id "$AMAZON_CONNECT_QUEUE_ID_DEFAULT")"
+    queue_status="$(aws_json_value "$queue_json" "Queue.Status")"
+    assert_aws_value "$queue_status" "ENABLED" "operator queue enabled"
+  else
+    echo "SKIP [operator queue enabled] AMAZON_CONNECT_INSTANCE_ID or AMAZON_CONNECT_QUEUE_ID_DEFAULT is missing."
+  fi
+
+  if [[ -n "${AMAZON_LEX_BOT_ID:-${LEX_BOT_ID:-}}" && -n "${AMAZON_LEX_BOT_ALIAS_ID:-${LEX_BOT_ALIAS_ID:-}}" ]]; then
+    local bot_id alias_id lex_json lex_status
+    bot_id="${AMAZON_LEX_BOT_ID:-$LEX_BOT_ID}"
+    alias_id="${AMAZON_LEX_BOT_ALIAS_ID:-$LEX_BOT_ALIAS_ID}"
+    lex_json="$(aws lexv2-models describe-bot-alias --profile "$AWS_PROFILE" --region "$AWS_REGION" --bot-id "$bot_id" --bot-alias-id "$alias_id")"
+    lex_status="$(aws_json_value "$lex_json" "botAliasStatus")"
+    assert_aws_value "$lex_status" "Available" "lex prod alias available"
+  else
+    echo "SKIP [lex prod alias available] AMAZON_LEX_BOT_ID/LEX_BOT_ID or AMAZON_LEX_BOT_ALIAS_ID/LEX_BOT_ALIAS_ID is missing."
+  fi
+
+  if [[ -n "${BOOKING_LAMBDA_FUNCTION_NAME:-${LAMBDA_BOOKING_HANDLER_NAME:-}}" ]]; then
+    local lambda_name lambda_json lambda_runtime lambda_env_keys
+    lambda_name="${BOOKING_LAMBDA_FUNCTION_NAME:-$LAMBDA_BOOKING_HANDLER_NAME}"
+    lambda_json="$(aws lambda get-function-configuration --profile "$AWS_PROFILE" --region "$AWS_REGION" --function-name "$lambda_name")"
+    lambda_runtime="$(aws_json_value "$lambda_json" "Runtime")"
+    assert_aws_value "$lambda_runtime" "nodejs20.x" "lambda runtime"
+    lambda_env_keys="$(python3 - "$lambda_json" <<'PY'
+import json
+import sys
+data = json.loads(sys.argv[1])
+keys = sorted((data.get("Environment") or {}).get("Variables", {}).keys())
+print(",".join(keys))
+PY
+)"
+    for required_key in FASTAIBOOKING_API_BASE_URL FASTAIBOOKING_API_INTERNAL_TOKEN DEFAULT_SALON_ID; do
+      if [[ ",${lambda_env_keys}," != *",${required_key},"* ]]; then
+        echo "FAILED [lambda env var names] missing ${required_key}"
+        exit 1
+      fi
+    done
+    echo "OK [lambda env var names] FASTAIBOOKING_API_BASE_URL, FASTAIBOOKING_API_INTERNAL_TOKEN, DEFAULT_SALON_ID"
+  else
+    echo "SKIP [lambda runtime/env] BOOKING_LAMBDA_FUNCTION_NAME or LAMBDA_BOOKING_HANDLER_NAME is missing."
+  fi
+}
+
+invoke_lambda_human_escalation_sample() {
+  if ! aws_available; then
+    echo "SKIP [lambda invoke sample] AWS CLI/profile ${AWS_PROFILE} is not available."
+    return
+  fi
+  local lambda_name="${BOOKING_LAMBDA_FUNCTION_NAME:-${LAMBDA_BOOKING_HANDLER_NAME:-}}"
+  if [[ -z "$lambda_name" ]]; then
+    echo "SKIP [lambda invoke sample] BOOKING_LAMBDA_FUNCTION_NAME or LAMBDA_BOOKING_HANDLER_NAME is missing."
+    return
+  fi
+
+  local event_file output_file
+  event_file="$(mktemp)"
+  output_file="$(mktemp)"
+  cat > "$event_file" <<JSON
+{
+  "invocationSource": "FulfillmentCodeHook",
+  "inputTranscript": "I want to speak to a real person.",
+  "sessionId": "smoke-lambda-${timestamp}",
+  "sessionState": {
+    "sessionAttributes": {
+      "salonId": "${salon_id}",
+      "AmazonConnectContactId": "smoke-lambda-${timestamp}",
+      "CalledNumber": "${AMAZON_CONNECT_PHONE_NUMBER:-+18483487681}",
+      "CustomerEndpointAddress": "+12125550132"
+    },
+    "intent": {
+      "name": "HumanEscalationIntent",
+      "state": "ReadyForFulfillment",
+      "slots": {}
+    }
+  }
+}
+JSON
+
+  aws lambda invoke --profile "$AWS_PROFILE" --region "$AWS_REGION" --function-name "$lambda_name" --payload "fileb://${event_file}" "$output_file" >/dev/null
+  local message
+  message="$(python3 - "$output_file" <<'PY'
+import json
+import sys
+with open(sys.argv[1], "r", encoding="utf-8") as handle:
+    data = json.load(handle)
+print(((data.get("messages") or [{}])[0]).get("content", ""))
+PY
+)"
+  rm -f "$event_file" "$output_file"
+  assert_aws_value "$message" "Please wait while I connect you." "lambda invoke human escalation message"
+}
+
 get_next_weekday_date() {
   python3 - <<'PY'
 from datetime import datetime, timedelta, timezone
@@ -137,6 +325,12 @@ assert_status "200" "health liveness"
 
 request GET "${BASE_URL}/health/readiness"
 assert_status "200" "health readiness"
+
+request GET "${BASE_URL}/api/v1/health/liveness"
+assert_status "200" "api health liveness"
+
+request GET "${BASE_URL}/api/v1/health/readiness"
+assert_status "200" "api health readiness"
 
 request GET "${BASE_URL}/api/v1/staff"
 if [[ "$http_code" != "401" && "$http_code" != "403" ]]; then
@@ -368,6 +562,27 @@ if [[ -z "${ai_internal_interaction_id}" ]]; then
   exit 1
 fi
 echo "OK [ai internal interaction] id=${ai_internal_interaction_id}"
+
+ai_escalation_payload="$(cat <<JSON
+{
+  "salonId":"${salon_id}",
+  "intentName":"HumanEscalationIntent",
+  "customerName":"Smoke Escalation Caller",
+  "customerPhone":"+12125550132",
+  "transcript":"I want to speak to a real person.",
+  "source":"amazon_connect_smoke_test",
+  "amazonConnectContactId":"smoke-escalation-${timestamp}",
+  "amazonConnectPhoneNumber":"+12125550141",
+  "calledNumber":"+12125550141"
+}
+JSON
+)"
+
+request POST "${BASE_URL}/api/v1/internal/ai/appointments" "$ai_escalation_payload" "$INTERNAL_API_TOKEN"
+assert_status "200" "ai internal human escalation"
+assert_json_value "data.outcome" "HUMAN_ESCALATION" "ai internal human escalation outcome"
+assert_json_value "data.lexResponse.message" "Please wait while I connect you." "ai internal human escalation message"
+assert_json_value "data.lexResponse.sessionAttributes.transferToQueue" "true" "ai internal human escalation queue transfer"
 
 if [[ "${CALL_PROVIDER}" == "callrail" ]]; then
   callrail_payload="$(cat <<JSON
@@ -610,5 +825,8 @@ if [[ -n "${ai_interaction_id}" ]]; then
   request GET "${BASE_URL}/api/v1/admin/ai-logs/${ai_interaction_id}" "" "$admin_token"
   assert_status "200" "admin ai log detail"
 fi
+
+verify_aws_resources
+invoke_lambda_human_escalation_sample
 
 echo "All smoke tests completed successfully."

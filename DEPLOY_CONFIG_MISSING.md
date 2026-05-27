@@ -14,6 +14,8 @@ No blocking human fallback config is missing. The runtime env now has the FastAI
 
 ## Blocking SMS live test
 
+This does not block the AWS AI booking flow. It blocks only live SMS delivery; appointment creation and human escalation must continue without SMS.
+
 - AWS_SMS_ORIGINATION_NUMBER
   - Needed by: AWS End User Messaging SMS provider for transactional booking confirmation/update/cancel SMS.
   - How to get: Lease or register an SMS-capable origination identity in AWS End User Messaging SMS for `us-east-1`, then set this env var to that phone number, sender ID, pool ID, or origination identity ARN.

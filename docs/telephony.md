@@ -20,7 +20,7 @@ Salon original number: 848-702-9493
   -> carrier forwards directly to Amazon Connect phone number
   -> Amazon Connect Contact Flow answers
   -> Amazon Lex Booking Bot collects booking details
-  -> Booking Lambda or FastAIBooking Backend API checks availability
+  -> Booking Lambda posts to the internal backend AI appointment endpoint
   -> FastAIBooking Backend API creates appointment
   -> Owner dashboard and assigned Staff schedule show the appointment
 ```

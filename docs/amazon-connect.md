@@ -75,7 +75,8 @@ Do not expose AWS credentials or internal backend tokens in frontend `VITE_*` en
 - The contact flow sets contact attributes where available: `salonId`, `callerPhone`, `contactId`, `callSessionId`, `provider=AMAZON_CONNECT`.
 - After each Lex result, the AI reception flow checks `$.Lex.SessionAttributes.transferToQueue`.
 - If `transferToQueue == true`, the flow transfers to `FastAIBooking Human Escalation`.
-- `HumanEscalationIntent` and backend fallback responses set transfer attributes and route to the human escalation flow.
+- `HumanEscalationIntent`, `CancelAppointmentIntent`, `RescheduleAppointmentIntent`, and backend fallback responses set transfer attributes and route to the human escalation flow.
+- Explicit human handoff says exactly: `Please wait while I connect you.`
 - The human escalation flow sets the working queue with `AMAZON_CONNECT_QUEUE_ID_DEFAULT`, then transfers to queue.
 - Queue setup/transfer errors play a fallback message before disconnecting safely.
 - The default/no-match path asks the caller to repeat once before sending the caller to the operator fallback.
@@ -90,6 +91,26 @@ AWS configuration used by the demo is versioned in the repo for review and maint
 - Human escalation Contact Flow content: `infra/aws/connect/contact-flows/human-escalation.json`
 
 Regenerate these exports with `AWS_PROFILE=nailnew` and `AWS_REGION=us-east-1` after changing Lex or Connect in AWS.
+
+## Production Verification Commands
+
+```bash
+npm run test
+npm run build:api
+npm run typecheck:api
+npm run build:app
+npm run typecheck:app
+npm run build:admin
+npm run typecheck:admin
+node --check infra/lambda/booking-handler/index.mjs
+git diff --check
+```
+
+`infra/scripts/smoke_test_production.sh` also verifies health endpoints, the internal AI booking endpoint, the internal human escalation endpoint, and read-only AWS resource state when AWS CLI profile `nailnew` is available.
+
+## SMS Limitation
+
+AWS SMS origination/config is not required for the Amazon Connect AI booking test. Missing `AWS_SMS_ORIGINATION_NUMBER` blocks only live SMS delivery; booking and human escalation should still complete and log a safe skipped SMS.
 
 ## Out Of Scope
 

@@ -1,6 +1,6 @@
 # AI Call Booking Workflow Audit
 
-Date: 2026-05-25
+Date: 2026-05-27
 
 ## Summary
 
@@ -18,16 +18,25 @@ The original demo failure mode is fixed:
 - Lambda and backend responses preserve known customer/booking fields across turns and avoid asking again for already-known fields.
 - Missing-slot and service-clarification retries escalate to a human after the third failed attempt.
 - Backend timeout/non-OK/error paths return `forceHumanEscalation=true` and `transferToQueue=true`.
+- Unexpected internal endpoint failures return a caller-safe Lex human escalation payload instead of raw error text.
 - Human escalation records and AWS routing point to `FastAIBooking Operator Queue`.
 - The AI Reception Contact Flow checks `$.Lex.SessionAttributes.transferToQueue` after Lex and transfers to `FastAIBooking Human Escalation` when true.
+- Automated contract tests now cover the Lambda, internal AI endpoint, and role/dashboard guard contracts.
 
 ## Files Changed
 
 - `apps/api/prisma/seed.ts`
 - `apps/api/src/modules/ai/ai.prompts.ts`
 - `apps/api/src/modules/ai/ai.service.ts`
+- `apps/api/src/modules/ai/ai.routes.ts`
 - `apps/api/src/modules/call-center/call-center.service.ts`
+- `apps/api/package.json`
 - `infra/lambda/booking-handler/index.mjs`
+- `tests/lambda/booking-handler.test.mjs`
+- `apps/api/test/ai-internal.test.ts`
+- `apps/api/test/role-guards.test.ts`
+- `package.json`
+- `infra/scripts/smoke_test_production.sh`
 - `infra/aws/lex/FastAIBookingBot-v7/`
 - `infra/aws/connect/contact-flows/ai-reception.json`
 - `infra/aws/connect/contact-flows/human-escalation.json`
@@ -43,7 +52,7 @@ The original demo failure mode is fixed:
 - Uses real staff records for confirmation, booking, no-availability, and alternative speech.
 - Dedupes alternatives before writing session attributes or speaking them.
 - Keeps booking attempts, transcripts, AI interaction logs, call sessions, and escalation metadata populated.
-- Human escalation returns SSML suitable for voice prompts and sets transfer attributes for Connect routing.
+- Explicit human, cancel, and reschedule handoff returns the exact caller message `Please wait while I connect you.` and sets transfer attributes for Connect routing.
 - Escalation records now label the queue as `FastAIBooking Operator Queue` when the Amazon Connect queue id is configured.
 
 ## Lambda Fixes
@@ -56,6 +65,36 @@ The original demo failure mode is fixed:
 - Uses one backend failure escalation path for book, cancel, reschedule, and human-escalation intents.
 - Sets `forceHumanEscalation=true`, `transferToQueue=true`, and `escalationReason=backend_error|backend_timeout` on backend failure.
 - Does not expose backend JSON/debug payloads to callers.
+- Logs coarse backend failure codes instead of backend response bodies.
+
+## Current Production Readiness
+
+Ready:
+
+- Current main flow is AWS: `848-702-9493 -> +1 848-348-7681 -> Amazon Connect Contact Flow -> Lex prod alias -> Booking Lambda -> POST /api/v1/internal/ai/appointments -> backend booking/escalation flow`.
+- CallRail is not in the main demo path. It remains optional legacy/integration code only.
+- AI Reception ON/OFF is external routing/redirect behavior before Amazon Connect. The backend flow does not use another in-app routing toggle.
+- Human Call Center remains a separate ON/OFF module.
+- Automated coverage exists for Lambda contracts, backend internal AI endpoint behavior, and role/dashboard guard safety.
+
+Needs Manual AWS Console Setup:
+
+- Confirm carrier forwarding from `848-702-9493` to `+1 848-348-7681`.
+- Confirm AI Reception and Human Escalation contact flows are published/active.
+- Confirm Operator Queue is enabled and an operator is logged into CCP as Available for live handoff testing.
+- Confirm Lex `prod` alias points at the intended bot version and Lambda hook.
+- Deploy the updated Lambda package if the running AWS function should include the latest logging-only change from this branch.
+
+Needs Live SMS Config:
+
+- `AWS_SMS_ORIGINATION_NUMBER` is required only for live AWS SMS delivery.
+- `AWS_SMS_CONFIGURATION_SET` is optional for SMS delivery metrics.
+- Missing AWS SMS origination/config does not block AI booking tests, real appointment creation, or human escalation.
+
+Known Limitations:
+
+- Cancel and reschedule voice intents intentionally hand off to human/backend flow.
+- Queue wait-time behavior after successful transfer is configured in Amazon Connect, outside the backend.
 
 ## AWS Verification
 
@@ -83,7 +122,7 @@ Profile used: `nailnew`
 - Lambda function: `fastaibooking-booking-handler`
 - Lambda runtime: `nodejs20.x`
 - Lambda handler: `index.handler`
-- Lambda last modified after deploy: `2026-05-22T12:38:39.000+0000`
+- Lambda last modified in AWS verification: `2026-05-25T13:23:03.000+0000`
 - Lambda env var names only: `FASTAIBOOKING_API_INTERNAL_TOKEN`, `DEFAULT_SALON_ID`, `FASTAIBOOKING_API_BASE_URL`
 - CloudWatch Lambda errors checked after deployment/smoke: none found
 - Versioned AWS exports live in `infra/aws/lex/FastAIBookingBot-v7/` and `infra/aws/connect/contact-flows/`.
@@ -112,11 +151,11 @@ Final active/bookable staff:
 - `Olivia Brooks`
 - `Nora Evans`
 
-Confirmed inactive/non-bookable-for-routing noise:
+Not part of the current seeded bookable staff set:
 
-- `Trang`: `INACTIVE`
-- `Amy`: `INACTIVE`
-- `Kelly`: `INACTIVE`
+- `Trang`
+- `Amy`
+- `Kelly`
 
 Service:
 
@@ -126,15 +165,21 @@ Service:
 
 Availability:
 
-- `2026-05-23T13:00:00-04:00` is available after smoke cleanup.
-- Active non-canceled appointments overlapping `2026-05-23T17:00:00.000Z` to `2026-05-23T17:45:00.000Z`: `0`.
+- Use the availability endpoint before live testing because seeded appointment dates move relative to the demo day.
+- Automated endpoint tests cover a busy 5:00 PM slot and verify deduped alternatives.
 
 ## Check Results
 
+- `npm run test:lambda`: pass
+- `npm run test:api`: pass
 - `git diff --check`: pass
 - `node --check infra/lambda/booking-handler/index.mjs`: pass
 - `npm run build:api`: pass
 - `npm run typecheck:api`: pass
+- `npm run build:app`: pass
+- `npm run typecheck:app`: pass
+- `npm run build:admin`: pass
+- `npm run typecheck:admin`: pass
 - Existing lint command: none present in root or API `package.json`
 - Production `/health/liveness`: `200`
 - Production `/health/readiness`: `200`
@@ -199,6 +244,25 @@ Safe Lambda invoke:
 ## Commands Run
 
 ```bash
+npm run test
+npm run test:lambda
+npm run test:api
+npm run build:api
+npm run typecheck:api
+npm run build:app
+npm run typecheck:app
+npm run build:admin
+npm run typecheck:admin
+node --check infra/lambda/booking-handler/index.mjs
+bash -n infra/scripts/smoke_test_production.sh
+git diff --check
+aws sts get-caller-identity --profile nailnew --query Account --output text
+aws connect describe-instance --profile nailnew --region us-east-1 --instance-id 74f78377-766f-46b7-a745-4bc97b68a8dc --query 'Instance.{Alias:InstanceAlias,Status:InstanceStatus,Id:Id}' --output json
+aws connect describe-contact-flow --profile nailnew --region us-east-1 --instance-id 74f78377-766f-46b7-a745-4bc97b68a8dc --contact-flow-id dcccf542-587c-426c-a644-a4c6f24da6e4 --query 'ContactFlow.{Name:Name,Status:Status,State:State}' --output json
+aws connect describe-contact-flow --profile nailnew --region us-east-1 --instance-id 74f78377-766f-46b7-a745-4bc97b68a8dc --contact-flow-id c7386b94-56bb-4382-b517-ee890bbacb51 --query 'ContactFlow.{Name:Name,Status:Status,State:State}' --output json
+aws connect describe-queue --profile nailnew --region us-east-1 --instance-id 74f78377-766f-46b7-a745-4bc97b68a8dc --queue-id d0f2a5d8-e983-4609-9bbc-efb0881a465d --query 'Queue.{Name:Name,Status:Status,QueueId:QueueId}' --output json
+aws lexv2-models describe-bot-alias --profile nailnew --region us-east-1 --bot-id KHMIXGA2US --bot-alias-id JVIPIZDYE3 --query '{Alias:botAliasName,Status:botAliasStatus,BotVersion:botVersion}' --output json
+aws lambda get-function-configuration --profile nailnew --region us-east-1 --function-name fastaibooking-booking-handler --query '{Runtime:Runtime,Handler:Handler,LastModified:LastModified,EnvKeys:keys(Environment.Variables)}' --output json
 git status --short
 git branch --show-current
 git log --oneline -8
@@ -253,7 +317,7 @@ Production data and smoke checks were run through the existing API/admin/interna
 
 - A real inbound call through `+18483487681` was not performed in this automated run.
 - Final manual acceptance should call the demo number with an operator logged into CCP and confirm audio, Lex, Lambda, backend logs, and operator pickup in one live session.
-- The prompt had an internal conflict: one section said final staff should include `Trang`, while the detailed verification and acceptance criteria required `Mia Carter`, `Olivia Brooks`, and `Nora Evans`. The deployed state follows the acceptance criteria.
+- Earlier planning notes had conflicting staff examples. The current seeded AI booking staff are `Mia Carter`, `Olivia Brooks`, and `Nora Evans`.
 
 ## Next Manual Demo Steps
 

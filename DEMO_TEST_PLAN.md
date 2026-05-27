@@ -46,21 +46,22 @@
    - staff preference if any
 5. "Tomorrow" and "five PM" are interpreted in the salon timezone. For the New Jersey demo salon, this is `America/New_York`.
 6. If the caller says "pedicure" or a close ASR variant such as "bettercure", the backend should match or confirm the closest active service instead of transferring immediately.
-7. If the caller asks for a staff member, for example "Trang", the backend checks that staff member's availability before booking.
-8. Booking Lambda or FastAIBooking Backend API checks services, staff, business hours, and availability.
+7. If the caller asks for an active/bookable staff member, for example "Mia Carter", "Olivia Brooks", or "Nora Evans", the backend checks that staff member's availability before booking.
+8. Booking Lambda posts to the internal backend AI appointment endpoint, which checks services, staff, business hours, and availability.
 9. Backend creates a real appointment, sends SMS confirmation when SMS is configured, and safely logs a skipped SMS when config is missing.
 10. Owner sees the new appointment in the dashboard at the local salon time.
 11. Assigned Staff sees the appointment in their schedule.
 
 ### Demo Scenario 2A: Staff Preference
 
-1. Customer says: "Hi, I want to book a pedicure with Trang tomorrow at five PM."
+1. Customer says: "Hi, I want to book a pedicure with Mia Carter tomorrow at five PM."
 2. Expected result:
    - service resolves to `Pedicure`
-   - staff preference resolves to `Trang`
+   - staff preference resolves to `Mia Carter`
    - requested time resolves to 5:00 PM in `America/New_York`
-   - if Trang is available, the appointment is booked with Trang
-   - if Trang is busy, AI suggests a short alternative such as another staff member at 5:00 PM or Trang's nearest available time
+   - if Mia Carter is available, the appointment is booked with Mia Carter
+   - if Mia Carter is busy, AI suggests a short deduped alternative such as another active/bookable staff member at 5:00 PM or Mia Carter's nearest available time
+3. Do not use Trang as a bookable demo example. Current AI demo staff are `Mia Carter`, `Olivia Brooks`, and `Nora Evans`.
 
 ### Demo Scenario 2B: Misheard Service
 
@@ -73,7 +74,7 @@
 1. Customer calls demo number `+1 848-348-7681`.
 2. Customer first hears the AI greeting and Lex prompt, not queue music.
 3. Customer says they want to speak with a real person.
-4. AI says: "No problem. Please hold while I connect you to our team."
+4. AI says exactly: "Please wait while I connect you."
 5. Amazon Connect transfers the call to the Operator Queue.
 6. Operator answers using Amazon Connect CCP/browser softphone.
 7. Operator manages the booking in the FastAIBooking operator dashboard.
@@ -84,6 +85,37 @@
 1. Customer waits in the Operator Queue.
 2. If timeout happens, system offers voicemail, callback request, or SMS link fallback if enabled.
 3. Dashboard records fallback status.
+
+## CCP Internal Test Helper
+
+Use this only as an internal/manual helper. The main customer demo remains a direct customer call to `+1 848-348-7681`.
+
+1. Open Amazon Connect CCP.
+2. Set the agent status to Available.
+3. Use Quick Connect only for an internal/manual test helper, not as the main customer path.
+4. Keep the main demo path as: customer calls `+1 848-348-7681` -> AI Reception -> Lex -> Lambda -> backend.
+5. Use nail salon scenarios only.
+
+Test utterances:
+
+1. "I want to book a pedicure tomorrow at five PM."
+2. "My name is Kiet Nguyen. My phone number is 7325956266."
+3. "Any staff is fine."
+4. "I want to speak to a real person."
+5. "I want to cancel my appointment."
+6. "I want to reschedule my appointment."
+7. "I want to book a pedicure with 111115 tomorrow at five PM."
+8. "I want to book a bettercure tomorrow at five PM."
+
+Expected:
+
+- AI asks only for missing details.
+- AI creates a real booking only after enough information is available and confirmation is accepted.
+- Invalid staff values are ignored or clarified safely and are not stored as staff preference.
+- Human escalation says exactly: "Please wait while I connect you."
+- Queue transfer works after an explicit human request.
+- Owner dashboard shows the appointment, call, and AI log.
+- Operator dashboard shows escalation detail.
 
 ## Admin Smoke Test
 
@@ -152,7 +184,7 @@
    - `callCenterEnabled`
    - `callCenterRoutingNumber`
    - `callCenterRoutingNote`
-8. Confirm there is no UI text implying a separate `afterHoursAiEnabled` toggle.
+8. Confirm AI Reception ON/OFF is described as external routing/redirect behavior, not as a second in-app after-hours toggle.
 9. Open Call Center and confirm the owner monitoring view shows:
    - assigned operator list
    - queue metrics
@@ -259,4 +291,36 @@
 - Amazon Lex Booking Bot and Booking Lambda require the bot, alias, intents, Lambda function, and backend internal token to stay configured.
 - Queue music should only happen after explicit human escalation.
 - Web AI ON/OFF is intentionally handled at the external redirect/routing layer before calls enter Amazon Connect/Lex.
-- SMS confirmation sends only when SMS provider config is available; booking should still succeed and log a safe skip when config is missing.
+- AWS SMS origination/config is not blocking AI booking tests. It blocks only live SMS delivery; booking should still succeed and log a safe skip when config is missing.
+
+## Current Production Readiness
+
+Ready:
+
+- Main phone flow is Amazon Connect -> Lex `prod` alias -> Booking Lambda -> internal AI appointment endpoint -> backend booking/escalation flow.
+- Automated Lambda and API tests cover booking, missing input, invalid staff, any staff, alternatives, cancel/reschedule handoff, human escalation, and backend failure safety.
+- Role guard tests cover owner, staff, operator, platform admin, and cross-salon route contracts.
+
+Needs manual AWS Console setup:
+
+- Confirm carrier forwarding from `848-702-9493` to `+1 848-348-7681`.
+- Confirm AI Reception and Human Escalation contact flows are published/active.
+- Confirm Operator Queue is enabled and an operator can answer in CCP.
+- Confirm Lex `prod` alias and Booking Lambda are connected.
+
+Needs live SMS config:
+
+- `AWS_SMS_ORIGINATION_NUMBER` for live AWS SMS delivery.
+- `AWS_SMS_CONFIGURATION_SET` only if SMS event tracking is required.
+
+Known limitations:
+
+- Cancel/reschedule voice intents intentionally hand off to human/backend flow.
+- Queue wait-time policy is configured in Amazon Connect, outside the backend.
+
+Exact commands run locally for this audit:
+
+```bash
+npm run test:lambda
+npm run test:api
+```

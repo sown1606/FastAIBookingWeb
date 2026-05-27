@@ -9,7 +9,7 @@ One clean demo salon only:
 - Carrier setup: T-Mobile no-answer forwarding code `**61*18483487681**10#`
 - Primary telephony layer: Amazon Connect
 - Primary AI layer: Amazon Lex / Amazon AI
-- Demo flow: `848-702-9493 -> Amazon Connect phone number -> Amazon Connect Contact Flow -> Amazon Lex Booking Bot -> Booking Lambda or FastAIBooking Backend API -> real appointment -> Owner/Staff dashboard`
+- Demo flow: `848-702-9493 -> +1 848-348-7681 -> Amazon Connect Contact Flow -> Lex prod alias -> Booking Lambda -> POST /api/v1/internal/ai/appointments -> backend booking/escalation flow -> Owner/Staff dashboard`
 - Human escalation flow: `AI Booking Reception -> Operator Queue -> Amazon Connect CCP/browser softphone -> FastAIBooking operator dashboard`
 
 ## What Is Now Coherent
@@ -24,11 +24,10 @@ One clean demo salon only:
 ## Seeded Demo Shape
 
 - 1 active salon
-- 7 staff records
-  - 6 active
-  - 1 inactive
-  - first 5 active staff included
-  - 6th active staff billable
+- 3 active/bookable AI demo staff records
+  - `Mia Carter`
+  - `Olivia Brooks`
+  - `Nora Evans`
 - 8 customers
 - 9 appointments
 - 7 call sessions

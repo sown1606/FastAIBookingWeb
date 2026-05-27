@@ -7,6 +7,7 @@ import { asyncHandler } from "../../middleware/async-handler";
 import { requireRoles } from "../../middleware/auth";
 import { validate } from "../../middleware/validate";
 import { AppError } from "../../lib/errors";
+import { logger } from "../../lib/logger";
 import { sendSuccess } from "../../utils/response";
 import {
   bookingFromTextRequestSchema,
@@ -90,6 +91,47 @@ const tokensMatch = (actual: string, expected: string): boolean => {
   );
 };
 
+const safeEscalationResponse = (reason: "backend_error" | "backend_timeout") => ({
+  outcome: "HUMAN_ESCALATION" as const,
+  message: "Please wait while I connect you.",
+  data: {
+    outcome: "HUMAN_ESCALATION",
+    lexResponse: {
+      fulfillmentState: "Fulfilled",
+      message: "Please wait while I connect you.",
+      messageContentType: "PlainText",
+      sessionAttributes: {
+        forceHumanEscalation: "true",
+        transferToQueue: "true",
+        escalationReason: reason,
+        fallbackMode: "operator_queue",
+        ...(env.AMAZON_CONNECT_QUEUE_ID_DEFAULT
+          ? { queueId: env.AMAZON_CONNECT_QUEUE_ID_DEFAULT }
+          : {})
+      }
+    },
+    appointment: null,
+    bookingAttemptId: null,
+    callSessionId: null,
+    transcriptId: null,
+    aiInteractionId: null,
+    escalationId: null,
+    missingFields: [],
+    alternatives: [],
+    salonResolutionSource: null
+  }
+});
+
+const classifyInternalAIError = (error: unknown): "backend_error" | "backend_timeout" => {
+  if (
+    error instanceof Error &&
+    (error.name === "AbortError" || /timeout|timed out|etimedout/i.test(error.message))
+  ) {
+    return "backend_timeout";
+  }
+  return "backend_error";
+};
+
 const requireInternalApiToken = asyncHandler(async (req, _res, next) => {
   const configuredToken = env.FASTAIBOOKING_API_INTERNAL_TOKEN?.trim();
   if (!configuredToken) {
@@ -116,7 +158,24 @@ aiInternalRouter.post(
   validate(createAIAppointmentSchema),
   asyncHandler(async (req, res) => {
     const payload = req.body as z.infer<typeof createAIAppointmentSchema>;
-    const result = await createAmazonConnectAIAppointment(payload);
+    let result: Awaited<ReturnType<typeof createAmazonConnectAIAppointment>>;
+    try {
+      result = await createAmazonConnectAIAppointment(payload);
+    } catch (error) {
+      const reason = classifyInternalAIError(error);
+      logger.error(
+        {
+          requestId: req.requestId,
+          reason,
+          errorName: error instanceof Error ? error.name : typeof error
+        },
+        "Internal AI appointment flow failed. Returning caller-safe human escalation."
+      );
+      return sendSuccess(res, {
+        statusCode: 200,
+        ...safeEscalationResponse(reason)
+      });
+    }
     return sendSuccess(res, {
       statusCode: result.outcome === "BOOKED" ? 201 : 200,
       message: result.message,

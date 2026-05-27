@@ -2684,7 +2684,7 @@ export const createAmazonConnectAIAppointment = async (
           }
         })
       : null;
-    const message = buildLexMessage({ outcome: "HUMAN_ESCALATION" });
+    const message = "Please wait while I connect you.";
     const parsed = buildInternalParsedIntent({
       intentType: "LIVE_PERSON_REQUEST",
       customerName: normalized.customerName,
@@ -2725,7 +2725,7 @@ export const createAmazonConnectAIAppointment = async (
       lexResponse: {
         fulfillmentState: "Fulfilled",
         message,
-        messageContentType: "SSML",
+        messageContentType: "PlainText",
         sessionAttributes: buildHumanEscalationSessionAttributes(
           "caller_requested_human",
           escalation

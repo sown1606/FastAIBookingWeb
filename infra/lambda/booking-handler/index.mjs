@@ -378,7 +378,7 @@ export const handler = async (event) => {
     if (shouldEscalate) {
       const result = await postInternalAppointment(buildInternalPayload(event, intentName));
       if (!result.ok) {
-        console.error("Appointment API rejected escalation request", result.message);
+        console.error("Appointment API rejected escalation request", result.code);
         return buildBackendFailureEscalationResponse(event, result);
       }
       const data = extractResultPayload(result);
@@ -394,7 +394,7 @@ export const handler = async (event) => {
     if (intentName === "CancelAppointmentIntent") {
       const result = await postInternalAppointment(buildInternalPayload(event, intentName));
       if (!result.ok) {
-        console.error("Appointment API rejected cancel request", result.message);
+        console.error("Appointment API rejected cancel request", result.code);
         return buildBackendFailureEscalationResponse(event, result);
       }
       const data = extractResultPayload(result);
@@ -411,7 +411,7 @@ export const handler = async (event) => {
     if (intentName === "RescheduleAppointmentIntent") {
       const result = await postInternalAppointment(buildInternalPayload(event, intentName));
       if (!result.ok) {
-        console.error("Appointment API rejected reschedule request", result.message);
+        console.error("Appointment API rejected reschedule request", result.code);
         return buildBackendFailureEscalationResponse(event, result);
       }
       const data = extractResultPayload(result);
@@ -435,7 +435,7 @@ export const handler = async (event) => {
     const result = await postInternalAppointment(buildInternalPayload(event, intentName));
 
     if (!result.ok) {
-      console.error("Appointment API rejected request", result.message);
+      console.error("Appointment API rejected request", result.code);
       return buildBackendFailureEscalationResponse(event, result);
     }
 
