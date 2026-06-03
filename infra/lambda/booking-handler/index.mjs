@@ -192,9 +192,9 @@ const WEEKDAY_INDEXES = {
 
 const SLOT_ELICIT_PROMPTS = {
   serviceName: [
-    "I didn't quite catch that. What service would you like?",
-    "Could you repeat the service name for me?",
-    `Which service should I book? We have ${DEMO_SERVICE_NAMES.join(", ")}.`
+    "We have Manicure, Pedicure, Gel Manicure, Acrylic Full Set, and Dip Powder. Which one would you like?",
+    "We have Manicure, Pedicure, Gel Manicure, Acrylic Full Set, and Dip Powder. Which one would you like?",
+    "We have Manicure, Pedicure, Gel Manicure, Acrylic Full Set, and Dip Powder. Which one would you like?"
   ],
   requestedDate: [
     "What day would you like to come in?",

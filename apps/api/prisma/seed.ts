@@ -1,12 +1,6 @@
 import {
   AiReceptionForwardingType,
   AiReceptionSetupStatus,
-  AppointmentSource,
-  AppointmentStatus,
-  BookingAttemptStatus,
-  CallEscalationStatus,
-  CallRoutingOutcome,
-  CallSessionStatus,
   ExternalProvider,
   PrismaClient,
   Role,
@@ -16,7 +10,6 @@ import {
   SubscriptionStatus
 } from "@prisma/client";
 import bcrypt from "bcryptjs";
-import { DateTime } from "luxon";
 
 const prisma = new PrismaClient();
 const SALT_ROUNDS = 12;
@@ -40,6 +33,7 @@ const toDemoPhone = (value: string, fallbackDigits: string): string => {
 };
 
 const DEMO_SALON_NAME = process.env.DEMO_SALON_NAME?.trim() || "Kiet Nails & Beauty";
+const DEMO_SALON_ID = process.env.DEMO_SALON_ID?.trim() || process.env.DEFAULT_SALON_ID?.trim();
 const DEMO_TIMEZONE = "America/New_York";
 const DEMO_ORIGINAL_PHONE = toDemoPhone(process.env.DEMO_ORIGINAL_PHONE_NUMBER ?? "8487029493", "18487029493");
 const DEMO_TRACKING_PHONE = toDemoPhone(
@@ -79,15 +73,6 @@ const getCurrentBillingPeriod = (date = new Date()) => {
     Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0, 23, 59, 59, 999)
   );
   return { periodStart, periodEnd };
-};
-
-const createFutureLocalDate = (dayOffset: number, hour: number, minute = 0) => {
-  return DateTime.now()
-    .setZone(DEMO_TIMEZONE)
-    .plus({ days: dayOffset })
-    .set({ hour, minute, second: 0, millisecond: 0 })
-    .toUTC()
-    .toJSDate();
 };
 
 const upsertUser = async (input: {
@@ -180,6 +165,7 @@ const run = async (): Promise<void> => {
   if (!salon) {
     salon = await prisma.salon.create({
       data: {
+        ...(DEMO_SALON_ID ? { id: DEMO_SALON_ID } : {}),
         ownerId: ownerUser.id,
         name: DEMO_SALON_NAME,
         timezone: DEMO_TIMEZONE,
@@ -293,7 +279,7 @@ const run = async (): Promise<void> => {
       callbackRequestEnabled: true,
       smsFallbackEnabled: true,
       aiGreetingPrompt:
-        `Thank you for calling ${DEMO_SALON_NAME}. I can help with bookings, service changes, or connect you with our call center team.`,
+        `Thank you for calling ${DEMO_SALON_NAME}. How can I help you today?`,
       callerLanguage: "en",
       callLogVisibility: "OWNER_STAFF_OPERATOR",
       notificationRecipients: [OWNER_EMAIL, DEMO_ORIGINAL_PHONE, CALL_CENTER_EMAIL],
@@ -314,7 +300,7 @@ const run = async (): Promise<void> => {
       callbackRequestEnabled: true,
       smsFallbackEnabled: true,
       aiGreetingPrompt:
-        `Thank you for calling ${DEMO_SALON_NAME}. I can help with bookings, service changes, or connect you with our call center team.`,
+        `Thank you for calling ${DEMO_SALON_NAME}. How can I help you today?`,
       callerLanguage: "en",
       callLogVisibility: "OWNER_STAFF_OPERATOR",
       notificationRecipients: [OWNER_EMAIL, DEMO_ORIGINAL_PHONE, CALL_CENTER_EMAIL],
@@ -368,22 +354,6 @@ const run = async (): Promise<void> => {
     }
   });
 
-  await prisma.businessHour.deleteMany({
-    where: { salonId: salon.id }
-  });
-
-  await prisma.businessHour.createMany({
-    data: [
-      { salonId: salon.id, dayOfWeek: 0, isOpen: false, openTime: null, closeTime: null },
-      { salonId: salon.id, dayOfWeek: 1, isOpen: true, openTime: "09:30", closeTime: "19:00" },
-      { salonId: salon.id, dayOfWeek: 2, isOpen: true, openTime: "09:30", closeTime: "19:00" },
-      { salonId: salon.id, dayOfWeek: 3, isOpen: true, openTime: "09:30", closeTime: "19:00" },
-      { salonId: salon.id, dayOfWeek: 4, isOpen: true, openTime: "09:30", closeTime: "19:00" },
-      { salonId: salon.id, dayOfWeek: 5, isOpen: true, openTime: "09:30", closeTime: "19:00" },
-      { salonId: salon.id, dayOfWeek: 6, isOpen: true, openTime: "09:00", closeTime: "17:00" }
-    ]
-  });
-
   await prisma.appointmentStatusHistory.deleteMany({
     where: {
       appointment: {
@@ -392,513 +362,196 @@ const run = async (): Promise<void> => {
     }
   });
 
-  await prisma.staffReminder.deleteMany({
+  await prisma.staffReminder.deleteMany({ where: { salonId: salon.id } });
+  await prisma.staffWorkSession.deleteMany({ where: { salonId: salon.id } });
+  await prisma.customerFeedback.deleteMany({ where: { salonId: salon.id } });
+  await prisma.chatMessage.deleteMany({ where: { salonId: salon.id } });
+  await prisma.alert.deleteMany({ where: { salonId: salon.id } });
+  await prisma.aiInteractionLog.deleteMany({ where: { salonId: salon.id } });
+  await prisma.bookingAttempt.deleteMany({ where: { salonId: salon.id } });
+  await prisma.callEvent.deleteMany({ where: { salonId: salon.id } });
+  await prisma.callTranscript.deleteMany({ where: { salonId: salon.id } });
+  await prisma.callEscalation.deleteMany({ where: { salonId: salon.id } });
+  await prisma.callSession.deleteMany({ where: { salonId: salon.id } });
+  await prisma.appointmentService.deleteMany({ where: { salonId: salon.id } });
+  await prisma.appointment.deleteMany({ where: { salonId: salon.id } });
+  await prisma.staffService.deleteMany({ where: { salonId: salon.id } });
+  await prisma.customer.deleteMany({ where: { salonId: salon.id } });
+
+  const businessHours = [
+    { dayOfWeek: 0, isOpen: false, openTime: null, closeTime: null },
+    { dayOfWeek: 1, isOpen: true, openTime: "09:30", closeTime: "19:00" },
+    { dayOfWeek: 2, isOpen: true, openTime: "09:30", closeTime: "19:00" },
+    { dayOfWeek: 3, isOpen: true, openTime: "09:30", closeTime: "19:00" },
+    { dayOfWeek: 4, isOpen: true, openTime: "09:30", closeTime: "19:00" },
+    { dayOfWeek: 5, isOpen: true, openTime: "09:30", closeTime: "19:00" },
+    { dayOfWeek: 6, isOpen: true, openTime: "09:00", closeTime: "17:00" }
+  ];
+
+  await Promise.all(
+    businessHours.map((hours) =>
+      prisma.businessHour.upsert({
+        where: {
+          salonId_dayOfWeek: {
+            salonId: salon.id,
+            dayOfWeek: hours.dayOfWeek
+          }
+        },
+        update: {
+          isOpen: hours.isOpen,
+          openTime: hours.openTime,
+          closeTime: hours.closeTime
+        },
+        create: {
+          salonId: salon.id,
+          ...hours
+        }
+      })
+    )
+  );
+
+  const existingTrangStaff = await prisma.staff.findMany({
     where: {
-      salonId: salon.id
+      salonId: salon.id,
+      fullName: {
+        equals: "Trang",
+        mode: "insensitive"
+      }
+    },
+    orderBy: {
+      createdAt: "asc"
     }
   });
 
-  await prisma.staffWorkSession.deleteMany({
-    where: {
-      salonId: salon.id
-    }
-  });
-
-  await prisma.customerFeedback.deleteMany({
-    where: {
-      salonId: salon.id
-    }
-  });
-
-  await prisma.chatMessage.deleteMany({
-    where: {
-      salonId: salon.id
-    }
-  });
-
-  await prisma.alert.deleteMany({
-    where: {
-      salonId: salon.id
-    }
-  });
-
-  await prisma.aiInteractionLog.deleteMany({
-    where: {
-      salonId: salon.id
-    }
-  });
-
-  await prisma.bookingAttempt.deleteMany({
-    where: {
-      salonId: salon.id
-    }
-  });
-
-  await prisma.callTranscript.deleteMany({
-    where: {
-      salonId: salon.id
-    }
-  });
-
-  await prisma.callEvent.deleteMany({
-    where: {
-      salonId: salon.id
-    }
-  });
-
-  await prisma.callEscalation.deleteMany({
-    where: {
-      salonId: salon.id
-    }
-  });
-
-  await prisma.callSession.deleteMany({
-    where: {
-      salonId: salon.id
-    }
-  });
-
-  await prisma.appointment.deleteMany({
-    where: {
-      salonId: salon.id
-    }
-  });
-
-  await prisma.appointmentService.deleteMany({
-    where: {
-      salonId: salon.id
-    }
-  });
-
-  await prisma.staffService.deleteMany({
-    where: {
-      salonId: salon.id
-    }
-  });
+  const trang = existingTrangStaff[0]
+    ? await prisma.staff.update({
+        where: { id: existingTrangStaff[0].id },
+        data: {
+          fullName: "Trang",
+          email: STAFF_EMAIL,
+          phone: "+17325550101",
+          title: "Pedicure Specialist",
+          status: StaffStatus.ACTIVE,
+          currentWorkStatus: StaffWorkStatus.AVAILABLE,
+          activeAppointmentId: null,
+          isBookable: true
+        }
+      })
+    : await prisma.staff.create({
+        data: {
+          salonId: salon.id,
+          fullName: "Trang",
+          email: STAFF_EMAIL,
+          phone: "+17325550101",
+          title: "Pedicure Specialist",
+          status: StaffStatus.ACTIVE,
+          currentWorkStatus: StaffWorkStatus.AVAILABLE,
+          isBookable: true
+        }
+      });
 
   await prisma.staff.deleteMany({
     where: {
-      salonId: salon.id
+      salonId: salon.id,
+      id: { not: trang.id }
     }
-  });
-
-  await prisma.customer.deleteMany({
-    where: {
-      salonId: salon.id
-    }
-  });
-
-  await prisma.service.deleteMany({
-    where: {
-      salonId: salon.id
-    }
-  });
-
-  const staffMembers = await prisma.staff.createManyAndReturn({
-    data: [
-      {
-        salonId: salon.id,
-        fullName: "Mia Carter",
-        email: "mia.demo@fastaibooking.local",
-        phone: "+17325550101",
-        title: "Senior Nail Technician",
-        status: StaffStatus.ACTIVE,
-        isBookable: true
-      },
-      {
-        salonId: salon.id,
-        fullName: "Olivia Brooks",
-        email: "olivia.demo@fastaibooking.local",
-        phone: "+17325550102",
-        title: "Nail Technician",
-        status: StaffStatus.ACTIVE,
-        isBookable: true
-      },
-      {
-        salonId: salon.id,
-        fullName: "Nora Evans",
-        email: "nora.demo@fastaibooking.local",
-        phone: "+17325550103",
-        title: "Pedicure Specialist",
-        status: StaffStatus.ACTIVE,
-        isBookable: true
-      }
-    ]
   });
 
   const staffUser = await upsertUser({
     email: STAFF_EMAIL,
-    fullName: staffMembers[0]!.fullName,
+    fullName: "Trang",
     passwordHash: staffPasswordHash,
     role: Role.STAFF,
-    phone: staffMembers[0]!.phone,
+    phone: trang.phone,
     salonId: salon.id,
-    staffId: staffMembers[0]!.id
+    staffId: trang.id
   });
 
-  const services = await prisma.service.createManyAndReturn({
-    data: [
-      {
+  const demoServices = [
+    {
+      name: "Manicure",
+      description: "Cuticle care, shaping, polish, and hand massage.",
+      durationMinutes: 40,
+      priceCents: 3500
+    },
+    {
+      name: "Pedicure",
+      description: "Soak, scrub, callus care, massage, and polish.",
+      durationMinutes: 45,
+      priceCents: 4500
+    },
+    {
+      name: "Gel Manicure",
+      description: "Cuticle care, shaping, gel color, and hand massage.",
+      durationMinutes: 60,
+      priceCents: 5000
+    },
+    {
+      name: "Acrylic Full Set",
+      description: "Full acrylic set with shaping and gel finish.",
+      durationMinutes: 100,
+      priceCents: 8500
+    },
+    {
+      name: "Dip Powder",
+      description: "Prep, dip color layers, shaping, and glossy top coat.",
+      durationMinutes: 70,
+      priceCents: 5800
+    }
+  ];
+
+  const services: Array<{ id: string }> = [];
+  for (const serviceInput of demoServices) {
+    const existingService = await prisma.service.findFirst({
+      where: {
         salonId: salon.id,
-        name: "Pedicure",
-        description: "Soak, scrub, callus care, mask, massage, and polish.",
-        durationMinutes: 45,
-        priceCents: 4500,
-        isActive: true
+        name: {
+          equals: serviceInput.name,
+          mode: "insensitive"
+        }
       },
-      {
-        salonId: salon.id,
-        name: "Manicure",
-        description: "Cuticle care, shaping, polish, and hand massage.",
-        durationMinutes: 40,
-        priceCents: 3500,
-        isActive: true
-      },
-      {
-        salonId: salon.id,
-        name: "Gel Manicure",
-        description: "Cuticle care, shaping, gel color, and hand massage.",
-        durationMinutes: 60,
-        priceCents: 5000,
-        isActive: true
-      },
-      {
-        salonId: salon.id,
-        name: "Acrylic Full Set",
-        description: "Full acrylic set with shaping and gel finish.",
-        durationMinutes: 100,
-        priceCents: 8500,
-        isActive: true
-      },
-      {
-        salonId: salon.id,
-        name: "Dip Powder",
-        description: "Prep, dip color layers, shaping, and glossy top coat.",
-        durationMinutes: 70,
-        priceCents: 5800,
-        isActive: true
+      orderBy: {
+        createdAt: "asc"
       }
-    ]
-  });
+    });
 
-  const serviceByName = Object.fromEntries(services.map((service) => [service.name, service])) as Record<
-    string,
-    (typeof services)[number]
-  >;
-  const staffByName = Object.fromEntries(staffMembers.map((staff) => [staff.fullName, staff])) as Record<
-    string,
-    (typeof staffMembers)[number]
-  >;
+    const service = existingService
+      ? await prisma.service.update({
+          where: { id: existingService.id },
+          data: {
+            name: serviceInput.name,
+            description: serviceInput.description,
+            durationMinutes: serviceInput.durationMinutes,
+            priceCents: serviceInput.priceCents,
+            isActive: true
+          }
+        })
+      : await prisma.service.create({
+          data: {
+            salonId: salon.id,
+            ...serviceInput,
+            isActive: true
+          }
+        });
+    services.push(service);
+  }
+
+  await prisma.service.deleteMany({
+    where: {
+      salonId: salon.id,
+      id: {
+        notIn: services.map((service) => service.id)
+      }
+    }
+  });
 
   await prisma.staffService.createMany({
-    data: staffMembers.flatMap((staff) => services.map((service) => ({
+    data: services.map((service) => ({
       salonId: salon.id,
       serviceId: service.id,
-      staffId: staff.id
-    }))),
-    skipDuplicates: true
-  });
-
-  const customers = await prisma.customer.createManyAndReturn({
-    data: [
-      {
-        salonId: salon.id,
-        firstName: "Thao",
-        lastName: "Nguyen",
-        phone: "+18485550201",
-        email: "thao.nguyen@example.com",
-        notes: "Prefers short almond shape and neutral tones."
-      },
-      {
-        salonId: salon.id,
-        firstName: "Jessica",
-        lastName: "Lopez",
-        phone: "+18485550202",
-        email: "jessica.lopez@example.com",
-        notes: "Usually books pedicure on weekends."
-      },
-      {
-        salonId: salon.id,
-        firstName: "Emily",
-        lastName: "Tran",
-        phone: "+18485550203",
-        email: "emily.tran@example.com",
-        notes: "Likes gel x and detailed nail art."
-      },
-      {
-        salonId: salon.id,
-        firstName: "Sophie",
-        lastName: "Kim",
-        phone: "+18485550204",
-        email: "sophie.kim@example.com",
-        notes: "Requests late afternoon slots."
-      },
-      {
-        salonId: salon.id,
-        firstName: "Rachel",
-        lastName: "Park",
-        phone: "+18485550205",
-        email: "rachel.park@example.com",
-        notes: "Returning customer from local referral."
-      },
-      {
-        salonId: salon.id,
-        firstName: "Linda",
-        lastName: "Ho",
-        phone: "+18485550206",
-        email: "linda.ho@example.com",
-        notes: "Asks for dip powder and shorter lunch-break appointments."
-      },
-      {
-        salonId: salon.id,
-        firstName: "Megan",
-        lastName: "Patel",
-        phone: "+18485550207",
-        email: "megan.patel@example.com",
-        notes: "Prefers Friday afternoon visits and warm neutral colors."
-      },
-      {
-        salonId: salon.id,
-        firstName: "Ava",
-        lastName: "Johnson",
-        phone: "+18485550208",
-        email: "ava.johnson@example.com",
-        notes: "VIP guest who often needs last-minute reschedules."
-      }
-    ]
-  });
-
-  const createAppointmentTiming = (serviceName: string, dayOffset: number, hour: number, minute = 0) => {
-    const service = serviceByName[serviceName]!;
-    const startTime = createFutureLocalDate(dayOffset, hour, minute);
-    return {
-      startTime,
-      endTime: new Date(startTime.getTime() + service.durationMinutes * 60 * 1000),
-      durationMinutes: service.durationMinutes
-    };
-  };
-
-  const appointments = await prisma.appointment.createManyAndReturn({
-    data: [
-      {
-        salonId: salon.id,
-        customerId: customers[0]!.id,
-        staffId: staffByName["Mia Carter"]!.id,
-        serviceId: serviceByName["Pedicure"]!.id,
-        ...createAppointmentTiming("Pedicure", 0, 10, 0),
-        status: AppointmentStatus.COMPLETED,
-        source: AppointmentSource.DASHBOARD,
-        notes: "Completed lunch-break pedicure for a returning guest.",
-        feedbackToken: "feedback-thao-completed-001",
-        createdByUserId: ownerUser.id
-      },
-      {
-        salonId: salon.id,
-        customerId: customers[1]!.id,
-        staffId: staffByName["Olivia Brooks"]!.id,
-        serviceId: serviceByName["Gel Manicure"]!.id,
-        ...createAppointmentTiming("Gel Manicure", 0, 11, 30),
-        status: AppointmentStatus.IN_PROGRESS,
-        source: AppointmentSource.DASHBOARD,
-        notes: "Walk-in upgrade to gel finish while team monitors inbound calls.",
-        createdByUserId: ownerUser.id
-      },
-      {
-        salonId: salon.id,
-        customerId: customers[7]!.id,
-        staffId: staffByName["Nora Evans"]!.id,
-        serviceId: serviceByName["Acrylic Full Set"]!.id,
-        ...createAppointmentTiming("Acrylic Full Set", 0, 15, 0),
-        status: AppointmentStatus.CONFIRMED,
-        source: AppointmentSource.CALL_CENTER,
-        notes: "Operator confirmed same-day VIP reschedule.",
-        createdByUserId: callCenterUser.id
-      },
-      {
-        salonId: salon.id,
-        customerId: customers[4]!.id,
-        staffId: staffByName["Mia Carter"]!.id,
-        serviceId: serviceByName["Gel Manicure"]!.id,
-        ...createAppointmentTiming("Gel Manicure", 1, 11, 0),
-        status: AppointmentStatus.CONFIRMED,
-        source: AppointmentSource.AI,
-        notes: "Booked after no-answer forwarding test call.",
-        createdByUserId: ownerUser.id
-      },
-      {
-        salonId: salon.id,
-        customerId: customers[3]!.id,
-        staffId: staffByName["Olivia Brooks"]!.id,
-        serviceId: serviceByName["Pedicure"]!.id,
-        ...createAppointmentTiming("Pedicure", 1, 14, 30),
-        status: AppointmentStatus.SCHEDULED,
-        source: AppointmentSource.DASHBOARD,
-        notes: "Requested late afternoon spa pedicure slot.",
-        createdByUserId: ownerUser.id
-      },
-      {
-        salonId: salon.id,
-        customerId: customers[2]!.id,
-        staffId: staffByName["Nora Evans"]!.id,
-        serviceId: serviceByName["Acrylic Full Set"]!.id,
-        ...createAppointmentTiming("Acrylic Full Set", 2, 11, 0),
-        status: AppointmentStatus.CONFIRMED,
-        source: AppointmentSource.AI,
-        notes: "Returning guest asked for an acrylic full set.",
-        createdByUserId: ownerUser.id
-      },
-      {
-        salonId: salon.id,
-        customerId: customers[5]!.id,
-        staffId: staffByName["Olivia Brooks"]!.id,
-        serviceId: serviceByName["Dip Powder"]!.id,
-        ...createAppointmentTiming("Dip Powder", 2, 15, 0),
-        status: AppointmentStatus.CONFIRMED,
-        source: AppointmentSource.AI,
-        notes: "AI booked a lunch-break dip powder service.",
-        createdByUserId: ownerUser.id
-      },
-      {
-        salonId: salon.id,
-        customerId: customers[6]!.id,
-        staffId: staffByName["Nora Evans"]!.id,
-        serviceId: serviceByName["Gel Manicure"]!.id,
-        ...createAppointmentTiming("Gel Manicure", 3, 15, 30),
-        status: AppointmentStatus.SCHEDULED,
-        source: AppointmentSource.DASHBOARD,
-        notes: "Friday appointment held for a frequent after-work guest.",
-        createdByUserId: ownerUser.id
-      },
-      {
-        salonId: salon.id,
-        customerId: customers[7]!.id,
-        staffId: staffByName["Mia Carter"]!.id,
-        serviceId: serviceByName["Acrylic Full Set"]!.id,
-        ...createAppointmentTiming("Acrylic Full Set", 4, 15, 0),
-        status: AppointmentStatus.CONFIRMED,
-        source: AppointmentSource.CALL_CENTER,
-        notes: "Operator confirmed a reschedule for a full acrylic set.",
-        createdByUserId: ownerUser.id
-      }
-    ]
-  });
-
-  await prisma.appointmentStatusHistory.createMany({
-    data: appointments.map((appointment) => ({
-      appointmentId: appointment.id,
-      previousStatus: null,
-      newStatus: appointment.status,
-      reason: "Seeded demo data",
-      changedByUserId: ownerUser.id
-    }))
-  });
-
-  await prisma.appointmentService.createMany({
-    data: appointments.map((appointment) => ({
-      salonId: salon.id,
-      appointmentId: appointment.id,
-      serviceId: appointment.serviceId,
-      durationMinutes: appointment.durationMinutes,
-      priceCents: services.find((service) => service.id === appointment.serviceId)!.priceCents
+      staffId: trang.id
     })),
     skipDuplicates: true
-  });
-
-  await prisma.appointmentStatusHistory.createMany({
-    data: [
-      {
-        appointmentId: appointments[0]!.id,
-        previousStatus: AppointmentStatus.CONFIRMED,
-        newStatus: AppointmentStatus.COMPLETED,
-        reason: "Service completed and feedback requested.",
-        changedByUserId: ownerUser.id
-      },
-      {
-        appointmentId: appointments[1]!.id,
-        previousStatus: AppointmentStatus.CONFIRMED,
-        newStatus: AppointmentStatus.IN_PROGRESS,
-        reason: "Technician started the service.",
-        changedByUserId: staffUser.id
-      }
-    ]
-  });
-
-  await prisma.staffWorkSession.createMany({
-    data: [
-      {
-        salonId: salon.id,
-        staffId: appointments[0]!.staffId,
-        appointmentId: appointments[0]!.id,
-        status: StaffWorkStatus.DONE,
-        startedAt: new Date(new Date(appointments[0]!.startTime).getTime() - 5 * 60 * 1000),
-        expectedEndAt: appointments[0]!.endTime,
-        endedAt: appointments[0]!.endTime
-      },
-      {
-        salonId: salon.id,
-        staffId: appointments[1]!.staffId,
-        appointmentId: appointments[1]!.id,
-        status: StaffWorkStatus.IN_PROGRESS,
-        startedAt: new Date(new Date(appointments[1]!.startTime).getTime() - 5 * 60 * 1000),
-        expectedEndAt: appointments[1]!.endTime
-      }
-    ]
-  });
-
-  await prisma.staffReminder.createMany({
-    data: [
-      {
-        salonId: salon.id,
-        staffId: appointments[3]!.staffId,
-        appointmentId: appointments[3]!.id,
-        reminderType: "APPOINTMENT_PREP",
-        remindAt: new Date(new Date(appointments[3]!.startTime).getTime() - 2 * 60 * 60 * 1000),
-        message: "Prepare gel manicure station for tomorrow's AI booking."
-      },
-      {
-        salonId: salon.id,
-        staffId: appointments[8]!.staffId,
-        appointmentId: appointments[8]!.id,
-        reminderType: "VIP_RESCHEDULE",
-        remindAt: new Date(new Date(appointments[8]!.startTime).getTime() - 24 * 60 * 60 * 1000),
-        message: "Confirm acrylic colors and extra soak-off time for the VIP reschedule."
-      }
-    ]
-  });
-
-  await prisma.customerFeedback.create({
-    data: {
-      salonId: salon.id,
-      appointmentId: appointments[0]!.id,
-      customerPhone: customers[0]!.phone,
-      rating: 5,
-      reason: "Loved the massage and the clean finish."
-    }
-  });
-
-  await prisma.staff.update({
-    where: { id: appointments[1]!.staffId },
-    data: {
-      currentWorkStatus: StaffWorkStatus.IN_PROGRESS,
-      activeAppointmentId: appointments[1]!.id
-    }
-  });
-
-  await prisma.chatMessage.createMany({
-    data: [
-      {
-        salonId: salon.id,
-        staffId: staffUser.staffId!,
-        senderUserId: ownerUser.id,
-        body: "Please confirm tomorrow's AI manicure booking and hold a chrome sample set."
-      },
-      {
-        salonId: salon.id,
-        staffId: staffUser.staffId!,
-        senderUserId: staffUser.id,
-        body: "Confirmed. I blocked an extra 15 minutes for nail art options."
-      }
-    ]
   });
 
   await prisma.integrationConfig.deleteMany({
@@ -991,680 +644,10 @@ const run = async (): Promise<void> => {
     ]
   });
 
-  const nowMs = Date.now();
-  const directInboundStartedAt = new Date(nowMs - 1000 * 60 * 60 * 8);
-  const directInboundAnsweredAt = new Date(directInboundStartedAt.getTime() + 8_000);
-  const directInboundEndedAt = new Date(directInboundAnsweredAt.getTime() + 6 * 60 * 1000);
-
-  const directInboundCall = await prisma.callSession.create({
-    data: {
-      salonId: salon.id,
-      provider: ExternalProvider.AMAZON_CONNECT,
-      providerCallId: "demo-salon-ring-1",
-      providerCompanyId: DEMO_CONNECT_INSTANCE_ID,
-      callerPhone: customers[6]!.phone,
-      originalPhoneNumber: DEMO_ORIGINAL_PHONE,
-      dialedPhone: DEMO_ORIGINAL_PHONE,
-      trackingNumber: DEMO_TRACKING_PHONE,
-      direction: "inbound",
-      sourceName: "Main Salon Line",
-      campaignName: DEMO_CALL_FLOW_NAME,
-      status: CallSessionStatus.COMPLETED,
-      startedAt: directInboundStartedAt,
-      answeredAt: directInboundAnsweredAt,
-      endedAt: directInboundEndedAt,
-      durationSeconds: 360,
-      routingOutcome: CallRoutingOutcome.SALON_RING,
-      finalResolution: "Salon front desk answered directly and confirmed the existing appointment.",
-      rawPayload: {
-        seed: true,
-        route: "SALON_RING"
-      }
-    }
-  });
-
-  const aiBookingStartedAt = new Date(nowMs - 1000 * 60 * 90);
-  const aiBookingAnsweredAt = new Date(aiBookingStartedAt.getTime() + 12_000);
-  const aiBookingEndedAt = new Date(aiBookingAnsweredAt.getTime() + 4 * 60 * 1000);
-
-  const aiBookingCall = await prisma.callSession.create({
-    data: {
-      salonId: salon.id,
-      provider: ExternalProvider.AMAZON_CONNECT,
-      providerCallId: "demo-forwarding-call-1",
-      providerCompanyId: DEMO_CONNECT_INSTANCE_ID,
-      callerPhone: customers[4]!.phone,
-      originalPhoneNumber: DEMO_ORIGINAL_PHONE,
-      dialedPhone: DEMO_TRACKING_PHONE,
-      trackingNumber: DEMO_TRACKING_PHONE,
-      direction: "inbound",
-      sourceName: "Forwarding Demo",
-      campaignName: DEMO_CALL_FLOW_NAME,
-      status: CallSessionStatus.COMPLETED,
-      startedAt: aiBookingStartedAt,
-      answeredAt: aiBookingAnsweredAt,
-      endedAt: aiBookingEndedAt,
-      durationSeconds: 240,
-      recordingUrl: "https://example.com/recordings/demo-forwarding-call-1.mp3",
-      transcriptSummary:
-        "Caller asked for a gel manicure after the salon number rang and forwarded to the AI line.",
-      aiSummary: {
-        intentType: "BOOK_APPOINTMENT",
-        customerName: `${customers[4]!.firstName} ${customers[4]!.lastName}`,
-        requestedService: "Gel Manicure",
-        result: "BOOKED"
-      },
-      routingOutcome: CallRoutingOutcome.AI_RECEPTION,
-      finalResolution: "Appointment created successfully for the demo salon.",
-      rawPayload: {
-        seed: true,
-        callFlowName: DEMO_CALL_FLOW_NAME,
-        originalPhoneNumber: DEMO_ORIGINAL_PHONE,
-        forwardingPhoneNumber: DEMO_TRACKING_PHONE
-      }
-    }
-  });
-
-  const aiBookingTranscript = await prisma.callTranscript.create({
-    data: {
-      salonId: salon.id,
-      callSessionId: aiBookingCall.id,
-      transcriptSource: "amazon_connect_contact_flow",
-      transcriptText:
-        "Hi, I called the salon line and it forwarded me here. I need a gel manicure tomorrow afternoon. My phone number is 848-555-0205.",
-      transcriptSummary:
-        "Caller requested a gel manicure after the no-answer forwarding flow sent the call to AI."
-    }
-  });
-
-  const aiBookingAttempt = await prisma.bookingAttempt.create({
-    data: {
-      salonId: salon.id,
-      callSessionId: aiBookingCall.id,
-      transcriptId: aiBookingTranscript.id,
-      appointmentId: appointments[3]!.id,
-      status: BookingAttemptStatus.SUCCESS,
-      source: "AI_TRANSCRIPT",
-      customerName: `${customers[4]!.firstName} ${customers[4]!.lastName}`,
-      customerPhone: customers[4]!.phone,
-      requestedService: serviceByName["Gel Manicure"]!.name,
-      requestedStaff: staffMembers[0]!.fullName,
-      requestedDateTimeText: appointments[3]!.startTime.toISOString(),
-      normalizedRequest: {
-        customerName: `${customers[4]!.firstName} ${customers[4]!.lastName}`,
-        customerPhone: customers[4]!.phone,
-        serviceName: serviceByName["Gel Manicure"]!.name,
-        staffName: staffMembers[0]!.fullName,
-        startTimeIso: appointments[3]!.startTime.toISOString(),
-        forwardingType: "no_answer"
-      },
-      rawInput: {
-        originalPhoneNumber: DEMO_ORIGINAL_PHONE,
-        forwardingPhoneNumber: DEMO_TRACKING_PHONE,
-        callFlowName: DEMO_CALL_FLOW_NAME
-      },
-      createdByUserId: ownerUser.id
-    }
-  });
-
-  await prisma.aiInteractionLog.create({
-    data: {
-      salonId: salon.id,
-      provider: ExternalProvider.AMAZON_CONNECT,
-      model: DEMO_LEX_BOT_ID,
-      taskType: "parse_booking",
-      requestText: aiBookingTranscript.transcriptText,
-      requestPayload: {
-        seed: true,
-        callFlowName: DEMO_CALL_FLOW_NAME
-      },
-      responseText: JSON.stringify({
-        intentType: "BOOK_APPOINTMENT",
-        confidence: 0.95
-      }),
-      responsePayload: {
-        seed: true
-      },
-      parsedOutput: {
-        intentType: "BOOK_APPOINTMENT",
-        serviceName: serviceByName["Gel Manicure"]!.name,
-        staffName: staffMembers[0]!.fullName,
-        appointmentId: appointments[3]!.id
-      },
-      isValid: true,
-      confidence: 0.95,
-      callSessionId: aiBookingCall.id,
-      transcriptId: aiBookingTranscript.id,
-      bookingAttemptId: aiBookingAttempt.id,
-      createdByUserId: ownerUser.id
-    }
-  });
-
-  const openEscalationStartedAt = new Date(nowMs - 1000 * 60 * 32);
-  const openEscalationEndedAt = new Date(openEscalationStartedAt.getTime() + 2 * 60 * 1000);
-  const openEscalationCall = await prisma.callSession.create({
-    data: {
-      salonId: salon.id,
-      provider: ExternalProvider.AMAZON_CONNECT,
-      providerCallId: "demo-escalation-open-1",
-      providerCompanyId: DEMO_CONNECT_INSTANCE_ID,
-      callerPhone: customers[7]!.phone,
-      originalPhoneNumber: DEMO_ORIGINAL_PHONE,
-      dialedPhone: DEMO_TRACKING_PHONE,
-      trackingNumber: DEMO_TRACKING_PHONE,
-      direction: "inbound",
-      sourceName: "Forwarding Demo",
-      campaignName: DEMO_CALL_FLOW_NAME,
-      status: CallSessionStatus.COMPLETED,
-      startedAt: openEscalationStartedAt,
-      answeredAt: new Date(openEscalationStartedAt.getTime() + 10_000),
-      endedAt: openEscalationEndedAt,
-      durationSeconds: 120,
-      transcriptSummary:
-        "Caller wants to move an existing acrylic appointment and asked to speak to a real person.",
-      aiSummary: {
-        intentType: "RESCHEDULE_APPOINTMENT",
-        escalationRequested: true,
-        customerName: `${customers[7]!.firstName} ${customers[7]!.lastName}`
-      },
-      routingOutcome: CallRoutingOutcome.QUEUED,
-      finalResolution: "Waiting in the human operator queue.",
-      rawPayload: {
-        seed: true,
-        route: "QUEUED"
-      }
-    }
-  });
-
-  const openEscalationTranscript = await prisma.callTranscript.create({
-    data: {
-      salonId: salon.id,
-      callSessionId: openEscalationCall.id,
-      transcriptSource: "amazon_connect_contact_flow",
-      transcriptText:
-        "Hi, I need to move my acrylic full set. Friday works, but I need to talk to a real person because I have a bridal party schedule.",
-      transcriptSummary:
-        "Caller asked for a human operator to reschedule a VIP acrylic appointment."
-    }
-  });
-
-  const openEscalationAttempt = await prisma.bookingAttempt.create({
-    data: {
-      salonId: salon.id,
-      callSessionId: openEscalationCall.id,
-      transcriptId: openEscalationTranscript.id,
-      status: BookingAttemptStatus.NEEDS_INPUT,
-      source: "AI_TRANSCRIPT",
-      customerName: `${customers[7]!.firstName} ${customers[7]!.lastName}`,
-      customerPhone: customers[7]!.phone,
-      requestedService: serviceByName["Acrylic Full Set"]!.name,
-      requestedStaff: staffByName["Mia Carter"]!.fullName,
-      requestedDateTimeText: "Friday afternoon",
-      failureReason: "Caller requested a real person before finalizing the reschedule.",
-      normalizedRequest: {
-        serviceName: "Acrylic Full Set",
-        requestedChange: "reschedule",
-        priority: "vip"
-      },
-      createdByUserId: ownerUser.id
-    }
-  });
-
-  await prisma.aiInteractionLog.create({
-    data: {
-      salonId: salon.id,
-      provider: ExternalProvider.AMAZON_CONNECT,
-      model: DEMO_LEX_BOT_ID,
-      taskType: "route_live_person_request",
-      requestText: openEscalationTranscript.transcriptText,
-      responseText: JSON.stringify({
-        intentType: "LIVE_PERSON_REQUEST",
-        confidence: 0.98
-      }),
-      parsedOutput: {
-        intentType: "LIVE_PERSON_REQUEST",
-        routingOutcome: "QUEUED"
-      },
-      isValid: true,
-      confidence: 0.98,
-      callSessionId: openEscalationCall.id,
-      transcriptId: openEscalationTranscript.id,
-      bookingAttemptId: openEscalationAttempt.id,
-      createdByUserId: ownerUser.id
-    }
-  });
-
-  const openEscalation = await prisma.callEscalation.create({
-    data: {
-      salonId: salon.id,
-      callSessionId: openEscalationCall.id,
-      status: CallEscalationStatus.QUEUED,
-      routingOutcome: CallRoutingOutcome.QUEUED,
-      escalationReason: "VIP reschedule requires a human operator.",
-      requestedBy: "AI_RECEPTION",
-      customerPhone: customers[7]!.phone,
-      queueId: DEMO_CONNECT_QUEUE_ID,
-      queueName: "Amazon Connect Shared Queue",
-      messageToCaller: "Please hold while I place you into our operator queue.",
-      requestedAt: new Date(nowMs - 1000 * 60 * 28),
-      queuedAt: new Date(nowMs - 1000 * 60 * 27),
-      metadata: {
-        source: "seed",
-        priority: "vip"
-      }
-    }
-  });
-
-  const resolvedEscalationStartedAt = new Date(nowMs - 1000 * 60 * 60 * 3);
-  const resolvedEscalationEndedAt = new Date(resolvedEscalationStartedAt.getTime() + 5 * 60 * 1000);
-  const resolvedEscalationCall = await prisma.callSession.create({
-    data: {
-      salonId: salon.id,
-      provider: ExternalProvider.AMAZON_CONNECT,
-      providerCallId: "demo-escalation-closed-1",
-      providerCompanyId: DEMO_CONNECT_INSTANCE_ID,
-      callerPhone: customers[6]!.phone,
-      originalPhoneNumber: DEMO_ORIGINAL_PHONE,
-      dialedPhone: DEMO_TRACKING_PHONE,
-      trackingNumber: DEMO_TRACKING_PHONE,
-      direction: "inbound",
-      sourceName: "Forwarding Demo",
-      campaignName: DEMO_CALL_FLOW_NAME,
-      status: CallSessionStatus.COMPLETED,
-      startedAt: resolvedEscalationStartedAt,
-      answeredAt: new Date(resolvedEscalationStartedAt.getTime() + 11_000),
-      endedAt: resolvedEscalationEndedAt,
-      durationSeconds: 300,
-      transcriptSummary:
-        "Caller requested a human operator to reschedule Friday's gel manicure and the operator completed the change.",
-      aiSummary: {
-        intentType: "LIVE_PERSON_REQUEST",
-        escalationRequested: true,
-        operatorResolution: "RESCHEDULED"
-      },
-      routingOutcome: CallRoutingOutcome.CALL_CENTER_ESCALATION,
-      finalResolution: "Anna Vo rescheduled the booking and confirmed the new Friday 6:00 PM slot.",
-      rawPayload: {
-        seed: true,
-        route: "CALL_CENTER_ESCALATION"
-      }
-    }
-  });
-
-  const resolvedEscalationTranscript = await prisma.callTranscript.create({
-    data: {
-      salonId: salon.id,
-      callSessionId: resolvedEscalationCall.id,
-      transcriptSource: "amazon_connect_contact_flow",
-      transcriptText:
-        "Can I talk to someone? I need to move my Friday manicure to a later time because of work.",
-      transcriptSummary: "Operator-assisted reschedule request."
-    }
-  });
-
-  await prisma.aiInteractionLog.create({
-    data: {
-      salonId: salon.id,
-      provider: ExternalProvider.AMAZON_CONNECT,
-      model: DEMO_LEX_BOT_ID,
-      taskType: "route_live_person_request",
-      requestText: resolvedEscalationTranscript.transcriptText,
-      responseText: JSON.stringify({
-        intentType: "LIVE_PERSON_REQUEST",
-        confidence: 0.94
-      }),
-      parsedOutput: {
-        intentType: "LIVE_PERSON_REQUEST",
-        route: "CALL_CENTER_ESCALATION"
-      },
-      isValid: true,
-      confidence: 0.94,
-      callSessionId: resolvedEscalationCall.id,
-      transcriptId: resolvedEscalationTranscript.id,
-      createdByUserId: ownerUser.id
-    }
-  });
-
-  await prisma.callEscalation.create({
-    data: {
-      salonId: salon.id,
-      callSessionId: resolvedEscalationCall.id,
-      status: CallEscalationStatus.CLOSED,
-      routingOutcome: CallRoutingOutcome.CALL_CENTER_ESCALATION,
-      escalationReason: "Caller requested help from a live operator.",
-      requestedBy: "AI_RECEPTION",
-      customerPhone: customers[6]!.phone,
-      queueId: DEMO_CONNECT_QUEUE_ID,
-      queueName: "Amazon Connect Shared Queue",
-      assignedAgentUserId: callCenterUser.id,
-      messageToCaller: "Please stay on the line while I connect you.",
-      operatorNotes: "Moved the appointment to match the customer's after-work availability.",
-      resolution: "Operator rescheduled the booking and confirmed SMS follow-up.",
-      qaNotes: "Demo-ready closed escalation with live operator handling.",
-      requestedAt: new Date(nowMs - 1000 * 60 * 60 * 3 + 60 * 1000),
-      queuedAt: new Date(nowMs - 1000 * 60 * 60 * 3 + 2 * 60 * 1000),
-      connectedAt: new Date(nowMs - 1000 * 60 * 60 * 3 + 4 * 60 * 1000),
-      closedAt: new Date(nowMs - 1000 * 60 * 60 * 3 + 18 * 60 * 1000),
-      metadata: {
-        source: "seed",
-        operator: callCenterUser.fullName
-      }
-    }
-  });
-
-  const callbackStartedAt = new Date(nowMs - 1000 * 60 * 60 * 26);
-  const callbackEndedAt = new Date(callbackStartedAt.getTime() + 75_000);
-  const callbackCall = await prisma.callSession.create({
-    data: {
-      salonId: salon.id,
-      provider: ExternalProvider.AMAZON_CONNECT,
-      providerCallId: "demo-callback-fallback-1",
-      providerCompanyId: DEMO_CONNECT_INSTANCE_ID,
-      callerPhone: customers[5]!.phone,
-      originalPhoneNumber: DEMO_ORIGINAL_PHONE,
-      dialedPhone: DEMO_TRACKING_PHONE,
-      trackingNumber: DEMO_TRACKING_PHONE,
-      direction: "inbound",
-      sourceName: "Forwarding Demo",
-      campaignName: DEMO_CALL_FLOW_NAME,
-      status: CallSessionStatus.MISSED,
-      startedAt: callbackStartedAt,
-      endedAt: callbackEndedAt,
-      durationSeconds: 75,
-      transcriptSummary: "Caller asked for the next available dip powder slot and requested a callback.",
-      routingOutcome: CallRoutingOutcome.CALLBACK_REQUEST,
-      finalResolution: "Callback request created because the caller preferred a manual follow-up.",
-      rawPayload: {
-        seed: true,
-        route: "CALLBACK_REQUEST"
-      }
-    }
-  });
-
-  await prisma.callEscalation.create({
-    data: {
-      salonId: salon.id,
-      callSessionId: callbackCall.id,
-      status: CallEscalationStatus.CALLBACK_REQUESTED,
-      routingOutcome: CallRoutingOutcome.CALLBACK_REQUEST,
-      escalationReason: "Customer requested a callback for the next available dip powder slot.",
-      requestedBy: "AI_RECEPTION",
-      customerPhone: customers[5]!.phone,
-      callbackPhone: customers[5]!.phone,
-      requestedAt: new Date(nowMs - 1000 * 60 * 60 * 26 + 90_000),
-      operatorNotes: "Hold callback after lunch rush."
-    }
-  });
-
-  const voicemailStartedAt = new Date(nowMs - 1000 * 60 * 60 * 18);
-  const voicemailEndedAt = new Date(voicemailStartedAt.getTime() + 95_000);
-  const voicemailCall = await prisma.callSession.create({
-    data: {
-      salonId: salon.id,
-      provider: ExternalProvider.AMAZON_CONNECT,
-      providerCallId: "demo-voicemail-fallback-1",
-      providerCompanyId: DEMO_CONNECT_INSTANCE_ID,
-      callerPhone: customers[2]!.phone,
-      originalPhoneNumber: DEMO_ORIGINAL_PHONE,
-      dialedPhone: DEMO_TRACKING_PHONE,
-      trackingNumber: DEMO_TRACKING_PHONE,
-      direction: "inbound",
-      sourceName: "Forwarding Demo",
-      campaignName: DEMO_CALL_FLOW_NAME,
-      status: CallSessionStatus.VOICEMAIL,
-      startedAt: voicemailStartedAt,
-      endedAt: voicemailEndedAt,
-      durationSeconds: 95,
-      transcriptSummary: "Caller left a voicemail asking about a nail art add-on for an existing Gel X booking.",
-      routingOutcome: CallRoutingOutcome.VOICEMAIL,
-      finalResolution: "Voicemail fallback captured for manual review.",
-      rawPayload: {
-        seed: true,
-        route: "VOICEMAIL"
-      }
-    }
-  });
-
-  await prisma.callEscalation.create({
-    data: {
-      salonId: salon.id,
-      callSessionId: voicemailCall.id,
-      status: CallEscalationStatus.VOICEMAIL_LEFT,
-      routingOutcome: CallRoutingOutcome.VOICEMAIL,
-      escalationReason: "Caller left a voicemail for a nail art add-on question.",
-      requestedBy: "AI_RECEPTION",
-      customerPhone: customers[2]!.phone,
-      voicemailRecordingUrl: "https://example.com/recordings/demo-voicemail-fallback-1.mp3",
-      requestedAt: new Date(nowMs - 1000 * 60 * 60 * 18 + 90_000),
-      resolution: "Voicemail stored for owner review."
-    }
-  });
-
-  const smsStartedAt = new Date(nowMs - 1000 * 60 * 60 * 12);
-  const smsEndedAt = new Date(smsStartedAt.getTime() + 80_000);
-  const smsCall = await prisma.callSession.create({
-    data: {
-      salonId: salon.id,
-      provider: ExternalProvider.AMAZON_CONNECT,
-      providerCallId: "demo-sms-fallback-1",
-      providerCompanyId: DEMO_CONNECT_INSTANCE_ID,
-      callerPhone: customers[3]!.phone,
-      originalPhoneNumber: DEMO_ORIGINAL_PHONE,
-      dialedPhone: DEMO_TRACKING_PHONE,
-      trackingNumber: DEMO_TRACKING_PHONE,
-      direction: "inbound",
-      sourceName: "Forwarding Demo",
-      campaignName: DEMO_CALL_FLOW_NAME,
-      status: CallSessionStatus.FAILED,
-      startedAt: smsStartedAt,
-      endedAt: smsEndedAt,
-      durationSeconds: 80,
-      transcriptSummary: "Caller needed a quick reply and accepted an SMS follow-up instead of waiting.",
-      routingOutcome: CallRoutingOutcome.SMS_FALLBACK,
-      finalResolution: "SMS fallback sent with callback instructions.",
-      rawPayload: {
-        seed: true,
-        route: "SMS_FALLBACK"
-      }
-    }
-  });
-
-  await prisma.callEscalation.create({
-    data: {
-      salonId: salon.id,
-      callSessionId: smsCall.id,
-      status: CallEscalationStatus.SMS_SENT,
-      routingOutcome: CallRoutingOutcome.SMS_FALLBACK,
-      escalationReason: "Customer requested a text instead of waiting in queue.",
-      requestedBy: "AI_RECEPTION",
-      customerPhone: customers[3]!.phone,
-      smsRecipientPhone: customers[3]!.phone,
-      requestedAt: new Date(nowMs - 1000 * 60 * 60 * 12 + 70_000),
-      resolution: "SMS follow-up sent with a callback link."
-    }
-  });
-
-  await prisma.callEvent.createMany({
-    data: [
-      {
-        salonId: salon.id,
-        callSessionId: directInboundCall.id,
-        provider: ExternalProvider.AMAZON_CONNECT,
-        providerEventId: "demo-salon-ring-1-pre-call",
-        eventType: "pre-call",
-        statusAfter: CallSessionStatus.RINGING,
-        eventTimestamp: directInboundStartedAt,
-        payload: {
-          eventType: "pre-call",
-          trackingNumber: DEMO_TRACKING_PHONE,
-          originalPhoneNumber: DEMO_ORIGINAL_PHONE
-        },
-        payloadHash: "demo-salon-ring-1-pre-call"
-      },
-      {
-        salonId: salon.id,
-        callSessionId: directInboundCall.id,
-        provider: ExternalProvider.AMAZON_CONNECT,
-        providerEventId: "demo-salon-ring-1-post-call",
-        eventType: "post-call",
-        statusBefore: CallSessionStatus.IN_PROGRESS,
-        statusAfter: CallSessionStatus.COMPLETED,
-        eventTimestamp: directInboundEndedAt,
-        payload: {
-          eventType: "post-call",
-          trackingNumber: DEMO_TRACKING_PHONE,
-          originalPhoneNumber: DEMO_ORIGINAL_PHONE
-        },
-        payloadHash: "demo-salon-ring-1-post-call"
-      },
-      {
-        salonId: salon.id,
-        callSessionId: aiBookingCall.id,
-        provider: ExternalProvider.AMAZON_CONNECT,
-        providerEventId: "demo-forwarding-call-1-pre-call",
-        eventType: "pre-call",
-        statusAfter: CallSessionStatus.RINGING,
-        eventTimestamp: aiBookingStartedAt,
-        payload: {
-          eventType: "pre-call",
-          trackingNumber: DEMO_TRACKING_PHONE,
-          originalPhoneNumber: DEMO_ORIGINAL_PHONE
-        },
-        payloadHash: "demo-forwarding-call-1-pre-call"
-      },
-      {
-        salonId: salon.id,
-        callSessionId: aiBookingCall.id,
-        provider: ExternalProvider.AMAZON_CONNECT,
-        providerEventId: "demo-forwarding-call-1-post-call",
-        eventType: "post-call",
-        statusBefore: CallSessionStatus.IN_PROGRESS,
-        statusAfter: CallSessionStatus.COMPLETED,
-        eventTimestamp: aiBookingEndedAt,
-        payload: {
-          eventType: "post-call",
-          trackingNumber: DEMO_TRACKING_PHONE,
-          originalPhoneNumber: DEMO_ORIGINAL_PHONE
-        },
-        payloadHash: "demo-forwarding-call-1-post-call"
-      },
-      {
-        salonId: salon.id,
-        callSessionId: openEscalationCall.id,
-        provider: ExternalProvider.AMAZON_CONNECT,
-        providerEventId: "demo-escalation-open-1-post-call",
-        eventType: "post-call",
-        statusBefore: CallSessionStatus.IN_PROGRESS,
-        statusAfter: CallSessionStatus.COMPLETED,
-        eventTimestamp: openEscalationEndedAt,
-        payload: {
-          eventType: "post-call",
-          route: "QUEUED"
-        },
-        payloadHash: "demo-escalation-open-1-post-call"
-      },
-      {
-        salonId: salon.id,
-        callSessionId: resolvedEscalationCall.id,
-        provider: ExternalProvider.AMAZON_CONNECT,
-        providerEventId: "demo-escalation-closed-1-post-call",
-        eventType: "post-call",
-        statusBefore: CallSessionStatus.IN_PROGRESS,
-        statusAfter: CallSessionStatus.COMPLETED,
-        eventTimestamp: resolvedEscalationEndedAt,
-        payload: {
-          eventType: "post-call",
-          route: "CALL_CENTER_ESCALATION"
-        },
-        payloadHash: "demo-escalation-closed-1-post-call"
-      },
-      {
-        salonId: salon.id,
-        callSessionId: callbackCall.id,
-        provider: ExternalProvider.AMAZON_CONNECT,
-        providerEventId: "demo-callback-fallback-1-post-call",
-        eventType: "post-call",
-        statusBefore: CallSessionStatus.RINGING,
-        statusAfter: CallSessionStatus.MISSED,
-        eventTimestamp: callbackEndedAt,
-        payload: {
-          eventType: "post-call",
-          route: "CALLBACK_REQUEST"
-        },
-        payloadHash: "demo-callback-fallback-1-post-call"
-      },
-      {
-        salonId: salon.id,
-        callSessionId: voicemailCall.id,
-        provider: ExternalProvider.AMAZON_CONNECT,
-        providerEventId: "demo-voicemail-fallback-1-post-call",
-        eventType: "post-call",
-        statusBefore: CallSessionStatus.IN_PROGRESS,
-        statusAfter: CallSessionStatus.VOICEMAIL,
-        eventTimestamp: voicemailEndedAt,
-        payload: {
-          eventType: "post-call",
-          route: "VOICEMAIL"
-        },
-        payloadHash: "demo-voicemail-fallback-1-post-call"
-      },
-      {
-        salonId: salon.id,
-        callSessionId: smsCall.id,
-        provider: ExternalProvider.AMAZON_CONNECT,
-        providerEventId: "demo-sms-fallback-1-post-call",
-        eventType: "post-call",
-        statusBefore: CallSessionStatus.RINGING,
-        statusAfter: CallSessionStatus.FAILED,
-        eventTimestamp: smsEndedAt,
-        payload: {
-          eventType: "post-call",
-          route: "SMS_FALLBACK"
-        },
-        payloadHash: "demo-sms-fallback-1-post-call"
-      }
-    ]
-  });
-
-  await prisma.alert.createMany({
-    data: [
-      {
-        salonId: salon.id,
-        alertType: "CALL_ESCALATION_CREATED",
-        title: "Escalation waiting for operator",
-        message: `VIP reschedule from ${customers[7]!.firstName} ${customers[7]!.lastName} is waiting in the operator queue.`,
-        priority: "URGENT",
-        metadata: {
-          escalationId: openEscalation.id,
-          callSessionId: openEscalationCall.id
-        }
-      },
-      {
-        salonId: salon.id,
-        alertType: "CALLBACK_REQUEST",
-        title: "Callback requested",
-        message: `${customers[5]!.firstName} ${customers[5]!.lastName} asked for a manual callback about dip powder availability.`,
-        priority: "HIGH",
-        metadata: {
-          callSessionId: callbackCall.id
-        }
-      },
-      {
-        salonId: salon.id,
-        alertType: "SMS_FALLBACK",
-        title: "SMS fallback sent",
-        message: `A text follow-up was sent to ${customers[3]!.firstName} ${customers[3]!.lastName}.`,
-        priority: "NORMAL",
-        metadata: {
-          callSessionId: smsCall.id
-        }
-      }
-    ]
-  });
+  const activeStaffCount = 1;
 
   const freeStaffLimit = Number(process.env.FREE_STAFF_LIMIT ?? 5);
   const extraStaffPrice = Number(process.env.EXTRA_STAFF_PRICE ?? 0);
-  const activeStaffCount = staffMembers.filter((staff) => staff.status === StaffStatus.ACTIVE).length;
   const includedStaffCount = Math.min(activeStaffCount, freeStaffLimit);
   const billableExtraStaffCount = Math.max(activeStaffCount - freeStaffLimit, 0);
   const extraStaffUnitPriceCents = Math.round(extraStaffPrice * 100);

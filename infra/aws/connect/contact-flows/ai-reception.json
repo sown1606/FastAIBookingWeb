@@ -214,7 +214,7 @@
     {
       "Parameters": {
         "SkipWhenDTMFBufferEnabled": "false",
-        "Text": "Thank you for calling FastAIBooking. Goodbye."
+        "Text": "Thank you for calling Kiet Nails & Beauty. Goodbye."
       },
       "Identifier": "67ada978-600a-4d39-9965-6230c52810a9",
       "Type": "MessageParticipant",
@@ -251,7 +251,6 @@
         },
         "LexSessionAttributes": {
           "provider": "AMAZON_CONNECT",
-          "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147",
           "callerPhone": "$.CustomerEndpoint.Address",
           "CustomerEndpointAddress": "$.CustomerEndpoint.Address",
           "CallerId": "$.CustomerEndpoint.Address",
@@ -263,7 +262,7 @@
           "AmazonConnectContactId": "$.ContactId",
           "InitialContactId": "$.InitialContactId"
         },
-        "Text": "How can I help with your appointment today?"
+        "Text": "What appointment can I help with?"
       },
       "Identifier": "3b2877ca-bc16-4019-a8e6-04200c0ded06",
       "Type": "ConnectParticipantWithLexBot",
@@ -324,7 +323,7 @@
       "Type": "MessageParticipant",
       "Parameters": {
         "SkipWhenDTMFBufferEnabled": "false",
-        "Text": "Sorry, I did not catch that. Please tell me the appointment you want to book, cancel, or reschedule. You can also say operator."
+        "Text": "Sorry, please say the appointment you want, or say operator."
       },
       "Transitions": {
         "NextAction": "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d",
@@ -345,7 +344,6 @@
         },
         "LexSessionAttributes": {
           "provider": "AMAZON_CONNECT",
-          "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147",
           "callerPhone": "$.CustomerEndpoint.Address",
           "CustomerEndpointAddress": "$.CustomerEndpoint.Address",
           "CallerId": "$.CustomerEndpoint.Address",
@@ -357,7 +355,7 @@
           "AmazonConnectContactId": "$.ContactId",
           "InitialContactId": "$.InitialContactId"
         },
-        "Text": "Please tell me the appointment you want, or say operator."
+        "Text": "Say the appointment you want, or operator."
       },
       "Transitions": {
         "NextAction": "05553b55-f227-4c66-b391-a3e068b01966",
@@ -433,7 +431,7 @@
       "Type": "MessageParticipant",
       "Parameters": {
         "SkipWhenDTMFBufferEnabled": "false",
-        "Text": "I am sorry, we cannot connect you to an operator right now. Please call back later. Goodbye."
+        "Text": "No agents available."
       },
       "Transitions": {
         "NextAction": "ef8d8054-77ea-40c7-aa4e-800ed784c49c",
@@ -451,7 +449,6 @@
       "Parameters": {
         "Attributes": {
           "provider": "AMAZON_CONNECT",
-          "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147",
           "callerPhone": "$.CustomerEndpoint.Address",
           "calledNumber": "$.SystemEndpoint.Address",
           "contactId": "$.ContactId",
@@ -474,7 +471,7 @@
       "Type": "MessageParticipant",
       "Parameters": {
         "SkipWhenDTMFBufferEnabled": "false",
-        "Text": "Hi, you have reached FastAIBooking AI reception. I can help with booking, canceling, or rescheduling an appointment."
+        "Text": "Thank you for calling Kiet Nails & Beauty. How can I help you today?"
       },
       "Transitions": {
         "NextAction": "3b2877ca-bc16-4019-a8e6-04200c0ded06",

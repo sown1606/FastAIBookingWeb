@@ -16,6 +16,28 @@ const slot = (value) => ({
   }
 });
 
+const usEasternDate = (daysToAdd = 0) => {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(
+    parts
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value])
+  );
+  const date = new Date(
+    Date.UTC(Number(values.year), Number(values.month) - 1, Number(values.day) + daysToAdd)
+  );
+  return [
+    String(date.getUTCFullYear()).padStart(4, "0"),
+    String(date.getUTCMonth() + 1).padStart(2, "0"),
+    String(date.getUTCDate()).padStart(2, "0")
+  ].join("-");
+};
+
 const baseEvent = (overrides = {}) => ({
   invocationSource: "FulfillmentCodeHook",
   inputTranscript: "I want to book a pedicure tomorrow at five PM.",
@@ -38,7 +60,7 @@ const baseEvent = (overrides = {}) => ({
         serviceName: slot("Pedicure"),
         requestedDate: slot("tomorrow"),
         requestedTime: slot("five PM"),
-        staffPreference: slot("Mia Carter")
+        staffPreference: slot("Trang")
       }
     }
   },
@@ -60,11 +82,7 @@ const successfulBackendPayload = (overrides = {}) => ({
     fulfillmentState: "Fulfilled",
     message: "Booked.",
     messageContentType: "PlainText",
-    sessionAttributes: {
-      transferToQueue: "true",
-      fallbackMode: "operator_queue",
-      queueId: "queue-from-backend"
-    }
+    sessionAttributes: {}
   },
   ...overrides
 });
@@ -128,9 +146,9 @@ test("BookAppointmentIntent with complete slots posts the backend contract and m
   assert.equal(fetchCalls[0].body.customerName, "Kiet Nguyen");
   assert.equal(fetchCalls[0].body.customerPhone, "7325956266");
   assert.equal(fetchCalls[0].body.serviceName, "Pedicure");
-  assert.equal(fetchCalls[0].body.requestedDate, "tomorrow");
-  assert.equal(fetchCalls[0].body.requestedTime, "five PM");
-  assert.equal(fetchCalls[0].body.staffPreference, "Mia Carter");
+  assert.equal(fetchCalls[0].body.requestedDate, usEasternDate(1));
+  assert.equal(fetchCalls[0].body.requestedTime, "5 PM");
+  assert.equal(fetchCalls[0].body.staffPreference, "Trang");
   assert.equal(fetchCalls[0].body.calledNumber, "+18483487681");
   assert.equal(fetchCalls[0].body.amazonConnectPhoneNumber, "+18483487681");
   assert.equal(fetchCalls[0].body.amazonConnectContactId, "connect-contact-1");
@@ -159,9 +177,9 @@ test("BookAppointmentIntent with complete slots posts the backend contract and m
       bookingAttemptId: "attempt-1",
       callSessionId: "call-session-1",
       escalationId: "escalation-1",
-      transferToQueue: "true",
-      fallbackMode: "operator_queue",
-      queueId: "queue-from-backend"
+      transferToQueue: undefined,
+      fallbackMode: undefined,
+      queueId: undefined
     }
   );
 });
@@ -176,6 +194,119 @@ test("DialogCodeHook delegates when the utterance is not an escalation", async (
 
   assert.equal(response.sessionState.dialogAction.type, "Delegate");
   assert.equal(response.sessionState.intent.slots.customerName.value.interpretedValue, "Kiet Nguyen");
+});
+
+test("DialogCodeHook recovers pedicure aliases and bare PM time from transcript", async () => {
+  const handler = await loadHandler();
+  globalThis.fetch = async () => {
+    throw new Error("fetch should not be called for DialogCodeHook recovery");
+  };
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript:
+        "I need a better cure tomorrow at five. My name is Kiet Nguyen. My phone number is 7325956266.",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: "connect-contact-1"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          slots: {}
+        }
+      }
+    })
+  );
+
+  assert.equal(response.sessionState.dialogAction.type, "Delegate");
+  assert.equal(response.sessionState.intent.slots.customerName.value.interpretedValue, "Kiet Nguyen");
+  assert.equal(response.sessionState.intent.slots.customerPhone.value.interpretedValue, "7325956266");
+  assert.equal(response.sessionState.intent.slots.serviceName.value.interpretedValue, "Pedicure");
+  assert.equal(response.sessionState.intent.slots.requestedDate.value.interpretedValue, usEasternDate(1));
+  assert.equal(response.sessionState.intent.slots.requestedTime.value.interpretedValue, "5 PM");
+});
+
+test("DialogCodeHook transcript relative date overrides incorrect Lex date slot", async () => {
+  const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
+  globalThis.fetch = async () => {
+    throw new Error("fetch should not be called for DialogCodeHook recovery");
+  };
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "Tomorrow at 3pm.",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: "connect-contact-1",
+          initialBookingUtterance: "I want to book a pedicure."
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          slots: {
+            customerName: slot("Kiet Nguyen"),
+            customerPhone: slot("7325956266"),
+            serviceName: slot("Pedicure"),
+            requestedDate: slot(usEasternDate(0)),
+            requestedTime: slot("3 PM")
+          }
+        }
+      }
+    })
+  );
+
+  assert.equal(response.sessionState.dialogAction.type, "Delegate");
+  assert.equal(response.sessionState.intent.slots.requestedDate.value.interpretedValue, usEasternDate(1));
+  assert.equal(response.sessionState.intent.slots.requestedTime.value.interpretedValue, "3 PM");
+});
+
+test("unknown booking service elicits service before backend escalation", async () => {
+  const handler = await loadHandler();
+  globalThis.fetch = async () => {
+    throw new Error("fetch should not be called before service clarification");
+  };
+
+  const response = await handler(
+    baseEvent({
+      inputTranscript: "I want to book a readykid tomorrow at three PM.",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: "connect-contact-1"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          slots: {
+            customerName: slot("Kiet Nguyen"),
+            customerPhone: slot("7325956266"),
+            serviceName: slot("readykid"),
+            requestedDate: slot(usEasternDate(1)),
+            requestedTime: slot("3 PM")
+          }
+        }
+      }
+    })
+  );
+
+  assert.equal(response.sessionState.intent.name, "BookAppointmentIntent");
+  assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName");
+  assert.equal(response.sessionState.intent.slots.serviceName, null);
+  assert.equal(response.sessionState.sessionAttributes.serviceFallbackOffered, "true");
+  assert.equal(response.sessionState.sessionAttributes.transferToQueue, undefined);
+  assert.match(response.messages[0].content, /service|Manicure|Pedicure/i);
 });
 
 test("HumanEscalationIntent returns the exact handoff message", async () => {
@@ -218,23 +349,40 @@ test("HumanEscalationIntent returns the exact handoff message", async () => {
   assert.equal(response.sessionState.sessionAttributes.transferToQueue, "true");
 });
 
-test("human escalation utterance overrides a different Lex intent", async () => {
+test("HumanEscalationIntent returns no-agent message when availability is blocked", async () => {
+  const handler = await loadHandler();
+  globalThis.fetch = async () => {
+    throw new Error("fetch should not be called when no agents are available");
+  };
+
+  const response = await handler(
+    baseEvent({
+      inputTranscript: "I want to speak to a real person.",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          ...baseEvent().sessionState.sessionAttributes,
+          AgentsAvailable: "0"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          name: "HumanEscalationIntent"
+        }
+      }
+    })
+  );
+
+  assert.equal(response.messages[0].content, "No agents available.");
+  assert.equal(response.messages[0].contentType, "PlainText");
+  assert.equal(response.sessionState.sessionAttributes.transferToQueue, "false");
+  assert.equal(response.sessionState.sessionAttributes.noAgentsAvailable, "true");
+});
+
+test("human escalation utterance does not override a different Lex intent", async () => {
   const handler = await loadHandler();
   const fetchCalls = installFetchMock(() =>
     jsonResponse(
-      successfulBackendPayload({
-        outcome: "HUMAN_ESCALATION",
-        appointment: null,
-        lexResponse: {
-          fulfillmentState: "Fulfilled",
-          message: "Please wait while I connect you.",
-          messageContentType: "PlainText",
-          sessionAttributes: {
-            forceHumanEscalation: "true",
-            transferToQueue: "true"
-          }
-        }
-      })
+      successfulBackendPayload()
     )
   );
 
@@ -251,7 +399,38 @@ test("human escalation utterance overrides a different Lex intent", async () => 
     })
   );
 
-  assert.equal(fetchCalls[0].body.intentName, "HumanEscalationIntent");
+  assert.equal(fetchCalls[0].body.intentName, "BookAppointmentIntent");
+});
+
+test("BookAppointmentIntent backend human escalation response is blocked", async () => {
+  const handler = await loadHandler();
+  installFetchMock(() =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "HUMAN_ESCALATION",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "Fulfilled",
+          message: "Please wait while I connect you.",
+          messageContentType: "PlainText",
+          sessionAttributes: {
+            forceHumanEscalation: "true",
+            transferToQueue: "true",
+            queueId: "queue-from-backend"
+          }
+        }
+      })
+    )
+  );
+
+  const response = await handler(baseEvent());
+
+  assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName");
+  assert.equal(response.sessionState.sessionAttributes.forceHumanEscalation, "false");
+  assert.equal(response.sessionState.sessionAttributes.transferToQueue, "false");
+  assert.equal(response.sessionState.sessionAttributes.queueId, undefined);
+  assert.equal(response.sessionState.sessionAttributes.blockedEscalationOutcome, "HUMAN_ESCALATION");
 });
 
 test("cancel and reschedule intents hand off to backend-driven human flow", async () => {
@@ -298,7 +477,7 @@ test("cancel and reschedule intents hand off to backend-driven human flow", asyn
   }
 });
 
-test("backend non-OK response returns caller-safe escalation without exposing debug text", async () => {
+test("BookAppointmentIntent backend non-OK response elicits a slot without escalation", async () => {
   const handler = await loadHandler();
   installFetchMock(() => ({
     ok: false,
@@ -308,15 +487,15 @@ test("backend non-OK response returns caller-safe escalation without exposing de
 
   const response = await handler(baseEvent());
 
-  assert.equal(response.sessionState.intent.state, "Failed");
-  assert.equal(response.sessionState.sessionAttributes.forceHumanEscalation, "true");
-  assert.equal(response.sessionState.sessionAttributes.transferToQueue, "true");
-  assert.equal(response.sessionState.sessionAttributes.escalationReason, "backend_error");
-  assert.equal(response.sessionState.sessionAttributes.queueId, "queue-default");
+  assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName");
+  assert.equal(response.sessionState.sessionAttributes.forceHumanEscalation, "false");
+  assert.equal(response.sessionState.sessionAttributes.transferToQueue, "false");
+  assert.equal(response.sessionState.sessionAttributes.backendFailureReason, "backend_error");
   assert.doesNotMatch(response.messages[0].content, /database|stack|secret|debug/i);
 });
 
-test("backend thrown error returns caller-safe human escalation", async () => {
+test("BookAppointmentIntent backend thrown error elicits a slot without escalation", async () => {
   const handler = await loadHandler();
   installFetchMock(() => {
     throw new Error("connection refused with internal host details");
@@ -324,9 +503,10 @@ test("backend thrown error returns caller-safe human escalation", async () => {
 
   const response = await handler(baseEvent());
 
-  assert.equal(response.sessionState.intent.state, "Failed");
-  assert.equal(response.sessionState.sessionAttributes.forceHumanEscalation, "true");
-  assert.equal(response.sessionState.sessionAttributes.transferToQueue, "true");
-  assert.equal(response.sessionState.sessionAttributes.escalationReason, "backend_error");
+  assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName");
+  assert.equal(response.sessionState.sessionAttributes.forceHumanEscalation, "false");
+  assert.equal(response.sessionState.sessionAttributes.transferToQueue, "false");
+  assert.equal(response.sessionState.sessionAttributes.backendFailureReason, "backend_error");
   assert.doesNotMatch(response.messages[0].content, /internal host|connection refused/i);
 });

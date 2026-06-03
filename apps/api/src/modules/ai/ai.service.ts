@@ -2718,20 +2718,10 @@ const buildServiceClarificationMessage = (input: {
   availableServiceNames: string[];
   attempts: number;
 }): string => {
-  if (input.attempts >= 2) {
-    return speak(
-      `I'm having trouble matching that service. <break time="300ms"/> Please hold while I connect you with our team.`
-    );
-  }
-  if (input.suggestedServiceName) {
-    return speak(
-      `I heard ${escapeSsml(input.heardServiceName)}. <break time="300ms"/> Did you mean ${escapeSsml(input.suggestedServiceName)}?`
-    );
-  }
   const options = formatNameList(getServicePromptNames(input.availableServiceNames));
   return options
     ? speak(
-        `I could not clearly match the service. <break time="300ms"/> We have ${escapeSsml(options)}. Which one would you like?`
+        `We have ${escapeSsml(options)}. Which one would you like?`
       )
     : speak(
         `I heard ${escapeSsml(input.heardServiceName)}. <break time="300ms"/> Which service would you like?`
@@ -3472,79 +3462,6 @@ export const createAmazonConnectAIAppointment = async (
         timezone: salon.timezone
       }
     });
-    if (attempts >= 2) {
-      const reason = "Service confirmation failed after repeated attempts.";
-      const escalation = callSession
-        ? await createOrUpdateCallEscalation({
-            salonId: salon.id,
-            callSessionId: callSession.id,
-            requestedBy: "AMAZON_CONNECT_LEX",
-            escalationReason: reason,
-            customerPhone: normalized.customerPhone ?? null,
-            messageToCaller: "Please hold while I connect you with our team.",
-            metadata: {
-              bookingAttemptId: bookingAttempt.id,
-              transcriptId: transcript?.id,
-              intentName: normalized.intentName,
-              contactId: normalized.contactId,
-              heardServiceName: normalized.serviceName,
-              suggestedServiceName: serviceMatch.service.name
-            }
-          })
-        : null;
-      const aiInteraction = await createInteraction({
-        outcome: "HUMAN_ESCALATION",
-        message,
-        parsed,
-        bookingAttemptId: bookingAttempt.id,
-        responsePayload: {
-          escalationId: escalation?.id ?? null,
-          reason,
-          suggestedServiceName: serviceMatch.service.name,
-          serviceMatchConfidence: serviceMatch.confidence
-        },
-        isValid: true
-      });
-      await finalizeCall({
-        outcome: "HUMAN_ESCALATION",
-        bookingAttemptId: bookingAttempt.id,
-        bookingStatus: bookingAttempt.status,
-        parsed,
-        message,
-        escalation,
-        routingOutcome:
-          escalation?.routingOutcome === "QUEUED"
-            ? CallRoutingOutcome.QUEUED
-            : CallRoutingOutcome.CALL_CENTER_ESCALATION,
-        failureReason: bookingAttempt.failureReason ?? undefined
-      });
-
-      return {
-        outcome: "HUMAN_ESCALATION" as const,
-        message,
-        lexResponse: {
-          fulfillmentState: "Fulfilled",
-          message,
-          messageContentType: "SSML",
-          sessionAttributes: buildHumanEscalationSessionAttributes(reason, escalation, {
-            serviceClarificationAttempts: String(attempts + 1),
-            lastAskedSlot: "serviceName",
-            askedSlotsCount: String(attempts + 1),
-            fallbackCount: String(attempts + 1),
-            errorCount: String(attempts + 1)
-          })
-        },
-        appointment: null,
-        bookingAttempt,
-        callSession,
-        transcript,
-        aiInteraction,
-        escalation,
-        alternatives: [],
-        missingFields: [],
-        salonResolutionSource: resolutionSource
-      };
-    }
     const aiInteraction = null;
 
     return {
@@ -3607,10 +3524,9 @@ export const createAmazonConnectAIAppointment = async (
       isReadyToBook: false
     });
     const bookingAttempt = await createAttempt({
-      status: attempts >= 2 ? BookingAttemptStatus.FAILED : BookingAttemptStatus.NEEDS_INPUT,
+      status: BookingAttemptStatus.NEEDS_INPUT,
       requestedStartTime,
-      failureReason:
-        attempts >= 2 ? "Service not found after repeated attempts." : "Service not found or inactive.",
+      failureReason: "Service not found or inactive.",
       normalizedRequest: {
         serviceName: normalized.serviceName,
         availableServiceNames: services.map((service) => service.name),
@@ -3618,78 +3534,6 @@ export const createAmazonConnectAIAppointment = async (
         timezone: salon.timezone
       }
     });
-    if (attempts >= 2) {
-      const reason = "Service not found after repeated attempts.";
-      const escalation = callSession
-        ? await createOrUpdateCallEscalation({
-            salonId: salon.id,
-            callSessionId: callSession.id,
-            requestedBy: "AMAZON_CONNECT_LEX",
-            escalationReason: reason,
-            customerPhone: normalized.customerPhone ?? null,
-            messageToCaller: "Please hold while I connect you with our team.",
-            metadata: {
-              bookingAttemptId: bookingAttempt.id,
-              transcriptId: transcript?.id,
-              intentName: normalized.intentName,
-              contactId: normalized.contactId,
-              heardServiceName: normalized.serviceName,
-              availableServiceNames: services.map((service) => service.name)
-            }
-          })
-        : null;
-      const aiInteraction = await createInteraction({
-        outcome: "HUMAN_ESCALATION",
-        message,
-        parsed,
-        bookingAttemptId: bookingAttempt.id,
-        responsePayload: {
-          escalationId: escalation?.id ?? null,
-          reason,
-          availableServiceNames: services.map((service) => service.name)
-        },
-        isValid: true
-      });
-      await finalizeCall({
-        outcome: "HUMAN_ESCALATION",
-        bookingAttemptId: bookingAttempt.id,
-        bookingStatus: bookingAttempt.status,
-        parsed,
-        message,
-        escalation,
-        routingOutcome:
-          escalation?.routingOutcome === "QUEUED"
-            ? CallRoutingOutcome.QUEUED
-            : CallRoutingOutcome.CALL_CENTER_ESCALATION,
-        failureReason: bookingAttempt.failureReason ?? undefined
-      });
-
-      return {
-        outcome: "HUMAN_ESCALATION" as const,
-        message,
-        lexResponse: {
-          fulfillmentState: "Fulfilled",
-          message,
-          messageContentType: "SSML",
-          sessionAttributes: buildHumanEscalationSessionAttributes(reason, escalation, {
-            serviceClarificationAttempts: String(attempts + 1),
-            lastAskedSlot: "serviceName",
-            askedSlotsCount: String(attempts + 1),
-            fallbackCount: String(attempts + 1),
-            errorCount: String(attempts + 1)
-          })
-        },
-        appointment: null,
-        bookingAttempt,
-        callSession,
-        transcript,
-        aiInteraction,
-        escalation,
-        alternatives: [],
-        missingFields: [],
-        salonResolutionSource: resolutionSource
-      };
-    }
     const aiInteraction = null;
 
     return {

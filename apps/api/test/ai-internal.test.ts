@@ -11,6 +11,7 @@ import {
   ExternalProvider,
   StaffStatus
 } from "@prisma/client";
+import { DateTime } from "luxon";
 import { app } from "../src/app";
 import { env } from "../src/config/env";
 import { prisma } from "../src/db/prisma";
@@ -91,13 +92,49 @@ const createInitialState = () => {
     salons,
     services: [
       {
+        id: "20000000-0000-4000-8000-000000000000",
+        salonId: ids.salonA,
+        name: "Manicure",
+        durationMinutes: 40,
+        priceCents: 3500,
+        isActive: true,
+        createdAt: new Date("2026-01-01T00:00:00.000Z")
+      },
+      {
         id: ids.pedicure,
         salonId: ids.salonA,
         name: "Pedicure",
         durationMinutes: 45,
         priceCents: 4500,
         isActive: true,
-        createdAt: new Date("2026-01-01T00:00:00.000Z")
+        createdAt: new Date("2026-01-02T00:00:00.000Z")
+      },
+      {
+        id: "20000000-0000-4000-8000-000000000003",
+        salonId: ids.salonA,
+        name: "Gel Manicure",
+        durationMinutes: 60,
+        priceCents: 5000,
+        isActive: true,
+        createdAt: new Date("2026-01-03T00:00:00.000Z")
+      },
+      {
+        id: "20000000-0000-4000-8000-000000000004",
+        salonId: ids.salonA,
+        name: "Acrylic Full Set",
+        durationMinutes: 100,
+        priceCents: 8500,
+        isActive: true,
+        createdAt: new Date("2026-01-04T00:00:00.000Z")
+      },
+      {
+        id: "20000000-0000-4000-8000-000000000005",
+        salonId: ids.salonA,
+        name: "Dip Powder",
+        durationMinutes: 70,
+        priceCents: 5800,
+        isActive: true,
+        createdAt: new Date("2026-01-05T00:00:00.000Z")
       },
       {
         id: "20000000-0000-4000-8000-000000000002",
@@ -111,36 +148,12 @@ const createInitialState = () => {
     ],
     staff: [
       {
-        id: ids.mia,
-        salonId: ids.salonA,
-        fullName: "Mia Carter",
-        status: StaffStatus.ACTIVE,
-        isBookable: true,
-        createdAt: new Date("2026-01-01T00:00:00.000Z")
-      },
-      {
-        id: ids.olivia,
-        salonId: ids.salonA,
-        fullName: "Olivia Brooks",
-        status: StaffStatus.ACTIVE,
-        isBookable: true,
-        createdAt: new Date("2026-01-02T00:00:00.000Z")
-      },
-      {
-        id: ids.nora,
-        salonId: ids.salonA,
-        fullName: "Nora Evans",
-        status: StaffStatus.ACTIVE,
-        isBookable: true,
-        createdAt: new Date("2026-01-03T00:00:00.000Z")
-      },
-      {
         id: ids.trang,
         salonId: ids.salonA,
         fullName: "Trang",
-        status: StaffStatus.INACTIVE,
-        isBookable: false,
-        createdAt: new Date("2026-01-04T00:00:00.000Z")
+        status: StaffStatus.ACTIVE,
+        isBookable: true,
+        createdAt: new Date("2026-01-01T00:00:00.000Z")
       },
       {
         id: "10000000-0000-4000-8000-000000000005",
@@ -632,8 +645,114 @@ test("any-staff phrases search all active bookable staff", async () => {
     assert.equal(result.body.data.outcome, "BOOKED");
     assert.equal(state.staffFindManyCalls[0].where.status, StaffStatus.ACTIVE);
     assert.equal(state.staffFindManyCalls[0].where.isBookable, true);
-    assert.equal(state.appointments[0].staffId, ids.mia);
+    assert.equal(state.appointments[0].staffId, ids.trang);
   }
+});
+
+test("transcript recovery normalizes pedicure aliases and confirms without re-asking date or time", async () => {
+  for (const transcript of [
+    "I want to book a pedicure tomorrow at five PM. My name is Kiet Nguyen. My phone number is 7325956266.",
+    "I need a pedi cure tomorrow at five. My name is Kiet Nguyen. My phone number is 7325956266.",
+    "I need a better cure tomorrow at five. My name is Kiet Nguyen. My phone number is 7325956266."
+  ]) {
+    resetMockState();
+    const result = await postInternalAppointment(
+      bookingPayload({
+        customerName: undefined,
+        customerPhone: undefined,
+        serviceName: undefined,
+        requestedDate: undefined,
+        requestedTime: undefined,
+        confirmationState: undefined,
+        transcript
+      })
+    );
+
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.data.outcome, "MISSING_INFO");
+    assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+    assert.equal(result.body.data.lexResponse.sessionAttributes.customerName, "Kiet Nguyen");
+    assert.equal(result.body.data.lexResponse.sessionAttributes.customerPhone, "7325956266");
+    assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Pedicure");
+    assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "17:00");
+    assert.match(result.body.data.lexResponse.message, /pedicure tomorrow at 5 PM/i);
+    assert.equal(state.appointments.length, 0);
+  }
+});
+
+test("Kiet demo phrase confirms Pedicure with Trang tomorrow at 3 PM", async () => {
+  const result = await postInternalAppointment(
+    bookingPayload({
+      customerName: undefined,
+      customerPhone: undefined,
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      transcript:
+        "I want to book a pedicure tomorrow at three PM with Trang. My name is Kiet Nguyen. My phone number is 7325956266."
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Pedicure");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "15:00");
+  assert.match(result.body.data.lexResponse.message, /pedicure tomorrow at 3 PM with Trang/i);
+  assert.equal(state.appointments.length, 0);
+});
+
+test("confirmed transcript booking uses salon-timezone tomorrow and bare 1-7 hours as PM", async () => {
+  const result = await postInternalAppointment(
+    bookingPayload({
+      customerName: undefined,
+      customerPhone: undefined,
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      transcript:
+        "I need a better cure tomorrow at five. My name is Kiet Nguyen. My phone number is 7325956266."
+    })
+  );
+
+  assert.equal(result.response.status, 201);
+  assert.equal(result.body.data.outcome, "BOOKED");
+  assert.equal(state.appointments.length, 1);
+  const localStart = DateTime.fromJSDate(state.appointments[0].startTime, {
+    zone: "utc"
+  }).setZone("America/New_York");
+  const expectedTomorrow = DateTime.now().setZone("America/New_York").plus({ days: 1 });
+  assert.equal(localStart.toFormat("yyyy-MM-dd"), expectedTomorrow.toFormat("yyyy-MM-dd"));
+  assert.equal(localStart.hour, 17);
+  assert.equal(state.bookingAttempts.at(-1).requestedService, "Pedicure");
+});
+
+test("unclear service asks the canonical service list without escalation", async () => {
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "pretty soon",
+      staffPreference: "Trang",
+      attributes: {
+        serviceClarificationAttempts: "2"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitSlot");
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.transferToQueue, undefined);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.forceHumanEscalation, undefined);
+  assert.match(
+    result.body.data.lexResponse.message,
+    /We have Manicure, Pedicure, Gel Manicure, Acrylic Full Set, and Dip Powder\. Which one would you like\?/i
+  );
+  assert.equal(state.escalations.length, 0);
+  assert.equal(state.appointments.length, 0);
 });
 
 test("numeric and unmatched staff preferences are ignored and do not leak into normalized booking request", async () => {
@@ -646,42 +765,43 @@ test("numeric and unmatched staff preferences are ignored and do not leak into n
     const attempt = state.bookingAttempts.at(-1);
     assert.equal(attempt.requestedStaff, undefined);
     assert.equal(attempt.normalizedRequest.staffPreference, undefined);
-    assert.notEqual(state.appointments[0].staffId, ids.trang);
+    assert.equal(state.appointments[0].staffId, ids.trang);
   }
 });
 
 test("valid staff preference books only that active bookable staff member", async () => {
-  const result = await postInternalAppointment(bookingPayload({ staffPreference: "Olivia Brooks" }));
+  const result = await postInternalAppointment(bookingPayload({ staffPreference: "Trang" }));
 
   assert.equal(result.response.status, 201);
   assert.equal(result.body.data.outcome, "BOOKED");
-  assert.equal(state.appointments[0].staffId, ids.olivia);
+  assert.equal(state.appointments[0].staffId, ids.trang);
   assert.ok(state.validationStaffIds.length >= 2);
-  assert.deepEqual(new Set(state.validationStaffIds), new Set([ids.olivia]));
+  assert.deepEqual(new Set(state.validationStaffIds), new Set([ids.trang]));
 });
 
 test("busy requested staff returns deduped alternatives", async () => {
-  state.busyStaffIds.add(ids.mia);
-  const result = await postInternalAppointment(bookingPayload({ staffPreference: "Mia Carter" }));
+  state.busyStaffIds.add(ids.trang);
+  const result = await postInternalAppointment(bookingPayload({ staffPreference: "Trang" }));
 
   assert.equal(result.response.status, 200);
   assert.equal(result.body.data.outcome, "NO_AVAILABILITY");
-  assert.equal(result.body.data.alternatives.length, 2);
+  assert.equal(result.body.data.alternatives.length, 1);
   assert.deepEqual(
     new Set(result.body.data.alternatives.map((slot: { staffName: string }) => slot.staffName)).size,
     result.body.data.alternatives.length
   );
+  assert.equal(result.body.data.alternatives[0].staffName, "Trang");
   assert.equal(state.appointments.length, 0);
 });
 
 test("successful booking creates appointment, booking attempt, call session, transcript, and AI log", async () => {
   const result = await postInternalAppointment(
     bookingPayload({
-      staffPreference: "Mia Carter",
+      staffPreference: "Trang",
       amazonConnectContactId: "connect-contact-success",
       amazonConnectPhoneNumber: "+18483487681",
       calledNumber: "+18483487681",
-      transcript: "Kiet Nguyen wants a pedicure with Mia Carter tomorrow at five PM."
+      transcript: "Kiet Nguyen wants a pedicure with Trang tomorrow at five PM."
     })
   );
 
@@ -726,6 +846,28 @@ test("explicit human, cancel, and reschedule intents create queued escalations w
     assert.equal(state.escalations[0].routingOutcome, CallRoutingOutcome.QUEUED);
     assert.equal(state.escalations[0].queueId, "queue-default");
   }
+});
+
+test("explicit human intent does not transfer when no agents are assigned", async () => {
+  state.salons[0].callCenterAssignments = [];
+
+  const result = await postInternalAppointment(
+    bookingPayload({
+      intentName: "HumanEscalationIntent",
+      amazonConnectContactId: "connect-human-no-agents",
+      transcript: "I want to speak to a real person."
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "HUMAN_ESCALATION");
+  assert.equal(result.body.data.lexResponse.message, "No agents available.");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.transferToQueue, "false");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.forceHumanEscalation, "false");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.queueId, undefined);
+  assert.equal(state.escalations[0].status, CallEscalationStatus.CALLBACK_REQUESTED);
+  assert.equal(state.escalations[0].routingOutcome, CallRoutingOutcome.CALLBACK_REQUEST);
+  assert.equal(state.escalations[0].messageToCaller, "No agents available.");
 });
 
 test("backend errors and timeouts return safe Lex human escalation payloads", async () => {
