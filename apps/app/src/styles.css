@@ -550,6 +550,57 @@ tbody tr:last-child td {
   border-bottom: none;
 }
 
+.ai-log-row {
+  cursor: pointer;
+}
+
+.ai-log-row-selected td {
+  background: rgba(11, 111, 95, 0.08);
+}
+
+.ai-log-detail-row td {
+  background: #f7fbf9;
+  border-bottom: 1px solid var(--border);
+  padding: 16px;
+}
+
+.ai-log-detail {
+  display: grid;
+  gap: 14px;
+}
+
+.ai-log-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ai-log-detail-meta span {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.82rem;
+  padding: 5px 9px;
+}
+
+.ai-log-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.ai-log-detail-section {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ai-log-detail-section pre {
+  max-height: 360px;
+  overflow: auto;
+}
+
 .metrics-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));

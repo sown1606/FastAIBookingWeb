@@ -19,6 +19,7 @@ import {
   bookingFromText,
   bookingFromTranscript,
   createAmazonConnectAIAppointment,
+  exportAIInteractions,
   getAIInteractionById,
   listAIInteractions,
   parseBookingText,
@@ -186,7 +187,7 @@ aiInternalRouter.post(
         bookingAttemptId: result.bookingAttempt.id,
         callSessionId: result.callSession?.id ?? null,
         transcriptId: result.transcript?.id ?? null,
-        aiInteractionId: result.aiInteraction.id,
+        aiInteractionId: result.aiInteraction?.id ?? null,
         escalationId: result.escalation?.id ?? null,
         missingFields: result.missingFields,
         alternatives: result.alternatives,
@@ -204,6 +205,21 @@ aiRouter.get(
   asyncHandler(async (req, res) => {
     const query = req.query as unknown as z.infer<typeof interactionsQuerySchema>;
     const result = await listAIInteractions(req.auth!.salonId!, query);
+    return sendSuccess(res, {
+      data: result
+    });
+  })
+);
+
+aiRouter.get(
+  "/interactions/export",
+  validate(interactionsQuerySchema.pick({ taskType: true, callSessionId: true }), "query"),
+  asyncHandler(async (req, res) => {
+    const query = req.query as unknown as Pick<
+      z.infer<typeof interactionsQuerySchema>,
+      "taskType" | "callSessionId"
+    >;
+    const result = await exportAIInteractions(req.auth!.salonId!, query);
     return sendSuccess(res, {
       data: result
     });

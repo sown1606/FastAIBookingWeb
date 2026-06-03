@@ -145,8 +145,11 @@ const NUMBER_WORDS: Record<string, number> = {
   one: 1,
   two: 2,
   three: 3,
+  tree: 3,
+  tri: 3,
   four: 4,
   five: 5,
+  fife: 5,
   six: 6,
   seven: 7,
   eight: 8,
@@ -167,11 +170,148 @@ const WEEKDAY_INDEXES: Record<string, number> = {
 };
 
 const SERVICE_ALIASES: Record<string, string[]> = {
-  pedicure: ["bettercure", "pedic care", "petty cure", "pedi cure", "peddy cure", "pedicure"],
-  manicure: ["many cure", "manny cure", "mani cure", "manicure"],
-  "gel manicure": ["gel many cure", "gel manny cure", "gel mani cure", "gel manicure"],
-  "acrylic full set": ["acrilic", "acyclic", "acrylic", "acrylic set", "acrylic full set"],
-  "dip powder": ["dip", "deep powder", "dip power", "dip powder"]
+  pedicure: [
+    "pedicure",
+    "bedicure",
+    "beticure",
+    "pedi cure",
+    "peddy cure",
+    "pay di cure",
+    "pay the cure",
+    "paydy cure",
+    "petty cure",
+    "pretty cure",
+    "ready cure",
+    "reddy cure",
+    "betty cure",
+    "berry cure",
+    "better cure",
+    "bettercure",
+    "pedic care",
+    "pedi care",
+    "pedicure appointment",
+    "toe service",
+    "foot service",
+    "foot pedicure",
+    "toe pedicure"
+  ],
+  manicure: [
+    "many cure",
+    "manny cure",
+    "mani cure",
+    "nanny cure",
+    "mini cure",
+    "manicure",
+    "manicure appointment",
+    "hand service",
+    "finger nail service"
+  ],
+  "gel manicure": [
+    "gel many cure",
+    "gel manny cure",
+    "gel mani cure",
+    "gel manicure",
+    "jell manicure",
+    "jail manicure",
+    "gel nail",
+    "gel nails",
+    "gel hand service"
+  ],
+  "acrylic full set": [
+    "acrilic",
+    "acyclic",
+    "acrylic",
+    "acrylics",
+    "acrylic set",
+    "acrylic full set",
+    "full set",
+    "full acrylic set",
+    "fake nails",
+    "extension nails"
+  ],
+  "dip powder": [
+    "dip",
+    "deep powder",
+    "dip power",
+    "dip powder",
+    "dipping powder",
+    "de powder",
+    "dep powder",
+    "powder dip",
+    "dip nails"
+  ]
+};
+
+const DATE_PHRASE_PATTERN =
+  "\\b(?:tomorrow\\s+(?:morning|afternoon|evening|night)|this\\s+(?:morning|afternoon|evening)|tonight|today|tomorrow|(?:this|next)\\s+(?:sunday|monday|tuesday|wednesday|thursday|friday|saturday)|sunday|monday|tuesday|wednesday|thursday|friday|saturday)\\b";
+
+const SPOKEN_HOUR_PATTERN =
+  "one|two|three|tree|tri|four|five|fife|six|seven|eight|nine|ten|eleven|twelve";
+
+const MONTH_DAY_PATTERN =
+  "\\b(?:january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|august|aug|september|sep|sept|october|oct|november|nov|december|dec)\\.?\\s+(?:\\d{1,2}(?:st|nd|rd|th)?|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth|thirteenth|fourteenth|fifteenth|sixteenth|seventeenth|eighteenth|nineteenth|twentieth|twenty\\s+first|twenty\\s+second|twenty\\s+third|twenty\\s+fourth|twenty\\s+fifth|twenty\\s+sixth|twenty\\s+seventh|twenty\\s+eighth|twenty\\s+ninth|thirtieth|thirty\\s+first)(?:\\s*,?\\s*\\d{4})?\\b";
+
+const ISO_DATE_PATTERN = "\\b\\d{4}-\\d{2}-\\d{2}\\b";
+
+const MONTH_NUMBERS: Record<string, number> = {
+  january: 1,
+  jan: 1,
+  february: 2,
+  feb: 2,
+  march: 3,
+  mar: 3,
+  april: 4,
+  apr: 4,
+  may: 5,
+  june: 6,
+  jun: 6,
+  july: 7,
+  jul: 7,
+  august: 8,
+  aug: 8,
+  september: 9,
+  sep: 9,
+  sept: 9,
+  october: 10,
+  oct: 10,
+  november: 11,
+  nov: 11,
+  december: 12,
+  dec: 12
+};
+
+const ORDINAL_DAY_WORDS: Record<string, number> = {
+  first: 1,
+  second: 2,
+  third: 3,
+  fourth: 4,
+  fifth: 5,
+  sixth: 6,
+  seventh: 7,
+  eighth: 8,
+  ninth: 9,
+  tenth: 10,
+  eleventh: 11,
+  twelfth: 12,
+  thirteenth: 13,
+  fourteenth: 14,
+  fifteenth: 15,
+  sixteenth: 16,
+  seventeenth: 17,
+  eighteenth: 18,
+  nineteenth: 19,
+  twentieth: 20,
+  "twenty first": 21,
+  "twenty second": 22,
+  "twenty third": 23,
+  "twenty fourth": 24,
+  "twenty fifth": 25,
+  "twenty sixth": 26,
+  "twenty seventh": 27,
+  "twenty eighth": 28,
+  "twenty ninth": 29,
+  thirtieth: 30,
+  "thirty first": 31
 };
 
 const ANY_STAFF_PHRASES = new Set([
@@ -209,6 +349,52 @@ const normalizeForMatch = (value?: string | null): string => {
 };
 
 const compactForMatch = (value?: string | null): string => normalizeForMatch(value).replace(/\s/g, "");
+
+const getStaticServiceAliasPhrases = (serviceName: string): string[] => {
+  const normalized = normalizeForMatch(serviceName);
+  const aliases = new Set<string>([serviceName, normalized]);
+  Object.entries(SERVICE_ALIASES).forEach(([canonical, phrases]) => {
+    const normalizedCanonical = normalizeForMatch(canonical);
+    if (normalized === normalizedCanonical || normalized.includes(normalizedCanonical)) {
+      phrases.forEach((phrase) => aliases.add(phrase));
+    }
+  });
+  return Array.from(aliases.values());
+};
+
+const findConfiguredServiceNameInText = (
+  serviceNames: string[],
+  text?: string
+): string | undefined => {
+  const normalizedText = compactForMatch(text);
+  if (!normalizedText) {
+    return undefined;
+  }
+
+  return serviceNames.find((serviceName) =>
+    getStaticServiceAliasPhrases(serviceName).some((phrase) => {
+      const compact = compactForMatch(phrase);
+      return compact.length >= 3 && normalizedText.includes(compact);
+    })
+  );
+};
+
+const extractCustomerNameFromText = (text?: string): string | undefined => {
+  const match = text?.match(
+    /(?:my name is|name is|this is|i am|i'm)\s+([a-zA-Z][a-zA-Z'-]*(?:\s+[a-zA-Z][a-zA-Z'-]*){0,4})(?=\s*(?:[,.!?;]|$|and\s+(?:my\s+)?phone|(?:my\s+)?phone\s+(?:number\s+)?(?:is|should|to)))/i
+  );
+  return match?.[1]?.trim();
+};
+
+const extractCustomerPhoneFromText = (text?: string): string | undefined => {
+  const explicitPhoneMatch = text?.match(
+    /(?:phone number is|phone is|call me at|reach me at)\s*(\+?1?[\s\-()]*[2-9]\d{2}[\s\-()]*[2-9]\d{2}[\s\-()]?\d{4})/i
+  );
+  const fallbackPhoneMatch = text?.match(
+    /(\+?1?[\s\-()]*[2-9]\d{2}[\s\-()]*[2-9]\d{2}[\s\-()]?\d{4})/
+  );
+  return normalizePhoneForMatching(explicitPhoneMatch?.[1] ?? fallbackPhoneMatch?.[1]);
+};
 
 const levenshteinDistance = (left: string, right: string): number => {
   if (left === right) {
@@ -355,26 +541,72 @@ const extractJsonObject = (rawText: string): unknown => {
 
 const normalizeSpokenNumbers = (value: string): string => {
   return value.replace(
-    /\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b/gi,
+    /\b(one|two|three|tree|tri|four|five|fife|six|seven|eight|nine|ten|eleven|twelve)\b/gi,
     (match) => String(NUMBER_WORDS[match.toLowerCase()] ?? match)
   );
+};
+
+const parseMonthDayDateText = (value: string, timezone: string): DateTime | null => {
+  const normalized = normalizeForMatch(value);
+  const monthNames = Object.keys(MONTH_NUMBERS).join("|");
+  const dayNames = Object.keys(ORDINAL_DAY_WORDS).sort((left, right) => right.length - left.length).join("|");
+  const match = normalized.match(
+    new RegExp(`\\b(${monthNames})\\s+((?:\\d{1,2}(?:st|nd|rd|th)?)|${dayNames})(?:\\s+(\\d{4}))?\\b`)
+  );
+  if (!match) {
+    return null;
+  }
+
+  const month = MONTH_NUMBERS[match[1] ?? ""];
+  const dayText = match[2] ?? "";
+  const numericDay = dayText.match(/^\d{1,2}/)?.[0];
+  const day = numericDay ? Number(numericDay) : ORDINAL_DAY_WORDS[dayText];
+  if (!month || !day) {
+    return null;
+  }
+
+  const now = DateTime.now().setZone(timezone);
+  const parsed = DateTime.fromObject(
+    {
+      year: match[3] ? Number(match[3]) : now.year,
+      month,
+      day
+    },
+    { zone: timezone }
+  );
+  return parsed.isValid ? parsed.startOf("day") : null;
 };
 
 const parseLocalDateText = (value: string, timezone: string): DateTime | null => {
   const cleaned = normalizeForMatch(value);
   const now = DateTime.now().setZone(timezone);
 
-  if (cleaned === "today") {
+  if (
+    cleaned === "today" ||
+    cleaned === "this morning" ||
+    cleaned === "this afternoon" ||
+    cleaned === "this evening" ||
+    cleaned === "tonight"
+  ) {
     return now.startOf("day");
   }
-  if (cleaned === "tomorrow") {
+  if (
+    cleaned === "tomorrow" ||
+    cleaned === "tomorrow morning" ||
+    cleaned === "tomorrow afternoon" ||
+    cleaned === "tomorrow evening" ||
+    cleaned === "tomorrow night"
+  ) {
     return now.plus({ days: 1 }).startOf("day");
   }
 
-  const weekday = WEEKDAY_INDEXES[cleaned];
+  const weekdayMatch = cleaned.match(
+    /^(?:(this|next)\s+)?(sunday|monday|tuesday|wednesday|thursday|friday|saturday)$/
+  );
+  const weekday = weekdayMatch ? WEEKDAY_INDEXES[weekdayMatch[2]!] : WEEKDAY_INDEXES[cleaned];
   if (weekday) {
     let daysUntil = weekday - now.weekday;
-    if (daysUntil <= 0) {
+    if (daysUntil < 0 || (daysUntil === 0 && weekdayMatch?.[1] === "next")) {
       daysUntil += 7;
     }
     return now.plus({ days: daysUntil }).startOf("day");
@@ -385,9 +617,16 @@ const parseLocalDateText = (value: string, timezone: string): DateTime | null =>
     return isoDate.startOf("day");
   }
 
+  const monthDayDate = parseMonthDayDateText(value, timezone);
+  if (monthDayDate) {
+    return monthDayDate;
+  }
+
   const formats = ["M/d/yyyy", "M-d-yyyy", "LLLL d yyyy", "LLL d yyyy", "LLLL d", "LLL d"];
   for (const format of formats) {
-    const parsed = DateTime.fromFormat(value.trim(), format, { zone: timezone });
+    const parsed = DateTime.fromFormat(value.trim().replace(/\b(\d{1,2})(?:st|nd|rd|th)\b/gi, "$1"), format, {
+      zone: timezone
+    });
     if (parsed.isValid) {
       const withYear = parsed.year === now.year ? parsed : parsed.set({ year: now.year });
       return withYear.startOf("day");
@@ -399,9 +638,13 @@ const parseLocalDateText = (value: string, timezone: string): DateTime | null =>
 
 const parseLocalTimeText = (value: string): { hour: number; minute: number; ambiguous: boolean } | null => {
   const normalized = normalizeSpokenNumbers(value)
+    .replace(/\b([ap])\s*\.?\s*m\.?\b/gi, "$1m")
     .replace(/\ba\.?m\.?\b/gi, "am")
     .replace(/\bp\.?m\.?\b/gi, "pm")
     .trim();
+  const normalizedWords = normalizeForMatch(normalized);
+  const hasMorningContext = /\bmorning\b/.test(normalizedWords);
+  const hasAfternoonContext = /\b(afternoon|evening|tonight|night)\b/.test(normalizedWords);
 
   const periodMatch = normalized.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i);
   if (periodMatch) {
@@ -424,14 +667,28 @@ const parseLocalTimeText = (value: string): { hour: number; minute: number; ambi
   if (twentyFourHourMatch) {
     const hour = Number(twentyFourHourMatch[1]);
     const minute = Number(twentyFourHourMatch[2]);
-    return { hour, minute, ambiguous: hour > 0 && hour < 12 };
+    return { hour, minute, ambiguous: false };
   }
+
+  const applyContext = (hour: number): { hour: number; ambiguous: boolean } => {
+    if (hasMorningContext) {
+      return { hour: hour === 12 ? 0 : hour, ambiguous: false };
+    }
+    if (hasAfternoonContext) {
+      return { hour: hour < 12 ? hour + 12 : hour, ambiguous: false };
+    }
+    if (hour >= 1 && hour <= 7) {
+      return { hour: hour + 12, ambiguous: false };
+    }
+    return { hour, ambiguous: true };
+  };
 
   const bareHourMatch = normalized.match(/\b(\d{1,2})\b/);
   if (bareHourMatch) {
     const hour = Number(bareHourMatch[1]);
     if (hour >= 1 && hour <= 12) {
-      return { hour, minute: 0, ambiguous: true };
+      const contextual = applyContext(hour);
+      return { hour: contextual.hour, minute: 0, ambiguous: contextual.ambiguous };
     }
     if (hour >= 13 && hour <= 23) {
       return { hour, minute: 0, ambiguous: false };
@@ -439,6 +696,71 @@ const parseLocalTimeText = (value: string): { hour: number; minute: number; ambi
   }
 
   return null;
+};
+
+const extractTimeCandidate = (value: string): string | undefined => {
+  const segment = value
+    .replace(/\b([ap])\s*\.?\s*m\.?\b/gi, "$1m")
+    .replace(/^\s*(?:at|around|about|for|by)\s+/i, "")
+    .split(/[,.!?;]/)[0]
+    ?.trim();
+  if (!segment) {
+    return undefined;
+  }
+
+  const explicitMatch = segment.match(
+    new RegExp(
+      `\\b(?:${SPOKEN_HOUR_PATTERN}|\\d{1,2})(?::\\d{2})?\\s*(?:a\\.?m\\.?|p\\.?m\\.?)\\b`,
+      "i"
+    )
+  );
+  if (explicitMatch?.[0]) {
+    return explicitMatch[0];
+  }
+
+  const markedBareMatch = segment.match(
+    new RegExp(
+      `\\b(?:at|around|about|for|by)\\s+((?:${SPOKEN_HOUR_PATTERN}|\\d{1,2})(?::\\d{2})?)\\b`,
+      "i"
+    )
+  );
+  if (markedBareMatch?.[1]) {
+    return markedBareMatch[1];
+  }
+
+  const leadingBareMatch = segment.match(
+    new RegExp(`^\\s*((?:${SPOKEN_HOUR_PATTERN}|\\d{1,2})(?::\\d{2})?)\\b`, "i")
+  );
+  return leadingBareMatch?.[1];
+};
+
+const getPreferredDateCandidate = (
+  raw: string
+): { text: string; index: number; kind: "explicit" | "relative" } | null => {
+  const collect = (
+    pattern: string,
+    kind: "explicit" | "relative"
+  ): { text: string; index: number; kind: "explicit" | "relative" }[] =>
+    Array.from(raw.matchAll(new RegExp(pattern, "gi")))
+      .filter((match) => match[0] && match.index !== undefined)
+      .map((match) => ({
+        text: match[0],
+        index: match.index!,
+        kind
+      }));
+
+  const explicitMatches = [
+    ...collect(ISO_DATE_PATTERN, "explicit"),
+    ...collect(MONTH_DAY_PATTERN, "explicit")
+  ].sort((left, right) => left.index - right.index);
+  if (explicitMatches.length) {
+    return explicitMatches[explicitMatches.length - 1] ?? null;
+  }
+
+  const relativeMatches = collect(DATE_PHRASE_PATTERN, "relative").sort(
+    (left, right) => left.index - right.index
+  );
+  return relativeMatches[0] ?? null;
 };
 
 const parseDateTimeText = (
@@ -460,8 +782,38 @@ const parseDateTimeText = (
     }
   }
 
+  const dateCandidate = getPreferredDateCandidate(raw);
+  if (dateCandidate) {
+    const localDate = parseLocalDateText(dateCandidate.text, timezone);
+    const afterDate = raw.slice(dateCandidate.index + dateCandidate.text.length);
+    const beforeDate = raw.slice(0, dateCandidate.index);
+    const timeCandidate =
+      extractTimeCandidate(afterDate) ??
+      extractTimeCandidate(beforeDate.split(/[!?;]/).at(-1) ?? "") ??
+      extractTimeCandidate(raw);
+    const localTime = timeCandidate
+      ? parseLocalTimeText(`${dateCandidate.text} ${timeCandidate}`)
+      : null;
+
+    if (localDate && localTime) {
+      return {
+        local: localDate.set({
+          hour: localTime.hour,
+          minute: localTime.minute,
+          second: 0,
+          millisecond: 0
+        }),
+        sourceText: [dateCandidate.text, timeCandidate].join(" "),
+        ambiguousTime: localTime.ambiguous
+      };
+    }
+  }
+
   const explicitLocalMatch = raw.match(
-    /(\d{4}-\d{2}-\d{2}|[01]?\d\/[0-3]?\d\/\d{4}|today|tomorrow|sunday|monday|tuesday|wednesday|thursday|friday|saturday)(?:\s+|.*?\s+at\s+)([a-z0-9:.\s]+?(?:am|pm)?)(?:$|[,.])/i
+    new RegExp(
+      `(\\d{4}-\\d{2}-\\d{2}|[01]?\\d\\/[0-3]?\\d\\/\\d{4}|${DATE_PHRASE_PATTERN})(?:\\s+|.*?\\s+at\\s+)([a-z0-9:.\\s]+?(?:am|pm)?)(?:$|[,.])`,
+      "i"
+    )
   );
   if (explicitLocalMatch) {
     const localDate = parseLocalDateText(explicitLocalMatch[1] ?? "", timezone);
@@ -521,6 +873,101 @@ const parseDateTimeFromText = (text: string, timezone: string): string | undefin
   return parsed.local.toUTC().toISO() ?? undefined;
 };
 
+const hasUsableStartTime = (value: string | undefined, timezone: string): boolean => {
+  if (!value || /^\d{4}-\d{2}-\d{2}$/.test(value.trim())) {
+    return false;
+  }
+  const iso = DateTime.fromISO(value.trim(), { setZone: true });
+  if (iso.isValid && /T\d{1,2}:\d{2}/.test(value)) {
+    return true;
+  }
+  const parsed = parseDateTimeText(value, timezone);
+  return Boolean(parsed?.local.isValid && !parsed.ambiguousTime);
+};
+
+const isClearlyInvalidServiceName = (value?: string | null, timezone = "America/New_York"): boolean => {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  const normalized = normalizeForMatch(trimmed);
+  const digits = trimmed.replace(/\D/g, "");
+  if (/^(?:am|pm|a m|p m)$/.test(normalized)) {
+    return true;
+  }
+  if (digits.length >= 7) {
+    return true;
+  }
+  if (/^\d{4}-\d{2}-\d{2}(?:T.*)?$/.test(trimmed)) {
+    return true;
+  }
+  if (
+    new RegExp(
+      `^(?:at\\s+)?(?:${SPOKEN_HOUR_PATTERN}|\\d{1,2})(?::\\d{2})?(?:\\s*(?:am|pm|a\\s*m|p\\s*m))?$`,
+      "i"
+    ).test(normalized)
+  ) {
+    return true;
+  }
+  if (parseLocalTimeText(trimmed)) {
+    return true;
+  }
+  if (
+    new RegExp(`^(?:${DATE_PHRASE_PATTERN}|${MONTH_DAY_PATTERN}|${ISO_DATE_PATTERN})$`, "i").test(
+      trimmed
+    )
+  ) {
+    return true;
+  }
+  if (parseLocalDateText(trimmed, timezone) && normalized.split(" ").length <= 4) {
+    return true;
+  }
+
+  return false;
+};
+
+const applyDeterministicTextRecovery = (input: {
+  intent: BookingIntentResult;
+  text: string;
+  timezone: string;
+  serviceNames: string[];
+}): BookingIntentResult => {
+  const next: BookingIntentResult = {
+    ...input.intent,
+    customer: {
+      ...input.intent.customer
+    },
+    normalizedBookingRequest: {
+      ...input.intent.normalizedBookingRequest
+    }
+  };
+
+  const recoveredStartTimeIso = parseDateTimeFromText(input.text, input.timezone);
+  if (
+    recoveredStartTimeIso &&
+    !hasUsableStartTime(next.normalizedBookingRequest.startTimeIso ?? next.requestedDateTime, input.timezone)
+  ) {
+    next.requestedDateTime = recoveredStartTimeIso;
+    next.normalizedBookingRequest.startTimeIso = recoveredStartTimeIso;
+    next.normalizedBookingRequest.timezone = input.timezone;
+  }
+
+  const recoveredService = findConfiguredServiceNameInText(input.serviceNames, input.text);
+  if (recoveredService) {
+    next.requestedService = recoveredService;
+    next.normalizedBookingRequest.serviceName = recoveredService;
+  }
+
+  const serviceValue = next.normalizedBookingRequest.serviceName ?? next.requestedService;
+  if (isClearlyInvalidServiceName(serviceValue, input.timezone)) {
+    next.requestedService = undefined;
+    next.normalizedBookingRequest.serviceName = undefined;
+  }
+
+  return next;
+};
+
 const inferFallbackIntent = (input: {
   text: string;
   timezone: string;
@@ -528,23 +975,11 @@ const inferFallbackIntent = (input: {
   staffNames: string[];
 }): BookingIntentResult => {
   const lower = input.text.toLowerCase();
-  const matchedService = input.serviceNames.find((service) =>
-    lower.includes(service.toLowerCase())
-  );
+  const matchedService = findConfiguredServiceNameInText(input.serviceNames, input.text);
   const matchedStaff = input.staffNames.find((staff) => lower.includes(staff.toLowerCase()));
 
-  const explicitPhoneMatch = input.text.match(
-    /(?:phone number is|phone is|call me at|reach me at)\s*(\+?1?[\s\-()]*[2-9]\d{2}[\s\-()]*[2-9]\d{2}[\s\-()]?\d{4})/i
-  );
-  const fallbackPhoneMatch = input.text.match(
-    /(\+?1?[\s\-()]*[2-9]\d{2}[\s\-()]*[2-9]\d{2}[\s\-()]?\d{4})/
-  );
-  const phone = normalizePhoneForMatching(explicitPhoneMatch?.[1] ?? fallbackPhoneMatch?.[1]);
-
-  const nameMatch = input.text.match(
-    /(?:name is|this is|i am|i'm)\s+([a-zA-Z][a-zA-Z.'-]*(?:\s+[a-zA-Z][a-zA-Z.'-]*){0,4})/i
-  );
-  const customerName = nameMatch?.[1]?.trim();
+  const phone = extractCustomerPhoneFromText(input.text);
+  const customerName = extractCustomerNameFromText(input.text);
   const startTimeIso = parseDateTimeFromText(input.text, input.timezone);
 
   const missingFields: string[] = [];
@@ -659,7 +1094,9 @@ const sanitizeParsedIntentForConfiguredData = async (
     }
   }
 
-  const serviceValue = nextNormalizedRequest.serviceName ?? intent.requestedService;
+  const serviceValue = [nextNormalizedRequest.serviceName, intent.requestedService].find(
+    (candidate) => candidate && !isClearlyInvalidServiceName(candidate)
+  );
   let requestedService = intent.requestedService;
   if (serviceValue) {
     const serviceMatch = await resolveServiceMatch(salonId, serviceValue);
@@ -667,6 +1104,9 @@ const sanitizeParsedIntentForConfiguredData = async (
       requestedService = serviceMatch.service.name;
       nextNormalizedRequest.serviceName = serviceMatch.service.name;
     }
+  } else if (nextNormalizedRequest.serviceName || intent.requestedService) {
+    requestedService = undefined;
+    nextNormalizedRequest.serviceName = undefined;
   }
 
   return normalizeIntentResult({
@@ -831,9 +1271,16 @@ const parseBookingIntentInternal = async (input: ParseBookingInput) => {
     };
   }
 
+  const recoveredIntent = applyDeterministicTextRecovery({
+    intent: parsedIntent,
+    text: input.text,
+    timezone: context.timezone,
+    serviceNames: context.services.map((service) => service.name)
+  });
+
   const normalized = await sanitizeParsedIntentForConfiguredData(
     input.salonId,
-    normalizeIntentResult(parsedIntent),
+    normalizeIntentResult(recoveredIntent),
     context.staff
   );
   const interaction = await createAIInteractionLog({
@@ -862,15 +1309,7 @@ const parseBookingIntentInternal = async (input: ParseBookingInput) => {
 };
 
 const getServiceAliasPhrases = (serviceName: string): string[] => {
-  const normalized = normalizeForMatch(serviceName);
-  const aliases = new Set<string>([serviceName, normalized]);
-  Object.entries(SERVICE_ALIASES).forEach(([canonical, phrases]) => {
-    const normalizedCanonical = normalizeForMatch(canonical);
-    if (normalized === normalizedCanonical || normalized.includes(normalizedCanonical)) {
-      phrases.forEach((phrase) => aliases.add(phrase));
-    }
-  });
-  return Array.from(aliases.values());
+  return getStaticServiceAliasPhrases(serviceName);
 };
 
 const rankServiceMatch = (
@@ -953,6 +1392,25 @@ const resolveServiceMatch = async (
 
 const resolveService = async (salonId: string, serviceName: string) => {
   return (await resolveServiceMatch(salonId, serviceName))?.service ?? null;
+};
+
+const shouldAutoAcceptServiceMatch = (
+  serviceMatch: ServiceMatch,
+  requestedServiceName?: string
+): boolean => {
+  if (serviceMatch.exact) {
+    return true;
+  }
+  if (serviceMatch.matchedBy === "alias" && serviceMatch.confidence >= 0.9) {
+    return true;
+  }
+  return (
+    normalizeForMatch(serviceMatch.service.name) === "pedicure" &&
+    serviceMatch.confidence >= 0.86 &&
+    getServiceAliasPhrases("pedicure").some(
+      (phrase) => compactForMatch(phrase) === compactForMatch(requestedServiceName)
+    )
+  );
 };
 
 const findServiceMentionInText = async (
@@ -1835,9 +2293,15 @@ const hasTimeComponent = (value?: string): boolean => {
   if (!value) {
     return false;
   }
-  return /T\d{1,2}:\d{2}|[^\d]\d{1,2}:\d{2}|\b\d{1,2}\s?(am|pm)\b|\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s?(am|pm)\b/i.test(
+  return /T\d{1,2}:\d{2}|[^\d]\d{1,2}:\d{2}|\b\d{1,2}\s?(?:a\.?\s?m\.?|p\.?\s?m\.?)\b|\b(one|two|three|tree|tri|four|five|fife|six|seven|eight|nine|ten|eleven|twelve)\s?(?:a\.?\s?m\.?|p\.?\s?m\.?)\b/i.test(
     value
-  );
+  ) || new RegExp(
+    `\\b(?:at|around|about|for|by)\\s+(?:${SPOKEN_HOUR_PATTERN}|[1-7])(?::[0-5]\\d)?\\b`,
+    "i"
+  ).test(value) || new RegExp(
+    `${DATE_PHRASE_PATTERN}\\s+(?:at\\s+)?(?:${SPOKEN_HOUR_PATTERN}|[1-7])(?::[0-5]\\d)?\\b`,
+    "i"
+  ).test(value);
 };
 
 const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppointmentInput) => {
@@ -1859,10 +2323,14 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
     asTrimmedString(input.serviceName) ??
     asTrimmedString(input.service) ??
     readBookingFieldAttribute(attributes, "serviceName");
-  const serviceName =
+  const serviceCandidate =
     rawServiceName && isAffirmative(rawServiceName) && suggestedServiceName
       ? suggestedServiceName
       : rawServiceName;
+  const serviceName =
+    serviceCandidate && !isClearlyInvalidServiceName(serviceCandidate)
+      ? serviceCandidate
+      : undefined;
   const requestedDate =
     asTrimmedString(input.requestedDate) ??
     asTrimmedString(input.preferredDateTime) ??
@@ -2435,6 +2903,15 @@ export const createAmazonConnectAIAppointment = async (
     ]) ?? asTrimmedString(activeBookingAttempt?.requestedDateTimeText ?? undefined);
   normalized.requestedTime ??= readStringAttribute(activeNormalizedRequest, ["requestedTime"]);
 
+  if (isClearlyInvalidServiceName(normalized.serviceName, salon.timezone)) {
+    normalized.serviceName = undefined;
+  }
+
+  if (normalized.transcriptText) {
+    normalized.customerName ??= extractCustomerNameFromText(normalized.transcriptText);
+    normalized.customerPhone ??= extractCustomerPhoneFromText(normalized.transcriptText);
+  }
+
   const transcript =
     callSession && normalized.transcriptText
       ? await createTranscriptForSession(callSession.id, {
@@ -2450,6 +2927,17 @@ export const createAmazonConnectAIAppointment = async (
   if (transcriptDateTime?.local.isValid && !transcriptDateTime.ambiguousTime) {
     normalized.requestedDate ??= transcriptDateTime.local.toFormat("yyyy-MM-dd");
     normalized.requestedTime ??= transcriptDateTime.local.toFormat("HH:mm");
+  }
+  if (normalized.transcriptText && normalized.requestedDate && !normalized.requestedTime) {
+    const transcriptTimeCandidate = extractTimeCandidate(normalized.transcriptText);
+    const transcriptTime = transcriptTimeCandidate
+      ? parseLocalTimeText(transcriptTimeCandidate)
+      : null;
+    if (transcriptTime && !transcriptTime.ambiguous) {
+      normalized.requestedTime = `${String(transcriptTime.hour).padStart(2, "0")}:${String(
+        transcriptTime.minute
+      ).padStart(2, "0")}`;
+    }
   }
 
   if (!normalized.serviceName && normalized.transcriptText) {
@@ -2645,12 +3133,13 @@ export const createAmazonConnectAIAppointment = async (
     escalation?: Awaited<ReturnType<typeof createOrUpdateCallEscalation>> | null,
     extra: Record<string, string | number | null | undefined> = {}
   ): Record<string, string> => {
+    const canTransferToQueue = escalation?.routingOutcome === CallRoutingOutcome.QUEUED;
     return buildKnownSessionAttributes({
-      forceHumanEscalation: "true",
-      transferToQueue: "true",
+      forceHumanEscalation: canTransferToQueue ? "true" : "false",
+      transferToQueue: canTransferToQueue ? "true" : "false",
       escalationReason: reason,
       fallbackMode: escalation?.routingOutcome ?? "operator_queue",
-      queueId: escalation?.queueId,
+      queueId: canTransferToQueue ? escalation?.queueId : undefined,
       ...extra
     });
   };
@@ -2684,7 +3173,10 @@ export const createAmazonConnectAIAppointment = async (
           }
         })
       : null;
-    const message = "Please wait while I connect you.";
+    const message =
+      escalation?.routingOutcome === CallRoutingOutcome.QUEUED
+        ? "Please wait while I connect you."
+        : "No agents available.";
     const parsed = buildInternalParsedIntent({
       intentType: "LIVE_PERSON_REQUEST",
       customerName: normalized.customerName,
@@ -2907,24 +3399,7 @@ export const createAmazonConnectAIAppointment = async (
         requestedDateTimeText
       }
     });
-    const aiInteraction = await createInteraction({
-      outcome: "MISSING_INFO",
-      message,
-      parsed,
-      bookingAttemptId: bookingAttempt.id,
-      responsePayload: {
-        missingFields: Array.from(missingFields.values())
-      },
-      isValid: true
-    });
-    await finalizeCall({
-      outcome: "MISSING_INFO",
-      bookingAttemptId: bookingAttempt.id,
-      bookingStatus: bookingAttempt.status,
-      parsed,
-      message,
-      failureReason: bookingAttempt.failureReason ?? undefined
-    });
+    const aiInteraction = null;
 
     return {
       outcome: "MISSING_INFO" as const,
@@ -2952,7 +3427,11 @@ export const createAmazonConnectAIAppointment = async (
   }
 
   const serviceMatch = await resolveServiceMatch(salon.id, normalized.serviceName!);
-  if (serviceMatch && !serviceMatch.exact && !isAffirmative(normalized.serviceName)) {
+  if (
+    serviceMatch &&
+    !shouldAutoAcceptServiceMatch(serviceMatch, normalized.serviceName) &&
+    !isAffirmative(normalized.serviceName)
+  ) {
     const attempts = parseAttemptCount(
       readStringAttribute(normalized.attributes, ["serviceClarificationAttempts"])
     );
@@ -3066,26 +3545,7 @@ export const createAmazonConnectAIAppointment = async (
         salonResolutionSource: resolutionSource
       };
     }
-    const aiInteraction = await createInteraction({
-      outcome: "MISSING_INFO",
-      message,
-      parsed,
-      bookingAttemptId: bookingAttempt.id,
-      responsePayload: {
-        reason: bookingAttempt.failureReason,
-        suggestedServiceName: serviceMatch.service.name,
-        serviceMatchConfidence: serviceMatch.confidence
-      },
-      isValid: true
-    });
-    await finalizeCall({
-      outcome: "MISSING_INFO",
-      bookingAttemptId: bookingAttempt.id,
-      bookingStatus: bookingAttempt.status,
-      parsed,
-      message,
-      failureReason: bookingAttempt.failureReason ?? undefined
-    });
+    const aiInteraction = null;
 
     return {
       outcome: "MISSING_INFO" as const,
@@ -3230,25 +3690,7 @@ export const createAmazonConnectAIAppointment = async (
         salonResolutionSource: resolutionSource
       };
     }
-    const aiInteraction = await createInteraction({
-      outcome: "MISSING_INFO",
-      message,
-      parsed,
-      bookingAttemptId: bookingAttempt.id,
-      responsePayload: {
-        reason: bookingAttempt.failureReason,
-        availableServiceNames: services.map((service) => service.name)
-      },
-      isValid: true
-    });
-    await finalizeCall({
-      outcome: "MISSING_INFO",
-      bookingAttemptId: bookingAttempt.id,
-      bookingStatus: bookingAttempt.status,
-      parsed,
-      message,
-      failureReason: bookingAttempt.failureReason ?? undefined
-    });
+    const aiInteraction = null;
 
     return {
       outcome: "MISSING_INFO" as const,
@@ -3319,25 +3761,7 @@ export const createAmazonConnectAIAppointment = async (
         timezone: salon.timezone
       }
     });
-    const aiInteraction = await createInteraction({
-      outcome: "MISSING_INFO",
-      message,
-      parsed,
-      bookingAttemptId: bookingAttempt.id,
-      responsePayload: {
-        missingFields: ["staffPreference"],
-        ambiguousStaffNames: staffResolution.ambiguousStaffNames
-      },
-      isValid: true
-    });
-    await finalizeCall({
-      outcome: "MISSING_INFO",
-      bookingAttemptId: bookingAttempt.id,
-      bookingStatus: bookingAttempt.status,
-      parsed,
-      message,
-      failureReason: bookingAttempt.failureReason ?? undefined
-    });
+    const aiInteraction = null;
 
     return {
       outcome: "MISSING_INFO" as const,
@@ -3535,24 +3959,7 @@ export const createAmazonConnectAIAppointment = async (
         timezone: salon.timezone
       }
     });
-    const aiInteraction = await createInteraction({
-      outcome: "MISSING_INFO",
-      message,
-      parsed,
-      bookingAttemptId: bookingAttempt.id,
-      responsePayload: {
-        reason: bookingAttempt.failureReason
-      },
-      isValid: true
-    });
-    await finalizeCall({
-      outcome: "MISSING_INFO",
-      bookingAttemptId: bookingAttempt.id,
-      bookingStatus: bookingAttempt.status,
-      parsed,
-      message,
-      failureReason: bookingAttempt.failureReason ?? undefined
-    });
+    const aiInteraction = null;
 
     return {
       outcome: "MISSING_INFO" as const,
@@ -3610,24 +4017,7 @@ export const createAmazonConnectAIAppointment = async (
         timezone: salon.timezone
       }
     });
-    const aiInteraction = await createInteraction({
-      outcome: "MISSING_INFO",
-      message,
-      parsed,
-      bookingAttemptId: bookingAttempt.id,
-      responsePayload: {
-        reason: bookingAttempt.failureReason
-      },
-      isValid: true
-    });
-    await finalizeCall({
-      outcome: "MISSING_INFO",
-      bookingAttemptId: bookingAttempt.id,
-      bookingStatus: bookingAttempt.status,
-      parsed,
-      message,
-      failureReason: bookingAttempt.failureReason ?? undefined
-    });
+    const aiInteraction = null;
 
     return {
       outcome: "MISSING_INFO" as const,
@@ -4379,6 +4769,58 @@ export const listAIInteractions = async (
   };
 };
 
+const toAIInteractionExportItem = (interaction: {
+  id: string;
+  requestText: string | null;
+  responseText: string | null;
+  requestPayload: Prisma.JsonValue | null;
+  responsePayload: Prisma.JsonValue | null;
+  parsedOutput: Prisma.JsonValue | null;
+  validationErrors: Prisma.JsonValue | null;
+  createdAt: Date;
+  taskType: string;
+  provider: ExternalProvider;
+  model: string | null;
+  confidence: number | null;
+  bookingAttemptId: string | null;
+  callSessionId: string | null;
+  salonId?: string;
+  salon?: { id: string; name: string } | null;
+}) => ({
+  id: interaction.id,
+  requestText: interaction.requestText,
+  responseText: interaction.responseText,
+  requestPayload: interaction.requestPayload,
+  responsePayload: interaction.responsePayload,
+  parsedOutput: interaction.parsedOutput,
+  validationErrors: interaction.validationErrors,
+  createdAt: interaction.createdAt,
+  taskType: interaction.taskType,
+  provider: interaction.provider,
+  model: interaction.model,
+  confidence: interaction.confidence,
+  bookingAttemptId: interaction.bookingAttemptId,
+  callSessionId: interaction.callSessionId,
+  salonId: interaction.salonId,
+  salon: interaction.salon ?? undefined
+});
+
+export const exportAIInteractions = async (
+  salonId: string,
+  input: { taskType?: string; callSessionId?: string } = {}
+) => {
+  const where: Prisma.AiInteractionLogWhereInput = {
+    salonId,
+    ...(input.taskType ? { taskType: input.taskType } : {}),
+    ...(input.callSessionId ? { callSessionId: input.callSessionId } : {})
+  };
+  const items = await prisma.aiInteractionLog.findMany({
+    where,
+    orderBy: { createdAt: "desc" }
+  });
+  return items.map(toAIInteractionExportItem);
+};
+
 export const getAIInteractionByIdForAdmin = async (interactionId: string) => {
   const interaction = await prisma.aiInteractionLog.findUnique({
     where: {
@@ -4442,4 +4884,27 @@ export const listAIInteractionsForAdmin = async (input: {
       total
     }
   };
+};
+
+export const exportAIInteractionsForAdmin = async (input: {
+  salonId?: string;
+  taskType?: string;
+} = {}) => {
+  const where: Prisma.AiInteractionLogWhereInput = {
+    ...(input.salonId ? { salonId: input.salonId } : {}),
+    ...(input.taskType ? { taskType: input.taskType } : {})
+  };
+  const items = await prisma.aiInteractionLog.findMany({
+    where,
+    orderBy: { createdAt: "desc" },
+    include: {
+      salon: {
+        select: {
+          id: true,
+          name: true
+        }
+      }
+    }
+  });
+  return items.map(toAIInteractionExportItem);
 };

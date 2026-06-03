@@ -19,6 +19,7 @@ import {
   listAiReceptionCallLogsForSalon
 } from "../ai-reception/ai-reception.service";
 import {
+  exportAIInteractionsForAdmin,
   getAIInteractionByIdForAdmin,
   listAIInteractionsForAdmin
 } from "../ai/ai.service";
@@ -1035,6 +1036,21 @@ adminRouter.get(
   asyncHandler(async (req, res) => {
     const query = req.query as unknown as z.infer<typeof adminAiQuerySchema>;
     const result = await listAIInteractionsForAdmin(query);
+    return sendSuccess(res, {
+      data: result
+    });
+  })
+);
+
+adminRouter.get(
+  "/ai-logs/export",
+  validate(adminAiQuerySchema.pick({ salonId: true, taskType: true }), "query"),
+  asyncHandler(async (req, res) => {
+    const query = req.query as unknown as Pick<
+      z.infer<typeof adminAiQuerySchema>,
+      "salonId" | "taskType"
+    >;
+    const result = await exportAIInteractionsForAdmin(query);
     return sendSuccess(res, {
       data: result
     });
