@@ -334,8 +334,24 @@ const ANY_STAFF_PHRASES = new Set([
   "anybody"
 ]);
 
-const DEMO_STAFF_NAMES = ["Mia Carter", "Olivia Brooks", "Nora Evans"];
 const DEMO_SERVICE_NAMES = ["Manicure", "Pedicure", "Gel Manicure", "Acrylic Full Set", "Dip Powder"];
+const DEMO_STAFF_NAMES = ["Trang", "Amy", "Kelly"];
+const SERVICE_DTMF_OPTIONS: Record<string, string> = {
+  "1": "Pedicure",
+  "2": "Manicure",
+  "3": "Gel Manicure",
+  "4": "Acrylic Full Set",
+  "5": "Dip Powder"
+};
+const STAFF_DTMF_OPTIONS: Record<string, string> = {
+  "1": "Trang",
+  "2": "Amy",
+  "3": "Kelly"
+};
+const SERVICE_DTMF_PROMPT =
+  "I could not clearly hear the service. You can say the service name, or press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Acrylic Full Set, 5 for Dip Powder.";
+const STAFF_DTMF_PROMPT =
+  "I could not clearly hear the staff name. You can say the staff name, or press 1 for Trang, 2 for Amy, 3 for Kelly.";
 
 const normalizeForMatch = (value?: string | null): string => {
   return (value ?? "")
@@ -446,6 +462,28 @@ const isNegative = (value?: string | null): boolean => {
   return /^(no|nope|not that|wrong)$/i.test(normalizeForMatch(value));
 };
 
+const readDtmfDigit = (value?: string | null): string | undefined => {
+  const match = (value ?? "").trim().match(/^(?:dtmf\s*)?([1-5])#?$/i);
+  return match?.[1];
+};
+
+const readScopedDtmfSelection = (
+  lastAskedSlot: string | undefined,
+  values: Array<string | undefined>,
+  options: Record<string, string>
+): string | undefined => {
+  if (lastAskedSlot !== "serviceName" && lastAskedSlot !== "staffPreference") {
+    return undefined;
+  }
+  for (const value of values) {
+    const digit = readDtmfDigit(value);
+    if (digit && options[digit]) {
+      return options[digit];
+    }
+  }
+  return undefined;
+};
+
 const isAnyStaffPreference = (value?: string | null): boolean => {
   const normalized = normalizeForMatch(value);
   return Boolean(normalized && ANY_STAFF_PHRASES.has(normalized));
@@ -456,6 +494,12 @@ const isClearlyInvalidStaffPreference = (value?: string | null): boolean => {
   const compact = compactForMatch(value);
   if (!normalized || isAnyStaffPreference(normalized)) {
     return false;
+  }
+  if (isAffirmative(normalized) || isNegative(normalized)) {
+    return true;
+  }
+  if (/^(?:am|pm|a m|p m|time|phone|phone number)$/.test(normalized)) {
+    return true;
   }
   if (compact.length < 3) {
     return true;
@@ -894,6 +938,9 @@ const isClearlyInvalidServiceName = (value?: string | null, timezone = "America/
   const normalized = normalizeForMatch(trimmed);
   const digits = trimmed.replace(/\D/g, "");
   if (/^(?:am|pm|a m|p m)$/.test(normalized)) {
+    return true;
+  }
+  if (isAffirmative(normalized) || isNegative(normalized)) {
     return true;
   }
   if (digits.length >= 7) {
@@ -2306,10 +2353,37 @@ const hasTimeComponent = (value?: string): boolean => {
 
 const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppointmentInput) => {
   const attributes = input.attributes ?? {};
+  const lastAskedSlot = readStringAttribute(attributes, ["lastAskedSlot"]);
+  const transcriptText = asTrimmedString(input.transcript) ?? asTrimmedString(input.text);
   const suggestedServiceName = readStringAttribute(attributes, [
     "serviceSuggestionName",
     "aiSuggestedServiceName"
   ]);
+  const serviceDtmfSelection =
+    lastAskedSlot === "serviceName"
+      ? readScopedDtmfSelection(
+          lastAskedSlot,
+          [
+            transcriptText,
+            asTrimmedString(input.serviceName),
+            asTrimmedString(input.service),
+            readBookingFieldAttribute(attributes, "serviceName")
+          ],
+          SERVICE_DTMF_OPTIONS
+        )
+      : undefined;
+  const staffDtmfSelection =
+    lastAskedSlot === "staffPreference"
+      ? readScopedDtmfSelection(
+          lastAskedSlot,
+          [
+            transcriptText,
+            asTrimmedString(input.staffPreference),
+            readBookingFieldAttribute(attributes, "staffPreference")
+          ],
+          STAFF_DTMF_OPTIONS
+        )
+      : undefined;
   const customerName =
     asTrimmedString(input.customerName) ??
     asTrimmedString(input.customer?.name) ??
@@ -2320,6 +2394,7 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
     asTrimmedString(input.callerPhone) ??
     readBookingFieldAttribute(attributes, "customerPhone");
   const rawServiceName =
+    serviceDtmfSelection ??
     asTrimmedString(input.serviceName) ??
     asTrimmedString(input.service) ??
     readBookingFieldAttribute(attributes, "serviceName");
@@ -2342,7 +2417,6 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
     asTrimmedString(input.contactId) ??
     asTrimmedString(input.callSessionId) ??
     readBookingFieldAttribute(attributes, "contactId");
-  const transcriptText = asTrimmedString(input.transcript) ?? asTrimmedString(input.text);
   const intentName = asTrimmedString(input.intentName);
   const source = asTrimmedString(input.source) ?? readBookingFieldAttribute(attributes, "source") ?? "AMAZON_CONNECT_LEX";
 
@@ -2354,6 +2428,7 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
     requestedDate,
     requestedTime,
     staffPreference:
+      staffDtmfSelection ??
       asTrimmedString(input.staffPreference) ??
       readBookingFieldAttribute(attributes, "staffPreference"),
     confirmationState: asTrimmedString(input.confirmationState),
@@ -2403,9 +2478,7 @@ const shouldEscalateToHuman = (input: {
   }
 
   const text = input.transcriptText?.toLowerCase() ?? "";
-  return /\b(real person|live person|human|operator|representative|agent|cancel|reschedule)\b/.test(
-    text
-  );
+  return /\b(real person|live person|human|operator|representative|speak to someone)\b/.test(text);
 };
 
 const buildInternalParsedIntent = (input: {
@@ -2597,14 +2670,7 @@ const buildLexMessage = (input: {
     const isRetry = (input.attemptCount ?? 1) > 1;
     const intro = isRetry ? "Sorry, I did not catch that." : "Got it.";
     if (input.missingFields?.includes("staffPreference")) {
-      const staffList = formatNameList(getStaffPromptNames(input.staffNames ?? []));
-      return staffList
-        ? speak(
-            `${intro} <break time="300ms"/> Do you prefer a specific staff member? We have ${escapeSsml(staffList)} available, or I can check anyone.`
-          )
-        : speak(
-            `${intro} <break time="300ms"/> Do you prefer a specific staff member, or is anyone okay?`
-          );
+      return speak(STAFF_DTMF_PROMPT);
     }
     if (input.missingFields?.includes("customerName")) {
       return speak(
@@ -2618,9 +2684,7 @@ const buildLexMessage = (input: {
       );
     }
     if (input.missingFields?.includes("serviceName")) {
-      return speak(
-        `${intro} <break time="300ms"/> What service would you like to book?`
-      );
+      return speak(SERVICE_DTMF_PROMPT);
     }
     if (input.missingFields?.includes("preferredDateTime")) {
       return input.knownFields?.requestedDate
@@ -2680,12 +2744,12 @@ const getElicitSlotForMissingFields = (
     slotToElicit = "serviceName";
   } else if (missingFields.has("preferredDateTime")) {
     slotToElicit = normalized.requestedDate ? "requestedTime" : "requestedDate";
+  } else if (missingFields.has("staffPreference")) {
+    slotToElicit = "staffPreference";
   } else if (missingFields.has("customerName")) {
     slotToElicit = "customerName";
   } else if (missingFields.has("customerPhone")) {
     slotToElicit = "customerPhone";
-  } else if (missingFields.has("staffPreference")) {
-    slotToElicit = "staffPreference";
   }
 
   const lastAskedSlot = readStringAttribute(normalized.attributes, ["lastAskedSlot"]);
@@ -2702,7 +2766,10 @@ const getElicitSlotForMissingFields = (
     slotToElicit,
     promptMissingFields,
     attemptCount,
-    shouldEscalate: attemptCount >= MAX_SLOT_RETRY_COUNT,
+    shouldEscalate:
+      attemptCount >= MAX_SLOT_RETRY_COUNT &&
+      slotToElicit !== "serviceName" &&
+      slotToElicit !== "staffPreference",
     sessionAttributes: {
       lastAskedSlot: slotToElicit,
       askedSlotsCount: String(attemptCount),
@@ -2720,9 +2787,7 @@ const buildServiceClarificationMessage = (input: {
 }): string => {
   const options = formatNameList(getServicePromptNames(input.availableServiceNames));
   return options
-    ? speak(
-        `We have ${escapeSsml(options)}. Which one would you like?`
-      )
+    ? speak(SERVICE_DTMF_PROMPT)
     : speak(
         `I heard ${escapeSsml(input.heardServiceName)}. <break time="300ms"/> Which service would you like?`
       );
@@ -2731,12 +2796,8 @@ const buildServiceClarificationMessage = (input: {
 const buildStaffClarificationMessage = (input: {
   availableStaffNames: string[];
 }): string => {
-  const options = formatNameList(getStaffPromptNames(input.availableStaffNames));
-  return options
-    ? speak(
-        `Which staff member would you like? <break time="300ms"/> We have ${escapeSsml(options)} available, or I can check anyone.`
-      )
-    : speak("Which staff member would you like, or is anyone okay?");
+  void input;
+  return speak(STAFF_DTMF_PROMPT);
 };
 
 const parseAlternativeSlotsAttribute = (
@@ -2964,6 +3025,19 @@ export const createAmazonConnectAIAppointment = async (
     normalized.staffPreference = staffResolution.matchedStaff.fullName;
   } else if (staffResolution.status !== "ambiguous") {
     normalized.staffPreference = undefined;
+  }
+
+  let serviceMatch = normalized.serviceName
+    ? await resolveServiceMatch(salon.id, normalized.serviceName)
+    : null;
+  if (
+    normalized.serviceName &&
+    (!serviceMatch ||
+      (!shouldAutoAcceptServiceMatch(serviceMatch, normalized.serviceName) &&
+        !isAffirmative(normalized.serviceName)))
+  ) {
+    normalized.serviceName = undefined;
+    serviceMatch = null;
   }
 
   const createAttempt = async (inputForAttempt: {
@@ -3241,6 +3315,10 @@ export const createAmazonConnectAIAppointment = async (
   ) {
     missingFields.add("preferredDateTime");
   }
+  if (staffResolution.status !== "matched") {
+    missingFields.add("staffPreference");
+    normalized.staffPreference = undefined;
+  }
   let requestedStartTime: Date | null = null;
   if (!missingFields.has("preferredDateTime") && normalized.requestedDate) {
     try {
@@ -3416,7 +3494,6 @@ export const createAmazonConnectAIAppointment = async (
     };
   }
 
-  const serviceMatch = await resolveServiceMatch(salon.id, normalized.serviceName!);
   if (
     serviceMatch &&
     !shouldAutoAcceptServiceMatch(serviceMatch, normalized.serviceName) &&

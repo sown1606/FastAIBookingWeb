@@ -206,7 +206,7 @@ test("DialogCodeHook recovers pedicure aliases and bare PM time from transcript"
     baseEvent({
       invocationSource: "DialogCodeHook",
       inputTranscript:
-        "I need a better cure tomorrow at five. My name is Kiet Nguyen. My phone number is 7325956266.",
+        "I need a better cure tomorrow at five with Trang. My name is Kiet Nguyen. My phone number is 7325956266.",
       sessionState: {
         ...baseEvent().sessionState,
         sessionAttributes: {
@@ -229,6 +229,7 @@ test("DialogCodeHook recovers pedicure aliases and bare PM time from transcript"
   assert.equal(response.sessionState.intent.slots.serviceName.value.interpretedValue, "Pedicure");
   assert.equal(response.sessionState.intent.slots.requestedDate.value.interpretedValue, usEasternDate(1));
   assert.equal(response.sessionState.intent.slots.requestedTime.value.interpretedValue, "5 PM");
+  assert.equal(response.sessionState.intent.slots.staffPreference.value.interpretedValue, "Trang");
 });
 
 test("DialogCodeHook transcript relative date overrides incorrect Lex date slot", async () => {
@@ -257,7 +258,8 @@ test("DialogCodeHook transcript relative date overrides incorrect Lex date slot"
             customerPhone: slot("7325956266"),
             serviceName: slot("Pedicure"),
             requestedDate: slot(usEasternDate(0)),
-            requestedTime: slot("3 PM")
+            requestedTime: slot("3 PM"),
+            staffPreference: slot("Trang")
           }
         }
       }
@@ -267,6 +269,80 @@ test("DialogCodeHook transcript relative date overrides incorrect Lex date slot"
   assert.equal(response.sessionState.dialogAction.type, "Delegate");
   assert.equal(response.sessionState.intent.slots.requestedDate.value.interpretedValue, usEasternDate(1));
   assert.equal(response.sessionState.intent.slots.requestedTime.value.interpretedValue, "3 PM");
+});
+
+test("DialogCodeHook maps service DTMF only when serviceName was last asked", async () => {
+  const handler = await loadHandler();
+  globalThis.fetch = async () => {
+    throw new Error("fetch should not be called for DialogCodeHook DTMF recovery");
+  };
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "1",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: "connect-contact-1",
+          lastAskedSlot: "serviceName",
+          customerName: "Kiet Nguyen",
+          customerPhone: "7325956266",
+          requestedDate: usEasternDate(1),
+          requestedTime: "3 PM"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          slots: {}
+        }
+      }
+    })
+  );
+
+  assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "staffPreference");
+  assert.equal(response.sessionState.sessionAttributes.serviceName, "Pedicure");
+  assert.equal(response.sessionState.intent.slots.serviceName.value.interpretedValue, "Pedicure");
+});
+
+test("DialogCodeHook maps staff DTMF only when staffPreference was last asked", async () => {
+  const handler = await loadHandler();
+  globalThis.fetch = async () => {
+    throw new Error("fetch should not be called for DialogCodeHook DTMF recovery");
+  };
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "1",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: "connect-contact-1",
+          lastAskedSlot: "staffPreference",
+          customerName: "Kiet Nguyen",
+          customerPhone: "7325956266",
+          serviceName: "Pedicure",
+          requestedDate: usEasternDate(1),
+          requestedTime: "3 PM"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          slots: {}
+        }
+      }
+    })
+  );
+
+  assert.equal(response.sessionState.dialogAction.type, "Delegate");
+  assert.equal(response.sessionState.intent.slots.staffPreference.value.interpretedValue, "Trang");
+  assert.equal(response.sessionState.intent.slots.serviceName.value.interpretedValue, "Pedicure");
 });
 
 test("unknown booking service elicits service before backend escalation", async () => {

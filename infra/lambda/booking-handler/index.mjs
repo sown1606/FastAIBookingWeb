@@ -127,6 +127,23 @@ const PEDICURE_ALIASES = [
 ];
 
 const DEMO_SERVICE_NAMES = ["Manicure", "Pedicure", "Gel Manicure", "Acrylic Full Set", "Dip Powder"];
+const DEMO_STAFF_NAMES = ["Trang", "Amy", "Kelly"];
+const SERVICE_DTMF_OPTIONS = {
+  "1": "Pedicure",
+  "2": "Manicure",
+  "3": "Gel Manicure",
+  "4": "Acrylic Full Set",
+  "5": "Dip Powder"
+};
+const STAFF_DTMF_OPTIONS = {
+  "1": "Trang",
+  "2": "Amy",
+  "3": "Kelly"
+};
+const SERVICE_DTMF_PROMPT =
+  "I could not clearly hear the service. You can say the service name, or press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Acrylic Full Set, 5 for Dip Powder.";
+const STAFF_DTMF_PROMPT =
+  "I could not clearly hear the staff name. You can say the staff name, or press 1 for Trang, 2 for Amy, 3 for Kelly.";
 
 const SERVICE_ALIAS_GROUPS = {
   Pedicure: PEDICURE_ALIASES,
@@ -192,9 +209,14 @@ const WEEKDAY_INDEXES = {
 
 const SLOT_ELICIT_PROMPTS = {
   serviceName: [
-    "We have Manicure, Pedicure, Gel Manicure, Acrylic Full Set, and Dip Powder. Which one would you like?",
-    "We have Manicure, Pedicure, Gel Manicure, Acrylic Full Set, and Dip Powder. Which one would you like?",
-    "We have Manicure, Pedicure, Gel Manicure, Acrylic Full Set, and Dip Powder. Which one would you like?"
+    SERVICE_DTMF_PROMPT,
+    SERVICE_DTMF_PROMPT,
+    SERVICE_DTMF_PROMPT
+  ],
+  staffPreference: [
+    STAFF_DTMF_PROMPT,
+    STAFF_DTMF_PROMPT,
+    STAFF_DTMF_PROMPT
   ],
   requestedDate: [
     "What day would you like to come in?",
@@ -323,6 +345,53 @@ function normalizePedicureService(value) {
 function extractServiceFromTranscript(text) {
   const serviceName = normalizeServiceName(text);
   return DEMO_SERVICE_NAMES.includes(serviceName) ? serviceName : "";
+}
+
+function extractStaffFromTranscript(text) {
+  const normalizedText = normalizeForMatch(text);
+  if (!normalizedText) {
+    return "";
+  }
+  return (
+    DEMO_STAFF_NAMES.find((staffName) => {
+      const fullName = normalizeForMatch(staffName);
+      const firstName = normalizeForMatch(staffName.split(/\s+/)[0]);
+      return normalizedText.includes(fullName) || normalizedText.includes(firstName);
+    }) || ""
+  );
+}
+
+function readDtmfDigit(value) {
+  const match = String(value || "").trim().match(/^(?:dtmf\s*)?([1-5])#?$/i);
+  return match?.[1] || "";
+}
+
+function readScopedDtmfSelection(event, expectedSlot, options) {
+  const previous = event.sessionState?.sessionAttributes || {};
+  const lastAskedSlot = previous.lastAskedSlot;
+  if (lastAskedSlot !== expectedSlot) {
+    return "";
+  }
+  const slots = event.sessionState?.intent?.slots || {};
+  const candidateValues =
+    expectedSlot === "serviceName"
+      ? [
+          event.inputTranscript,
+          getSlotValue(slots, slotNames.serviceName, { preferOriginal: true }),
+          getSessionAttribute(previous, slotNames.serviceName)
+        ]
+      : [
+          event.inputTranscript,
+          getSlotValue(slots, slotNames.staffPreference, { preferOriginal: true }),
+          getSessionAttribute(previous, slotNames.staffPreference)
+        ];
+  for (const value of candidateValues) {
+    const digit = readDtmfDigit(value);
+    if (digit && options[digit]) {
+      return options[digit];
+    }
+  }
+  return "";
 }
 
 function extractCustomerNameFromText(text) {
@@ -597,6 +666,12 @@ function isClearlyInvalidServiceName(value) {
   if (/^(?:am|pm|a m|p m)$/.test(normalized)) {
     return true;
   }
+  if (/^(?:yes|yeah|yep|correct|right|sure|ok|okay|no|nope)$/.test(normalized)) {
+    return true;
+  }
+  if (/^(?:time|phone|phone number)$/.test(normalized)) {
+    return true;
+  }
   if (digits.length >= 7) {
     return true;
   }
@@ -714,6 +789,9 @@ function isBookingLikeUtterance(text) {
 
 function shouldPromptForServiceFallback(event, intentName) {
   const previous = event.sessionState?.sessionAttributes || {};
+  if (readScopedDtmfSelection(event, "serviceName", SERVICE_DTMF_OPTIONS)) {
+    return false;
+  }
   if (previous.serviceFallbackOffered === "true") {
     return false;
   }
@@ -830,6 +908,8 @@ function buildKnownBookingSessionAttributes(event) {
   const knownDate = getKnownField(event, "requestedDate");
   const knownTime = getKnownField(event, "requestedTime", { preferOriginal: true });
   const rawKnownService = getKnownField(event, "serviceName");
+  const serviceDtmfSelection = readScopedDtmfSelection(event, "serviceName", SERVICE_DTMF_OPTIONS);
+  const staffDtmfSelection = readScopedDtmfSelection(event, "staffPreference", STAFF_DTMF_OPTIONS);
   const normalizedKnownService = normalizeServiceName(rawKnownService);
   const knownService =
     normalizedKnownService && !isClearlyInvalidServiceName(normalizedKnownService)
@@ -841,13 +921,16 @@ function buildKnownBookingSessionAttributes(event) {
       getKnownField(event, "customerPhone") ||
       recovered.customerPhone ||
       getAttribute(event, attributeNames.customerNumber),
-    serviceName: knownService || recovered.serviceName,
+    serviceName: serviceDtmfSelection || knownService || recovered.serviceName,
     requestedDate: recovered.requestedDate || resolveKnownDateValue(knownDate, timeZone),
     requestedTime:
       recovered.requestedTime ||
       normalizeTimePhrase(knownTime) ||
       knownTime,
-    staffPreference: getKnownField(event, "staffPreference"),
+    staffPreference:
+      staffDtmfSelection ||
+      getKnownField(event, "staffPreference") ||
+      extractStaffFromTranscript(transcript),
     initialBookingUtterance: initial
   };
 
@@ -928,6 +1011,11 @@ function getBookingSlotToElicit(event) {
   const requestedTime = getSessionAttribute(sessionAttributes, slotNames.requestedTime);
   if (!requestedTime) {
     return "requestedTime";
+  }
+
+  const staffPreference = getSessionAttribute(sessionAttributes, slotNames.staffPreference);
+  if (!staffPreference) {
+    return "staffPreference";
   }
 
   const customerName = getSessionAttribute(sessionAttributes, slotNames.customerName);

@@ -636,24 +636,27 @@ test("missing booking fields return a Lex needs-input response instead of crashi
   assert.match(result.body.data.lexResponse.message, /best name|phone number|day and time|service/i);
 });
 
-test("any-staff phrases search all active bookable staff", async () => {
+test("any-staff phrases ask for a concrete staff selection", async () => {
   for (const phrase of ["any staff", "anyone", "whoever is available"]) {
     resetMockState();
     const result = await postInternalAppointment(bookingPayload({ staffPreference: phrase }));
 
-    assert.equal(result.response.status, 201);
-    assert.equal(result.body.data.outcome, "BOOKED");
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.data.outcome, "MISSING_INFO");
+    assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitSlot");
+    assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "staffPreference");
+    assert.match(result.body.data.lexResponse.message, /press 1 for Trang, 2 for Amy, 3 for Kelly/i);
     assert.equal(state.staffFindManyCalls[0].where.status, StaffStatus.ACTIVE);
     assert.equal(state.staffFindManyCalls[0].where.isBookable, true);
-    assert.equal(state.appointments[0].staffId, ids.trang);
+    assert.equal(state.appointments.length, 0);
   }
 });
 
 test("transcript recovery normalizes pedicure aliases and confirms without re-asking date or time", async () => {
   for (const transcript of [
-    "I want to book a pedicure tomorrow at five PM. My name is Kiet Nguyen. My phone number is 7325956266.",
-    "I need a pedi cure tomorrow at five. My name is Kiet Nguyen. My phone number is 7325956266.",
-    "I need a better cure tomorrow at five. My name is Kiet Nguyen. My phone number is 7325956266."
+    "I want to book a pedicure tomorrow at five PM with Trang. My name is Kiet Nguyen. My phone number is 7325956266.",
+    "I need a pedi cure tomorrow at five with Trang. My name is Kiet Nguyen. My phone number is 7325956266.",
+    "I need a better cure tomorrow at five with Trang. My name is Kiet Nguyen. My phone number is 7325956266."
   ]) {
     resetMockState();
     const result = await postInternalAppointment(
@@ -714,7 +717,7 @@ test("confirmed transcript booking uses salon-timezone tomorrow and bare 1-7 hou
       requestedDate: undefined,
       requestedTime: undefined,
       transcript:
-        "I need a better cure tomorrow at five. My name is Kiet Nguyen. My phone number is 7325956266."
+        "I need a better cure tomorrow at five with Trang. My name is Kiet Nguyen. My phone number is 7325956266."
     })
   );
 
@@ -749,24 +752,81 @@ test("unclear service asks the canonical service list without escalation", async
   assert.equal(result.body.data.lexResponse.sessionAttributes.forceHumanEscalation, undefined);
   assert.match(
     result.body.data.lexResponse.message,
-    /We have Manicure, Pedicure, Gel Manicure, Acrylic Full Set, and Dip Powder\. Which one would you like\?/i
+    /press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Acrylic Full Set, 5 for Dip Powder/i
   );
   assert.equal(state.escalations.length, 0);
   assert.equal(state.appointments.length, 0);
 });
 
-test("numeric and unmatched staff preferences are ignored and do not leak into normalized booking request", async () => {
-  for (const staffPreference of ["111115", "Not A Real Technician"]) {
+test("invalid staff preferences are cleared and ask for staff without booking", async () => {
+  for (const staffPreference of ["yes", "p.m.", "111115", "7325956266", "3 PM", "Not A Real Technician"]) {
     resetMockState();
     const result = await postInternalAppointment(bookingPayload({ staffPreference }));
 
-    assert.equal(result.response.status, 201);
-    assert.equal(result.body.data.outcome, "BOOKED");
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.data.outcome, "MISSING_INFO");
+    assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitSlot");
+    assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "staffPreference");
+    assert.match(result.body.data.lexResponse.message, /press 1 for Trang/i);
     const attempt = state.bookingAttempts.at(-1);
     assert.equal(attempt.requestedStaff, undefined);
     assert.equal(attempt.normalizedRequest.staffPreference, undefined);
-    assert.equal(state.appointments[0].staffId, ids.trang);
+    assert.equal(state.appointments.length, 0);
   }
+});
+
+test("service DTMF applies only to serviceName and continues to staff", async () => {
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      transcript: "1",
+      attributes: {
+        lastAskedSlot: "serviceName",
+        serviceName: "pretty soon",
+        requestedDate: "2026-05-28",
+        requestedTime: "5 PM",
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitSlot");
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "staffPreference");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Pedicure");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, undefined);
+  assert.equal(state.appointments.length, 0);
+});
+
+test("staff DTMF applies only to staffPreference and reaches confirmation", async () => {
+  const result = await postInternalAppointment(
+    bookingPayload({
+      staffPreference: undefined,
+      confirmationState: undefined,
+      transcript: "1",
+      attributes: {
+        lastAskedSlot: "staffPreference",
+        serviceName: "Pedicure",
+        requestedDate: "2026-05-28",
+        requestedTime: "5 PM",
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Pedicure");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
+  assert.match(result.body.data.lexResponse.message, /pedicure/i);
+  assert.match(result.body.data.lexResponse.message, /Trang/i);
+  assert.equal(state.appointments.length, 0);
 });
 
 test("valid staff preference books only that active bookable staff member", async () => {
