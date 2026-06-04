@@ -668,6 +668,39 @@ test("known Amazon Connect caller phone keeps Kiet instead of bad Lex name text"
   assert.equal(state.appointments.length, 0);
 });
 
+test("known Amazon Connect caller phone skips name and phone prompts", async () => {
+  const result = await postInternalAppointment(
+    bookingPayload({
+      customerName: undefined,
+      customerPhone: undefined,
+      callerPhone: "+17325956266",
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      attributes: {
+        CustomerEndpointAddress: "+17325956266"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitSlot");
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.customerId, ids.kietCustomer);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.customerName, "Kiet");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.customerPhone, "+17325956266");
+  assert.equal(
+    result.body.data.missingFields.includes("customerName") ||
+      result.body.data.missingFields.includes("customerPhone"),
+    false
+  );
+  assert.match(result.body.data.lexResponse.message, /What service would you like today/i);
+  assert.equal(state.appointments.length, 0);
+});
+
 test("missing booking fields return a Lex needs-input response instead of crashing", async () => {
   const result = await postInternalAppointment({
     salonId: ids.salonA,
@@ -691,7 +724,7 @@ test("any-staff phrases ask for a concrete staff selection", async () => {
     assert.equal(result.body.data.outcome, "MISSING_INFO");
     assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitSlot");
     assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "staffPreference");
-    assert.match(result.body.data.lexResponse.message, /press 1 for Trang, 2 for Amy, 3 for Kelly/i);
+    assert.match(result.body.data.lexResponse.message, /press 1 for Trang, 2 for Amy, or 3 for Kelly/i);
     assert.equal(state.staffFindManyCalls[0].where.status, StaffStatus.ACTIVE);
     assert.equal(state.staffFindManyCalls[0].where.isBookable, true);
     assert.equal(state.appointments.length, 0);
@@ -798,7 +831,7 @@ test("unclear service asks the canonical service list without escalation", async
   assert.equal(result.body.data.lexResponse.sessionAttributes.forceHumanEscalation, undefined);
   assert.match(
     result.body.data.lexResponse.message,
-    /press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Acrylic Full Set, 5 for Dip Powder/i
+    /press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Acrylic Full Set, or 5 for Dip Powder/i
   );
   assert.equal(state.escalations.length, 0);
   assert.equal(state.appointments.length, 0);

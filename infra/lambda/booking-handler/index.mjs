@@ -141,9 +141,11 @@ const STAFF_DTMF_OPTIONS = {
   "3": "Kelly"
 };
 const SERVICE_DTMF_PROMPT =
-  "I could not clearly hear the service. You can say the service name, or press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Acrylic Full Set, 5 for Dip Powder.";
+  "What service would you like today? You can say Pedicure, Manicure, Gel Manicure, Acrylic Full Set, or Dip Powder. You can also press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Acrylic Full Set, or 5 for Dip Powder.";
 const STAFF_DTMF_PROMPT =
-  "I could not clearly hear the staff name. You can say the staff name, or press 1 for Trang, 2 for Amy, 3 for Kelly.";
+  "Who would you like to book with? You can say Trang, Amy, or Kelly. You can also press 1 for Trang, 2 for Amy, or 3 for Kelly.";
+const KNOWN_KIET_CUSTOMER_NAME = "Kiet";
+const KNOWN_KIET_PHONE_DIGITS = new Set(["7325956266", "17325956266"]);
 
 const SERVICE_ALIAS_GROUPS = {
   Pedicure: PEDICURE_ALIASES,
@@ -307,6 +309,21 @@ function normalizeForMatch(value) {
     .replace(/[^a-z0-9]+/g, " ")
     .trim()
     .replace(/\s+/g, " ");
+}
+
+function normalizeCustomerPhoneDigits(value) {
+  return String(value || "").replace(/\D/g, "");
+}
+
+function stripLeadingCountryCode(value) {
+  const digits = normalizeCustomerPhoneDigits(value);
+  return digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
+}
+
+function isKnownKietCallerPhone(value) {
+  const digits = normalizeCustomerPhoneDigits(value);
+  const localDigits = stripLeadingCountryCode(value);
+  return KNOWN_KIET_PHONE_DIGITS.has(digits) || KNOWN_KIET_PHONE_DIGITS.has(localDigits);
 }
 
 function compactForMatch(value) {
@@ -822,6 +839,16 @@ function shouldPromptForServiceFallback(event, intentName) {
   return isBookingLikeUtterance(`${transcript} ${serviceName}`);
 }
 
+function isNoInputEvent(event) {
+  const transcript = String(event.inputTranscript || "").trim();
+  if (!transcript) {
+    return true;
+  }
+
+  const normalized = normalizeForMatch(transcript);
+  return /^(no input|noinput|silence|silent|timeout|timed out)$/.test(normalized);
+}
+
 function parseAttemptCount(value) {
   const parsed = Number.parseInt(String(value || ""), 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
@@ -916,11 +943,20 @@ function buildKnownBookingSessionAttributes(event) {
       ? normalizedKnownService
       : "";
   const explicitCustomerName = recovered.customerName;
+  const amazonConnectCustomerPhone = getAttribute(event, attributeNames.customerNumber);
+  const knownCallerName = isKnownKietCallerPhone(amazonConnectCustomerPhone)
+    ? KNOWN_KIET_CUSTOMER_NAME
+    : "";
   const protectedCustomerName =
     previous.recognizedCustomerName ||
-    (previous.customerNameSource === "phone_lookup" ? previous.customerName : "");
-  const amazonConnectCustomerPhone = getAttribute(event, attributeNames.customerNumber);
+    (previous.customerNameSource === "phone_lookup" ? previous.customerName : "") ||
+    knownCallerName;
   const known = {
+    recognizedCustomerName: knownCallerName || previous.recognizedCustomerName,
+    customerNameSource:
+      knownCallerName || previous.customerNameSource === "phone_lookup"
+        ? "phone_lookup"
+        : previous.customerNameSource,
     customerName:
       explicitCustomerName ||
       protectedCustomerName ||
@@ -988,7 +1024,7 @@ function mergeKnownSlots(event) {
     const sessionValue = getSessionAttribute(sessionAttributes, names);
     const preferSessionValue =
       ["serviceName", "requestedDate", "requestedTime"].includes(field) ||
-      (field === "customerName" &&
+      (["customerName", "customerPhone"].includes(field) &&
         Boolean(sessionAttributes.recognizedCustomerName || sessionAttributes.customerNameSource === "phone_lookup"));
     const value = preferSessionValue
       ? sessionValue ||
@@ -1360,6 +1396,15 @@ export const handler = async (event) => {
   try {
     const intentName = event.sessionState?.intent?.name || "";
     const shouldEscalate = isHumanEscalationRequest(intentName);
+
+    if (event.invocationSource === "DialogCodeHook" && !shouldEscalate && isNoInputEvent(event)) {
+      const slotToElicit = getBookingSlotToElicit(event);
+      if (slotToElicit) {
+        return buildElicitSlotResponse(event, slotToElicit, {
+          noInputPrompted: "true"
+        });
+      }
+    }
 
     if (!shouldEscalate && shouldPromptForServiceFallback(event, intentName)) {
       return buildBookServiceElicitResponse(event);

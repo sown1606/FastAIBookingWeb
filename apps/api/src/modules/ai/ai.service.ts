@@ -356,9 +356,9 @@ const STAFF_DTMF_OPTIONS: Record<string, string> = {
   "3": "Kelly"
 };
 const SERVICE_DTMF_PROMPT =
-  "I could not clearly hear the service. You can say the service name, or press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Acrylic Full Set, 5 for Dip Powder.";
+  "What service would you like today? You can say Pedicure, Manicure, Gel Manicure, Acrylic Full Set, or Dip Powder. You can also press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Acrylic Full Set, or 5 for Dip Powder.";
 const STAFF_DTMF_PROMPT =
-  "I could not clearly hear the staff name. You can say the staff name, or press 1 for Trang, 2 for Amy, 3 for Kelly.";
+  "Who would you like to book with? You can say Trang, Amy, or Kelly. You can also press 1 for Trang, 2 for Amy, or 3 for Kelly.";
 
 const normalizeForMatch = (value?: string | null): string => {
   return (value ?? "")
