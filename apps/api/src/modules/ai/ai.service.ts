@@ -95,6 +95,13 @@ type StaffCandidate = {
   fullName: string;
 };
 
+type CustomerCandidate = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  phone: string;
+};
+
 type StaffPreferenceResolution =
   | {
       status: "all";
@@ -523,6 +530,10 @@ const stripLeadingCountryCode = (value?: string | null): string => {
   return digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
 };
 
+const customerDisplayName = (customer: CustomerCandidate): string => {
+  return customer.firstName.trim() || [customer.firstName, customer.lastName].filter(Boolean).join(" ").trim();
+};
+
 const readStringAttribute = (
   attributes: Record<string, unknown> | undefined,
   names: string[]
@@ -545,7 +556,15 @@ const MAX_SLOT_RETRY_COUNT = 3;
 
 const BOOKING_ATTRIBUTE_NAMES = {
   customerName: ["customerName", "CustomerName"],
-  customerPhone: ["customerPhone", "CustomerPhone", "callerPhone", "CallerId", "ANI"],
+  customerPhone: [
+    "callerPhone",
+    "CustomerEndpointAddress",
+    "CustomerEndpoint",
+    "customerPhone",
+    "CustomerPhone",
+    "CallerId",
+    "ANI"
+  ],
   serviceName: ["serviceName", "ServiceName", "service", "Service"],
   requestedDate: ["requestedDate", "RequestedDate", "preferredDate", "preferredDateTime"],
   requestedTime: ["requestedTime", "RequestedTime", "preferredTime"],
@@ -1539,16 +1558,9 @@ const resolveCustomer = async (input: {
 }) => {
   const normalizedPhone = normalizePhoneForMatching(input.customerPhone);
   if (normalizedPhone) {
-    const candidates = [input.customerPhone, normalizedPhone].filter(
-      (value): value is string => Boolean(value)
-    );
-    const existingByPhone = await prisma.customer.findFirst({
-      where: {
-        salonId: input.salonId,
-        phone: {
-          in: candidates
-        }
-      }
+    const existingByPhone = await findExistingCustomerByPhone({
+      salonId: input.salonId,
+      customerPhone: input.customerPhone
     });
     if (existingByPhone) {
       return existingByPhone;
@@ -1811,6 +1823,63 @@ const buildPhoneLookupValues = (value?: string | null): string[] => {
 
   return Array.from(values.values());
 };
+
+async function findExistingCustomerByPhone(input: {
+  salonId: string;
+  customerPhone?: string | null;
+}): Promise<CustomerCandidate | null> {
+  const lookupValues = buildPhoneLookupValues(input.customerPhone);
+  if (!lookupValues.length) {
+    return null;
+  }
+
+  const exactMatch = await prisma.customer.findFirst({
+    where: {
+      salonId: input.salonId,
+      phone: {
+        in: lookupValues
+      }
+    },
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      phone: true
+    }
+  });
+  if (exactMatch) {
+    return exactMatch;
+  }
+
+  const lookupDigits = stripLeadingCountryCode(input.customerPhone);
+  const lastFour = lookupDigits.slice(-4);
+  if (lookupDigits.length < 7 || lastFour.length < 4) {
+    return null;
+  }
+
+  const possibleMatches = await prisma.customer.findMany({
+    where: {
+      salonId: input.salonId,
+      phone: {
+        contains: lastFour
+      }
+    },
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      phone: true
+    },
+    take: 25,
+    orderBy: {
+      createdAt: "desc"
+    }
+  });
+
+  return (
+    possibleMatches.find((customer) => stripLeadingCountryCode(customer.phone) === lookupDigits) ?? null
+  );
+}
 
 const parseRequestedStartTimeDetailed = (input: {
   requestedDate: string;
@@ -2388,10 +2457,12 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
     asTrimmedString(input.customerName) ??
     asTrimmedString(input.customer?.name) ??
     readBookingFieldAttribute(attributes, "customerName");
+  const amazonConnectCallerPhone =
+    asTrimmedString(input.callerPhone) ?? readBookingFieldAttribute(attributes, "customerPhone");
   const customerPhone =
+    amazonConnectCallerPhone ??
     asTrimmedString(input.customerPhone) ??
     asTrimmedString(input.customer?.phone) ??
-    asTrimmedString(input.callerPhone) ??
     readBookingFieldAttribute(attributes, "customerPhone");
   const rawServiceName =
     serviceDtmfSelection ??
@@ -2565,6 +2636,11 @@ const formatLocalDateTimeForSpeech = (value: Date, timezone: string): string => 
   return `${date} at ${formatLocalTimeForSpeech(value, timezone)}`;
 };
 
+const formatFinalConfirmationDateTimeForSpeech = (value: Date, timezone: string): string => {
+  const local = DateTime.fromJSDate(value, { zone: "utc" }).setZone(timezone);
+  return `${local.toFormat("cccc, LLLL d")} at ${formatLocalTimeForSpeech(value, timezone)}`;
+};
+
 const dedupeSuggestedSlots = (slots: SuggestedSlot[]): SuggestedSlot[] => {
   const seenNameTime = new Set<string>();
   const seenStaffNames = new Set<string>();
@@ -2580,18 +2656,15 @@ const dedupeSuggestedSlots = (slots: SuggestedSlot[]): SuggestedSlot[] => {
   });
 };
 
-const formatAlternativeSentence = (alternatives: SuggestedSlot[], timezone: string): string => {
-  const readable = dedupeSuggestedSlots(alternatives).slice(0, 2).map((slot) => {
+const formatAlternativeChoicePrompt = (alternatives: SuggestedSlot[], timezone: string): string => {
+  const readable = dedupeSuggestedSlots(alternatives).slice(0, 2).map((slot, index) => {
     const time = formatLocalTimeForSpeech(slot.startTime, timezone);
-    return `${slot.staffName} is available at ${time}`;
+    return `press ${index + 1} for ${time} with ${slot.staffName}`;
   });
   if (readable.length === 2) {
     return `${readable[0]}, or ${readable[1]}.`;
   }
-  if (readable.length === 1) {
-    return `${readable[0]}.`;
-  }
-  return "";
+  return readable[0] ? `${readable[0]}.` : "";
 };
 
 const escapeSsml = (value?: string | null): string => {
@@ -2610,18 +2683,14 @@ const buildBookingConfirmationMessage = (input: {
   appointmentStartTime: Date;
   salonTimezone: string;
   staffName: string;
-  customerName: string;
-  customerPhone?: string;
 }): string => {
   const service = input.serviceName.toLowerCase();
-  const appointmentTime = formatLocalDateTimeForSpeech(
+  const appointmentTime = formatFinalConfirmationDateTimeForSpeech(
     input.appointmentStartTime,
     input.salonTimezone
   );
-  const phone = stripLeadingCountryCode(input.customerPhone);
-  const phoneText = phone ? `, phone number ${phone}` : "";
   return speak(
-    `Just to confirm, you want to book a ${escapeSsml(service)} ${escapeSsml(appointmentTime)} with ${escapeSsml(input.staffName)}, under ${escapeSsml(input.customerName)}${escapeSsml(phoneText)}. <break time="300ms"/> Is that correct?`
+    `Just to confirm, ${escapeSsml(service)} with ${escapeSsml(input.staffName)} on ${escapeSsml(appointmentTime)}. <break time="300ms"/> Is that correct?`
   );
 };
 
@@ -2709,15 +2778,31 @@ const buildLexMessage = (input: {
     }
 
     const timezone = input.salonTimezone ?? "America/New_York";
-    const formattedAlternatives = formatAlternativeSentence(alternatives, timezone);
+    const dedupedAlternatives = dedupeSuggestedSlots(alternatives).slice(0, 2);
     if (input.requestedStaffName && input.appointmentStartTime) {
       const requestedTime = formatLocalTimeForSpeech(input.appointmentStartTime, timezone);
+      if (dedupedAlternatives.length === 1) {
+        const [alternative] = dedupedAlternatives;
+        const alternativeTime = formatLocalTimeForSpeech(alternative.startTime, timezone);
+        return speak(
+          `${escapeSsml(input.requestedStaffName)} is not available at ${escapeSsml(requestedTime)}. <break time="300ms"/> ${escapeSsml(alternative.staffName)} is available at ${escapeSsml(alternativeTime)}. Would you like ${escapeSsml(alternativeTime)} with ${escapeSsml(alternative.staffName)}?`
+        );
+      }
+      const formattedChoices = formatAlternativeChoicePrompt(dedupedAlternatives, timezone);
       return speak(
-        `${escapeSsml(input.requestedStaffName)} is not available at ${escapeSsml(requestedTime)}. <break time="300ms"/> ${escapeSsml(formattedAlternatives)} Which one works better?`
+        `${escapeSsml(input.requestedStaffName)} is not available at ${escapeSsml(requestedTime)}. <break time="300ms"/> ${escapeSsml(formattedChoices)}`
       );
     }
+    if (dedupedAlternatives.length === 1) {
+      const [alternative] = dedupedAlternatives;
+      const alternativeTime = formatLocalTimeForSpeech(alternative.startTime, timezone);
+      return speak(
+        `That time is not available. <break time="300ms"/> ${escapeSsml(alternative.staffName)} is available at ${escapeSsml(alternativeTime)}. Would you like ${escapeSsml(alternativeTime)} with ${escapeSsml(alternative.staffName)}?`
+      );
+    }
+    const formattedChoices = formatAlternativeChoicePrompt(dedupedAlternatives, timezone);
     return speak(
-      `That time is not available. <break time="300ms"/> ${escapeSsml(formattedAlternatives)} Which one works better?`
+      `That time is not available. <break time="300ms"/> ${escapeSsml(formattedChoices)}`
     );
   }
 
@@ -2856,14 +2941,47 @@ const textMentionsSlotTime = (text: string, slot: SuggestedSlot, timezone: strin
 const selectAlternativeSlotFromText = (input: {
   alternatives: SuggestedSlot[];
   transcriptText?: string;
+  requestedTime?: string;
   staffPreference?: string;
   timezone: string;
+  allowAffirmativeSingleOption?: boolean;
 }): SuggestedSlot | null => {
   if (!input.alternatives.length) {
     return null;
   }
 
-  const selectionText = [input.transcriptText, input.staffPreference].filter(Boolean).join(" ");
+  if (
+    isNegative(input.transcriptText) ||
+    isNegative(input.requestedTime) ||
+    isNegative(input.staffPreference)
+  ) {
+    return null;
+  }
+
+  if (
+    input.allowAffirmativeSingleOption &&
+    input.alternatives.length === 1 &&
+    (isAffirmative(input.transcriptText) ||
+      isAffirmative(input.requestedTime) ||
+      isAffirmative(input.staffPreference))
+  ) {
+    return input.alternatives[0] ?? null;
+  }
+
+  const digit =
+    readDtmfDigit(input.transcriptText) ||
+    readDtmfDigit(input.requestedTime) ||
+    readDtmfDigit(input.staffPreference);
+  if (digit === "1") {
+    return input.alternatives[0] ?? null;
+  }
+  if (digit === "2") {
+    return input.alternatives[1] ?? null;
+  }
+
+  const selectionText = [input.transcriptText, input.requestedTime, input.staffPreference]
+    .filter(Boolean)
+    .join(" ");
   const normalizedText = normalizeForMatch(selectionText);
   if (!normalizedText) {
     return null;
@@ -2958,9 +3076,25 @@ export const createAmazonConnectAIAppointment = async (
     normalized.serviceName = undefined;
   }
 
+  const explicitCustomerName = normalized.transcriptText
+    ? extractCustomerNameFromText(normalized.transcriptText)
+    : undefined;
   if (normalized.transcriptText) {
-    normalized.customerName ??= extractCustomerNameFromText(normalized.transcriptText);
+    if (explicitCustomerName) {
+      normalized.customerName = explicitCustomerName;
+    }
     normalized.customerPhone ??= extractCustomerPhoneFromText(normalized.transcriptText);
+  }
+
+  const recognizedCustomer = normalized.customerPhone
+    ? await findExistingCustomerByPhone({
+        salonId: salon.id,
+        customerPhone: normalized.customerPhone
+      })
+    : null;
+  if (recognizedCustomer && !explicitCustomerName) {
+    normalized.customerName = customerDisplayName(recognizedCustomer);
+    normalized.customerPhone = normalizePhoneForMatching(normalized.customerPhone) ?? recognizedCustomer.phone;
   }
 
   const transcript =
@@ -3002,11 +3136,39 @@ export const createAmazonConnectAIAppointment = async (
     normalized.staffPreference = await findStaffMentionInText(salon.id, normalized.transcriptText);
   }
 
+  const awaitingAlternativeSelection =
+    readStringAttribute(normalized.attributes, ["awaitingAlternativeSelection"]) === "true";
+  const awaitingFinalBookingConfirmation =
+    readStringAttribute(normalized.attributes, [
+      "awaitingFinalBookingConfirmation",
+      "bookingConfirmationAsked",
+      "finalBookingConfirmationAsked"
+    ]) === "true";
+  if (
+    awaitingFinalBookingConfirmation &&
+    (isAffirmative(normalized.transcriptText) ||
+      isAffirmative(normalized.serviceName) ||
+      isAffirmative(normalized.requestedTime))
+  ) {
+    normalized.confirmationState = "Confirmed";
+  } else if (
+    awaitingFinalBookingConfirmation &&
+    (isNegative(normalized.transcriptText) ||
+      isNegative(normalized.serviceName) ||
+      isNegative(normalized.requestedTime))
+  ) {
+    normalized.confirmationState = "Denied";
+  }
+
   const selectedAlternative = selectAlternativeSlotFromText({
-    alternatives: parseAlternativeSlotsAttribute(normalized.attributes),
+    alternatives: awaitingAlternativeSelection
+      ? parseAlternativeSlotsAttribute(normalized.attributes)
+      : [],
     transcriptText: normalized.transcriptText,
+    requestedTime: normalized.requestedTime,
     staffPreference: normalized.staffPreference,
-    timezone: salon.timezone
+    timezone: salon.timezone,
+    allowAffirmativeSingleOption: awaitingAlternativeSelection
   });
   if (selectedAlternative) {
     const selectedLocalStart = DateTime.fromISO(selectedAlternative.startTime, { zone: "utc" }).setZone(
@@ -3015,6 +3177,9 @@ export const createAmazonConnectAIAppointment = async (
     normalized.requestedDate = selectedLocalStart.toFormat("yyyy-MM-dd");
     normalized.requestedTime = selectedLocalStart.toFormat("HH:mm");
     normalized.staffPreference = selectedAlternative.staffName;
+    if (!awaitingFinalBookingConfirmation) {
+      normalized.confirmationState = undefined;
+    }
   }
 
   let staffResolution = await resolveStaffCandidates({
@@ -3064,6 +3229,7 @@ export const createAmazonConnectAIAppointment = async (
       normalizedRequest: toJson({
         salonId: salon.id,
         salonResolutionSource: resolutionSource,
+        customerId: recognizedCustomer?.id,
         customerName: normalized.customerName,
         customerPhone: normalized.customerPhone,
         serviceName: normalized.serviceName,
@@ -3177,12 +3343,17 @@ export const createAmazonConnectAIAppointment = async (
   ): Record<string, string> => {
     return Object.fromEntries(
       Object.entries({
+        customerId: recognizedCustomer?.id,
+        recognizedCustomerId: recognizedCustomer?.id,
+        recognizedCustomerName: recognizedCustomer ? customerDisplayName(recognizedCustomer) : undefined,
         customerName: normalized.customerName,
         customerPhone: normalized.customerPhone,
         serviceName: normalized.serviceName,
         requestedDate: normalized.requestedDate,
         requestedTime: normalized.requestedTime,
         staffPreference: normalized.staffPreference,
+        confirmedServiceName: normalized.serviceName,
+        confirmedStaffName: normalized.staffPreference,
         callSessionId: callSession?.id,
         amazonConnectContactId: normalized.contactId,
         ...extra
@@ -3837,6 +4008,8 @@ export const createAmazonConnectAIAppointment = async (
         sessionAttributes: buildKnownSessionAttributes({
           aiAlternativeSlots: JSON.stringify(alternatives.slice(0, 2)),
           awaitingAlternativeSelection: "true",
+          awaitingFinalBookingConfirmation: "false",
+          bookingConfirmationAsked: "false",
           lastAskedSlot: "requestedTime",
           askedSlotsCount: "1",
           fallbackCount: "1",
@@ -3892,7 +4065,12 @@ export const createAmazonConnectAIAppointment = async (
         dialogAction: {
           type: "ElicitIntent"
         },
-        sessionAttributes: buildKnownSessionAttributes()
+        sessionAttributes: buildKnownSessionAttributes({
+          aiAlternativeSlots: "[]",
+          awaitingAlternativeSelection: "false",
+          awaitingFinalBookingConfirmation: "false",
+          bookingConfirmationAsked: "false"
+        })
       },
       appointment: null,
       bookingAttempt,
@@ -3911,9 +4089,7 @@ export const createAmazonConnectAIAppointment = async (
       serviceName: service.name,
       appointmentStartTime: requestedStartTime,
       salonTimezone: salon.timezone,
-      staffName: chosenStaff.fullName,
-      customerName: normalized.customerName!,
-      customerPhone: normalized.customerPhone
+      staffName: chosenStaff.fullName
     });
     const parsed = buildInternalParsedIntent({
       intentType: "BOOK_APPOINTMENT",
@@ -3950,7 +4126,16 @@ export const createAmazonConnectAIAppointment = async (
         dialogAction: {
           type: "ConfirmIntent"
         },
-        sessionAttributes: buildKnownSessionAttributes()
+        sessionAttributes: buildKnownSessionAttributes({
+          aiAlternativeSlots: "[]",
+          awaitingAlternativeSelection: "false",
+          awaitingFinalBookingConfirmation: "true",
+          bookingConfirmationAsked: "true",
+          lastAskedSlot: "bookingConfirmation",
+          askedSlotsCount: "1",
+          fallbackCount: "1",
+          errorCount: "1"
+        })
       },
       appointment: null,
       bookingAttempt,
@@ -4108,7 +4293,11 @@ export const createAmazonConnectAIAppointment = async (
       message,
       messageContentType: "SSML",
       sessionAttributes: buildKnownSessionAttributes({
-        bookingOutcome: "BOOKED"
+        bookingOutcome: "BOOKED",
+        aiAlternativeSlots: "[]",
+        awaitingAlternativeSelection: "false",
+        awaitingFinalBookingConfirmation: "false",
+        bookingConfirmationAsked: "false"
       })
     },
     appointment,

@@ -144,7 +144,7 @@ test("BookAppointmentIntent with complete slots posts the backend contract and m
   assert.equal(fetchCalls[0].body.intentName, "BookAppointmentIntent");
   assert.equal(fetchCalls[0].body.provider, "AMAZON_CONNECT");
   assert.equal(fetchCalls[0].body.customerName, "Kiet Nguyen");
-  assert.equal(fetchCalls[0].body.customerPhone, "7325956266");
+  assert.equal(fetchCalls[0].body.customerPhone, "+17325956266");
   assert.equal(fetchCalls[0].body.serviceName, "Pedicure");
   assert.equal(fetchCalls[0].body.requestedDate, usEasternDate(1));
   assert.equal(fetchCalls[0].body.requestedTime, "5 PM");
@@ -225,7 +225,7 @@ test("DialogCodeHook recovers pedicure aliases and bare PM time from transcript"
 
   assert.equal(response.sessionState.dialogAction.type, "Delegate");
   assert.equal(response.sessionState.intent.slots.customerName.value.interpretedValue, "Kiet Nguyen");
-  assert.equal(response.sessionState.intent.slots.customerPhone.value.interpretedValue, "7325956266");
+  assert.equal(response.sessionState.intent.slots.customerPhone.value.interpretedValue, "+17325956266");
   assert.equal(response.sessionState.intent.slots.serviceName.value.interpretedValue, "Pedicure");
   assert.equal(response.sessionState.intent.slots.requestedDate.value.interpretedValue, usEasternDate(1));
   assert.equal(response.sessionState.intent.slots.requestedTime.value.interpretedValue, "5 PM");
@@ -305,6 +305,7 @@ test("DialogCodeHook maps service DTMF only when serviceName was last asked", as
   assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
   assert.equal(response.sessionState.dialogAction.slotToElicit, "staffPreference");
   assert.equal(response.sessionState.sessionAttributes.serviceName, "Pedicure");
+  assert.equal(response.sessionState.sessionAttributes.confirmedServiceName, "Pedicure");
   assert.equal(response.sessionState.intent.slots.serviceName.value.interpretedValue, "Pedicure");
 });
 
@@ -343,6 +344,50 @@ test("DialogCodeHook maps staff DTMF only when staffPreference was last asked", 
   assert.equal(response.sessionState.dialogAction.type, "Delegate");
   assert.equal(response.sessionState.intent.slots.staffPreference.value.interpretedValue, "Trang");
   assert.equal(response.sessionState.intent.slots.serviceName.value.interpretedValue, "Pedicure");
+  assert.equal(response.sessionState.sessionAttributes.confirmedStaffName, "Trang");
+});
+
+test("DialogCodeHook preserves recognized customer name over bad Lex name slot", async () => {
+  const handler = await loadHandler();
+  globalThis.fetch = async () => {
+    throw new Error("fetch should not be called for DialogCodeHook recognized customer preservation");
+  };
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "I want a pedicure tomorrow at three PM.",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: "connect-contact-1",
+          customerName: "Kiet",
+          recognizedCustomerName: "Kiet",
+          customerNameSource: "phone_lookup",
+          customerPhone: "+17325956266"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          slots: {
+            customerName: slot("chang"),
+            customerPhone: slot("1111156266"),
+            serviceName: slot("Pedicure"),
+            requestedDate: slot(usEasternDate(1)),
+            requestedTime: slot("3 PM"),
+            staffPreference: slot("Trang")
+          }
+        }
+      }
+    })
+  );
+
+  assert.equal(response.sessionState.dialogAction.type, "Delegate");
+  assert.equal(response.sessionState.sessionAttributes.customerName, "Kiet");
+  assert.equal(response.sessionState.sessionAttributes.customerPhone, "+17325956266");
+  assert.equal(response.sessionState.intent.slots.customerName.value.interpretedValue, "Kiet");
 });
 
 test("unknown booking service elicits service before backend escalation", async () => {

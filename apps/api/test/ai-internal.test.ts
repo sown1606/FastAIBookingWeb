@@ -38,7 +38,8 @@ const ids = {
   olivia: "10000000-0000-4000-8000-000000000002",
   nora: "10000000-0000-4000-8000-000000000003",
   trang: "10000000-0000-4000-8000-000000000004",
-  pedicure: "20000000-0000-4000-8000-000000000001"
+  pedicure: "20000000-0000-4000-8000-000000000001",
+  kietCustomer: "30000000-0000-4000-8000-000000000001"
 };
 
 const patch = (target: Record<string, unknown>, key: string, value: unknown) => {
@@ -164,7 +165,16 @@ const createInitialState = () => {
         createdAt: new Date("2026-01-01T00:00:00.000Z")
       }
     ],
-    customers: [] as any[],
+    customers: [
+      {
+        id: ids.kietCustomer,
+        salonId: ids.salonA,
+        firstName: "Kiet",
+        lastName: "Nguyen",
+        phone: "7325956266",
+        createdAt: new Date("2026-01-01T00:00:00.000Z")
+      }
+    ] as any[],
     appointments: [] as any[],
     appointmentServices: [] as any[],
     bookingAttempts: [] as any[],
@@ -344,6 +354,16 @@ const setupPrismaMock = () => {
           customer.salonId === args?.where?.salonId &&
           customer.firstName.toLowerCase().includes(String(args?.where?.firstName?.contains ?? "").toLowerCase())
       ) ?? null
+    );
+  });
+  patch(prisma.customer as any, "findMany", async (args: any) => {
+    const contains = String(args?.where?.phone?.contains ?? "");
+    const phoneCandidates = args?.where?.phone?.in as string[] | undefined;
+    return state.customers.filter(
+      (customer) =>
+        customer.salonId === args?.where?.salonId &&
+        (!phoneCandidates || phoneCandidates.includes(customer.phone)) &&
+        (!contains || String(customer.phone).includes(contains))
     );
   });
   patch(prisma.customer as any, "create", async (args: any) => {
@@ -622,6 +642,32 @@ test("salon resolution supports explicit salonId, Amazon Connect called number, 
   assert.equal(result.body.data.salonResolutionSource, "default_salon_demo_fallback");
 });
 
+test("known Amazon Connect caller phone keeps Kiet instead of bad Lex name text", async () => {
+  const result = await postInternalAppointment(
+    bookingPayload({
+      customerName: "chang",
+      customerPhone: undefined,
+      callerPhone: "+17325956266",
+      requestedTime: "3 PM",
+      staffPreference: "Trang",
+      confirmationState: undefined,
+      attributes: {
+        CustomerEndpointAddress: "+17325956266",
+        customerName: "chang"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.customerId, ids.kietCustomer);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.customerName, "Kiet");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.recognizedCustomerName, "Kiet");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.customerPhone, "+17325956266");
+  assert.equal(state.appointments.length, 0);
+});
+
 test("missing booking fields return a Lex needs-input response instead of crashing", async () => {
   const result = await postInternalAppointment({
     salonId: ids.salonA,
@@ -678,7 +724,7 @@ test("transcript recovery normalizes pedicure aliases and confirms without re-as
     assert.equal(result.body.data.lexResponse.sessionAttributes.customerPhone, "7325956266");
     assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Pedicure");
     assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "17:00");
-    assert.match(result.body.data.lexResponse.message, /pedicure tomorrow at 5 PM/i);
+    assert.match(result.body.data.lexResponse.message, /Just to confirm, pedicure with Trang on/i);
     assert.equal(state.appointments.length, 0);
   }
 });
@@ -704,7 +750,7 @@ test("Kiet demo phrase confirms Pedicure with Trang tomorrow at 3 PM", async () 
   assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Pedicure");
   assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
   assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "15:00");
-  assert.match(result.body.data.lexResponse.message, /pedicure tomorrow at 3 PM with Trang/i);
+  assert.match(result.body.data.lexResponse.message, /Just to confirm, pedicure with Trang on/i);
   assert.equal(state.appointments.length, 0);
 });
 
@@ -798,6 +844,7 @@ test("service DTMF applies only to serviceName and continues to staff", async ()
   assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitSlot");
   assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "staffPreference");
   assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Pedicure");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedServiceName, "Pedicure");
   assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, undefined);
   assert.equal(state.appointments.length, 0);
 });
@@ -824,6 +871,8 @@ test("staff DTMF applies only to staffPreference and reaches confirmation", asyn
   assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
   assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Pedicure");
   assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedServiceName, "Pedicure");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedStaffName, "Trang");
   assert.match(result.body.data.lexResponse.message, /pedicure/i);
   assert.match(result.body.data.lexResponse.message, /Trang/i);
   assert.equal(state.appointments.length, 0);
@@ -851,7 +900,62 @@ test("busy requested staff returns deduped alternatives", async () => {
     result.body.data.alternatives.length
   );
   assert.equal(result.body.data.alternatives[0].staffName, "Trang");
+  assert.match(result.body.data.lexResponse.message, /Trang is not available at 5 PM/i);
+  assert.match(result.body.data.lexResponse.message, /Would you like .* with Trang/i);
+  assert.doesNotMatch(result.body.data.lexResponse.message, /Which one works better/i);
   assert.equal(state.appointments.length, 0);
+});
+
+test("yes to a single alternative asks final confirmation before booking", async () => {
+  state.busyStaffIds.add(ids.trang);
+  const first = await postInternalAppointment(bookingPayload({ staffPreference: "Trang" }));
+  assert.equal(first.body.data.outcome, "NO_AVAILABILITY");
+  assert.equal(first.body.data.alternatives.length, 1);
+
+  const firstAttributes = first.body.data.lexResponse.sessionAttributes;
+  state.busyStaffIds.clear();
+  const second = await postInternalAppointment(
+    bookingPayload({
+      customerName: firstAttributes.customerName,
+      customerPhone: firstAttributes.customerPhone,
+      serviceName: firstAttributes.serviceName,
+      requestedDate: firstAttributes.requestedDate,
+      requestedTime: firstAttributes.requestedTime,
+      staffPreference: firstAttributes.staffPreference,
+      confirmationState: "Confirmed",
+      transcript: "yes",
+      attributes: firstAttributes
+    })
+  );
+
+  assert.equal(second.response.status, 200);
+  assert.equal(second.body.data.outcome, "MISSING_INFO");
+  assert.equal(second.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(second.body.data.lexResponse.sessionAttributes.awaitingAlternativeSelection, "false");
+  assert.equal(second.body.data.lexResponse.sessionAttributes.awaitingFinalBookingConfirmation, "true");
+  assert.equal(second.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
+  assert.match(second.body.data.lexResponse.message, /Just to confirm, pedicure with Trang on/i);
+  assert.equal(state.appointments.length, 0);
+
+  const secondAttributes = second.body.data.lexResponse.sessionAttributes;
+  const third = await postInternalAppointment(
+    bookingPayload({
+      customerName: secondAttributes.customerName,
+      customerPhone: secondAttributes.customerPhone,
+      serviceName: secondAttributes.serviceName,
+      requestedDate: secondAttributes.requestedDate,
+      requestedTime: secondAttributes.requestedTime,
+      staffPreference: secondAttributes.staffPreference,
+      confirmationState: "Confirmed",
+      transcript: "yes",
+      attributes: secondAttributes
+    })
+  );
+
+  assert.equal(third.response.status, 201);
+  assert.equal(third.body.data.outcome, "BOOKED");
+  assert.equal(state.appointments.length, 1);
+  assert.equal(state.appointments[0].staffId, ids.trang);
 });
 
 test("successful booking creates appointment, booking attempt, call session, transcript, and AI log", async () => {

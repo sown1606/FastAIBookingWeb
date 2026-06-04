@@ -166,6 +166,24 @@
           "x": 1040,
           "y": 160
         }
+      },
+      "check-kiet-known-caller": {
+        "position": {
+          "x": 420,
+          "y": 180
+        }
+      },
+      "set-kiet-known-customer": {
+        "position": {
+          "x": 620,
+          "y": 120
+        }
+      },
+      "kiet-known-caller-greeting-prompt": {
+        "position": {
+          "x": 760,
+          "y": 120
+        }
       }
     },
     "Annotations": []
@@ -457,10 +475,10 @@
         "TargetContact": "Current"
       },
       "Transitions": {
-        "NextAction": "ai-greeting-prompt",
+        "NextAction": "check-kiet-known-caller",
         "Errors": [
           {
-            "NextAction": "ai-greeting-prompt",
+            "NextAction": "check-kiet-known-caller",
             "ErrorType": "NoMatchingError"
           }
         ]
@@ -521,6 +539,93 @@
         "Errors": [
           {
             "NextAction": "37dbed23-a7c0-4259-a4f5-9be9db2f9c80",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "check-kiet-known-caller",
+      "Type": "Compare",
+      "Parameters": {
+        "ComparisonValue": "$.CustomerEndpoint.Address"
+      },
+      "Transitions": {
+        "NextAction": "ai-greeting-prompt",
+        "Conditions": [
+          {
+            "NextAction": "set-kiet-known-customer",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "+17325956266"
+              ]
+            }
+          },
+          {
+            "NextAction": "set-kiet-known-customer",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "7325956266"
+              ]
+            }
+          },
+          {
+            "NextAction": "set-kiet-known-customer",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "17325956266"
+              ]
+            }
+          }
+        ],
+        "Errors": [
+          {
+            "NextAction": "ai-greeting-prompt",
+            "ErrorType": "NoMatchingCondition"
+          },
+          {
+            "NextAction": "ai-greeting-prompt",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "set-kiet-known-customer",
+      "Type": "UpdateContactAttributes",
+      "Parameters": {
+        "Attributes": {
+          "customerName": "Kiet",
+          "recognizedCustomerName": "Kiet",
+          "customerNameSource": "phone_lookup"
+        },
+        "TargetContact": "Current"
+      },
+      "Transitions": {
+        "NextAction": "kiet-known-caller-greeting-prompt",
+        "Errors": [
+          {
+            "NextAction": "kiet-known-caller-greeting-prompt",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "kiet-known-caller-greeting-prompt",
+      "Type": "MessageParticipant",
+      "Parameters": {
+        "SkipWhenDTMFBufferEnabled": "false",
+        "Text": "Hi Kiet, thank you for calling Kiet Nails & Beauty. How can I help you today?"
+      },
+      "Transitions": {
+        "NextAction": "3b2877ca-bc16-4019-a8e6-04200c0ded06",
+        "Errors": [
+          {
+            "NextAction": "3b2877ca-bc16-4019-a8e6-04200c0ded06",
             "ErrorType": "NoMatchingError"
           }
         ]

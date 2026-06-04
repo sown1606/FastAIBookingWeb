@@ -915,12 +915,21 @@ function buildKnownBookingSessionAttributes(event) {
     normalizedKnownService && !isClearlyInvalidServiceName(normalizedKnownService)
       ? normalizedKnownService
       : "";
+  const explicitCustomerName = recovered.customerName;
+  const protectedCustomerName =
+    previous.recognizedCustomerName ||
+    (previous.customerNameSource === "phone_lookup" ? previous.customerName : "");
+  const amazonConnectCustomerPhone = getAttribute(event, attributeNames.customerNumber);
   const known = {
-    customerName: getKnownField(event, "customerName") || recovered.customerName,
+    customerName:
+      explicitCustomerName ||
+      protectedCustomerName ||
+      getKnownField(event, "customerName"),
     customerPhone:
+      amazonConnectCustomerPhone ||
       getKnownField(event, "customerPhone") ||
       recovered.customerPhone ||
-      getAttribute(event, attributeNames.customerNumber),
+      amazonConnectCustomerPhone,
     serviceName: serviceDtmfSelection || knownService || recovered.serviceName,
     requestedDate: recovered.requestedDate || resolveKnownDateValue(knownDate, timeZone),
     requestedTime:
@@ -931,6 +940,12 @@ function buildKnownBookingSessionAttributes(event) {
       staffDtmfSelection ||
       getKnownField(event, "staffPreference") ||
       extractStaffFromTranscript(transcript),
+    confirmedServiceName:
+      serviceDtmfSelection ||
+      previous.confirmedServiceName,
+    confirmedStaffName:
+      staffDtmfSelection ||
+      previous.confirmedStaffName,
     initialBookingUtterance: initial
   };
 
@@ -971,7 +986,10 @@ function mergeKnownSlots(event) {
       preferOriginal: field === "requestedTime"
     });
     const sessionValue = getSessionAttribute(sessionAttributes, names);
-    const preferSessionValue = ["serviceName", "requestedDate", "requestedTime"].includes(field);
+    const preferSessionValue =
+      ["serviceName", "requestedDate", "requestedTime"].includes(field) ||
+      (field === "customerName" &&
+        Boolean(sessionAttributes.recognizedCustomerName || sessionAttributes.customerNameSource === "phone_lookup"));
     const value = preferSessionValue
       ? sessionValue ||
         currentValue ||
