@@ -548,7 +548,7 @@
       "Identifier": "check-kiet-known-caller",
       "Type": "Compare",
       "Parameters": {
-        "ComparisonValue": "$.CustomerEndpoint.Address"
+        "ComparisonValue": "$.Attributes.callerPhone"
       },
       "Transitions": {
         "NextAction": "ai-greeting-prompt",
