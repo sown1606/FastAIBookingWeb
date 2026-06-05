@@ -61,6 +61,22 @@ services:
     networks:
       - public
 
+  adminer:
+    image: adminer:4.8.1-standalone
+    container_name: fastaibooking-adminer
+    restart: unless-stopped
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    volumes:
+      - ./apps/admin/db.php:/var/www/html/index.php:ro
+    ports:
+      - "127.0.0.1:${ADMINER_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - private
+
   app:
     build:
       context: .

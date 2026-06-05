@@ -526,6 +526,114 @@ test("DialogCodeHook maps staff DTMF only when staffPreference was last asked", 
   assert.equal(response.sessionState.sessionAttributes.confirmedStaffName, "Trang");
 });
 
+test("DialogCodeHook maps staff DTMF 3 to Kelly when staffPreference was last asked", async () => {
+  const handler = await loadHandler();
+  globalThis.fetch = async () => {
+    throw new Error("fetch should not be called for DialogCodeHook DTMF recovery");
+  };
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "3",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: "connect-contact-1",
+          lastAskedSlot: "staffPreference",
+          customerName: "Kiet Nguyen",
+          customerPhone: "7325956266",
+          serviceName: "Pedicure",
+          requestedDate: usEasternDate(1),
+          requestedTime: "3 PM"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          slots: {}
+        }
+      }
+    })
+  );
+
+  assert.equal(response.sessionState.dialogAction.type, "Delegate");
+  assert.equal(response.sessionState.intent.slots.staffPreference.value.interpretedValue, "Kelly");
+  assert.equal(response.sessionState.sessionAttributes.confirmedStaffName, "Kelly");
+});
+
+test("DialogCodeHook maps staff DTMF 4 to Any staff when staffPreference was last asked", async () => {
+  const handler = await loadHandler();
+  globalThis.fetch = async () => {
+    throw new Error("fetch should not be called for DialogCodeHook DTMF recovery");
+  };
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "4",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: "connect-contact-1",
+          lastAskedSlot: "staffPreference",
+          customerName: "Kiet Nguyen",
+          customerPhone: "7325956266",
+          serviceName: "Pedicure",
+          requestedDate: usEasternDate(1),
+          requestedTime: "3 PM"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          slots: {}
+        }
+      }
+    })
+  );
+
+  assert.equal(response.sessionState.dialogAction.type, "Delegate");
+  assert.equal(response.sessionState.intent.slots.staffPreference.value.interpretedValue, "Any staff");
+  assert.equal(response.sessionState.sessionAttributes.confirmedStaffName, "Any staff");
+});
+
+test("DialogCodeHook recovers Kelly staff alias from transcript", async () => {
+  const handler = await loadHandler();
+  globalThis.fetch = async () => {
+    throw new Error("fetch should not be called for DialogCodeHook transcript recovery");
+  };
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript:
+        "I want to book a pedicure tomorrow at two PM with Kelly. My name is Kiet Nguyen. My phone number is 7325956266.",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: "connect-contact-1"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          slots: {}
+        }
+      }
+    })
+  );
+
+  assert.equal(response.sessionState.dialogAction.type, "Delegate");
+  assert.equal(response.sessionState.intent.slots.serviceName.value.interpretedValue, "Pedicure");
+  assert.equal(response.sessionState.intent.slots.requestedDate.value.interpretedValue, usEasternDate(1));
+  assert.equal(response.sessionState.intent.slots.requestedTime.value.interpretedValue, "2 PM");
+  assert.equal(response.sessionState.intent.slots.staffPreference.value.interpretedValue, "Kelly");
+});
+
 test("DialogCodeHook preserves recognized customer name over bad Lex name slot", async () => {
   const handler = await loadHandler();
   globalThis.fetch = async () => {

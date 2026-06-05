@@ -34,7 +34,10 @@ const interactionsQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
   taskType: z.string().max(80).optional(),
-  callSessionId: z.string().uuid().optional()
+  callSessionId: z.string().trim().min(1).max(160).optional(),
+  contactId: z.string().trim().min(1).max(160).optional(),
+  callerPhone: z.string().trim().min(3).max(40).optional(),
+  q: z.string().trim().min(1).max(160).optional()
 });
 
 const createAIAppointmentSchema = z
@@ -213,11 +216,20 @@ aiRouter.get(
 
 aiRouter.get(
   "/interactions/export",
-  validate(interactionsQuerySchema.pick({ taskType: true, callSessionId: true }), "query"),
+  validate(
+    interactionsQuerySchema.pick({
+      taskType: true,
+      callSessionId: true,
+      contactId: true,
+      callerPhone: true,
+      q: true
+    }),
+    "query"
+  ),
   asyncHandler(async (req, res) => {
     const query = req.query as unknown as Pick<
       z.infer<typeof interactionsQuerySchema>,
-      "taskType" | "callSessionId"
+      "taskType" | "callSessionId" | "contactId" | "callerPhone" | "q"
     >;
     const result = await exportAIInteractions(req.auth!.salonId!, query);
     return sendSuccess(res, {

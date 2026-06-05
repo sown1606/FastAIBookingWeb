@@ -59,10 +59,9 @@ Only `owner.demo@fastaibooking.local` is seeded as the primary owner of the sing
 
 - One active demo salon: `Kiet Nails & Beauty`
 - 3 active/bookable staff records seeded:
-  - `Mia Carter`
-  - `Olivia Brooks`
-  - `Nora Evans`
-  - `Trang` is not part of the current seeded bookable staff set
+  - `Trang`
+  - `Amy`
+  - `Kelly`
 - 8 customers
 - 9 appointments across today and upcoming dates
 - 7 demo call sessions covering:

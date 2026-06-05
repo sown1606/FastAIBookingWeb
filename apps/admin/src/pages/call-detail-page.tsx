@@ -143,6 +143,9 @@ export const CallDetailPage = () => {
     return <EmptyBlock message={t("calls.notFound")} />;
   }
 
+  const hasLexTranscriptWithoutFulfillment =
+    call.transcripts.length > 0 && call.bookingAttempts.length === 0 && call.aiInteractions.length === 0;
+
   return (
     <div className="stack">
       <section className="card">
@@ -272,6 +275,9 @@ export const CallDetailPage = () => {
             </article>
           ) : null}
           <pre>{JSON.stringify(call.aiSummary ?? null, null, 2)}</pre>
+          {hasLexTranscriptWithoutFulfillment ? (
+            <p className="form-error">{t("calls.lexTranscriptNoFulfillment")}</p>
+          ) : null}
           <h4>{t("calls.aiInteractions")}</h4>
           {call.aiInteractions.length ? (
             <div className="mobile-list">

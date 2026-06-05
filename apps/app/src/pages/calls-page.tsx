@@ -62,6 +62,11 @@ interface CallDetail {
     failureReason: string | null;
     createdAt: string;
   }>;
+  aiInteractions?: Array<{
+    id: string;
+    taskType: string;
+    createdAt: string;
+  }>;
   callEscalations: Array<{
     id: string;
     status: string;
@@ -148,6 +153,11 @@ export const CallsPage = () => {
       withTranscripts: calls.filter((item) => item._count.transcripts > 0).length
     };
   }, [calls]);
+
+  const hasLexTranscriptWithoutFulfillment =
+    Boolean(selectedCall?.transcripts.length) &&
+    selectedCall?.bookingAttempts.length === 0 &&
+    (selectedCall.aiInteractions?.length ?? 0) === 0;
 
   if (loading) {
     return <LoadingBlock />;
@@ -294,6 +304,9 @@ export const CallsPage = () => {
 
             <article className="inspection-box">
               <h3>{t("calls.aiSummary")}</h3>
+              {hasLexTranscriptWithoutFulfillment ? (
+                <p className="form-error">{t("calls.lexTranscriptNoFulfillment")}</p>
+              ) : null}
               <pre>{JSON.stringify(selectedCall.aiSummary ?? null, null, 2)}</pre>
             </article>
 

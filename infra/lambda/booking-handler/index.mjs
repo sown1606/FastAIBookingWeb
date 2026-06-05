@@ -138,16 +138,31 @@ const SERVICE_DTMF_OPTIONS = {
 const STAFF_DTMF_OPTIONS = {
   "1": "Trang",
   "2": "Amy",
-  "3": "Kelly"
+  "3": "Kelly",
+  "4": "Any staff"
 };
+const STAFF_ALIAS_GROUPS = {
+  Trang: ["trang", "chang", "train", "trangg"],
+  Amy: ["amy", "amie", "a me"],
+  Kelly: ["kelly", "keli", "kelley", "ke li"]
+};
+const ANY_STAFF_ALIASES = [
+  "anyone",
+  "anybody",
+  "any body",
+  "any staff",
+  "no preference",
+  "whoever is available",
+  "first available"
+];
 const SERVICE_DTMF_PROMPT =
   "What service would you like today? You can say Pedicure, Manicure, Gel Manicure, Acrylic Full Set, or Dip Powder. You can also press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Acrylic Full Set, or 5 for Dip Powder.";
 const SERVICE_DTMF_SHORT_PROMPT =
   "You can say Pedicure, Manicure, Gel Manicure, Acrylic Full Set, or Dip Powder, or press 1 through 5.";
 const STAFF_DTMF_PROMPT =
-  "Who would you like to book with? You can say Trang, Amy, or Kelly. You can also press 1 for Trang, 2 for Amy, or 3 for Kelly.";
+  "Who would you like to book with? You can say Trang, Amy, Kelly, or any staff. You can also press 1 for Trang, 2 for Amy, 3 for Kelly, or 4 for Any staff.";
 const STAFF_DTMF_SHORT_PROMPT =
-  "You can say Trang, Amy, or Kelly, or press 1, 2, or 3.";
+  "You can say Trang, Amy, Kelly, or any staff, or press 1, 2, 3, or 4.";
 const NO_INPUT_HUMAN_CONFIRM_PROMPT =
   "Are you still there? Would you like me to connect you to a real person?";
 const KNOWN_KIET_CUSTOMER_NAME = "Kiet";
@@ -374,6 +389,14 @@ function extractStaffFromTranscript(text) {
   const normalizedText = normalizeForMatch(text);
   if (!normalizedText) {
     return "";
+  }
+  if (ANY_STAFF_ALIASES.some((alias) => normalizedText.includes(normalizeForMatch(alias)))) {
+    return "Any staff";
+  }
+  for (const [staffName, aliases] of Object.entries(STAFF_ALIAS_GROUPS)) {
+    if (aliases.some((alias) => normalizedText.includes(normalizeForMatch(alias)))) {
+      return staffName;
+    }
   }
   return (
     DEMO_STAFF_NAMES.find((staffName) => {

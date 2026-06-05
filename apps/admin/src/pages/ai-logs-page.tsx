@@ -18,6 +18,13 @@ interface AiLogItem {
     id: string;
     name: string;
   } | null;
+  callSessionId?: string | null;
+  callSession?: {
+    id: string;
+    providerCallId: string;
+    callerPhone: string | null;
+  } | null;
+  bookingAttemptId?: string | null;
 }
 
 interface AiLogsResponse {
@@ -30,6 +37,8 @@ export const AiLogsPage = () => {
   const [taskType, setTaskType] = useState("");
   const [salonId, setSalonId] = useState("");
   const [querySalonId, setQuerySalonId] = useState("");
+  const [search, setSearch] = useState("");
+  const [querySearch, setQuerySearch] = useState("");
   const [data, setData] = useState<AiLogsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -48,6 +57,9 @@ export const AiLogsPage = () => {
       if (salonId.trim()) {
         params.set("salonId", salonId.trim());
       }
+      if (search.trim()) {
+        params.set("q", search.trim());
+      }
       const response = await apiGet<AiLogsResponse>(`/api/v1/admin/ai-logs?${params.toString()}`);
       setData(response);
     } catch (loadError) {
@@ -59,11 +71,12 @@ export const AiLogsPage = () => {
 
   useEffect(() => {
     void load();
-  }, [taskType, salonId]);
+  }, [taskType, salonId, search]);
 
   const onFilter = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setSalonId(querySalonId.trim());
+    setSearch(querySearch.trim());
   };
 
   if (loading) {
@@ -99,6 +112,14 @@ export const AiLogsPage = () => {
             placeholder={t("aiLogs.filterSalonPlaceholder")}
           />
         </label>
+        <label className="field compact">
+          <span>{t("aiLogs.search")}</span>
+          <input
+            value={querySearch}
+            onChange={(event) => setQuerySearch(event.target.value)}
+            placeholder={t("aiLogs.searchPlaceholder")}
+          />
+        </label>
         <button type="submit" className="button-secondary">
           {t("aiLogs.apply")}
         </button>
@@ -110,6 +131,7 @@ export const AiLogsPage = () => {
               <tr>
                 <th>{t("aiLogs.created")}</th>
                 <th>{t("aiLogs.salon")}</th>
+                <th>{t("aiLogs.linkedCall")}</th>
                 <th>{t("aiLogs.task")}</th>
                 <th>{t("aiLogs.provider")}</th>
                 <th>{t("aiLogs.valid")}</th>
@@ -122,6 +144,10 @@ export const AiLogsPage = () => {
                 <tr key={item.id}>
                   <td>{formatDateTime(item.createdAt)}</td>
                   <td>{item.salon?.name ?? t("common.none")}</td>
+                  <td>
+                    <div>{item.callSession?.providerCallId ?? item.callSessionId ?? t("common.none")}</div>
+                    <small className="muted">{item.callSession?.callerPhone ?? item.bookingAttemptId ?? ""}</small>
+                  </td>
                   <td>{item.taskType}</td>
                   <td>{item.model ? `${item.provider} / ${item.model}` : item.provider}</td>
                   <td>{item.isValid ? t("common.yes") : t("common.no")}</td>

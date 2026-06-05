@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState, type ReactNode } from "react";
+import { FormEvent, Fragment, useEffect, useState, type ReactNode } from "react";
 import { apiGet, extractErrorMessage } from "../lib/api";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
 import { formatDateTime } from "../lib/format";
@@ -12,6 +12,13 @@ interface AiLogItem {
   isValid: boolean;
   confidence: number | null;
   createdAt: string;
+  callSessionId?: string | null;
+  callSession?: {
+    id: string;
+    providerCallId: string;
+    callerPhone: string | null;
+  } | null;
+  bookingAttemptId?: string | null;
 }
 
 interface AiLogsResponse {
@@ -35,7 +42,7 @@ interface AiLogDetail {
   bookingAttemptId?: string | null;
   callSessionId?: string | null;
   bookingAttempt?: { id: string } | null;
-  callSession?: { id: string } | null;
+  callSession?: { id: string; providerCallId?: string | null; callerPhone?: string | null } | null;
 }
 
 type AiLogExportItem = Pick<
@@ -74,6 +81,8 @@ export const AiLogsPage = () => {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailLoadingId, setDetailLoadingId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [search, setSearch] = useState("");
+  const [querySearch, setQuerySearch] = useState("");
 
   const loadDetail = async (id: string) => {
     setSelectedId(id);
@@ -90,7 +99,14 @@ export const AiLogsPage = () => {
     setError("");
     setLoading(true);
     try {
-      const response = await apiGet<AiLogsResponse>("/api/v1/ai/interactions?page=1&limit=50");
+      const params = new URLSearchParams({
+        page: "1",
+        limit: "50"
+      });
+      if (search.trim()) {
+        params.set("q", search.trim());
+      }
+      const response = await apiGet<AiLogsResponse>(`/api/v1/ai/interactions?${params.toString()}`);
       setLogs(response.items);
       const nextId = selectedId ?? selected?.id ?? response.items[0]?.id;
       if (nextId) {
@@ -108,7 +124,12 @@ export const AiLogsPage = () => {
 
   useEffect(() => {
     void load();
-  }, []);
+  }, [search]);
+
+  const onFilter = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSearch(querySearch.trim());
+  };
 
   const openLog = async (id: string) => {
     try {
@@ -122,7 +143,12 @@ export const AiLogsPage = () => {
     setError("");
     setExporting(true);
     try {
-      const items = await apiGet<AiLogExportItem[]>("/api/v1/ai/interactions/export");
+      const params = new URLSearchParams();
+      if (search.trim()) {
+        params.set("q", search.trim());
+      }
+      const suffix = params.toString() ? `?${params.toString()}` : "";
+      const items = await apiGet<AiLogExportItem[]>(`/api/v1/ai/interactions/export${suffix}`);
       const blob = new Blob([JSON.stringify(items, null, 2)], {
         type: "application/json"
       });
@@ -159,12 +185,26 @@ export const AiLogsPage = () => {
             {exporting ? t("common.loading") : "Export All JSON"}
           </button>
         </div>
+        <form className="filters" onSubmit={onFilter}>
+          <label className="field compact">
+            <span>{t("aiLogs.search")}</span>
+            <input
+              value={querySearch}
+              onChange={(event) => setQuerySearch(event.target.value)}
+              placeholder={t("aiLogs.searchPlaceholder")}
+            />
+          </label>
+          <button type="submit" className="button-secondary">
+            {t("common.search")}
+          </button>
+        </form>
         {logs.length ? (
           <div className="table-wrap">
             <table>
               <thead>
                 <tr>
                   <th>{t("calls.created")}</th>
+                  <th>{t("aiLogs.search")}</th>
                   <th>{t("aiLogs.task")}</th>
                   <th>{t("aiLogs.provider")}</th>
                   <th>{t("aiLogs.valid")}</th>
@@ -180,6 +220,10 @@ export const AiLogsPage = () => {
                       onClick={() => void openLog(log.id)}
                     >
                       <td>{formatDateTime(log.createdAt)}</td>
+                      <td>
+                        <div>{log.callSession?.providerCallId ?? log.callSessionId ?? t("common.none")}</div>
+                        <small className="muted">{log.callSession?.callerPhone ?? log.bookingAttemptId ?? ""}</small>
+                      </td>
                       <td>{log.taskType}</td>
                       <td>{log.model ? `${log.provider} / ${log.model}` : log.provider}</td>
                       <td>{log.isValid ? t("common.enabled") : t("common.disabled")}</td>
@@ -199,7 +243,7 @@ export const AiLogsPage = () => {
                     </tr>
                     {selectedId === log.id ? (
                       <tr className="ai-log-detail-row">
-                        <td colSpan={6}>
+                        <td colSpan={7}>
                           {detailLoadingId === log.id || !selected || selected.id !== log.id ? (
                             <div className="muted">{t("common.loading")}</div>
                           ) : (
@@ -215,7 +259,11 @@ export const AiLogsPage = () => {
                                   {selected.bookingAttemptId ?? selected.bookingAttempt?.id ?? t("common.none")}
                                 </span>
                                 <span>
-                                  Call session: {selected.callSessionId ?? selected.callSession?.id ?? t("common.none")}
+                                  Call session:{" "}
+                                  {selected.callSession?.providerCallId ??
+                                    selected.callSessionId ??
+                                    selected.callSession?.id ??
+                                    t("common.none")}
                                 </span>
                               </div>
                               <div className="ai-log-detail-grid">

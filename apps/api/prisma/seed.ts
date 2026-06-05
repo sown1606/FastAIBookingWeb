@@ -410,52 +410,106 @@ const run = async (): Promise<void> => {
     )
   );
 
-  const existingTrangStaff = await prisma.staff.findMany({
-    where: {
-      salonId: salon.id,
-      fullName: {
-        equals: "Trang",
-        mode: "insensitive"
-      }
+  const demoStaffInputs = [
+    {
+      fullName: "Trang",
+      email: STAFF_EMAIL,
+      phone: "+17325550101",
+      title: "Pedicure Specialist"
     },
-    orderBy: {
-      createdAt: "asc"
+    {
+      fullName: "Amy",
+      email: "amy.demo@fastaibooking.local",
+      phone: "+17325550102",
+      title: "Nail Technician"
+    },
+    {
+      fullName: "Kelly",
+      email: "kelly.demo@fastaibooking.local",
+      phone: "+17325550103",
+      title: "Nail Technician"
     }
-  });
+  ];
 
-  const trang = existingTrangStaff[0]
-    ? await prisma.staff.update({
-        where: { id: existingTrangStaff[0].id },
-        data: {
-          fullName: "Trang",
-          email: STAFF_EMAIL,
-          phone: "+17325550101",
-          title: "Pedicure Specialist",
-          status: StaffStatus.ACTIVE,
-          currentWorkStatus: StaffWorkStatus.AVAILABLE,
-          activeAppointmentId: null,
-          isBookable: true
+  const demoStaff: Array<{ id: string; fullName: string; phone: string | null }> = [];
+  for (const staffInput of demoStaffInputs) {
+    const matchingStaff = await prisma.staff.findMany({
+      where: {
+        salonId: salon.id,
+        fullName: {
+          equals: staffInput.fullName,
+          mode: "insensitive"
         }
-      })
-    : await prisma.staff.create({
-        data: {
+      },
+      orderBy: {
+        createdAt: "asc"
+      }
+    });
+
+    const staff = matchingStaff[0]
+      ? await prisma.staff.update({
+          where: { id: matchingStaff[0].id },
+          data: {
+            fullName: staffInput.fullName,
+            email: staffInput.email,
+            phone: staffInput.phone,
+            title: staffInput.title,
+            status: StaffStatus.ACTIVE,
+            currentWorkStatus: StaffWorkStatus.AVAILABLE,
+            activeAppointmentId: null,
+            isBookable: true
+          }
+        })
+      : await prisma.staff.create({
+          data: {
+            salonId: salon.id,
+            fullName: staffInput.fullName,
+            email: staffInput.email,
+            phone: staffInput.phone,
+            title: staffInput.title,
+            status: StaffStatus.ACTIVE,
+            currentWorkStatus: StaffWorkStatus.AVAILABLE,
+            isBookable: true
+          }
+        });
+
+    demoStaff.push(staff);
+
+    const duplicateIds = matchingStaff.slice(1).map((member) => member.id);
+    if (duplicateIds.length) {
+      await prisma.staff.updateMany({
+        where: {
           salonId: salon.id,
-          fullName: "Trang",
-          email: STAFF_EMAIL,
-          phone: "+17325550101",
-          title: "Pedicure Specialist",
-          status: StaffStatus.ACTIVE,
+          id: {
+            in: duplicateIds
+          }
+        },
+        data: {
+          status: StaffStatus.INACTIVE,
+          isBookable: false,
           currentWorkStatus: StaffWorkStatus.AVAILABLE,
-          isBookable: true
+          activeAppointmentId: null
         }
       });
+    }
+  }
 
-  await prisma.staff.deleteMany({
+  await prisma.staff.updateMany({
     where: {
       salonId: salon.id,
-      id: { not: trang.id }
+      id: {
+        notIn: demoStaff.map((staff) => staff.id)
+      }
+    },
+    data: {
+      status: StaffStatus.INACTIVE,
+      isBookable: false,
+      currentWorkStatus: StaffWorkStatus.AVAILABLE,
+      activeAppointmentId: null
     }
   });
+
+  const trang = demoStaff.find((staff) => staff.fullName === "Trang")!;
 
   const staffUser = await upsertUser({
     email: STAFF_EMAIL,
@@ -546,11 +600,13 @@ const run = async (): Promise<void> => {
   });
 
   await prisma.staffService.createMany({
-    data: services.map((service) => ({
-      salonId: salon.id,
-      serviceId: service.id,
-      staffId: trang.id
-    })),
+    data: demoStaff.flatMap((staff) =>
+      services.map((service) => ({
+        salonId: salon.id,
+        serviceId: service.id,
+        staffId: staff.id
+      }))
+    ),
     skipDuplicates: true
   });
 
@@ -653,7 +709,7 @@ const run = async (): Promise<void> => {
     ]
   });
 
-  const activeStaffCount = 1;
+  const activeStaffCount = demoStaff.length;
 
   const freeStaffLimit = Number(process.env.FREE_STAFF_LIMIT ?? 5);
   const extraStaffPrice = Number(process.env.EXTRA_STAFF_PRICE ?? 0);

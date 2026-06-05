@@ -337,6 +337,8 @@ const ANY_STAFF_PHRASES = new Set([
   "any",
   "anyone",
   "any one",
+  "anybody",
+  "any body",
   "any available staff",
   "any staff",
   "any technician",
@@ -348,13 +350,18 @@ const ANY_STAFF_PHRASES = new Set([
   "someone available",
   "whoever",
   "whoever is available",
+  "whoever s available",
   "whoever's available",
-  "who is available",
-  "anybody"
+  "who is available"
 ]);
 
 const DEMO_SERVICE_NAMES = ["Manicure", "Pedicure", "Gel Manicure", "Acrylic Full Set", "Dip Powder"];
 const DEMO_STAFF_NAMES = ["Trang", "Amy", "Kelly"];
+const STAFF_ALIAS_GROUPS: Record<string, string[]> = {
+  Trang: ["trang", "chang", "train", "trangg"],
+  Amy: ["amy", "amie", "a me"],
+  Kelly: ["kelly", "keli", "kelley", "ke li"]
+};
 const SERVICE_DTMF_OPTIONS: Record<string, string> = {
   "1": "Pedicure",
   "2": "Manicure",
@@ -365,12 +372,13 @@ const SERVICE_DTMF_OPTIONS: Record<string, string> = {
 const STAFF_DTMF_OPTIONS: Record<string, string> = {
   "1": "Trang",
   "2": "Amy",
-  "3": "Kelly"
+  "3": "Kelly",
+  "4": "Any staff"
 };
 const SERVICE_DTMF_PROMPT =
   "What service would you like today? You can say Pedicure, Manicure, Gel Manicure, Acrylic Full Set, or Dip Powder. You can also press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Acrylic Full Set, or 5 for Dip Powder.";
 const STAFF_DTMF_PROMPT =
-  "Who would you like to book with? You can say Trang, Amy, or Kelly. You can also press 1 for Trang, 2 for Amy, or 3 for Kelly.";
+  "Who would you like to book with? You can say Trang, Amy, Kelly, or any staff. You can also press 1 for Trang, 2 for Amy, 3 for Kelly, or 4 for Any staff.";
 
 const normalizeForMatch = (value?: string | null): string => {
   return (value ?? "")
@@ -506,6 +514,10 @@ const readScopedDtmfSelection = (
 const isAnyStaffPreference = (value?: string | null): boolean => {
   const normalized = normalizeForMatch(value);
   return Boolean(normalized && ANY_STAFF_PHRASES.has(normalized));
+};
+
+const getStaffAliasPhrases = (staffName: string): string[] => {
+  return STAFF_ALIAS_GROUPS[staffName] ?? [staffName];
 };
 
 const isClearlyInvalidStaffPreference = (value?: string | null): boolean => {
@@ -1166,6 +1178,9 @@ const sanitizeParsedIntentForConfiguredData = async (
     } else if (staffResolution.status === "ambiguous") {
       requestedStaff = staffResolution.rawStaffPreference;
       nextNormalizedRequest.staffName = staffResolution.rawStaffPreference;
+    } else if (staffResolution.invalidReason === "explicit_any") {
+      requestedStaff = "Any staff";
+      nextNormalizedRequest.staffName = "Any staff";
     } else {
       requestedStaff = undefined;
       nextNormalizedRequest.staffName = undefined;
@@ -1553,7 +1568,23 @@ const findStaffMentionInText = async (
     return undefined;
   }
 
+  if (
+    isAnyStaffPreference(normalizedText) ||
+    Array.from(ANY_STAFF_PHRASES).some((phrase) => normalizedText.includes(phrase))
+  ) {
+    return "Any staff";
+  }
+
   const staff = await getStaffCandidates({ salonId });
+  for (const member of staff) {
+    const aliasMatch = getStaffAliasPhrases(member.fullName).some((alias) =>
+      normalizedText.includes(normalizeForMatch(alias))
+    );
+    if (aliasMatch) {
+      return member.fullName;
+    }
+  }
+
   return staff.find((member) => {
     const fullName = normalizeForMatch(member.fullName);
     const firstName = normalizeForMatch(member.fullName.split(/\s+/)[0]);
@@ -1690,9 +1721,12 @@ const resolveStaffPreferenceFromCandidates = (
   }
 
   const exactMatches = allStaff.filter((member) => {
-    const fullName = normalizeForMatch(member.fullName);
-    const firstName = normalizeForMatch(member.fullName.split(/\s+/)[0]);
-    return fullName === requested || firstName === requested;
+    const aliases = new Set([
+      normalizeForMatch(member.fullName),
+      normalizeForMatch(member.fullName.split(/\s+/)[0]),
+      ...getStaffAliasPhrases(member.fullName).map((alias) => normalizeForMatch(alias))
+    ]);
+    return aliases.has(requested);
   });
 
   if (exactMatches.length === 1) {
@@ -1715,13 +1749,18 @@ const resolveStaffPreferenceFromCandidates = (
   }
 
   const containsMatches = allStaff.filter((member) => {
-    const fullName = normalizeForMatch(member.fullName);
-    const firstName = normalizeForMatch(member.fullName.split(/\s+/)[0]);
-    return (
-      requested.length >= 3 &&
-      (fullName.includes(requested) ||
-        requested.includes(fullName) ||
-        (firstName.length >= 3 && (firstName.includes(requested) || requested.includes(firstName))))
+    const aliases = [
+      normalizeForMatch(member.fullName),
+      normalizeForMatch(member.fullName.split(/\s+/)[0]),
+      ...getStaffAliasPhrases(member.fullName).map((alias) => normalizeForMatch(alias))
+    ].filter(Boolean);
+    return aliases.some(
+      (alias) =>
+        requested.length >= 3 &&
+        (alias.includes(requested) ||
+          requested.includes(alias) ||
+          (compactForMatch(alias).length >= 3 &&
+            compactForMatch(alias).includes(compactForMatch(requested))))
     );
   });
 
@@ -1746,9 +1785,12 @@ const resolveStaffPreferenceFromCandidates = (
 
   const fuzzyMatches = allStaff
     .map((member) => {
-      const fullName = normalizeForMatch(member.fullName);
-      const firstName = normalizeForMatch(member.fullName.split(/\s+/)[0]);
-      const score = Math.max(similarityScore(fullName, requested), similarityScore(firstName, requested));
+      const aliases = [
+        normalizeForMatch(member.fullName),
+        normalizeForMatch(member.fullName.split(/\s+/)[0]),
+        ...getStaffAliasPhrases(member.fullName).map((alias) => normalizeForMatch(alias))
+      ].filter(Boolean);
+      const score = Math.max(...aliases.map((alias) => similarityScore(alias, requested)));
       return { member, score };
     })
     .filter((item) => item.score >= 0.84)
@@ -2781,14 +2823,18 @@ const buildBookingConfirmationMessage = (input: {
   appointmentStartTime: Date;
   salonTimezone: string;
   staffName: string;
+  requestedAnyStaff?: boolean;
 }): string => {
   const service = input.serviceName.toLowerCase();
   const appointmentTime = formatFinalConfirmationDateTimeForSpeech(
     input.appointmentStartTime,
     input.salonTimezone
   );
+  const selectedStaffPrefix = input.requestedAnyStaff
+    ? `I found ${escapeSsml(input.staffName)} available. <break time="300ms"/> `
+    : "";
   return speak(
-    `Just to confirm, ${escapeSsml(service)} with ${escapeSsml(input.staffName)} on ${escapeSsml(appointmentTime)}. <break time="300ms"/> Is that correct?`
+    `${selectedStaffPrefix}Just to confirm, ${escapeSsml(service)} with ${escapeSsml(input.staffName)} on ${escapeSsml(appointmentTime)}. <break time="300ms"/> Is that correct?`
   );
 };
 
@@ -3286,6 +3332,8 @@ export const createAmazonConnectAIAppointment = async (
   });
   if (staffResolution.status === "matched") {
     normalized.staffPreference = staffResolution.matchedStaff.fullName;
+  } else if (staffResolution.status === "all" && staffResolution.invalidReason === "explicit_any") {
+    normalized.staffPreference = "Any staff";
   } else if (staffResolution.status !== "ambiguous") {
     normalized.staffPreference = undefined;
   }
@@ -3793,7 +3841,9 @@ export const createAmazonConnectAIAppointment = async (
   ) {
     missingFields.add("preferredDateTime");
   }
-  if (staffResolution.status !== "matched") {
+  const explicitAnyStaffSelected =
+    staffResolution.status === "all" && staffResolution.invalidReason === "explicit_any";
+  if (staffResolution.status !== "matched" && !explicitAnyStaffSelected) {
     missingFields.add("staffPreference");
     normalized.staffPreference = undefined;
   }
@@ -3945,7 +3995,26 @@ export const createAmazonConnectAIAppointment = async (
         requestedDateTimeText
       }
     });
-    const aiInteraction = null;
+    const aiInteraction = await createInteraction({
+      outcome: "MISSING_INFO",
+      message,
+      parsed,
+      bookingAttemptId: bookingAttempt.id,
+      responsePayload: {
+        missingFields: Array.from(missingFields.values()),
+        promptMissingFields: elicitDecision.promptMissingFields,
+        slotToElicit: elicitDecision.slotToElicit
+      },
+      isValid: true
+    });
+    await finalizeCall({
+      outcome: "MISSING_INFO",
+      bookingAttemptId: bookingAttempt.id,
+      bookingStatus: bookingAttempt.status,
+      parsed,
+      message,
+      failureReason: bookingAttempt.failureReason ?? undefined
+    });
 
     return {
       outcome: "MISSING_INFO" as const,
@@ -4017,7 +4086,29 @@ export const createAmazonConnectAIAppointment = async (
         timezone: salon.timezone
       }
     });
-    const aiInteraction = null;
+    const aiInteraction = await createInteraction({
+      outcome: "MISSING_INFO",
+      message,
+      parsed,
+      bookingAttemptId: bookingAttempt.id,
+      responsePayload: {
+        serviceName: normalized.serviceName,
+        suggestedServiceName: serviceMatch.service.name,
+        serviceMatchConfidence: serviceMatch.confidence,
+        serviceMatchStrategy: serviceMatch.matchedBy,
+        attempts: attempts + 1,
+        slotToElicit: "serviceName"
+      },
+      isValid: true
+    });
+    await finalizeCall({
+      outcome: "MISSING_INFO",
+      bookingAttemptId: bookingAttempt.id,
+      bookingStatus: bookingAttempt.status,
+      parsed,
+      message,
+      failureReason: bookingAttempt.failureReason ?? undefined
+    });
 
     return {
       outcome: "MISSING_INFO" as const,
@@ -4089,7 +4180,27 @@ export const createAmazonConnectAIAppointment = async (
         timezone: salon.timezone
       }
     });
-    const aiInteraction = null;
+    const aiInteraction = await createInteraction({
+      outcome: "MISSING_INFO",
+      message,
+      parsed,
+      bookingAttemptId: bookingAttempt.id,
+      responsePayload: {
+        serviceName: normalized.serviceName,
+        availableServiceNames: services.map((service) => service.name),
+        attempts: attempts + 1,
+        slotToElicit: "serviceName"
+      },
+      isValid: true
+    });
+    await finalizeCall({
+      outcome: "MISSING_INFO",
+      bookingAttemptId: bookingAttempt.id,
+      bookingStatus: bookingAttempt.status,
+      parsed,
+      message,
+      failureReason: bookingAttempt.failureReason ?? undefined
+    });
 
     return {
       outcome: "MISSING_INFO" as const,
@@ -4160,7 +4271,26 @@ export const createAmazonConnectAIAppointment = async (
         timezone: salon.timezone
       }
     });
-    const aiInteraction = null;
+    const aiInteraction = await createInteraction({
+      outcome: "MISSING_INFO",
+      message,
+      parsed,
+      bookingAttemptId: bookingAttempt.id,
+      responsePayload: {
+        staffPreference: staffResolution.rawStaffPreference,
+        ambiguousStaffNames: staffResolution.ambiguousStaffNames,
+        slotToElicit: "staffPreference"
+      },
+      isValid: true
+    });
+    await finalizeCall({
+      outcome: "MISSING_INFO",
+      bookingAttemptId: bookingAttempt.id,
+      bookingStatus: bookingAttempt.status,
+      parsed,
+      message,
+      failureReason: bookingAttempt.failureReason ?? undefined
+    });
 
     return {
       outcome: "MISSING_INFO" as const,
@@ -4198,6 +4328,7 @@ export const createAmazonConnectAIAppointment = async (
 
   const preferredStaffCandidates = staffResolution.candidates;
   const allStaffCandidates = staffResolution.allStaff;
+  const requestedAnyStaff = staffResolution.status === "all" && staffResolution.invalidReason === "explicit_any";
 
   let chosenStaff: { id: string; fullName: string } | null = null;
   const rejectedReasons: string[] = [];
@@ -4221,6 +4352,9 @@ export const createAmazonConnectAIAppointment = async (
       }
       throw error;
     }
+  }
+  if (chosenStaff && requestedAnyStaff) {
+    normalized.staffPreference = chosenStaff.fullName;
   }
 
   if (!chosenStaff) {
@@ -4360,7 +4494,25 @@ export const createAmazonConnectAIAppointment = async (
         timezone: salon.timezone
       }
     });
-    const aiInteraction = null;
+    const aiInteraction = await createInteraction({
+      outcome: "MISSING_INFO",
+      message,
+      parsed,
+      bookingAttemptId: bookingAttempt.id,
+      responsePayload: {
+        confirmationState: normalized.confirmationState,
+        awaitingFinalBookingConfirmation: false
+      },
+      isValid: true
+    });
+    await finalizeCall({
+      outcome: "MISSING_INFO",
+      bookingAttemptId: bookingAttempt.id,
+      bookingStatus: bookingAttempt.status,
+      parsed,
+      message,
+      failureReason: bookingAttempt.failureReason ?? undefined
+    });
 
     return {
       outcome: "MISSING_INFO" as const,
@@ -4396,7 +4548,8 @@ export const createAmazonConnectAIAppointment = async (
       serviceName: service.name,
       appointmentStartTime: requestedStartTime,
       salonTimezone: salon.timezone,
-      staffName: chosenStaff.fullName
+      staffName: chosenStaff.fullName,
+      requestedAnyStaff
     });
     const parsed = buildInternalParsedIntent({
       intentType: "BOOK_APPOINTMENT",
@@ -4421,7 +4574,28 @@ export const createAmazonConnectAIAppointment = async (
         timezone: salon.timezone
       }
     });
-    const aiInteraction = null;
+    const aiInteraction = await createInteraction({
+      outcome: "MISSING_INFO",
+      message,
+      parsed,
+      bookingAttemptId: bookingAttempt.id,
+      responsePayload: {
+        serviceId: service.id,
+        staffId: chosenStaff.id,
+        staffName: chosenStaff.fullName,
+        startTimeIso: requestedStartTime.toISOString(),
+        awaitingFinalBookingConfirmation: true
+      },
+      isValid: true
+    });
+    await finalizeCall({
+      outcome: "MISSING_INFO",
+      bookingAttemptId: bookingAttempt.id,
+      bookingStatus: bookingAttempt.status,
+      parsed,
+      message,
+      failureReason: bookingAttempt.failureReason ?? undefined
+    });
 
     return {
       outcome: "MISSING_INFO" as const,
@@ -5153,14 +5327,10 @@ export const getAIInteractionById = async (salonId: string, interactionId: strin
 
 export const listAIInteractions = async (
   salonId: string,
-  input: { page: number; limit: number; taskType?: string; callSessionId?: string }
+  input: { page: number; limit: number } & Omit<AIInteractionFilters, "salonId">
 ) => {
   const skip = (input.page - 1) * input.limit;
-  const where = {
-    salonId,
-    ...(input.taskType ? { taskType: input.taskType } : {}),
-    ...(input.callSessionId ? { callSessionId: input.callSessionId } : {})
-  };
+  const where = buildAIInteractionWhere({ ...input, salonId });
 
   const [items, total] = await Promise.all([
     prisma.aiInteractionLog.findMany({
@@ -5170,7 +5340,8 @@ export const listAIInteractions = async (
       orderBy: { createdAt: "desc" },
       include: {
         bookingAttempt: true,
-        transcript: true
+        transcript: true,
+        callSession: true
       }
     }),
     prisma.aiInteractionLog.count({ where })
@@ -5203,6 +5374,11 @@ const toAIInteractionExportItem = (interaction: {
   callSessionId: string | null;
   salonId?: string;
   salon?: { id: string; name: string } | null;
+  callSession?: {
+    id: string;
+    providerCallId: string;
+    callerPhone: string | null;
+  } | null;
 }) => ({
   id: interaction.id,
   requestText: interaction.requestText,
@@ -5219,21 +5395,145 @@ const toAIInteractionExportItem = (interaction: {
   bookingAttemptId: interaction.bookingAttemptId,
   callSessionId: interaction.callSessionId,
   salonId: interaction.salonId,
-  salon: interaction.salon ?? undefined
+  salon: interaction.salon ?? undefined,
+  callSession: interaction.callSession ?? undefined
 });
+
+interface AIInteractionFilters {
+  salonId?: string;
+  taskType?: string;
+  callSessionId?: string;
+  contactId?: string;
+  callerPhone?: string;
+  q?: string;
+}
+
+const buildPhoneSearchValues = (value?: string): string[] => {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  const digits = trimmed.replace(/\D/g, "");
+  const localDigits = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
+  return Array.from(
+    new Set(
+      [
+        trimmed,
+        normalizePhoneForMatching(trimmed),
+        digits,
+        localDigits,
+        digits ? `+${digits}` : undefined,
+        localDigits?.length === 10 ? `+1${localDigits}` : undefined,
+        localDigits?.length === 10 ? `1${localDigits}` : undefined
+      ].filter((candidate): candidate is string => Boolean(candidate))
+    )
+  );
+};
+
+const containsInsensitive = (value: string): Prisma.StringFilter => ({
+  contains: value,
+  mode: "insensitive"
+});
+
+const isUuidLike = (value: string): boolean =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value
+  );
+
+const buildAIInteractionWhere = (input: AIInteractionFilters): Prisma.AiInteractionLogWhereInput => {
+  const and: Prisma.AiInteractionLogWhereInput[] = [];
+  if (input.salonId) {
+    and.push({ salonId: input.salonId });
+  }
+  if (input.taskType) {
+    and.push({ taskType: input.taskType });
+  }
+
+  const searchTerms = [input.q, input.callSessionId, input.contactId]
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value));
+
+  const or: Prisma.AiInteractionLogWhereInput[] = [];
+  for (const term of searchTerms) {
+    if (isUuidLike(term)) {
+      or.push(
+        { id: term },
+        { callSessionId: term },
+        { bookingAttemptId: term },
+        {
+          callSession: {
+            is: {
+              id: term
+            }
+          }
+        },
+        {
+          bookingAttempt: {
+            is: {
+              id: term
+            }
+          }
+        }
+      );
+    }
+    or.push(
+      { requestText: containsInsensitive(term) },
+      { responseText: containsInsensitive(term) },
+      {
+        callSession: {
+          is: {
+            providerCallId: containsInsensitive(term)
+          }
+        }
+      }
+    );
+  }
+
+  for (const phone of buildPhoneSearchValues(input.callerPhone ?? input.q)) {
+    or.push(
+      {
+        callSession: {
+          is: {
+            callerPhone: containsInsensitive(phone)
+          }
+        }
+      },
+      {
+        bookingAttempt: {
+          is: {
+            customerPhone: containsInsensitive(phone)
+          }
+        }
+      },
+      { requestText: containsInsensitive(phone) }
+    );
+  }
+
+  if (or.length) {
+    and.push({ OR: or });
+  }
+
+  return and.length ? { AND: and } : {};
+};
 
 export const exportAIInteractions = async (
   salonId: string,
-  input: { taskType?: string; callSessionId?: string } = {}
+  input: Omit<AIInteractionFilters, "salonId"> = {}
 ) => {
-  const where: Prisma.AiInteractionLogWhereInput = {
-    salonId,
-    ...(input.taskType ? { taskType: input.taskType } : {}),
-    ...(input.callSessionId ? { callSessionId: input.callSessionId } : {})
-  };
+  const where = buildAIInteractionWhere({ ...input, salonId });
   const items = await prisma.aiInteractionLog.findMany({
     where,
-    orderBy: { createdAt: "desc" }
+    orderBy: { createdAt: "desc" },
+    include: {
+      callSession: {
+        select: {
+          id: true,
+          providerCallId: true,
+          callerPhone: true
+        }
+      }
+    }
   });
   return items.map(toAIInteractionExportItem);
 };
@@ -5266,12 +5566,13 @@ export const listAIInteractionsForAdmin = async (input: {
   limit: number;
   salonId?: string;
   taskType?: string;
+  callSessionId?: string;
+  contactId?: string;
+  callerPhone?: string;
+  q?: string;
 }) => {
   const skip = (input.page - 1) * input.limit;
-  const where = {
-    ...(input.salonId ? { salonId: input.salonId } : {}),
-    ...(input.taskType ? { taskType: input.taskType } : {})
-  };
+  const where = buildAIInteractionWhere(input);
 
   const [items, total] = await Promise.all([
     prisma.aiInteractionLog.findMany({
@@ -5306,11 +5607,12 @@ export const listAIInteractionsForAdmin = async (input: {
 export const exportAIInteractionsForAdmin = async (input: {
   salonId?: string;
   taskType?: string;
+  callSessionId?: string;
+  contactId?: string;
+  callerPhone?: string;
+  q?: string;
 } = {}) => {
-  const where: Prisma.AiInteractionLogWhereInput = {
-    ...(input.salonId ? { salonId: input.salonId } : {}),
-    ...(input.taskType ? { taskType: input.taskType } : {})
-  };
+  const where = buildAIInteractionWhere(input);
   const items = await prisma.aiInteractionLog.findMany({
     where,
     orderBy: { createdAt: "desc" },
@@ -5319,6 +5621,13 @@ export const exportAIInteractionsForAdmin = async (input: {
         select: {
           id: true,
           name: true
+        }
+      },
+      callSession: {
+        select: {
+          id: true,
+          providerCallId: true,
+          callerPhone: true
         }
       }
     }

@@ -38,6 +38,8 @@ const ids = {
   olivia: "10000000-0000-4000-8000-000000000002",
   nora: "10000000-0000-4000-8000-000000000003",
   trang: "10000000-0000-4000-8000-000000000004",
+  amy: "10000000-0000-4000-8000-000000000006",
+  kelly: "10000000-0000-4000-8000-000000000007",
   pedicure: "20000000-0000-4000-8000-000000000001",
   kietCustomer: "30000000-0000-4000-8000-000000000001"
 };
@@ -155,6 +157,22 @@ const createInitialState = () => {
         status: StaffStatus.ACTIVE,
         isBookable: true,
         createdAt: new Date("2026-01-01T00:00:00.000Z")
+      },
+      {
+        id: ids.amy,
+        salonId: ids.salonA,
+        fullName: "Amy",
+        status: StaffStatus.ACTIVE,
+        isBookable: true,
+        createdAt: new Date("2026-01-02T00:00:00.000Z")
+      },
+      {
+        id: ids.kelly,
+        salonId: ids.salonA,
+        fullName: "Kelly",
+        status: StaffStatus.ACTIVE,
+        isBookable: true,
+        createdAt: new Date("2026-01-03T00:00:00.000Z")
       },
       {
         id: "10000000-0000-4000-8000-000000000005",
@@ -740,20 +758,38 @@ test("missing booking fields return a Lex needs-input response instead of crashi
   assert.match(result.body.data.lexResponse.message, /best name|phone number|day and time|service/i);
 });
 
-test("any-staff phrases ask for a concrete staff selection", async () => {
+test("any-staff phrases resolve to an actual staff member before final confirmation", async () => {
   for (const phrase of ["any staff", "anyone", "whoever is available"]) {
     resetMockState();
-    const result = await postInternalAppointment(bookingPayload({ staffPreference: phrase }));
+    const result = await postInternalAppointment(
+      bookingPayload({
+        staffPreference: phrase,
+        confirmationState: undefined
+      })
+    );
 
     assert.equal(result.response.status, 200);
     assert.equal(result.body.data.outcome, "MISSING_INFO");
-    assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitSlot");
-    assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "staffPreference");
-    assert.match(result.body.data.lexResponse.message, /press 1 for Trang, 2 for Amy, or 3 for Kelly/i);
+    assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+    assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
+    assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedStaffName, "Trang");
+    assert.match(result.body.data.lexResponse.message, /I found Trang available/i);
+    assert.equal(result.body.data.aiInteractionId, state.aiInteractionLogs[0].id);
     assert.equal(state.staffFindManyCalls[0].where.status, StaffStatus.ACTIVE);
     assert.equal(state.staffFindManyCalls[0].where.isBookable, true);
     assert.equal(state.appointments.length, 0);
   }
+});
+
+test("confirmed any-staff booking creates appointment with resolved staff id", async () => {
+  const result = await postInternalAppointment(bookingPayload({ staffPreference: "anybody" }));
+
+  assert.equal(result.response.status, 201);
+  assert.equal(result.body.data.outcome, "BOOKED");
+  assert.equal(state.appointments.length, 1);
+  assert.equal(state.appointments[0].staffId, ids.trang);
+  assert.equal(state.bookingAttempts.at(-1).requestedStaff, "Trang");
+  assert.notEqual(state.bookingAttempts.at(-1).normalizedRequest.staffPreference, null);
 });
 
 test("transcript recovery normalizes pedicure aliases and confirms without re-asking date or time", async () => {
@@ -809,6 +845,32 @@ test("Kiet demo phrase confirms Pedicure with Trang tomorrow at 3 PM", async () 
   assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
   assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "15:00");
   assert.match(result.body.data.lexResponse.message, /Just to confirm, pedicure with Trang on/i);
+  assert.equal(state.appointments.length, 0);
+});
+
+test("Kiet demo phrase confirms Pedicure with Kelly tomorrow at 2 PM", async () => {
+  const result = await postInternalAppointment(
+    bookingPayload({
+      customerName: undefined,
+      customerPhone: undefined,
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      transcript:
+        "I want to book a pedicure tomorrow at two PM with Kelly. My name is Kiet Nguyen. My phone number is 7325956266."
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Pedicure");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Kelly");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedStaffName, "Kelly");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "14:00");
+  assert.match(result.body.data.lexResponse.message, /Just to confirm, pedicure with Kelly on/i);
   assert.equal(state.appointments.length, 0);
 });
 
@@ -936,6 +998,58 @@ test("staff DTMF applies only to staffPreference and reaches confirmation", asyn
   assert.equal(state.appointments.length, 0);
 });
 
+test("staff DTMF 3 maps to Kelly and does not ask staff again", async () => {
+  const result = await postInternalAppointment(
+    bookingPayload({
+      staffPreference: undefined,
+      confirmationState: undefined,
+      transcript: "3",
+      attributes: {
+        lastAskedSlot: "staffPreference",
+        serviceName: "Pedicure",
+        requestedDate: "2026-05-28",
+        requestedTime: "2 PM",
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Kelly");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedStaffName, "Kelly");
+  assert.match(result.body.data.lexResponse.message, /pedicure with Kelly/i);
+  assert.equal(state.appointments.length, 0);
+});
+
+test("staff DTMF 4 maps to any staff and resolves before confirmation", async () => {
+  const result = await postInternalAppointment(
+    bookingPayload({
+      staffPreference: undefined,
+      confirmationState: undefined,
+      transcript: "4",
+      attributes: {
+        lastAskedSlot: "staffPreference",
+        serviceName: "Pedicure",
+        requestedDate: "2026-05-28",
+        requestedTime: "2 PM",
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedStaffName, "Trang");
+  assert.match(result.body.data.lexResponse.message, /I found Trang available/i);
+  assert.equal(state.appointments.length, 0);
+});
+
 test("valid staff preference books only that active bookable staff member", async () => {
   const result = await postInternalAppointment(bookingPayload({ staffPreference: "Trang" }));
 
@@ -946,25 +1060,40 @@ test("valid staff preference books only that active bookable staff member", asyn
   assert.deepEqual(new Set(state.validationStaffIds), new Set([ids.trang]));
 });
 
+test("valid Kelly staff preference books Kelly", async () => {
+  const result = await postInternalAppointment(bookingPayload({ staffPreference: "Kelly" }));
+
+  assert.equal(result.response.status, 201);
+  assert.equal(result.body.data.outcome, "BOOKED");
+  assert.equal(state.appointments[0].staffId, ids.kelly);
+  assert.deepEqual(new Set(state.validationStaffIds), new Set([ids.kelly]));
+});
+
 test("busy requested staff returns deduped alternatives", async () => {
   state.busyStaffIds.add(ids.trang);
   const result = await postInternalAppointment(bookingPayload({ staffPreference: "Trang" }));
 
   assert.equal(result.response.status, 200);
   assert.equal(result.body.data.outcome, "NO_AVAILABILITY");
-  assert.equal(result.body.data.alternatives.length, 1);
+  assert.equal(result.body.data.alternatives.length, 2);
   assert.deepEqual(
     new Set(result.body.data.alternatives.map((slot: { staffName: string }) => slot.staffName)).size,
     result.body.data.alternatives.length
   );
-  assert.equal(result.body.data.alternatives[0].staffName, "Trang");
+  assert.deepEqual(
+    new Set(result.body.data.alternatives.map((slot: { staffName: string }) => slot.staffName)),
+    new Set(["Amy", "Trang"])
+  );
   assert.match(result.body.data.lexResponse.message, /Trang is not available at 5 PM/i);
-  assert.match(result.body.data.lexResponse.message, /Would you like .* with Trang/i);
-  assert.doesNotMatch(result.body.data.lexResponse.message, /Which one works better/i);
+  assert.match(result.body.data.lexResponse.message, /press 1 for .* with Amy/i);
+  assert.match(result.body.data.lexResponse.message, /press 2 for .* with Trang/i);
   assert.equal(state.appointments.length, 0);
 });
 
 test("yes to a single alternative asks final confirmation before booking", async () => {
+  state.staff = state.staff.filter(
+    (member) => member.salonId !== ids.salonA || member.id === ids.trang
+  );
   state.busyStaffIds.add(ids.trang);
   const first = await postInternalAppointment(bookingPayload({ staffPreference: "Trang" }));
   assert.equal(first.body.data.outcome, "NO_AVAILABILITY");

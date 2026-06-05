@@ -25,9 +25,9 @@ One clean demo salon only:
 
 - 1 active salon
 - 3 active/bookable AI demo staff records
-  - `Mia Carter`
-  - `Olivia Brooks`
-  - `Nora Evans`
+  - `Trang`
+  - `Amy`
+  - `Kelly`
 - 8 customers
 - 9 appointments
 - 7 call sessions

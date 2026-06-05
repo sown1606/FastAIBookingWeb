@@ -147,21 +147,15 @@ Salon:
 
 Final active/bookable staff:
 
-- `Mia Carter`
-- `Olivia Brooks`
-- `Nora Evans`
-
-Not part of the current seeded bookable staff set:
-
 - `Trang`
 - `Amy`
 - `Kelly`
 
 Service:
 
-- `Pedicure` is active.
+- `Pedicure`, `Manicure`, `Gel Manicure`, `Acrylic Full Set`, and `Dip Powder` are active.
 - Duration: 45 minutes.
-- Staff mapping: `Mia Carter`, `Olivia Brooks`, `Nora Evans`.
+- Staff mapping: `Trang`, `Amy`, `Kelly`.
 
 Availability:
 
@@ -204,24 +198,23 @@ Smoke A: no staff preference
 
 - Input: `I want to book a pedicure tomorrow at 1 PM. My name is Kiet Nguyen. My phone number is 7325956266.`
 - Result: `BOOKED`
-- Staff: `Mia Carter`
-- Caller message: `You're all set. Your pedicure is booked for tomorrow at 1 PM with Mia Carter. Thank you for calling.`
+- Staff: first available active staff, usually `Trang`
+- Caller message names the selected staff before completion.
 - Cleanup: appointment canceled
 
 Smoke B: valid staff
 
-- Input: `I want to book a pedicure tomorrow at 1 PM with Mia Carter. My name is Kiet Nguyen. My phone number is 7325956266.`
+- Input: `I want to book a pedicure tomorrow at 1 PM with Kelly. My name is Kiet Nguyen. My phone number is 7325956266.`
 - Result: `BOOKED`
-- Staff: `Mia Carter`
-- Caller message: `You're all set. Your pedicure is booked for tomorrow at 1 PM with Mia Carter. Thank you for calling.`
+- Staff: `Kelly`
+- Caller message names `Kelly`.
 - Cleanup: appointment canceled
 
 Smoke C: invalid staff
 
 - Input: `I want to book a pedicure tomorrow at 1 PM with 111115. My name is Kiet Nguyen. My phone number is 7325956266.`
-- Result: `BOOKED`
-- Staff: `Mia Carter`
-- Caller message did not contain `111115`
+- Result: staff clarification instead of booking
+- Caller message does not contain `111115`
 - Cleanup: appointment canceled
 
 Smoke D: human escalation
@@ -317,7 +310,7 @@ Production data and smoke checks were run through the existing API/admin/interna
 
 - A real inbound call through `+18483487681` was not performed in this automated run.
 - Final manual acceptance should call the demo number with an operator logged into CCP and confirm audio, Lex, Lambda, backend logs, and operator pickup in one live session.
-- Earlier planning notes had conflicting staff examples. The current seeded AI booking staff are `Mia Carter`, `Olivia Brooks`, and `Nora Evans`.
+- Earlier planning notes had conflicting staff examples. The current seeded AI booking staff are `Trang`, `Amy`, and `Kelly`.
 
 ## Next Manual Demo Steps
 
