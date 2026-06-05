@@ -385,7 +385,7 @@ const run = async (): Promise<void> => {
     { dayOfWeek: 3, isOpen: true, openTime: "09:30", closeTime: "19:00" },
     { dayOfWeek: 4, isOpen: true, openTime: "09:30", closeTime: "19:00" },
     { dayOfWeek: 5, isOpen: true, openTime: "09:30", closeTime: "19:00" },
-    { dayOfWeek: 6, isOpen: true, openTime: "09:00", closeTime: "17:00" }
+    { dayOfWeek: 6, isOpen: true, openTime: "09:00", closeTime: "19:00" }
   ];
 
   await Promise.all(
@@ -552,6 +552,15 @@ const run = async (): Promise<void> => {
       staffId: trang.id
     })),
     skipDuplicates: true
+  });
+
+  await prisma.customer.create({
+    data: {
+      salonId: salon.id,
+      firstName: "Kiet",
+      lastName: "",
+      phone: "+17325956266"
+    }
   });
 
   await prisma.integrationConfig.deleteMany({
