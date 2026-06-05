@@ -1,5 +1,6 @@
 import { DateTime } from "luxon";
 import {
+  AppointmentStatus,
   BookingAttemptStatus,
   CallRoutingOutcome,
   CallSessionStatus,
@@ -100,6 +101,17 @@ type CustomerCandidate = {
   firstName: string;
   lastName: string;
   phone: string;
+};
+
+type UpcomingAppointmentCandidate = {
+  id: string;
+  startTime: Date;
+  service: {
+    name: string;
+  };
+  staff: {
+    fullName: string;
+  };
 };
 
 type StaffPreferenceResolution =
@@ -1881,6 +1893,42 @@ async function findExistingCustomerByPhone(input: {
   );
 }
 
+async function findUpcomingAppointmentsForCustomer(input: {
+  salonId: string;
+  customerId: string;
+}): Promise<UpcomingAppointmentCandidate[]> {
+  return prisma.appointment.findMany({
+    where: {
+      salonId: input.salonId,
+      customerId: input.customerId,
+      startTime: {
+        gte: new Date()
+      },
+      status: {
+        in: [AppointmentStatus.SCHEDULED, AppointmentStatus.CONFIRMED]
+      }
+    },
+    select: {
+      id: true,
+      startTime: true,
+      service: {
+        select: {
+          name: true
+        }
+      },
+      staff: {
+        select: {
+          fullName: true
+        }
+      }
+    },
+    orderBy: {
+      startTime: "asc"
+    },
+    take: 3
+  });
+}
+
 const parseRequestedStartTimeDetailed = (input: {
   requestedDate: string;
   requestedTime?: string;
@@ -2533,11 +2581,7 @@ const shouldEscalateToHuman = (input: {
     return true;
   }
 
-  if (
-    intent === "humanescalationintent" ||
-    intent === "cancelappointmentintent" ||
-    intent === "rescheduleappointmentintent"
-  ) {
+  if (intent === "humanescalationintent") {
     return true;
   }
 
@@ -2634,6 +2678,60 @@ const formatLocalDateTimeForSpeech = (value: Date, timezone: string): string => 
         ? "tomorrow"
         : local.toFormat("cccc, LLL d");
   return `${date} at ${formatLocalTimeForSpeech(value, timezone)}`;
+};
+
+type ExistingAppointmentRequestKind = "existing" | "ambiguous" | "new_booking" | "none";
+
+const classifyExistingAppointmentRequest = (input: {
+  intentName?: string;
+  transcriptText?: string;
+  serviceName?: string;
+  requestedDate?: string;
+  requestedTime?: string;
+}): ExistingAppointmentRequestKind => {
+  const intent = input.intentName?.toLowerCase();
+  const text = normalizeForMatch(input.transcriptText);
+
+  if (intent === "cancelappointmentintent" || intent === "rescheduleappointmentintent") {
+    return "existing";
+  }
+
+  if (
+    /\b(cancel|reschedule|re schedule|change|move|update)\b.*\bappointment\b/.test(text) ||
+    /\b(my appointment|existing appointment|current appointment)\b/.test(text) ||
+    /\b(what time|when)\b.*\b(my )?appointment\b/.test(text)
+  ) {
+    return "existing";
+  }
+
+  if (/\b(book|booking|new appointment|make an appointment|schedule)\b/.test(text)) {
+    return "new_booking";
+  }
+
+  if (
+    /\bappointment\b/.test(text) &&
+    !input.serviceName &&
+    !input.requestedDate &&
+    !input.requestedTime
+  ) {
+    return "ambiguous";
+  }
+
+  return "none";
+};
+
+const isExistingAppointmentStatusQuestion = (value?: string): boolean => {
+  const text = normalizeForMatch(value);
+  return /\b(what time|when)\b.*\b(my )?appointment\b/.test(text);
+};
+
+const formatUpcomingAppointmentForSpeech = (
+  appointment: UpcomingAppointmentCandidate,
+  timezone: string
+): string => {
+  const service = appointment.service.name.toLowerCase();
+  const time = formatLocalDateTimeForSpeech(appointment.startTime, timezone);
+  return `${service} with ${appointment.staff.fullName} ${time}`;
 };
 
 const formatFinalConfirmationDateTimeForSpeech = (value: Date, timezone: string): string => {
@@ -3382,6 +3480,215 @@ export const createAmazonConnectAIAppointment = async (
   const requestedDateTimeText = [normalized.requestedDate, normalized.requestedTime]
     .filter((value): value is string => Boolean(value))
     .join(" ");
+
+  const existingAppointmentRequestKind = classifyExistingAppointmentRequest({
+    intentName: normalized.intentName,
+    transcriptText: normalized.transcriptText,
+    serviceName: normalized.serviceName,
+    requestedDate: normalized.requestedDate,
+    requestedTime: normalized.requestedTime
+  });
+
+  if (!recognizedCustomer && existingAppointmentRequestKind === "existing") {
+    const message = speak(
+      "What phone number is on the appointment?"
+    );
+    const parsed = buildInternalParsedIntent({
+      intentType:
+        normalized.intentName?.toLowerCase() === "cancelappointmentintent"
+          ? "CANCEL_APPOINTMENT"
+          : "RESCHEDULE_APPOINTMENT",
+      customerName: normalized.customerName,
+      customerPhone: normalized.customerPhone,
+      serviceName: normalized.serviceName,
+      staffPreference: normalized.staffPreference,
+      requestedDateTime: normalized.requestedDate,
+      missingFields: ["customerPhone"],
+      isReadyToBook: false
+    });
+    const bookingAttempt = await createAttempt({
+      status: BookingAttemptStatus.NEEDS_INPUT,
+      failureReason: "Phone required to find existing appointment.",
+      normalizedRequest: {
+        intentName: normalized.intentName,
+        existingAppointmentRequestKind,
+        requestedDateTimeText
+      }
+    });
+    const aiInteraction = await createInteraction({
+      outcome: "MISSING_INFO",
+      message,
+      parsed,
+      bookingAttemptId: bookingAttempt.id,
+      responsePayload: {
+        missingFields: ["customerPhone"]
+      },
+      isValid: true
+    });
+    await finalizeCall({
+      outcome: "MISSING_INFO",
+      bookingAttemptId: bookingAttempt.id,
+      bookingStatus: bookingAttempt.status,
+      parsed,
+      message,
+      failureReason: bookingAttempt.failureReason ?? undefined
+    });
+
+    return {
+      outcome: "MISSING_INFO" as const,
+      message,
+      lexResponse: {
+        fulfillmentState: "InProgress",
+        message,
+        messageContentType: "SSML",
+        dialogAction: {
+          type: "ElicitSlot",
+          slotToElicit: "customerPhone"
+        },
+        sessionAttributes: buildKnownSessionAttributes({
+          lastAskedSlot: "customerPhone",
+          askedSlotsCount: "1",
+          fallbackCount: "1",
+          errorCount: "1",
+          awaitingExistingAppointmentHumanConfirmation: "false",
+          forceHumanEscalation: "false",
+          transferToQueue: "false"
+        })
+      },
+      appointment: null,
+      bookingAttempt,
+      callSession,
+      transcript,
+      aiInteraction,
+      escalation: null,
+      alternatives: [],
+      missingFields: ["customerPhone"],
+      salonResolutionSource: resolutionSource
+    };
+  }
+
+  if (
+    recognizedCustomer &&
+    (existingAppointmentRequestKind === "existing" ||
+      existingAppointmentRequestKind === "ambiguous")
+  ) {
+    const upcomingAppointments = await findUpcomingAppointmentsForCustomer({
+      salonId: salon.id,
+      customerId: recognizedCustomer.id
+    });
+    const summaries = upcomingAppointments.map((appointment) =>
+      formatUpcomingAppointmentForSpeech(appointment, salon.timezone)
+    );
+    const singleAppointment = upcomingAppointments.length === 1 ? upcomingAppointments[0] : null;
+    const statusQuestion = isExistingAppointmentStatusQuestion(normalized.transcriptText);
+    const shouldOfferHumanForExisting =
+      existingAppointmentRequestKind === "existing" &&
+      Boolean(singleAppointment) &&
+      !statusQuestion;
+    const message = (() => {
+      if (!upcomingAppointments.length) {
+        return speak(
+          "I don't see an upcoming appointment for this phone number. Would you like to book a new appointment, or speak with our team?"
+        );
+      }
+      if (existingAppointmentRequestKind === "ambiguous") {
+        return speak(
+          `I see you have an upcoming appointment: ${escapeSsml(summaries[0])}. <break time="300ms"/> Are you calling about that appointment, or would you like to book a new one?`
+        );
+      }
+      if (upcomingAppointments.length > 1) {
+        return speak(
+          `I see a few upcoming appointments: ${escapeSsml(summaries.join("; "))}. <break time="300ms"/> Which appointment are you calling about?`
+        );
+      }
+      if (statusQuestion) {
+        return speak(
+          `I see your upcoming ${escapeSsml(summaries[0])}. <break time="300ms"/> What would you like to do next?`
+        );
+      }
+      return speak(
+        `I see your upcoming ${escapeSsml(summaries[0])}. <break time="300ms"/> Would you like me to connect you with our team to update that appointment?`
+      );
+    })();
+    const parsed = buildInternalParsedIntent({
+      intentType:
+        normalized.intentName?.toLowerCase() === "cancelappointmentintent"
+          ? "CANCEL_APPOINTMENT"
+          : normalized.intentName?.toLowerCase() === "rescheduleappointmentintent"
+            ? "RESCHEDULE_APPOINTMENT"
+            : "GENERAL_INQUIRY",
+      customerName: normalized.customerName,
+      customerPhone: normalized.customerPhone,
+      serviceName: normalized.serviceName,
+      staffPreference: normalized.staffPreference,
+      requestedDateTime: singleAppointment?.startTime.toISOString() ?? normalized.requestedDate,
+      missingFields: [],
+      isReadyToBook: false
+    });
+    const bookingAttempt = await createAttempt({
+      status: BookingAttemptStatus.NEEDS_INPUT,
+      failureReason: "Existing appointment context provided.",
+      normalizedRequest: {
+        intentName: normalized.intentName,
+        existingAppointmentRequestKind,
+        upcomingAppointmentIds: upcomingAppointments.map((appointment) => appointment.id),
+        existingAppointmentId: singleAppointment?.id,
+        requestedDateTimeText
+      }
+    });
+    const aiInteraction = await createInteraction({
+      outcome: "MISSING_INFO",
+      message,
+      parsed,
+      bookingAttemptId: bookingAttempt.id,
+      responsePayload: {
+        upcomingAppointmentCount: upcomingAppointments.length,
+        upcomingAppointmentIds: upcomingAppointments.map((appointment) => appointment.id),
+        awaitingExistingAppointmentHumanConfirmation: shouldOfferHumanForExisting
+      },
+      isValid: true
+    });
+    await finalizeCall({
+      outcome: "MISSING_INFO",
+      bookingAttemptId: bookingAttempt.id,
+      bookingStatus: bookingAttempt.status,
+      parsed,
+      message,
+      failureReason: bookingAttempt.failureReason ?? undefined
+    });
+
+    return {
+      outcome: "MISSING_INFO" as const,
+      message,
+      lexResponse: {
+        fulfillmentState: "InProgress",
+        message,
+        messageContentType: "SSML",
+        dialogAction: {
+          type: "ElicitIntent"
+        },
+        sessionAttributes: buildKnownSessionAttributes({
+          upcomingAppointmentCount: String(upcomingAppointments.length),
+          existingAppointmentId: singleAppointment?.id,
+          existingAppointmentSummary: summaries[0],
+          awaitingExistingAppointmentHumanConfirmation: shouldOfferHumanForExisting
+            ? "true"
+            : "false",
+          forceHumanEscalation: "false",
+          transferToQueue: "false"
+        })
+      },
+      appointment: null,
+      bookingAttempt,
+      callSession,
+      transcript,
+      aiInteraction,
+      escalation: null,
+      alternatives: [],
+      missingFields: [],
+      salonResolutionSource: resolutionSource
+    };
+  }
 
   if (shouldEscalateToHuman(normalized)) {
     const bookingAttempt = await createAttempt({

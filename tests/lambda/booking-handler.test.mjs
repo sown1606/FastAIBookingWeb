@@ -733,22 +733,29 @@ test("BookAppointmentIntent backend human escalation response is blocked", async
   assert.equal(response.sessionState.sessionAttributes.blockedEscalationOutcome, "HUMAN_ESCALATION");
 });
 
-test("cancel and reschedule intents hand off to backend-driven human flow", async () => {
+test("cancel and reschedule intents pass through backend appointment context without transfer", async () => {
   for (const intentName of ["CancelAppointmentIntent", "RescheduleAppointmentIntent"]) {
     const handler = await loadHandler();
     const fetchCalls = installFetchMock(() =>
       jsonResponse(
         successfulBackendPayload({
-          outcome: "HUMAN_ESCALATION",
+          outcome: "MISSING_INFO",
           appointment: null,
           lexResponse: {
-            fulfillmentState: "Fulfilled",
-            message: "Please wait while I connect you.",
-            messageContentType: "PlainText",
+            fulfillmentState: "InProgress",
+            message:
+              "<speak>I see your upcoming pedicure with Trang tomorrow at 3 PM. <break time=\"300ms\"/> Would you like me to connect you with our team to update that appointment?</speak>",
+            messageContentType: "SSML",
+            dialogAction: {
+              type: "ElicitIntent"
+            },
             sessionAttributes: {
-              forceHumanEscalation: "true",
-              transferToQueue: "true",
-              escalationReason: "caller_requested_human"
+              customerId: "customer-kiet",
+              customerName: "Kiet",
+              customerPhone: "+17325956266",
+              awaitingExistingAppointmentHumanConfirmation: "true",
+              forceHumanEscalation: "false",
+              transferToQueue: "false"
             }
           }
         })
@@ -772,9 +779,49 @@ test("cancel and reschedule intents hand off to backend-driven human flow", asyn
     );
 
     assert.equal(fetchCalls[0].body.intentName, intentName);
-    assert.equal(response.messages[0].content, "Please wait while I connect you.");
+    assert.match(response.messages[0].content, /upcoming pedicure with Trang/i);
+    assert.equal(response.messages[0].contentType, "SSML");
+    assert.equal(response.sessionState.dialogAction.type, "ElicitIntent");
+    assert.equal(
+      response.sessionState.sessionAttributes.awaitingExistingAppointmentHumanConfirmation,
+      "true"
+    );
+    assert.equal(response.sessionState.sessionAttributes.transferToQueue, "false");
     delete globalThis.fetch;
   }
+});
+
+test("yes after existing appointment handoff offer transfers only after confirmation", async () => {
+  const handler = await loadHandler();
+  const response = await handler(
+    baseEvent({
+      inputTranscript: "yes",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          ...baseEvent().sessionState.sessionAttributes,
+          awaitingExistingAppointmentHumanConfirmation: "true",
+          existingAppointmentId: "appointment-1"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          name: "BookAppointmentIntent"
+        }
+      }
+    })
+  );
+
+  assert.equal(response.messages[0].content, "Please wait while I connect you.");
+  assert.equal(response.messages[0].contentType, "PlainText");
+  assert.equal(response.sessionState.sessionAttributes.transferToQueue, "true");
+  assert.equal(
+    response.sessionState.sessionAttributes.awaitingExistingAppointmentHumanConfirmation,
+    "false"
+  );
+  assert.equal(
+    response.sessionState.sessionAttributes.escalationReason,
+    "caller_confirmed_existing_appointment_handoff"
+  );
 });
 
 test("BookAppointmentIntent backend non-OK response elicits a slot without escalation", async () => {

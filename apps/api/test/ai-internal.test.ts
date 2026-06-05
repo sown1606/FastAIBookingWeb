@@ -394,6 +394,31 @@ const setupPrismaMock = () => {
     return null;
   });
   patch(prisma.appointment as any, "findMany", async (args: any) => {
+    if (args?.where?.customerId) {
+      const statusFilter = args.where.status?.in as AppointmentStatus[] | undefined;
+      const startGte = args.where.startTime?.gte as Date | undefined;
+      return state.appointments
+        .filter(
+          (appointment) =>
+            appointment.salonId === args.where.salonId &&
+            appointment.customerId === args.where.customerId &&
+            (!statusFilter || statusFilter.includes(appointment.status)) &&
+            (!startGte || appointment.startTime >= startGte)
+        )
+        .sort((left, right) => left.startTime.getTime() - right.startTime.getTime())
+        .slice(0, args.take ?? 3)
+        .map((appointment) => ({
+          id: appointment.id,
+          startTime: appointment.startTime,
+          service: {
+            name: findService(appointment.serviceId)?.name ?? "Appointment"
+          },
+          staff: {
+            fullName:
+              state.staff.find((member) => member.id === appointment.staffId)?.fullName ?? "Staff"
+          }
+        }));
+    }
     if (args?.where?.staffId && state.busyStaffIds.has(args.where.staffId)) {
       return [
         {
@@ -1014,34 +1039,78 @@ test("successful booking creates appointment, booking attempt, call session, tra
   assert.equal(result.body.data.aiInteractionId, state.aiInteractionLogs[0].id);
 });
 
-test("explicit human, cancel, and reschedule intents create queued escalations with queue id", async () => {
-  for (const intentName of [
-    "HumanEscalationIntent",
-    "CancelAppointmentIntent",
-    "RescheduleAppointmentIntent"
-  ]) {
+test("explicit human intent creates queued escalation with queue id", async () => {
+  const result = await postInternalAppointment(
+    bookingPayload({
+      intentName: "HumanEscalationIntent",
+      amazonConnectContactId: "connect-HumanEscalationIntent",
+      transcript: "I want to speak to a real person."
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "HUMAN_ESCALATION");
+  assert.equal(result.body.data.lexResponse.message, "Please wait while I connect you.");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.transferToQueue, "true");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.queueId, "queue-default");
+  assert.equal(state.escalations[0].status, CallEscalationStatus.QUEUED);
+  assert.equal(state.escalations[0].routingOutcome, CallRoutingOutcome.QUEUED);
+  assert.equal(state.escalations[0].queueId, "queue-default");
+});
+
+test("cancel and reschedule intents use upcoming appointment context without transfer", async () => {
+  for (const intentName of ["CancelAppointmentIntent", "RescheduleAppointmentIntent"]) {
     resetMockState();
+    state.appointments.push({
+      id: `upcoming-${intentName}`,
+      salonId: ids.salonA,
+      customerId: ids.kietCustomer,
+      staffId: ids.trang,
+      serviceId: ids.pedicure,
+      startTime: DateTime.now()
+        .setZone("America/New_York")
+        .plus({ days: 1 })
+        .set({ hour: 15, minute: 0, second: 0, millisecond: 0 })
+        .toUTC()
+        .toJSDate(),
+      endTime: DateTime.now()
+        .setZone("America/New_York")
+        .plus({ days: 1 })
+        .set({ hour: 15, minute: 45, second: 0, millisecond: 0 })
+        .toUTC()
+        .toJSDate(),
+      durationMinutes: 45,
+      status: AppointmentStatus.SCHEDULED,
+      source: AppointmentSource.AI
+    });
+
     const result = await postInternalAppointment(
       bookingPayload({
         intentName,
         amazonConnectContactId: `connect-${intentName}`,
+        serviceName: undefined,
+        requestedDate: undefined,
+        requestedTime: undefined,
+        confirmationState: undefined,
         transcript:
-          intentName === "HumanEscalationIntent"
-            ? "I want to speak to a real person."
-            : intentName === "CancelAppointmentIntent"
-              ? "I want to cancel my appointment."
-              : "I want to reschedule my appointment."
+          intentName === "CancelAppointmentIntent"
+            ? "I want to cancel my appointment."
+            : "I want to reschedule my appointment."
       })
     );
 
     assert.equal(result.response.status, 200);
-    assert.equal(result.body.data.outcome, "HUMAN_ESCALATION");
-    assert.equal(result.body.data.lexResponse.message, "Please wait while I connect you.");
-    assert.equal(result.body.data.lexResponse.sessionAttributes.transferToQueue, "true");
-    assert.equal(result.body.data.lexResponse.sessionAttributes.queueId, "queue-default");
-    assert.equal(state.escalations[0].status, CallEscalationStatus.QUEUED);
-    assert.equal(state.escalations[0].routingOutcome, CallRoutingOutcome.QUEUED);
-    assert.equal(state.escalations[0].queueId, "queue-default");
+    assert.equal(result.body.data.outcome, "MISSING_INFO");
+    assert.match(result.body.data.lexResponse.message, /upcoming pedicure with Trang/i);
+    assert.equal(result.body.data.lexResponse.sessionAttributes.customerId, ids.kietCustomer);
+    assert.equal(result.body.data.lexResponse.sessionAttributes.customerName, "Kiet");
+    assert.equal(result.body.data.lexResponse.sessionAttributes.transferToQueue, "false");
+    assert.equal(result.body.data.lexResponse.sessionAttributes.forceHumanEscalation, "false");
+    assert.equal(
+      result.body.data.lexResponse.sessionAttributes.awaitingExistingAppointmentHumanConfirmation,
+      "true"
+    );
+    assert.equal(state.escalations.length, 0);
   }
 });
 

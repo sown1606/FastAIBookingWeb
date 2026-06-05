@@ -1500,6 +1500,50 @@ export const handler = async (event) => {
       );
     }
 
+    if (
+      !shouldEscalate &&
+      sessionAttributes.awaitingExistingAppointmentHumanConfirmation === "true" &&
+      isAffirmativeUtterance(event.inputTranscript)
+    ) {
+      return buildLexResponse(
+        event,
+        "Please wait while I connect you.",
+        "Fulfilled",
+        buildForceHumanEscalationAttributes("caller_confirmed_existing_appointment_handoff", {
+          awaitingExistingAppointmentHumanConfirmation: "false"
+        }),
+        {
+          dialogAction: {
+            type: "Close"
+          },
+          messageContentType: "PlainText"
+        }
+      );
+    }
+
+    if (
+      !shouldEscalate &&
+      sessionAttributes.awaitingExistingAppointmentHumanConfirmation === "true" &&
+      isNegativeUtterance(event.inputTranscript)
+    ) {
+      return buildLexResponse(
+        event,
+        "No problem. How can I help you today?",
+        "InProgress",
+        {
+          awaitingExistingAppointmentHumanConfirmation: "false",
+          forceHumanEscalation: "false",
+          transferToQueue: "false"
+        },
+        {
+          dialogAction: {
+            type: "ElicitIntent"
+          },
+          messageContentType: "PlainText"
+        }
+      );
+    }
+
     if (event.invocationSource === "DialogCodeHook" && !shouldEscalate && isNoInputEvent(event)) {
       const slotToElicit = getBookingSlotToElicit(event);
       if (slotToElicit) {
