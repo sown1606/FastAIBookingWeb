@@ -280,7 +280,7 @@
           "AmazonConnectContactId": "$.ContactId",
           "InitialContactId": "$.InitialContactId"
         },
-        "Text": "What service would you like today? You can say Pedicure, Manicure, Gel Manicure, Acrylic Full Set, or Dip Powder. You can also press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Acrylic Full Set, or 5 for Dip Powder."
+        "Text": "Thank you for calling Kiet Nails & Beauty. How can I help you today?"
       },
       "Identifier": "3b2877ca-bc16-4019-a8e6-04200c0ded06",
       "Type": "ConnectParticipantWithLexBot",
@@ -326,7 +326,7 @@
         ],
         "Errors": [
           {
-            "NextAction": "05553b55-f227-4c66-b391-a3e068b01966",
+            "NextAction": "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d",
             "ErrorType": "NoMatchingCondition"
           },
           {
@@ -341,7 +341,7 @@
       "Type": "MessageParticipant",
       "Parameters": {
         "SkipWhenDTMFBufferEnabled": "false",
-        "Text": "Sorry, please say the appointment you want, or say operator."
+        "Text": "Are you still there? You can say operator if you want a real person."
       },
       "Transitions": {
         "NextAction": "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d",
@@ -551,7 +551,7 @@
         "ComparisonValue": "$.Attributes.callerPhone"
       },
       "Transitions": {
-        "NextAction": "ai-greeting-prompt",
+        "NextAction": "3b2877ca-bc16-4019-a8e6-04200c0ded06",
         "Conditions": [
           {
             "NextAction": "set-kiet-known-customer",
@@ -583,7 +583,7 @@
         ],
         "Errors": [
           {
-            "NextAction": "ai-greeting-prompt",
+            "NextAction": "3b2877ca-bc16-4019-a8e6-04200c0ded06",
             "ErrorType": "NoMatchingCondition"
           }
         ]
@@ -612,16 +612,73 @@
     },
     {
       "Identifier": "kiet-known-caller-greeting-prompt",
-      "Type": "MessageParticipant",
+      "Type": "ConnectParticipantWithLexBot",
       "Parameters": {
-        "SkipWhenDTMFBufferEnabled": "false",
+        "LexV2Bot": {
+          "AliasArn": "arn:aws:lex:us-east-1:197452633989:bot-alias/KHMIXGA2US/JVIPIZDYE3"
+        },
+        "LexSessionAttributes": {
+          "provider": "AMAZON_CONNECT",
+          "callerPhone": "$.CustomerEndpoint.Address",
+          "CustomerEndpointAddress": "$.CustomerEndpoint.Address",
+          "CallerId": "$.CustomerEndpoint.Address",
+          "calledNumber": "$.SystemEndpoint.Address",
+          "CalledNumber": "$.SystemEndpoint.Address",
+          "SystemEndpointAddress": "$.SystemEndpoint.Address",
+          "contactId": "$.ContactId",
+          "ContactId": "$.ContactId",
+          "AmazonConnectContactId": "$.ContactId",
+          "InitialContactId": "$.InitialContactId"
+        },
         "Text": "Hi Kiet, thank you for calling Kiet Nails & Beauty. How can I help you today?"
       },
       "Transitions": {
-        "NextAction": "3b2877ca-bc16-4019-a8e6-04200c0ded06",
+        "NextAction": "05553b55-f227-4c66-b391-a3e068b01966",
+        "Conditions": [
+          {
+            "NextAction": "check-transfer-to-queue",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "BookAppointmentIntent"
+              ]
+            }
+          },
+          {
+            "NextAction": "check-transfer-to-queue",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "CancelAppointmentIntent"
+              ]
+            }
+          },
+          {
+            "NextAction": "check-transfer-to-queue",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "RescheduleAppointmentIntent"
+              ]
+            }
+          },
+          {
+            "NextAction": "check-transfer-to-queue",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "HumanEscalationIntent"
+              ]
+            }
+          }
+        ],
         "Errors": [
           {
-            "NextAction": "3b2877ca-bc16-4019-a8e6-04200c0ded06",
+            "NextAction": "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d",
+            "ErrorType": "NoMatchingCondition"
+          },
+          {
+            "NextAction": "41e3f239-5b57-4363-92fc-9d594579fa98",
             "ErrorType": "NoMatchingError"
           }
         ]

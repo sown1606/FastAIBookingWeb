@@ -142,8 +142,14 @@ const STAFF_DTMF_OPTIONS = {
 };
 const SERVICE_DTMF_PROMPT =
   "What service would you like today? You can say Pedicure, Manicure, Gel Manicure, Acrylic Full Set, or Dip Powder. You can also press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Acrylic Full Set, or 5 for Dip Powder.";
+const SERVICE_DTMF_SHORT_PROMPT =
+  "You can say Pedicure, Manicure, Gel Manicure, Acrylic Full Set, or Dip Powder, or press 1 through 5.";
 const STAFF_DTMF_PROMPT =
   "Who would you like to book with? You can say Trang, Amy, or Kelly. You can also press 1 for Trang, 2 for Amy, or 3 for Kelly.";
+const STAFF_DTMF_SHORT_PROMPT =
+  "You can say Trang, Amy, or Kelly, or press 1, 2, or 3.";
+const NO_INPUT_HUMAN_CONFIRM_PROMPT =
+  "Are you still there? Would you like me to connect you to a real person?";
 const KNOWN_KIET_CUSTOMER_NAME = "Kiet";
 const KNOWN_KIET_PHONE_DIGITS = new Set(["7325956266", "17325956266"]);
 
@@ -849,6 +855,16 @@ function isNoInputEvent(event) {
   return /^(no input|noinput|silence|silent|timeout|timed out)$/.test(normalized);
 }
 
+function isAffirmativeUtterance(value) {
+  return /^(?:yes|yeah|yep|correct|right|sure|ok|okay|please|connect me)$/i.test(
+    normalizeForMatch(value)
+  );
+}
+
+function isNegativeUtterance(value) {
+  return /^(?:no|nope|not now|no thanks|do not|dont|don t)$/i.test(normalizeForMatch(value));
+}
+
 function parseAttemptCount(value) {
   const parsed = Number.parseInt(String(value || ""), 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
@@ -1085,7 +1101,7 @@ function getBookingSlotToElicit(event) {
   return "";
 }
 
-function buildElicitSlotResponse(event, slotName, extraAttributes = {}) {
+function buildElicitSlotResponse(event, slotName, extraAttributes = {}, messageOverride = "") {
   const slots = mergeKnownSlots(event);
   const sessionAttributes = buildKnownBookingSessionAttributes(event);
   const names = slotNames[slotName] || [slotName];
@@ -1123,10 +1139,60 @@ function buildElicitSlotResponse(event, slotName, extraAttributes = {}) {
     messages: [
       {
         contentType: "PlainText",
-        content: getElicitPrompt(event, slotName, attemptCount)
+        content: messageOverride || getElicitPrompt(event, slotName, attemptCount)
       }
     ]
   };
+}
+
+function getNoInputPrompt(slotName, noInputCount, event) {
+  if (noInputCount <= 1) {
+    return getElicitPrompt(event, slotName, 1);
+  }
+  if (slotName === "staffPreference") {
+    return STAFF_DTMF_SHORT_PROMPT;
+  }
+  if (slotName === "serviceName") {
+    return SERVICE_DTMF_SHORT_PROMPT;
+  }
+  return getElicitPrompt(event, slotName, 2);
+}
+
+function buildNoInputResponse(event, slotName) {
+  const previous = event.sessionState?.sessionAttributes || {};
+  const noInputCount = parseAttemptCount(previous.noInputCount) + 1;
+
+  if (noInputCount >= 3) {
+    return buildLexResponse(
+      event,
+      NO_INPUT_HUMAN_CONFIRM_PROMPT,
+      "InProgress",
+      {
+        noInputCount: String(noInputCount),
+        noInputPrompted: "true",
+        awaitingNoInputHumanConfirmation: "true",
+        forceHumanEscalation: "false",
+        transferToQueue: "false"
+      },
+      {
+        dialogAction: {
+          type: "ElicitIntent"
+        },
+        messageContentType: "PlainText"
+      }
+    );
+  }
+
+  return buildElicitSlotResponse(
+    event,
+    slotName,
+    {
+      noInputCount: String(noInputCount),
+      noInputPrompted: "true",
+      awaitingNoInputHumanConfirmation: "false"
+    },
+    getNoInputPrompt(slotName, noInputCount, event)
+  );
 }
 
 function buildBookServiceElicitResponse(event) {
@@ -1396,13 +1462,48 @@ export const handler = async (event) => {
   try {
     const intentName = event.sessionState?.intent?.name || "";
     const shouldEscalate = isHumanEscalationRequest(intentName);
+    const sessionAttributes = event.sessionState?.sessionAttributes || {};
+
+    if (
+      !shouldEscalate &&
+      sessionAttributes.awaitingNoInputHumanConfirmation === "true" &&
+      isAffirmativeUtterance(event.inputTranscript)
+    ) {
+      return buildLexResponse(
+        event,
+        "Please wait while I connect you.",
+        "Fulfilled",
+        buildForceHumanEscalationAttributes("caller_confirmed_human_after_no_input", {
+          awaitingNoInputHumanConfirmation: "false"
+        }),
+        {
+          dialogAction: {
+            type: "Close"
+          },
+          messageContentType: "PlainText"
+        }
+      );
+    }
+
+    if (
+      !shouldEscalate &&
+      sessionAttributes.awaitingNoInputHumanConfirmation === "true" &&
+      isNegativeUtterance(event.inputTranscript)
+    ) {
+      return buildElicitSlotResponse(
+        event,
+        getBookingSlotToElicit(event) || "serviceName",
+        {
+          awaitingNoInputHumanConfirmation: "false",
+          noInputCount: "0"
+        }
+      );
+    }
 
     if (event.invocationSource === "DialogCodeHook" && !shouldEscalate && isNoInputEvent(event)) {
       const slotToElicit = getBookingSlotToElicit(event);
       if (slotToElicit) {
-        return buildElicitSlotResponse(event, slotToElicit, {
-          noInputPrompted: "true"
-        });
+        return buildNoInputResponse(event, slotToElicit);
       }
     }
 

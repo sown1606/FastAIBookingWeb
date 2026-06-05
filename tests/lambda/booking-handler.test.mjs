@@ -225,12 +225,117 @@ test("DialogCodeHook no input prompts service menu and keeps known caller", asyn
   assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
   assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName");
   assert.equal(response.sessionState.sessionAttributes.noInputPrompted, "true");
+  assert.equal(response.sessionState.sessionAttributes.noInputCount, "1");
+  assert.equal(response.sessionState.sessionAttributes.awaitingNoInputHumanConfirmation, "false");
   assert.equal(response.sessionState.sessionAttributes.customerName, "Kiet");
   assert.equal(response.sessionState.sessionAttributes.recognizedCustomerName, "Kiet");
   assert.equal(response.sessionState.sessionAttributes.customerNameSource, "phone_lookup");
   assert.equal(response.sessionState.sessionAttributes.customerPhone, "+17325956266");
   assert.match(response.messages[0].content, /What service would you like today/i);
   assert.match(response.messages[0].content, /press 1 for Pedicure/i);
+});
+
+test("DialogCodeHook second no input uses shorter prompt without transfer", async () => {
+  const handler = await loadHandler();
+  globalThis.fetch = async () => {
+    throw new Error("fetch should not be called for second no-input DialogCodeHook");
+  };
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: "connect-contact-1",
+          customerName: "Kiet",
+          customerPhone: "+17325956266",
+          noInputCount: "1"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          slots: {}
+        }
+      }
+    })
+  );
+
+  assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName");
+  assert.equal(response.sessionState.sessionAttributes.noInputCount, "2");
+  assert.equal(response.sessionState.sessionAttributes.transferToQueue, undefined);
+  assert.match(response.messages[0].content, /press 1 through 5/i);
+  assert.doesNotMatch(response.messages[0].content, /You can also press 1 for Pedicure/i);
+});
+
+test("DialogCodeHook third no input asks for human confirmation without transfer", async () => {
+  const handler = await loadHandler();
+  globalThis.fetch = async () => {
+    throw new Error("fetch should not be called for third no-input DialogCodeHook");
+  };
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: "connect-contact-1",
+          customerName: "Kiet",
+          customerPhone: "+17325956266",
+          noInputCount: "2"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          slots: {}
+        }
+      }
+    })
+  );
+
+  assert.equal(response.sessionState.dialogAction.type, "ElicitIntent");
+  assert.equal(response.sessionState.sessionAttributes.noInputCount, "3");
+  assert.equal(response.sessionState.sessionAttributes.awaitingNoInputHumanConfirmation, "true");
+  assert.equal(response.sessionState.sessionAttributes.transferToQueue, "false");
+  assert.match(response.messages[0].content, /connect you to a real person/i);
+});
+
+test("yes after no-input human offer transfers only after confirmation", async () => {
+  const handler = await loadHandler();
+  globalThis.fetch = async () => {
+    throw new Error("fetch should not be called for no-input human confirmation");
+  };
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "yes",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          ...baseEvent().sessionState.sessionAttributes,
+          awaitingNoInputHumanConfirmation: "true",
+          noInputCount: "3"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          slots: {}
+        }
+      }
+    })
+  );
+
+  assert.equal(response.messages[0].content, "Please wait while I connect you.");
+  assert.equal(response.sessionState.sessionAttributes.transferToQueue, "true");
+  assert.equal(response.sessionState.sessionAttributes.awaitingNoInputHumanConfirmation, "false");
 });
 
 test("DialogCodeHook recovers pedicure aliases and bare PM time from transcript", async () => {
