@@ -138,7 +138,7 @@
       "Type": "MessageParticipant",
       "Parameters": {
         "SkipWhenDTMFBufferEnabled": "false",
-        "Text": "I am sorry, we cannot connect you to an operator right now. Please call back later. Goodbye."
+        "Text": "No agents available."
       },
       "Transitions": {
         "NextAction": "eab531ca-686c-470f-9ed2-426e5ead1400",

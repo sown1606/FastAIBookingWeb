@@ -293,6 +293,105 @@ PY
   assert_aws_value "$message" "Please wait while I connect you." "lambda invoke human escalation message"
 }
 
+invoke_lambda_booking_recovery_samples() {
+  if ! aws_available; then
+    echo "SKIP [lambda booking recovery samples] AWS CLI/profile ${AWS_PROFILE} is not available."
+    return
+  fi
+  local lambda_name="${BOOKING_LAMBDA_FUNCTION_NAME:-${LAMBDA_BOOKING_HANDLER_NAME:-}}"
+  if [[ -z "$lambda_name" ]]; then
+    echo "SKIP [lambda booking recovery samples] BOOKING_LAMBDA_FUNCTION_NAME or LAMBDA_BOOKING_HANDLER_NAME is missing."
+    return
+  fi
+
+  local demo_salon_id="${DEFAULT_SALON_ID:-9bd14a12-85ed-418a-af7d-3f5cb329c147}"
+  local demo_called_number="${AMAZON_CONNECT_PHONE_NUMBER:-+18483487681}"
+  local today_date tomorrow_date
+  today_date="$(python3 - <<'PY'
+from datetime import datetime
+from zoneinfo import ZoneInfo
+print(datetime.now(ZoneInfo("America/New_York")).date().isoformat())
+PY
+)"
+  tomorrow_date="$(python3 - <<'PY'
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+print((datetime.now(ZoneInfo("America/New_York")) + timedelta(days=1)).date().isoformat())
+PY
+)"
+  local samples=(
+    "pedicure_today|I want to book a pedicure today at five PM. My name is Kiet Nguyen. My phone number is 7325956266.|${today_date}"
+    "pedicure_tomorrow|I want to book a pedicure tomorrow at five PM. My name is Kiet Nguyen. My phone number is 7325956266.|${tomorrow_date}"
+    "pedi_cure|I need a pedi cure tomorrow at five. My name is Kiet Nguyen. My phone number is 7325956266.|${tomorrow_date}"
+    "better_cure|I need a better cure tomorrow at five. My name is Kiet Nguyen. My phone number is 7325956266.|${tomorrow_date}"
+  )
+
+  for sample in "${samples[@]}"; do
+    IFS="|" read -r label transcript expected_date <<< "$sample"
+    local event_file output_file parsed
+    event_file="$(mktemp)"
+    output_file="$(mktemp)"
+    cat > "$event_file" <<JSON
+{
+  "invocationSource": "FulfillmentCodeHook",
+  "inputTranscript": "${transcript}",
+  "sessionId": "smoke-booking-${label}-${timestamp}",
+  "sessionState": {
+    "sessionAttributes": {
+      "salonId": "${demo_salon_id}",
+      "AmazonConnectContactId": "smoke-booking-${label}-${timestamp}",
+      "CalledNumber": "${demo_called_number}",
+      "CustomerEndpointAddress": "+17325956266"
+    },
+    "intent": {
+      "name": "BookAppointmentIntent",
+      "state": "ReadyForFulfillment",
+      "confirmationState": "None",
+      "slots": {}
+    }
+  }
+}
+JSON
+
+    aws lambda invoke --profile "$AWS_PROFILE" --region "$AWS_REGION" --function-name "$lambda_name" --payload "fileb://${event_file}" "$output_file" >/dev/null
+    python3 - "$output_file" "$expected_date" "$label" <<'PY'
+import json
+import sys
+with open(sys.argv[1], "r", encoding="utf-8") as handle:
+    data = json.load(handle)
+expected_date = sys.argv[2]
+label = sys.argv[3]
+attrs = (data.get("sessionState") or {}).get("sessionAttributes") or {}
+dialog = (data.get("sessionState") or {}).get("dialogAction") or {}
+message = ((data.get("messages") or [{}])[0]).get("content", "")
+checks = {
+    "action": dialog.get("type", "") == "ConfirmIntent",
+    "slotToElicit": not dialog.get("slotToElicit"),
+    "serviceName": attrs.get("serviceName", "") == "Pedicure",
+    "requestedDate": attrs.get("requestedDate", "") == expected_date,
+    "requestedTime": attrs.get("requestedTime", "") == "5 PM",
+    "customerName": attrs.get("customerName", "") == "Kiet Nguyen",
+    "message": "Just to confirm" in message,
+}
+if not all(checks.values()):
+    print(
+        f"FAILED [lambda booking recovery {label}] "
+        f"action={dialog.get('type', '')} slot={dialog.get('slotToElicit', '')} "
+        f"service={attrs.get('serviceName', '')} date={attrs.get('requestedDate', '')} "
+        f"time={attrs.get('requestedTime', '')} name={attrs.get('customerName', '')}"
+    )
+    print(message)
+    sys.exit(1)
+print(
+    f"OK [lambda booking recovery {label}] "
+    f"service={attrs.get('serviceName', '')} date={attrs.get('requestedDate', '')} "
+    f"time={attrs.get('requestedTime', '')}"
+)
+PY
+    rm -f "$event_file" "$output_file"
+  done
+}
+
 get_next_weekday_date() {
   python3 - <<'PY'
 from datetime import datetime, timedelta, timezone
@@ -531,6 +630,7 @@ ai_internal_payload="$(cat <<JSON
   "serviceName":"Smoke Service",
   "requestedDate":"${ai_internal_slot_start}",
   "staffPreference":"Smoke Staff",
+  "confirmationState":"Confirmed",
   "source":"amazon_connect_smoke_test",
   "amazonConnectContactId":"smoke-contact-${timestamp}",
   "amazonConnectPhoneNumber":"+12125550141",
@@ -828,5 +928,6 @@ fi
 
 verify_aws_resources
 invoke_lambda_human_escalation_sample
+invoke_lambda_booking_recovery_samples
 
 echo "All smoke tests completed successfully."

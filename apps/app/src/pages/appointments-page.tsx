@@ -10,6 +10,7 @@ import { toDateTimeLocalValue, useFormDialog } from "../components/form-dialog";
 import { statusLabelKey, useI18n } from "../lib/i18n";
 import { DemoAvatar } from "../components/avatar";
 import { requiredLabel } from "../lib/phone";
+import { useUiMode } from "../lib/ui-mode";
 
 interface AppointmentItem {
   id: string;
@@ -75,6 +76,8 @@ interface StaffReminder {
   appointment: AppointmentItem;
 }
 
+const SALON_TIMEZONE = "America/New_York";
+
 const formatHourLabel = (hour: number) => {
   const displayHour = ((hour + 11) % 12) + 1;
   return `${displayHour} ${hour >= 12 ? "PM" : "AM"}`;
@@ -88,8 +91,21 @@ const formatTimeOnly = (value: string) => {
   return date.toLocaleTimeString([], {
     hour: "numeric",
     minute: "2-digit",
-    timeZone: "America/New_York"
+    timeZone: SALON_TIMEZONE
   });
+};
+
+const formatSalonDateKey = (date: Date) => {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone: SALON_TIMEZONE
+  }).formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value ?? "1970";
+  const month = parts.find((part) => part.type === "month")?.value ?? "01";
+  const day = parts.find((part) => part.type === "day")?.value ?? "01";
+  return `${year}-${month}-${day}`;
 };
 
 const minutesFromDayStart = (value: string) => {
@@ -98,7 +114,7 @@ const minutesFromDayStart = (value: string) => {
     hour: "numeric",
     minute: "2-digit",
     hourCycle: "h23",
-    timeZone: "America/New_York"
+    timeZone: SALON_TIMEZONE
   }).formatToParts(date);
   const hour = Number(parts.find((part) => part.type === "hour")?.value ?? 0);
   const minute = Number(parts.find((part) => part.type === "minute")?.value ?? 0);
@@ -110,11 +126,23 @@ const localDateKey = (value: string) => {
   if (Number.isNaN(date.getTime())) {
     return "unknown";
   }
-  return new Intl.DateTimeFormat("en-CA", {
+  return formatSalonDateKey(date);
+};
+
+const shiftDateKey = (dateKey: string, days: number) => {
+  const [year = 1970, month = 1, day = 1] = dateKey.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day + days));
+  return date.toISOString().slice(0, 10);
+};
+
+const formatSelectedDateLabel = (dateKey: string, locale: "vi" | "en") => {
+  const [year = 1970, month = 1, day = 1] = dateKey.split("-").map(Number);
+  const date = new Date(year, month - 1, day, 12);
+  return new Intl.DateTimeFormat(locale === "vi" ? "vi-VN" : "en-US", {
+    weekday: "long",
     year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    timeZone: "America/New_York"
+    month: "long",
+    day: "numeric"
   }).format(date);
 };
 
@@ -133,13 +161,15 @@ export const AppointmentsPage = () => {
   const { session } = useAuth();
   const { notify } = useToast();
   const { openFormDialog, FormDialog } = useFormDialog();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
+  const { isBasicMode } = useUiMode();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [appointments, setAppointments] = useState<AppointmentItem[]>([]);
   const [reminders, setReminders] = useState<StaffReminder[]>([]);
   const [statusFilter, setStatusFilter] = useState("");
+  const [selectedDate, setSelectedDate] = useState(() => formatSalonDateKey(new Date()));
   const [now, setNow] = useState(Date.now());
 
   const [customers, setCustomers] = useState<CustomerItem[]>([]);
@@ -403,27 +433,32 @@ export const AppointmentsPage = () => {
     return `${minutes}:${String(seconds).padStart(2, "0")}`;
   };
 
+  const selectedDayAppointments = useMemo(
+    () => appointments.filter((appointment) => localDateKey(appointment.startTime) === selectedDate),
+    [appointments, selectedDate]
+  );
+
   const groupedByDay = useMemo(() => {
     const byDay = new Map<string, AppointmentItem[]>();
-    appointments.forEach((appointment) => {
+    selectedDayAppointments.forEach((appointment) => {
       const dateKey = localDateKey(appointment.startTime);
       const list = byDay.get(dateKey) ?? [];
       list.push(appointment);
       byDay.set(dateKey, list);
     });
     return [...byDay.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  }, [appointments]);
+  }, [selectedDayAppointments]);
 
   const scheduleStaff = useMemo(() => {
     const byId = new Map<string, StaffItem>();
     staff.forEach((member) => byId.set(member.id, member));
-    appointments.forEach((appointment) => {
+    selectedDayAppointments.forEach((appointment) => {
       if (!byId.has(appointment.staff.id)) {
         byId.set(appointment.staff.id, appointment.staff);
       }
     });
     return [...byId.values()].sort((a, b) => a.fullName.localeCompare(b.fullName));
-  }, [appointments, staff]);
+  }, [selectedDayAppointments, staff]);
 
   const getAppointmentToneClass = (appointment: AppointmentItem) => {
     if (appointment.status === "CANCELED" || appointment.status === "NO_SHOW") {
@@ -468,15 +503,44 @@ export const AppointmentsPage = () => {
             </select>
           </label>
         </div>
+        <div className="date-navigation">
+          <button
+            type="button"
+            className="button-secondary"
+            aria-label={t("appointments.previousDay")}
+            onClick={() => setSelectedDate((value) => shiftDateKey(value, -1))}
+          >
+            {"<"}
+          </button>
+          <strong className="selected-date-label">
+            {t("appointments.selectedDate")}: {formatSelectedDateLabel(selectedDate, locale)}
+          </strong>
+          <button
+            type="button"
+            className="button-secondary"
+            aria-label={t("appointments.nextDay")}
+            onClick={() => setSelectedDate((value) => shiftDateKey(value, 1))}
+          >
+            {">"}
+          </button>
+          <label className="field compact">
+            <span>{t("appointments.selectDate")}</span>
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(event) => setSelectedDate(event.target.value || formatSalonDateKey(new Date()))}
+            />
+          </label>
+        </div>
         <div className="summary-badges">
           <span className="summary-badge">
-            {t("appointments.todayCount")}: {appointments.filter((item) => new Date(item.startTime).toDateString() === new Date().toDateString()).length}
+            {t("appointments.selectedDateCount")}: {selectedDayAppointments.length}
           </span>
           <span className="summary-badge">
-            {t("appointments.completedCount")}: {appointments.filter((item) => item.status === "COMPLETED").length}
+            {t("appointments.completedCount")}: {selectedDayAppointments.filter((item) => item.status === "COMPLETED").length}
           </span>
           <span className="summary-badge">
-            {t("appointments.inProgressCount")}: {appointments.filter((item) => item.status === "IN_PROGRESS").length}
+            {t("appointments.inProgressCount")}: {selectedDayAppointments.filter((item) => item.status === "IN_PROGRESS").length}
           </span>
         </div>
       </section>
@@ -669,7 +733,7 @@ export const AppointmentsPage = () => {
         </section>
       ) : null}
 
-      {!isOwner ? (
+      {!isOwner && !isBasicMode ? (
         <section className="card">
           <h2>{t("appointments.reminders")}</h2>
           {reminders.length ? (
@@ -715,10 +779,12 @@ export const AppointmentsPage = () => {
                         <span className="muted">{t("appointments.staff")}</span>
                         <strong>{item.staff.fullName}</strong>
                       </div>
-                      <div>
-                        <span className="muted">{t("appointments.source")}</span>
-                        <strong>{item.source}</strong>
-                      </div>
+                      {!isBasicMode ? (
+                        <div>
+                          <span className="muted">{t("appointments.source")}</span>
+                          <strong>{item.source}</strong>
+                        </div>
+                      ) : null}
                     </div>
                     <div className="summary-badges">
                       {countdownText(item) ? <span className="summary-badge">{countdownText(item)}</span> : null}

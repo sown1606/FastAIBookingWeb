@@ -1,0 +1,377 @@
+[
+  {
+    "id": "1f9d0fc8-f6de-4d01-892a-619fb339e75d",
+    "requestText": "I want to change my appointment",
+    "responseText": "<speak>I see your upcoming pedicure with Trang today at 9:30 AM. <break time=\"300ms\"/> Would you like me to connect you with our team to update that appointment?</speak>",
+    "requestPayload": {
+      "slots": {},
+      "source": "amazon_connect_ai",
+      "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147",
+      "provider": "AMAZON_CONNECT",
+      "attributes": {
+        "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147",
+        "CalledNumber": "+18483487681",
+        "customerName": "Kiet",
+        "customerPhone": "+17325956266",
+        "customerNameSource": "phone_lookup",
+        "AmazonConnectContactId": "live-smoke-change-a99a882",
+        "recognizedCustomerName": "Kiet",
+        "CustomerEndpointAddress": "+17325956266",
+        "initialBookingUtterance": "I want to change my appointment"
+      },
+      "intentName": "RescheduleAppointmentIntent",
+      "transcript": "I want to change my appointment",
+      "calledNumber": "+18483487681",
+      "customerName": "Kiet",
+      "customerPhone": "+17325956266",
+      "confirmationState": "None",
+      "amazonConnectContactId": "live-smoke-change-a99a882",
+      "amazonConnectPhoneNumber": "+18483487681"
+    },
+    "responsePayload": {
+      "upcomingAppointmentIds": [
+        "ffa1da0f-c515-4084-b9cb-17630afb9929"
+      ],
+      "upcomingAppointmentCount": 1,
+      "awaitingExistingAppointmentHumanConfirmation": true
+    },
+    "parsedOutput": {
+      "parsed": {
+        "customer": {
+          "name": "Kiet",
+          "phone": "+17325956266"
+        },
+        "confidence": 1,
+        "intentType": "RESCHEDULE_APPOINTMENT",
+        "isReadyToBook": false,
+        "missingFields": [],
+        "requestedDateTime": "2026-06-05T13:30:00.000Z",
+        "normalizedBookingRequest": {
+          "customerName": "Kiet",
+          "startTimeIso": "2026-06-05T13:30:00.000Z",
+          "customerPhone": "+17325956266"
+        }
+      },
+      "outcome": "MISSING_INFO"
+    },
+    "validationErrors": null,
+    "createdAt": "2026-06-05T13:10:27.504Z",
+    "taskType": "amazon_connect_booking_fulfillment",
+    "provider": "AMAZON_CONNECT",
+    "model": "KHMIXGA2US",
+    "confidence": 1,
+    "bookingAttemptId": "24191d56-8e0a-4e6a-9c2d-5ab6d021ced9",
+    "callSessionId": "0d197bb7-cf1a-467e-b05e-f2ab5a966616",
+    "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147"
+  },
+  {
+    "id": "7d1e0f1f-dd30-472f-a907-95716bb17f45",
+    "requestText": "i want to have eddie here tomorrow at seven p.m. yes.",
+    "responseText": "<speak>You're all set. <break time=\"300ms\"/> Your pedicure is booked for Friday, Jun 5 at 9:30 AM with Trang. Thank you for calling.</speak>",
+    "requestPayload": {
+      "slots": {
+        "serviceName": {
+          "shape": "Scalar",
+          "value": {
+            "originalValue": "Pedicure",
+            "resolvedValues": [
+              "Pedicure"
+            ],
+            "interpretedValue": "Pedicure"
+          }
+        },
+        "customerName": {
+          "shape": "Scalar",
+          "value": {
+            "originalValue": "chang",
+            "resolvedValues": [
+              "chang"
+            ],
+            "interpretedValue": "chang"
+          }
+        },
+        "customerPhone": {
+          "shape": "Scalar",
+          "value": {
+            "originalValue": "+17325956266",
+            "resolvedValues": [
+              "+17325956266"
+            ],
+            "interpretedValue": "+17325956266"
+          }
+        },
+        "requestedDate": {
+          "shape": "Scalar",
+          "value": {
+            "originalValue": "2026-06-04",
+            "resolvedValues": [
+              "2026-06-04"
+            ],
+            "interpretedValue": "2026-06-04"
+          }
+        },
+        "requestedTime": {
+          "shape": "Scalar",
+          "value": {
+            "originalValue": "7 PM",
+            "resolvedValues": [
+              "7 PM"
+            ],
+            "interpretedValue": "7 PM"
+          }
+        },
+        "staffPreference": {
+          "shape": "Scalar",
+          "value": {
+            "originalValue": "1",
+            "resolvedValues": [
+              "1"
+            ],
+            "interpretedValue": "1"
+          }
+        }
+      },
+      "source": "amazon_connect_ai",
+      "provider": "AMAZON_CONNECT",
+      "attributes": {
+        "CallerId": "+17325956266",
+        "provider": "AMAZON_CONNECT",
+        "ContactId": "35c362e8-dd41-45d7-b0a6-39905b9af79e",
+        "contactId": "35c362e8-dd41-45d7-b0a6-39905b9af79e",
+        "errorCount": "2",
+        "callerPhone": "+17325956266",
+        "serviceName": "Pedicure",
+        "CalledNumber": "+18483487681",
+        "calledNumber": "+18483487681",
+        "customerName": "chang",
+        "callSessionId": "12bf5808-fb4f-481c-a1c8-9b5e1710cc76",
+        "customerPhone": "+17325956266",
+        "fallbackCount": "2",
+        "lastAskedSlot": "staffPreference",
+        "requestedDate": "2026-06-04",
+        "requestedTime": "7 PM",
+        "bookingOutcome": "MISSING_INFO",
+        "askedSlotsCount": "2",
+        "staffPreference": "Trang",
+        "InitialContactId": "35c362e8-dd41-45d7-b0a6-39905b9af79e",
+        "bookingAttemptId": "d2fb567e-7cb7-4d16-8599-ffafd6f27c67",
+        "aiAlternativeSlots": "[{\"staffId\":\"903511ee-4849-43dd-85fb-73595e79a233\",\"staffName\":\"Trang\",\"startTime\":\"2026-06-05T13:30:00.000Z\",\"endTime\":\"2026-06-05T14:15:00.000Z\"}]",
+        "SystemEndpointAddress": "+18483487681",
+        "AmazonConnectContactId": "35c362e8-dd41-45d7-b0a6-39905b9af79e",
+        "amazonConnectContactId": "35c362e8-dd41-45d7-b0a6-39905b9af79e",
+        "CustomerEndpointAddress": "+17325956266",
+        "initialBookingUtterance": "i want to have eddie here tomorrow at seven p.m.",
+        "awaitingAlternativeSelection": "true",
+        "x-amz-lex:connect-originating-request-id": "9b66d8c1-7c99-3e33-9857-fe4bd86a49d2"
+      },
+      "intentName": "BookAppointmentIntent",
+      "transcript": "i want to have eddie here tomorrow at seven p.m. yes.",
+      "serviceName": "Pedicure",
+      "calledNumber": "+18483487681",
+      "customerName": "chang",
+      "callSessionId": "12bf5808-fb4f-481c-a1c8-9b5e1710cc76",
+      "customerPhone": "+17325956266",
+      "requestedDate": "2026-06-04",
+      "requestedTime": "7 PM",
+      "staffPreference": "Trang",
+      "confirmationState": "Confirmed",
+      "amazonConnectContactId": "35c362e8-dd41-45d7-b0a6-39905b9af79e",
+      "amazonConnectPhoneNumber": "+18483487681"
+    },
+    "responsePayload": {
+      "appointmentId": "ffa1da0f-c515-4084-b9cb-17630afb9929"
+    },
+    "parsedOutput": {
+      "parsed": {
+        "customer": {
+          "name": "chang",
+          "phone": "+17325956266"
+        },
+        "confidence": 1,
+        "intentType": "BOOK_APPOINTMENT",
+        "isReadyToBook": true,
+        "missingFields": [],
+        "requestedStaff": "Trang",
+        "requestedService": "Pedicure",
+        "requestedDateTime": "2026-06-05T13:30:00.000Z",
+        "normalizedBookingRequest": {
+          "staffName": "Trang",
+          "serviceName": "Pedicure",
+          "customerName": "chang",
+          "startTimeIso": "2026-06-05T13:30:00.000Z",
+          "customerPhone": "+17325956266"
+        }
+      },
+      "outcome": "BOOKED"
+    },
+    "validationErrors": null,
+    "createdAt": "2026-06-03T19:01:23.151Z",
+    "taskType": "amazon_connect_booking_fulfillment",
+    "provider": "AMAZON_CONNECT",
+    "model": "KHMIXGA2US",
+    "confidence": 1,
+    "bookingAttemptId": "d2fb567e-7cb7-4d16-8599-ffafd6f27c67",
+    "callSessionId": "12bf5808-fb4f-481c-a1c8-9b5e1710cc76",
+    "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147"
+  },
+  {
+    "id": "b45a0e3c-72db-4e9a-b2d7-8c6b5d003464",
+    "requestText": "i want to have eddie here tomorrow at seven p.m. 1",
+    "responseText": "<speak>Trang is not available at 7 PM. <break time=\"300ms\"/> Trang is available at 9:30 AM. Which one works better?</speak>",
+    "requestPayload": {
+      "slots": {
+        "serviceName": {
+          "shape": "Scalar",
+          "value": {
+            "originalValue": "1",
+            "resolvedValues": [
+              "Pedicure"
+            ],
+            "interpretedValue": "Pedicure"
+          }
+        },
+        "customerName": {
+          "shape": "Scalar",
+          "value": {
+            "originalValue": "chang",
+            "resolvedValues": [
+              "Chang",
+              "Chan",
+              "Channing",
+              "Chana",
+              "Ching"
+            ],
+            "interpretedValue": "chang"
+          }
+        },
+        "customerPhone": {
+          "shape": "Scalar",
+          "value": {
+            "originalValue": "+17325956266",
+            "resolvedValues": [
+              "+17325956266"
+            ],
+            "interpretedValue": "+17325956266"
+          }
+        },
+        "requestedDate": {
+          "shape": "Scalar",
+          "value": {
+            "originalValue": "2026-06-04",
+            "resolvedValues": [
+              "2026-06-04"
+            ],
+            "interpretedValue": "2026-06-04"
+          }
+        },
+        "requestedTime": {
+          "shape": "Scalar",
+          "value": {
+            "originalValue": "7 PM",
+            "resolvedValues": [
+              "7 PM"
+            ],
+            "interpretedValue": "7 PM"
+          }
+        },
+        "staffPreference": {
+          "shape": "Scalar",
+          "value": {
+            "originalValue": "1",
+            "resolvedValues": [
+              "1",
+              "1"
+            ],
+            "interpretedValue": "1"
+          }
+        }
+      },
+      "source": "amazon_connect_ai",
+      "provider": "AMAZON_CONNECT",
+      "attributes": {
+        "CallerId": "+17325956266",
+        "provider": "AMAZON_CONNECT",
+        "ContactId": "35c362e8-dd41-45d7-b0a6-39905b9af79e",
+        "contactId": "35c362e8-dd41-45d7-b0a6-39905b9af79e",
+        "errorCount": "1",
+        "callerPhone": "+17325956266",
+        "serviceName": "Pedicure",
+        "CalledNumber": "+18483487681",
+        "calledNumber": "+18483487681",
+        "customerName": "chang",
+        "callSessionId": "12bf5808-fb4f-481c-a1c8-9b5e1710cc76",
+        "customerPhone": "+17325956266",
+        "fallbackCount": "1",
+        "lastAskedSlot": "staffPreference",
+        "requestedDate": "2026-06-04",
+        "requestedTime": "7 PM",
+        "bookingOutcome": "MISSING_INFO",
+        "askedSlotsCount": "1",
+        "staffPreference": "Trang",
+        "InitialContactId": "35c362e8-dd41-45d7-b0a6-39905b9af79e",
+        "bookingAttemptId": "84479be8-393a-4c5e-8675-8112deaee1d9",
+        "SystemEndpointAddress": "+18483487681",
+        "AmazonConnectContactId": "35c362e8-dd41-45d7-b0a6-39905b9af79e",
+        "amazonConnectContactId": "35c362e8-dd41-45d7-b0a6-39905b9af79e",
+        "CustomerEndpointAddress": "+17325956266",
+        "initialBookingUtterance": "i want to have eddie here tomorrow at seven p.m.",
+        "x-amz-lex:connect-originating-request-id": "9b66d8c1-7c99-3e33-9857-fe4bd86a49d2"
+      },
+      "intentName": "BookAppointmentIntent",
+      "transcript": "i want to have eddie here tomorrow at seven p.m. 1",
+      "serviceName": "Pedicure",
+      "calledNumber": "+18483487681",
+      "customerName": "chang",
+      "callSessionId": "12bf5808-fb4f-481c-a1c8-9b5e1710cc76",
+      "customerPhone": "+17325956266",
+      "requestedDate": "2026-06-04",
+      "requestedTime": "7 PM",
+      "staffPreference": "Trang",
+      "confirmationState": "None",
+      "amazonConnectContactId": "35c362e8-dd41-45d7-b0a6-39905b9af79e",
+      "amazonConnectPhoneNumber": "+18483487681"
+    },
+    "responsePayload": {
+      "alternatives": [
+        {
+          "endTime": "2026-06-05T14:15:00.000Z",
+          "staffId": "903511ee-4849-43dd-85fb-73595e79a233",
+          "staffName": "Trang",
+          "startTime": "2026-06-05T13:30:00.000Z"
+        }
+      ]
+    },
+    "parsedOutput": {
+      "parsed": {
+        "customer": {
+          "name": "chang",
+          "phone": "+17325956266"
+        },
+        "confidence": 1,
+        "intentType": "BOOK_APPOINTMENT",
+        "isReadyToBook": false,
+        "missingFields": [],
+        "requestedStaff": "Trang",
+        "requestedService": "Pedicure",
+        "requestedDateTime": "2026-06-04T23:00:00.000Z",
+        "normalizedBookingRequest": {
+          "staffName": "Trang",
+          "serviceName": "Pedicure",
+          "customerName": "chang",
+          "startTimeIso": "2026-06-04T23:00:00.000Z",
+          "customerPhone": "+17325956266"
+        }
+      },
+      "outcome": "NO_AVAILABILITY"
+    },
+    "validationErrors": null,
+    "createdAt": "2026-06-03T19:00:20.256Z",
+    "taskType": "amazon_connect_booking_fulfillment",
+    "provider": "AMAZON_CONNECT",
+    "model": "KHMIXGA2US",
+    "confidence": 1,
+    "bookingAttemptId": "84479be8-393a-4c5e-8675-8112deaee1d9",
+    "callSessionId": "12bf5808-fb4f-481c-a1c8-9b5e1710cc76",
+    "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147"
+  }
+]

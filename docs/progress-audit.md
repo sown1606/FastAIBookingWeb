@@ -43,6 +43,13 @@ One clean demo salon only:
 ## UI Changes In This Pass
 
 - `apps/app`
+  - added a persisted Basic / Advanced view mode switch for demo-friendly navigation
+  - Basic mode keeps owner navigation focused on dashboard, appointments, staff, services, salon profile, and call center status
+  - Basic mode keeps staff work to today/dashboard and appointments, hiding extra reminders/source details
+  - Basic mode keeps the operator workspace focused on opening Amazon Connect CCP, selecting a salon, queue handling, customer/booking forms, appointment actions, notes, and completion
+  - Advanced mode keeps the existing full owner navigation plus operator runtime/AWS/AI/debug details
+  - appointments now default to today's selected date, show previous/next day buttons plus a date input, and filter owner/staff visible schedules to that selected day while preserving the status filter
+  - business hours now highlights the current weekday with a Today/Hôm nay label
   - added owner access to `/call-center`
   - added owner call-center navigation item
   - localized and cleaned:

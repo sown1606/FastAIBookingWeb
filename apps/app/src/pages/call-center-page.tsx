@@ -8,6 +8,7 @@ import { toDateTimeLocalValue, useFormDialog } from "../components/form-dialog";
 import { formatUsPhoneInput, validateOptionalUsPhone } from "../lib/phone";
 import { useAuth } from "../auth/auth-context";
 import { statusLabelKey, useI18n } from "../lib/i18n";
+import { useUiMode } from "../lib/ui-mode";
 
 interface RuntimeResponse {
   assignedSalonCount: number;
@@ -194,6 +195,7 @@ export const CallCenterPage = () => {
   const { notify } = useToast();
   const { openFormDialog, FormDialog } = useFormDialog();
   const { t } = useI18n();
+  const { isBasicMode } = useUiMode();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -726,6 +728,56 @@ export const CallCenterPage = () => {
       ["CALLBACK_REQUESTED", "VOICEMAIL_LEFT", "SMS_SENT"].includes(item.status)
     );
 
+    if (isBasicMode) {
+      return (
+        <div className="stack">
+          <section className="card">
+            <div className="section-header">
+              <div>
+                <h2>{t("callCenter.ownerMonitorTitle")}</h2>
+                <p className="muted">{t("callCenter.ownerBasicHint")}</p>
+              </div>
+              <span
+                className={
+                  selectedSalonDetail?.settings?.callCenterEnabled
+                    ? "status-pill success"
+                    : "status-pill warning"
+                }
+              >
+                {t("nav.callCenter")}:{" "}
+                {selectedSalonDetail?.settings?.callCenterEnabled ? t("common.enabled") : t("common.disabled")}
+              </span>
+            </div>
+            <div className="metrics-grid">
+              <div>
+                <span className="muted">{t("callCenter.currentSalon")}</span>
+                <strong>{selectedSalonName}</strong>
+              </div>
+              <div>
+                <span className="muted">{t("callCenter.openRequests")}</span>
+                <strong>{openRequests}</strong>
+              </div>
+              <div>
+                <span className="muted">{t("callCenter.queuedItems")}</span>
+                <strong>{queuedItems.length}</strong>
+              </div>
+              <div>
+                <span className="muted">{t("callCenter.assignedAgentsTitle")}</span>
+                <strong>{assignedAgents.length}</strong>
+              </div>
+            </div>
+            <div className="quick-actions primary-actions">
+              <Link to="/salon-profile">{t("dashboard.salonSettings")}</Link>
+              <Link to="/appointments">{t("dashboard.viewSchedule")}</Link>
+              <button type="button" onClick={() => void loadQueue(false)}>
+                {t("callCenter.refreshQueue")}
+              </button>
+            </div>
+          </section>
+        </div>
+      );
+    }
+
     return (
       <div className="stack">
         <FormDialog />
@@ -1054,15 +1106,17 @@ export const CallCenterPage = () => {
                 {t("callCenter.amazonPending")}
               </button>
             )}
-            {ccpSettingsUrl ? (
-              <a href={ccpSettingsUrl} target="_blank" rel="noreferrer" className="button-secondary">
-                {t("callCenter.ccpSettingsLink")}
-              </a>
-            ) : (
-              <button type="button" className="button-secondary" disabled>
-                {t("callCenter.ccpSettingsLink")}
-              </button>
-            )}
+            {!isBasicMode ? (
+              ccpSettingsUrl ? (
+                <a href={ccpSettingsUrl} target="_blank" rel="noreferrer" className="button-secondary">
+                  {t("callCenter.ccpSettingsLink")}
+                </a>
+              ) : (
+                <button type="button" className="button-secondary" disabled>
+                  {t("callCenter.ccpSettingsLink")}
+                </button>
+              )
+            ) : null}
             <button type="button" className="button-secondary" onClick={() => void loadQueue()}>
               {t("callCenter.refreshQueue")}
             </button>
@@ -1088,14 +1142,16 @@ export const CallCenterPage = () => {
           </div>
         </div>
 
-        <div className="call-center-next-steps">
-          <span>{t("callCenter.stepOpenCcp")}</span>
-          <span>{t("callCenter.stepPickSalon")}</span>
-          <span>{t("callCenter.stepHandleQueue")}</span>
-        </div>
+        {!isBasicMode ? (
+          <div className="call-center-next-steps">
+            <span>{t("callCenter.stepOpenCcp")}</span>
+            <span>{t("callCenter.stepPickSalon")}</span>
+            <span>{t("callCenter.stepHandleQueue")}</span>
+          </div>
+        ) : null}
       </section>
 
-      <details className="advanced-config">
+      {!isBasicMode ? <details className="advanced-config">
         <summary>{t("callCenter.advancedConfig")}</summary>
       <section className="card">
         <div className="section-header">
@@ -1226,9 +1282,9 @@ export const CallCenterPage = () => {
           <EmptyBlock message={t("callCenter.noAssignedSalons")} />
         )}
       </section>
-      </details>
+      </details> : null}
 
-      <section className="card-grid">
+      {!isBasicMode ? <section className="card-grid">
         <article className="card simple-ccp-card">
           <div className="section-header">
             <div>
@@ -1290,7 +1346,7 @@ export const CallCenterPage = () => {
             </article>
           </div>
         </article>
-      </section>
+      </section> : null}
 
       <section className="card">
         <h2>{t("callCenter.queueTitle")}</h2>
@@ -1303,7 +1359,7 @@ export const CallCenterPage = () => {
                   <th>{t("callCenter.currentSalon")}</th>
                   <th>{t("callCenter.caller")}</th>
                   <th>{t("common.status")}</th>
-                  <th>{t("callCenter.routing")}</th>
+                  {!isBasicMode ? <th>{t("callCenter.routing")}</th> : null}
                   <th>{t("callCenter.waitingTime")}</th>
                   <th>{t("common.actions")}</th>
                 </tr>
@@ -1324,7 +1380,7 @@ export const CallCenterPage = () => {
                       <td>{item.salon.name}</td>
                       <td>{item.callSession.callerPhone ?? t("common.none")}</td>
                       <td>{statusLabelKey(item.status) ? t(statusLabelKey(item.status)!) : item.status}</td>
-                      <td>{translateRoutingOutcome(item.routingOutcome ?? item.callSession.routingOutcome)}</td>
+                      {!isBasicMode ? <td>{translateRoutingOutcome(item.routingOutcome ?? item.callSession.routingOutcome)}</td> : null}
                       <td>{t("callCenter.waitingMinutes", { count: waitingMinutes })}</td>
                       <td>
                         <button
@@ -1353,7 +1409,9 @@ export const CallCenterPage = () => {
             <p className="muted">
               {selectedEscalation
                 ? `${selectedEscalation.salon.name} · ${selectedEscalation.callSession.callerPhone ?? t("callCenter.unknownCaller")}`
-                : t("callCenter.selectedHintEmpty")}
+                : isBasicMode
+                  ? t("callCenter.selectedBasicHint")
+                  : t("callCenter.selectedHintEmpty")}
             </p>
           </div>
           <div className="inline-actions">
@@ -1386,10 +1444,12 @@ export const CallCenterPage = () => {
                 <span className="muted">{t("callCenter.callerPhone")}</span>
                 <strong>{selectedEscalation.callSession.callerPhone ?? t("common.none")}</strong>
               </div>
-              <div>
-                <span className="muted">{t("callCenter.routing")}</span>
-                <strong>{translateRoutingOutcome(selectedEscalation.routingOutcome)}</strong>
-              </div>
+              {!isBasicMode ? (
+                <div>
+                  <span className="muted">{t("callCenter.routing")}</span>
+                  <strong>{translateRoutingOutcome(selectedEscalation.routingOutcome)}</strong>
+                </div>
+              ) : null}
               <div>
                 <span className="muted">{t("callCenter.resolution")}</span>
                 <strong>{selectedEscalation.callSession.finalResolution ?? t("common.none")}</strong>
@@ -1409,16 +1469,18 @@ export const CallCenterPage = () => {
                     }
                   />
                 </label>
-                <label className="field">
-                  <span>{t("callCenter.qaNotes")}</span>
-                  <textarea
-                    rows={4}
-                    value={notesForm.qaNotes}
-                    onChange={(event) =>
-                      setNotesForm((prev) => ({ ...prev, qaNotes: event.target.value }))
-                    }
-                  />
-                </label>
+                {!isBasicMode ? (
+                  <label className="field">
+                    <span>{t("callCenter.qaNotes")}</span>
+                    <textarea
+                      rows={4}
+                      value={notesForm.qaNotes}
+                      onChange={(event) =>
+                        setNotesForm((prev) => ({ ...prev, qaNotes: event.target.value }))
+                      }
+                    />
+                  </label>
+                ) : null}
                 <label className="field">
                   <span>{t("callCenter.resolution")}</span>
                   <textarea
@@ -1437,19 +1499,23 @@ export const CallCenterPage = () => {
                 <button type="button" className="button-primary" onClick={() => void completeQueueItem()}>
                   {t("callCenter.complete")}
                 </button>
-                <button type="button" className="button-secondary" onClick={() => void requestCallback()}>
-                  {t("callCenter.callbackRequest")}
-                </button>
-                <button type="button" className="button-secondary" onClick={() => void captureVoicemail()}>
-                  {t("callCenter.saveVoicemail")}
-                </button>
-                <button type="button" className="button-secondary" onClick={() => void sendSmsFallback()}>
-                  {t("callCenter.sendSmsFallback")}
-                </button>
+                {!isBasicMode ? (
+                  <>
+                    <button type="button" className="button-secondary" onClick={() => void requestCallback()}>
+                      {t("callCenter.callbackRequest")}
+                    </button>
+                    <button type="button" className="button-secondary" onClick={() => void captureVoicemail()}>
+                      {t("callCenter.saveVoicemail")}
+                    </button>
+                    <button type="button" className="button-secondary" onClick={() => void sendSmsFallback()}>
+                      {t("callCenter.sendSmsFallback")}
+                    </button>
+                  </>
+                ) : null}
               </div>
             </section>
 
-            <section className="card-grid">
+            {!isBasicMode ? <section className="card-grid">
               <article className="card">
                 <h3>{t("callCenter.transcript")}</h3>
                 {selectedEscalation.callSession.transcripts.length ? (
@@ -1487,9 +1553,9 @@ export const CallCenterPage = () => {
                   <EmptyBlock message={t("callCenter.aiInteractionsEmpty")} />
                 )}
               </article>
-            </section>
+            </section> : null}
 
-            <section className="card-grid">
+            {!isBasicMode ? <section className="card-grid">
               <article className="card">
                 <h3>{t("callCenter.customerLookup")}</h3>
                 {selectedEscalation.customerMatches.length ? (
@@ -1524,7 +1590,7 @@ export const CallCenterPage = () => {
                   <EmptyBlock message={t("callCenter.bookingAttemptsEmpty")} />
                 )}
               </article>
-            </section>
+            </section> : null}
           </div>
         ) : (
           <EmptyBlock message={t("callCenter.selectedEmpty")} />

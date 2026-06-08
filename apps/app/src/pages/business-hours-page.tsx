@@ -65,6 +65,8 @@ export const BusinessHoursPage = () => {
     return <ErrorBlock message={error} onRetry={load} />;
   }
 
+  const todayDayOfWeek = new Date().getDay();
+
   return (
     <div className="stack">
       <section className="card">
@@ -92,10 +94,15 @@ export const BusinessHoursPage = () => {
 
       <section className="hours-grid">
         {hours.map((item, index) => (
-          <article key={item.dayOfWeek} className="hours-card">
+          <article key={item.dayOfWeek} className={item.dayOfWeek === todayDayOfWeek ? "hours-card today" : "hours-card"}>
             <div className="hours-card-header">
               <div>
-                <strong>{t(`weekday.${item.dayOfWeek}` as TranslationKey)}</strong>
+                <strong>
+                  {t(`weekday.${item.dayOfWeek}` as TranslationKey)}
+                  {item.dayOfWeek === todayDayOfWeek ? (
+                    <span className="summary-badge">{t("common.today")}</span>
+                  ) : null}
+                </strong>
                 <div className="muted">{item.isOpen ? t("hours.open") : t("hours.closed")}</div>
               </div>
               <label className="field checkbox-row">

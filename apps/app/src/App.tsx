@@ -21,6 +21,7 @@ import { MessagesPage } from "./pages/messages-page";
 import { AlertsPage } from "./pages/alerts-page";
 import { FeedbackPage } from "./pages/feedback-page";
 import { CallCenterPage } from "./pages/call-center-page";
+import { UiModeProvider } from "./lib/ui-mode";
 
 const AppShell = () => {
   const { session, logout } = useAuth();
@@ -28,9 +29,11 @@ const AppShell = () => {
     return null;
   }
   return (
-    <AppLayout user={session.user} onLogout={() => void logout()}>
-      <Outlet />
-    </AppLayout>
+    <UiModeProvider>
+      <AppLayout user={session.user} onLogout={() => void logout()}>
+        <Outlet />
+      </AppLayout>
+    </UiModeProvider>
   );
 };
 

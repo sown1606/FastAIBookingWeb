@@ -86,7 +86,7 @@ Do not expose AWS credentials or internal backend tokens in frontend `VITE_*` en
 
 AWS configuration used by the demo is versioned in the repo for review and maintenance:
 
-- Lex V2 bot export: `infra/aws/lex/FastAIBookingBot-v7/`
+- Lex V2 bot export: `infra/aws/lex/FastAIBookingBot-v8/`
 - AI reception Contact Flow content: `infra/aws/connect/contact-flows/ai-reception.json`
 - Human escalation Contact Flow content: `infra/aws/connect/contact-flows/human-escalation.json`
 

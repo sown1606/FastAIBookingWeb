@@ -1,6 +1,47 @@
 # AI Call Booking Workflow Audit
 
-Date: 2026-05-27
+Date: 2026-06-02
+
+## 2026-06-02 Demo Fix Update
+
+Current deployed path:
+
+`Amazon Connect -> Lex alias prod version 8 -> Lambda fastaibooking-booking-handler -> POST /api/v1/internal/ai/appointments -> backend booking/escalation flow`
+
+Deployed fixes:
+
+- Lex `prod` alias now points to bot version `8`.
+- New Lex custom slot type `NailServiceType` handles demo nail services and pedicure synonyms.
+- `serviceName` now uses `NailServiceType` instead of `AMAZON.AlphaNumeric`.
+- Added Lex samples for pedicure today/tomorrow, `pedi cure`, and `better cure`.
+- Shortened Lex slot prompts and lowered audio end timeout from `640ms` to `500ms`.
+- Shortened AI reception Connect prompts while preserving the same Lex prod alias ARN and human escalation flow.
+- Lambda recovers service/date/time/name/phone from raw `inputTranscript` on DialogCodeHook and fulfillment.
+- Backend resolves `today`, `tomorrow`, `this afternoon`, `tonight`, `tomorrow morning`, `tomorrow afternoon`, and weekdays in the salon timezone.
+- Backend treats bare hours `1` through `7` as PM in salon booking context unless AM/morning is clear.
+- Backend auto-normalizes obvious pedicure aliases instead of asking `Did you mean Pedicure?`.
+- Missing-info and confirmation prompt turns keep booking attempt context but skip extra AI interaction/call-summary writes; final booking and escalation audit remain intact.
+
+Deployment verification:
+
+- EC2 backend deployed with `./infra/scripts/deploy_remote_ec2.sh`; API container healthy.
+- Lambda code deployed to `fastaibooking-booking-handler`; last modified `2026-06-02T10:11:52.000+0000`; update status `Successful`.
+- Lex version `8` created and alias `prod` (`JVIPIZDYE3`) updated to version `8`.
+- Connect AI reception flow remains `PUBLISHED` and `ACTIVE`, using alias ARN `arn:aws:lex:us-east-1:197452633989:bot-alias/KHMIXGA2US/JVIPIZDYE3`.
+- Versioned Lex export is now `infra/aws/lex/FastAIBookingBot-v8/`.
+- Connect exports refreshed in `infra/aws/connect/contact-flows/`.
+
+Current smoke result:
+
+- `npm run test:lambda`: pass
+- `npm --prefix apps/api run typecheck`: pass
+- `npm --prefix apps/api run build`: pass
+- `npm --prefix apps/api test -- --test-name-pattern "transcript recovery|confirmed transcript"`: pass; full API test suite also passed under that run.
+- `node --check infra/lambda/booking-handler/index.mjs`: pass
+- `bash -n infra/scripts/smoke_test_production.sh`: pass
+- `infra/scripts/smoke_test_production.sh`: pass, including live Lambda recovery samples for `pedicure today`, `pedicure tomorrow`, `pedi cure`, and `better cure`.
+- CloudWatch Lambda error scan after deploy/smoke: no matching error events found.
+- Recent Lambda REPORT durations after deploy/smoke: mostly sub-second warm calls; highest observed sample was `2469.61 ms` on a cold/fulfillment call.
 
 ## Summary
 
@@ -37,7 +78,7 @@ The original demo failure mode is fixed:
 - `apps/api/test/role-guards.test.ts`
 - `package.json`
 - `infra/scripts/smoke_test_production.sh`
-- `infra/aws/lex/FastAIBookingBot-v7/`
+- `infra/aws/lex/FastAIBookingBot-v8/`
 - `infra/aws/connect/contact-flows/ai-reception.json`
 - `infra/aws/connect/contact-flows/human-escalation.json`
 - `docs/AI_CALL_BOOKING_WORKFLOW_AUDIT.md`
@@ -61,7 +102,7 @@ The original demo failure mode is fixed:
 - Sends `HumanEscalationIntent` to the backend when Lex gives that intent or when the utterance clearly asks to speak to a real person.
 - Merges captured slots into `sessionAttributes` on every `DialogCodeHook` before returning `Delegate`.
 - Hydrates known Lex slots from `sessionAttributes` so Lex does not elicit known fields again.
-- Wraps backend API calls with a 6-second `AbortController` timeout.
+- Wraps backend API calls with a 4.5-second `AbortController` timeout.
 - Uses one backend failure escalation path for book, cancel, reschedule, and human-escalation intents.
 - Sets `forceHumanEscalation=true`, `transferToQueue=true`, and `escalationReason=backend_error|backend_timeout` on backend failure.
 - Does not expose backend JSON/debug payloads to callers.
@@ -83,7 +124,7 @@ Needs Manual AWS Console Setup:
 - Confirm AI Reception and Human Escalation contact flows are published/active.
 - Confirm Operator Queue is enabled and an operator is logged into CCP as Available for live handoff testing.
 - Confirm Lex `prod` alias points at the intended bot version and Lambda hook.
-- Deploy the updated Lambda package if the running AWS function should include the latest logging-only change from this branch.
+- Lambda package is deployed for the current booking recovery and timeout changes.
 
 Needs Live SMS Config:
 
@@ -113,19 +154,19 @@ Profile used: `nailnew`
 - AI Reception flow includes `Compare` on `$.Lex.SessionAttributes.transferToQueue` and `TransferToFlow` to `FastAIBooking Human Escalation`.
 - Human escalation flow has queue error fallback messaging before disconnect for queue-at-capacity/no-matching-error branches.
 - Lex bot: `FastAIBookingBot`, id `KHMIXGA2US`
-- Lex alias: `prod`, id `JVIPIZDYE3`, bot version `7`, status `Available`
+- Lex alias: `prod`, id `JVIPIZDYE3`, bot version `8`, status `Available`
 - Lex alias Lambda hook: `arn:aws:lambda:us-east-1:197452633989:function:fastaibooking-booking-handler`
 - `BookAppointmentIntent`: fulfillment hook enabled; dialog hook enabled
 - `HumanEscalationIntent`: fulfillment hook enabled
-- `CancelAppointmentIntent`: fulfillment hook enabled in version `7`; safe behavior is human handoff
-- `RescheduleAppointmentIntent`: fulfillment hook enabled in version `7`; safe behavior is human handoff
+- `CancelAppointmentIntent`: fulfillment hook enabled in version `8`; safe behavior is human handoff
+- `RescheduleAppointmentIntent`: fulfillment hook enabled in version `8`; safe behavior is human handoff
 - Lambda function: `fastaibooking-booking-handler`
 - Lambda runtime: `nodejs20.x`
 - Lambda handler: `index.handler`
-- Lambda last modified in AWS verification: `2026-05-25T13:23:03.000+0000`
+- Lambda last modified in AWS verification: `2026-06-02T10:11:52.000+0000`
 - Lambda env var names only: `FASTAIBOOKING_API_INTERNAL_TOKEN`, `DEFAULT_SALON_ID`, `FASTAIBOOKING_API_BASE_URL`
 - CloudWatch Lambda errors checked after deployment/smoke: none found
-- Versioned AWS exports live in `infra/aws/lex/FastAIBookingBot-v7/` and `infra/aws/connect/contact-flows/`.
+- Versioned AWS exports live in `infra/aws/lex/FastAIBookingBot-v8/` and `infra/aws/connect/contact-flows/`.
 
 Note: the default AWS profile points at account `794673701212` and lacks Connect/Lex/Lambda permissions. Use profile `nailnew` for this demo account.
 
@@ -184,8 +225,8 @@ Availability:
 
 - Implementation commit: `9abab6491758bdc554938507bf7f6c6ebc1e3ef9`
 - Lambda was packaged from `infra/lambda/booking-handler/index.mjs` and deployed with `aws lambda update-function-code`.
-- Lex DRAFT was updated so cancel/reschedule intents invoke fulfillment, then built into bot version `7`.
-- Lex alias `prod` was moved to version `7` and the alias Lambda hook was restored/verified.
+- Lex DRAFT was updated with service synonyms, demo booking utterances, shorter prompts, and built into bot version `8`.
+- Lex alias `prod` was moved to version `8` and the alias Lambda hook was restored/verified.
 - EC2 was deployed with `./infra/scripts/deploy_remote_ec2.sh`.
 - Docker build completed successfully.
 - Prisma migrate deploy found no pending migrations.
@@ -289,8 +330,8 @@ aws lexv2-models update-intent --profile nailnew --region us-east-1 --bot-id KHM
 aws lexv2-models build-bot-locale --profile nailnew --region us-east-1 --bot-id KHMIXGA2US --bot-version DRAFT --locale-id en_US
 aws lexv2-models wait bot-locale-built --profile nailnew --region us-east-1 --bot-id KHMIXGA2US --bot-version DRAFT --locale-id en_US
 aws lexv2-models create-bot-version --profile nailnew --region us-east-1 --bot-id KHMIXGA2US --bot-version-locale-specification '{"en_US":{"sourceBotVersion":"DRAFT"}}'
-aws lexv2-models wait bot-version-available --profile nailnew --region us-east-1 --bot-id KHMIXGA2US --bot-version 7
-aws lexv2-models update-bot-alias --profile nailnew --region us-east-1 --bot-id KHMIXGA2US --bot-alias-id JVIPIZDYE3 --bot-alias-name prod --bot-version 7 --bot-alias-locale-settings '{"en_US":{"enabled":true,"codeHookSpecification":{"lambdaCodeHook":{"lambdaARN":"arn:aws:lambda:us-east-1:197452633989:function:fastaibooking-booking-handler","codeHookInterfaceVersion":"1.0"}}}}'
+aws lexv2-models describe-bot-version --profile nailnew --region us-east-1 --bot-id KHMIXGA2US --bot-version 8
+aws lexv2-models update-bot-alias --profile nailnew --region us-east-1 --bot-id KHMIXGA2US --bot-alias-id JVIPIZDYE3 --bot-alias-name prod --bot-version 8 --bot-alias-locale-settings '{"en_US":{"enabled":true,"codeHookSpecification":{"lambdaCodeHook":{"lambdaARN":"arn:aws:lambda:us-east-1:197452633989:function:fastaibooking-booking-handler","codeHookInterfaceVersion":"1.0"}}}}'
 zip -j /tmp/fastaibooking-booking-handler.zip infra/lambda/booking-handler/index.mjs
 aws lambda update-function-code --profile nailnew --region us-east-1 --function-name fastaibooking-booking-handler --zip-file fileb:///tmp/fastaibooking-booking-handler.zip
 aws lambda wait function-updated --profile nailnew --region us-east-1 --function-name fastaibooking-booking-handler

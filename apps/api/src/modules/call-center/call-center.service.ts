@@ -443,6 +443,10 @@ export const createOrUpdateCallEscalation = async (input: {
     routingOutcome = CallRoutingOutcome.VOICEMAIL;
     finalResolution = "Voicemail fallback is enabled for this salon.";
   }
+  const messageToCaller =
+    routingOutcome === CallRoutingOutcome.QUEUED
+      ? input.messageToCaller ?? "Please wait while I connect you."
+      : "No agents available.";
 
   const escalation = await prisma.callEscalation.upsert({
     where: {
@@ -458,7 +462,7 @@ export const createOrUpdateCallEscalation = async (input: {
       customerPhone: input.customerPhone ?? null,
       queueId: env.AMAZON_CONNECT_QUEUE_ID_DEFAULT ?? null,
       queueName: env.AMAZON_CONNECT_QUEUE_ID_DEFAULT ? AMAZON_CONNECT_OPERATOR_QUEUE_NAME : null,
-      messageToCaller: input.messageToCaller ?? "Please wait while I connect you.",
+      messageToCaller,
       callbackPhone,
       smsRecipientPhone,
       queuedAt,
@@ -474,7 +478,7 @@ export const createOrUpdateCallEscalation = async (input: {
       queueName: env.AMAZON_CONNECT_QUEUE_ID_DEFAULT
         ? AMAZON_CONNECT_OPERATOR_QUEUE_NAME
         : undefined,
-      messageToCaller: input.messageToCaller ?? "Please wait while I connect you.",
+      messageToCaller,
       callbackPhone,
       smsRecipientPhone,
       queuedAt,
