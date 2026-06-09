@@ -92,9 +92,30 @@ export const assertCallCenterSalonAccess = async (
 
 const salonWorkspaceInclude = {
   settings: true,
+  owner: {
+    select: {
+      id: true,
+      fullName: true,
+      email: true,
+      phone: true
+    }
+  },
+  businessHours: {
+    orderBy: {
+      dayOfWeek: "asc" as const
+    }
+  },
   staff: {
     orderBy: {
       fullName: "asc" as const
+    }
+  },
+  services: {
+    where: {
+      isActive: true
+    },
+    orderBy: {
+      name: "asc" as const
     }
   },
   callCenterAssignments: {

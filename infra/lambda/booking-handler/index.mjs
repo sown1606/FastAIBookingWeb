@@ -126,7 +126,14 @@ const PEDICURE_ALIASES = [
   "toe pedicure"
 ];
 
-const DEMO_SERVICE_NAMES = ["Manicure", "Pedicure", "Gel Manicure", "Acrylic Full Set", "Dip Powder"];
+const DEMO_SERVICE_NAMES = [
+  "Manicure",
+  "Pedicure",
+  "Gel Manicure",
+  "Acrylic Full Set",
+  "Dip Powder",
+  "Other Services"
+];
 const DEMO_STAFF_NAMES = ["Trang", "Amy", "Kelly"];
 const SERVICE_DTMF_OPTIONS = {
   "1": "Pedicure",
@@ -156,15 +163,15 @@ const ANY_STAFF_ALIASES = [
   "first available"
 ];
 const SERVICE_DTMF_PROMPT =
-  "What service would you like today? You can say Pedicure, Manicure, Gel Manicure, Acrylic Full Set, or Dip Powder. You can also press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Acrylic Full Set, or 5 for Dip Powder.";
+  "What service would you like today? You can say Pedicure, Manicure, Gel Manicure, Acrylic Full Set, Dip Powder, or Other Services. You can also press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Acrylic Full Set, or 5 for Dip Powder. Press 0 to speak with an operator.";
 const SERVICE_DTMF_SHORT_PROMPT =
-  "You can say Pedicure, Manicure, Gel Manicure, Acrylic Full Set, or Dip Powder, or press 1 through 5.";
+  "You can say Pedicure, Manicure, Gel Manicure, Acrylic Full Set, Dip Powder, or Other Services, press 1 through 5, or press 0 for an operator.";
 const STAFF_DTMF_PROMPT =
-  "Who would you like to book with? You can say Trang, Amy, Kelly, or any staff. You can also press 1 for Trang, 2 for Amy, 3 for Kelly, or 4 for Any staff.";
+  "Who would you like to book with? You can say a specific technician or any staff. Press 0 to speak with an operator.";
 const STAFF_DTMF_SHORT_PROMPT =
-  "You can say Trang, Amy, Kelly, or any staff, or press 1, 2, 3, or 4.";
+  "You can say a specific technician, say any staff, or press 0 for an operator.";
 const NO_INPUT_HUMAN_CONFIRM_PROMPT =
-  "Are you still there? Would you like me to connect you to a real person?";
+  "Are you still there? Would you like me to connect you to a real person? You can press 0 for an operator.";
 const KNOWN_KIET_CUSTOMER_NAME = "Kiet";
 const KNOWN_KIET_PHONE_DIGITS = new Set(["7325956266", "17325956266"]);
 
@@ -215,6 +222,14 @@ const SERVICE_ALIAS_GROUPS = {
     "dep powder",
     "powder dip",
     "dip nails"
+  ],
+  "Other Services": [
+    "other services",
+    "other service",
+    "others services",
+    "something else",
+    "different service",
+    "custom service"
   ]
 };
 
@@ -242,24 +257,24 @@ const SLOT_ELICIT_PROMPTS = {
     STAFF_DTMF_PROMPT
   ],
   requestedDate: [
-    "What day would you like to come in?",
-    "Could you repeat the appointment date?",
-    "Do you want that today, tomorrow, or another day?"
+    "What day would you like to come in? Press 0 to speak with an operator.",
+    "Could you repeat the appointment date? Press 0 to speak with an operator.",
+    "Do you want that today, tomorrow, or another day? Press 0 to speak with an operator."
   ],
   requestedTime: [
-    "What time would you like?",
-    "Could you repeat the appointment time?",
-    "What time works best for you?"
+    "What time would you like? Press 0 to speak with an operator.",
+    "Could you repeat the appointment time? Press 0 to speak with an operator.",
+    "What time works best for you? Press 0 to speak with an operator."
   ],
   customerName: [
-    "What name should I put the appointment under?",
-    "Could you say your name for the booking?",
-    "What is your name?"
+    "What name should I put the appointment under? Press 0 to speak with an operator.",
+    "Could you say your name for the booking? Press 0 to speak with an operator.",
+    "What is your name? Press 0 to speak with an operator."
   ],
   customerPhone: [
-    "What phone number should I use for the appointment?",
-    "Could you repeat your phone number?",
-    "What is the best phone number for you?"
+    "What phone number should I use for the appointment? Press 0 to speak with an operator.",
+    "Could you repeat your phone number? Press 0 to speak with an operator.",
+    "What is the best phone number for you? Press 0 to speak with an operator."
   ]
 };
 
@@ -408,8 +423,40 @@ function extractStaffFromTranscript(text) {
 }
 
 function readDtmfDigit(value) {
-  const match = String(value || "").trim().match(/^(?:dtmf\s*)?([1-5])#?$/i);
+  const match = String(value || "").trim().match(/^(?:dtmf\s*)?([0-9])#?$/i);
   return match?.[1] || "";
+}
+
+function parseDtmfOptions(value) {
+  if (!value) {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(value);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {};
+    }
+    return Object.fromEntries(
+      Object.entries(parsed)
+        .filter(([key, entry]) => /^[1-9]$/.test(key) && typeof entry === "string" && entry.trim())
+        .map(([key, entry]) => [key, String(entry).trim()])
+    );
+  } catch {
+    return {};
+  }
+}
+
+function getStaffDtmfOptions(sessionAttributes) {
+  const dynamicOptions = parseDtmfOptions(sessionAttributes?.staffDtmfOptions);
+  return Object.keys(dynamicOptions).length ? dynamicOptions : STAFF_DTMF_OPTIONS;
+}
+
+function isOperatorZeroValue(value) {
+  if (readDtmfDigit(value) === "0") {
+    return true;
+  }
+  const normalized = normalizeForMatch(value);
+  return normalized === "zero" || /\b(?:press|pressed|hit|dial)\s+zero\b/.test(normalized);
 }
 
 function readScopedDtmfSelection(event, expectedSlot, options) {
@@ -770,7 +817,22 @@ function extractBookingDetailsFromText(text, timeZone = DEFAULT_SALON_TIMEZONE) 
 }
 
 function isHumanEscalationRequest(intentName, text) {
-  return intentName === "HumanEscalationIntent";
+  if (intentName === "HumanEscalationIntent") {
+    return true;
+  }
+  const normalized = normalizeForMatch(text);
+  return /\b(real person|live person|human|operator|representative|talk to a person|speak to someone|speak with someone)\b/.test(
+    normalized
+  );
+}
+
+function isOperatorZeroRequest(event) {
+  const slots = event.sessionState?.intent?.slots || {};
+  const values = [
+    event.inputTranscript,
+    ...Object.values(slots).map((slot) => slot?.value?.originalValue || slot?.value?.interpretedValue)
+  ];
+  return values.some(isOperatorZeroValue);
 }
 
 function getOptionalAttribute(event, names) {
@@ -975,7 +1037,11 @@ function buildKnownBookingSessionAttributes(event) {
   const knownTime = getKnownField(event, "requestedTime", { preferOriginal: true });
   const rawKnownService = getKnownField(event, "serviceName");
   const serviceDtmfSelection = readScopedDtmfSelection(event, "serviceName", SERVICE_DTMF_OPTIONS);
-  const staffDtmfSelection = readScopedDtmfSelection(event, "staffPreference", STAFF_DTMF_OPTIONS);
+  const staffDtmfSelection = readScopedDtmfSelection(
+    event,
+    "staffPreference",
+    getStaffDtmfOptions(previous)
+  );
   const normalizedKnownService = normalizeServiceName(rawKnownService);
   const knownService =
     normalizedKnownService && !isClearlyInvalidServiceName(normalizedKnownService)
@@ -1224,6 +1290,43 @@ function buildBookServiceElicitResponse(event) {
   });
 }
 
+async function buildDynamicStaffElicitResponse(event, intentName) {
+  const result = await postInternalAppointment(buildInternalPayload(event, intentName));
+  if (!result.ok) {
+    console.error("Appointment API rejected dynamic staff prompt request", result.code);
+    return buildElicitSlotResponse(event, "staffPreference");
+  }
+
+  const data = extractResultPayload(result);
+  if (data.outcome === "HUMAN_ESCALATION") {
+    return buildLexResponse(
+      event,
+      data.lexResponse?.message || "Please wait while I connect you.",
+      data.lexResponse?.fulfillmentState || "Fulfilled",
+      buildSessionAttributesFromResult(data),
+      data.lexResponse
+    );
+  }
+
+  const lexResponse = data.lexResponse || {};
+  if (lexResponse.dialogAction?.type === "ElicitSlot") {
+    return buildLexResponse(
+      event,
+      lexResponse.message || data.message || STAFF_DTMF_PROMPT,
+      lexResponse.fulfillmentState || "InProgress",
+      buildSessionAttributesFromResult(data),
+      lexResponse
+    );
+  }
+
+  return buildElicitSlotResponse(
+    event,
+    "staffPreference",
+    buildSessionAttributesFromResult(data),
+    data.message || lexResponse.message || STAFF_DTMF_PROMPT
+  );
+}
+
 function buildForceHumanEscalationAttributes(reason, extra = {}) {
   return {
     forceHumanEscalation: "true",
@@ -1386,7 +1489,7 @@ async function postInternalAppointment(payload) {
   };
 }
 
-function buildInternalPayload(event, intentName) {
+function buildInternalPayload(event, intentName, extraAttributes = {}) {
   const slots = event.sessionState?.intent?.slots || {};
   const sessionAttributes = buildKnownBookingSessionAttributes(event);
   const knownField = (fieldName, options = {}) =>
@@ -1426,7 +1529,10 @@ function buildInternalPayload(event, intentName) {
     amazonConnectPhoneNumber,
     calledNumber: calledNumber || undefined,
     slots,
-    attributes: sessionAttributes
+    attributes: {
+      ...sessionAttributes,
+      ...extraAttributes
+    }
   };
 
   const explicitSalonId = getAttribute(event, attributeNames.salonId);
@@ -1484,8 +1590,13 @@ function removeTransferSessionAttributes(lexResponse) {
 export const handler = async (event) => {
   try {
     const intentName = event.sessionState?.intent?.name || "";
-    const shouldEscalate = isHumanEscalationRequest(intentName);
+    const pressedZeroForOperator = isOperatorZeroRequest(event);
+    const shouldEscalate =
+      pressedZeroForOperator || isHumanEscalationRequest(intentName, event.inputTranscript);
     const sessionAttributes = event.sessionState?.sessionAttributes || {};
+    const escalationAttributes = pressedZeroForOperator
+      ? buildForceHumanEscalationAttributes("customer_pressed_zero")
+      : {};
 
     if (
       !shouldEscalate &&
@@ -1581,6 +1692,9 @@ export const handler = async (event) => {
     if (!shouldEscalate && intentName === "BookAppointmentIntent") {
       const slotToElicit = getBookingSlotToElicit(event);
       if (slotToElicit) {
+        if (slotToElicit === "staffPreference") {
+          return await buildDynamicStaffElicitResponse(event, intentName);
+        }
         return buildElicitSlotResponse(event, slotToElicit);
       }
     }
@@ -1593,7 +1707,9 @@ export const handler = async (event) => {
       if (isHumanAvailabilityBlocked(event)) {
         return buildNoAgentsAvailableResponse(event);
       }
-      const result = await postInternalAppointment(buildInternalPayload(event, intentName));
+      const result = await postInternalAppointment(
+        buildInternalPayload(event, intentName, escalationAttributes)
+      );
       if (!result.ok) {
         console.error("Appointment API rejected escalation request", result.code);
         return buildBackendFailureEscalationResponse(event, result);

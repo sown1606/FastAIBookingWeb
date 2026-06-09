@@ -280,7 +280,7 @@
           "AmazonConnectContactId": "$.ContactId",
           "InitialContactId": "$.InitialContactId"
         },
-        "Text": "Thank you for calling Kiet Nails & Beauty. How can I help you today?"
+        "Text": "Thank you for calling Kiet Nails & Beauty. How can I help you today? You can press 0 for an operator at any time."
       },
       "Identifier": "3b2877ca-bc16-4019-a8e6-04200c0ded06",
       "Type": "ConnectParticipantWithLexBot",
@@ -341,7 +341,7 @@
       "Type": "MessageParticipant",
       "Parameters": {
         "SkipWhenDTMFBufferEnabled": "false",
-        "Text": "Are you still there? You can say operator if you want a real person."
+        "Text": "Are you still there? You can say operator or press 0 if you want a real person."
       },
       "Transitions": {
         "NextAction": "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d",
@@ -373,7 +373,7 @@
           "AmazonConnectContactId": "$.ContactId",
           "InitialContactId": "$.InitialContactId"
         },
-        "Text": "What service would you like today? You can say Pedicure, Manicure, Gel Manicure, Acrylic Full Set, or Dip Powder. You can also press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Acrylic Full Set, or 5 for Dip Powder."
+        "Text": "What service would you like today? You can say Pedicure, Manicure, Gel Manicure, Acrylic Full Set, Dip Powder, or Other Services. You can also press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Acrylic Full Set, or 5 for Dip Powder. Press 0 to speak with an operator."
       },
       "Transitions": {
         "NextAction": "05553b55-f227-4c66-b391-a3e068b01966",
@@ -449,7 +449,7 @@
       "Type": "MessageParticipant",
       "Parameters": {
         "SkipWhenDTMFBufferEnabled": "false",
-        "Text": "No agents available."
+        "Text": "No agents are available right now. Please call back later or leave a message if voicemail is enabled."
       },
       "Transitions": {
         "NextAction": "ef8d8054-77ea-40c7-aa4e-800ed784c49c",
@@ -489,7 +489,7 @@
       "Type": "MessageParticipant",
       "Parameters": {
         "SkipWhenDTMFBufferEnabled": "false",
-        "Text": "Thank you for calling Kiet Nails & Beauty. How can I help you today?"
+        "Text": "Thank you for calling Kiet Nails & Beauty. How can I help you today? You can press 0 for an operator at any time."
       },
       "Transitions": {
         "NextAction": "3b2877ca-bc16-4019-a8e6-04200c0ded06",
@@ -630,7 +630,7 @@
           "AmazonConnectContactId": "$.ContactId",
           "InitialContactId": "$.InitialContactId"
         },
-        "Text": "Hi Kiet, thank you for calling Kiet Nails & Beauty. How can I help you today?"
+        "Text": "Hi Kiet, thank you for calling Kiet Nails & Beauty. How can I help you today? You can press 0 for an operator at any time."
       },
       "Transitions": {
         "NextAction": "05553b55-f227-4c66-b391-a3e068b01966",

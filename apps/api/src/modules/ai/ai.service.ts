@@ -258,6 +258,14 @@ const SERVICE_ALIASES: Record<string, string[]> = {
     "dep powder",
     "powder dip",
     "dip nails"
+  ],
+  "other services": [
+    "other services",
+    "other service",
+    "others services",
+    "something else",
+    "different service",
+    "custom service"
   ]
 };
 
@@ -355,7 +363,14 @@ const ANY_STAFF_PHRASES = new Set([
   "who is available"
 ]);
 
-const DEMO_SERVICE_NAMES = ["Manicure", "Pedicure", "Gel Manicure", "Acrylic Full Set", "Dip Powder"];
+const DEMO_SERVICE_NAMES = [
+  "Manicure",
+  "Pedicure",
+  "Gel Manicure",
+  "Acrylic Full Set",
+  "Dip Powder",
+  "Other Services"
+];
 const DEMO_STAFF_NAMES = ["Trang", "Amy", "Kelly"];
 const STAFF_ALIAS_GROUPS: Record<string, string[]> = {
   Trang: ["trang", "chang", "train", "trangg"],
@@ -376,9 +391,9 @@ const STAFF_DTMF_OPTIONS: Record<string, string> = {
   "4": "Any staff"
 };
 const SERVICE_DTMF_PROMPT =
-  "What service would you like today? You can say Pedicure, Manicure, Gel Manicure, Acrylic Full Set, or Dip Powder. You can also press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Acrylic Full Set, or 5 for Dip Powder.";
+  "What service would you like today? You can say Pedicure, Manicure, Gel Manicure, Acrylic Full Set, Dip Powder, or Other Services. You can also press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Acrylic Full Set, or 5 for Dip Powder. Press 0 to speak with an operator.";
 const STAFF_DTMF_PROMPT =
-  "Who would you like to book with? You can say Trang, Amy, Kelly, or any staff. You can also press 1 for Trang, 2 for Amy, 3 for Kelly, or 4 for Any staff.";
+  "Who would you like to book with? You can say a staff name or any staff. Press 0 to speak with an operator.";
 
 const normalizeForMatch = (value?: string | null): string => {
   return (value ?? "")
@@ -490,7 +505,7 @@ const isNegative = (value?: string | null): boolean => {
 };
 
 const readDtmfDigit = (value?: string | null): string | undefined => {
-  const match = (value ?? "").trim().match(/^(?:dtmf\s*)?([1-5])#?$/i);
+  const match = (value ?? "").trim().match(/^(?:dtmf\s*)?([0-9])#?$/i);
   return match?.[1];
 };
 
@@ -514,6 +529,42 @@ const readScopedDtmfSelection = (
 const isAnyStaffPreference = (value?: string | null): boolean => {
   const normalized = normalizeForMatch(value);
   return Boolean(normalized && ANY_STAFF_PHRASES.has(normalized));
+};
+
+const parseJsonStringRecord = (value?: string): Record<string, string> => {
+  if (!value) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(value);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {};
+    }
+    return Object.fromEntries(
+      Object.entries(parsed)
+        .filter(([key, entry]) => /^[1-9]$/.test(key) && typeof entry === "string" && entry.trim())
+        .map(([key, entry]) => [key, String(entry).trim()])
+    );
+  } catch {
+    return {};
+  }
+};
+
+const readStaffDtmfOptions = (
+  attributes: Record<string, unknown> | undefined
+): Record<string, string> => {
+  const dynamicOptions = parseJsonStringRecord(readStringAttribute(attributes, ["staffDtmfOptions"]));
+  return Object.keys(dynamicOptions).length ? dynamicOptions : STAFF_DTMF_OPTIONS;
+};
+
+const isOperatorZeroRequest = (value?: string | null): boolean => {
+  const digit = readDtmfDigit(value);
+  if (digit === "0") {
+    return true;
+  }
+  const normalized = normalizeForMatch(value);
+  return normalized === "zero" || /\b(?:press|pressed|hit|dial)\s+zero\b/.test(normalized);
 };
 
 const getStaffAliasPhrases = (staffName: string): string[] => {
@@ -1088,11 +1139,14 @@ const inferFallbackIntent = (input: {
 
   return {
     intentType:
+      isOperatorZeroRequest(input.text) ||
       lower.includes("live person") ||
       lower.includes("real person") ||
       lower.includes("operator") ||
       lower.includes("representative") ||
-      lower.includes("agent")
+      lower.includes("agent") ||
+      lower.includes("talk to a person") ||
+      lower.includes("speak to someone")
         ? "LIVE_PERSON_REQUEST"
         : lower.includes("cancel")
           ? "CANCEL_APPOINTMENT"
@@ -2540,7 +2594,7 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
             asTrimmedString(input.staffPreference),
             readBookingFieldAttribute(attributes, "staffPreference")
           ],
-          STAFF_DTMF_OPTIONS
+          readStaffDtmfOptions(attributes)
         )
       : undefined;
   const customerName =
@@ -2613,29 +2667,51 @@ const shouldEscalateToHuman = (input: {
   intentName?: string;
   transcriptText?: string;
   serviceName?: string;
+  staffPreference?: string;
   attributes?: Record<string, unknown>;
 }): boolean => {
+  return Boolean(getHumanEscalationReason(input));
+};
+
+const getHumanEscalationReason = (input: {
+  intentName?: string;
+  transcriptText?: string;
+  serviceName?: string;
+  staffPreference?: string;
+  attributes?: Record<string, unknown>;
+}): "customer_pressed_zero" | "caller_requested_human" | undefined => {
   const intent = input.intentName?.toLowerCase();
+  if (
+    readStringAttribute(input.attributes, ["escalationReason"]) === "customer_pressed_zero" ||
+    isOperatorZeroRequest(input.transcriptText) ||
+    isOperatorZeroRequest(input.serviceName) ||
+    isOperatorZeroRequest(input.staffPreference)
+  ) {
+    return "customer_pressed_zero";
+  }
+
   if (
     readStringAttribute(input.attributes, ["forceHumanEscalation"]) === "true" ||
     readStringAttribute(input.attributes, ["transferToQueue"]) === "true"
   ) {
-    return true;
+    return "caller_requested_human";
   }
 
   if (intent === "humanescalationintent") {
-    return true;
+    return "caller_requested_human";
   }
 
   if (
     readStringAttribute(input.attributes, ["humanEscalationOffer"]) &&
     (isAffirmative(input.transcriptText) || isAffirmative(input.serviceName))
   ) {
-    return true;
+    return "caller_requested_human";
   }
 
   const text = input.transcriptText?.toLowerCase() ?? "";
-  return /\b(real person|live person|human|operator|representative|speak to someone)\b/.test(text);
+  return /\b(real person|live person|human|operator|representative|talk to a person|speak to someone|speak with someone)\b/.test(text)
+    ? "caller_requested_human"
+    : undefined;
 };
 
 const buildInternalParsedIntent = (input: {
@@ -2691,9 +2767,50 @@ const orderStaffForDemo = <T extends { fullName: string }>(staff: T[]): T[] => {
 };
 
 const getStaffPromptNames = (staffNames: string[]): string[] => {
-  const available = new Set(staffNames.map((name) => normalizeForMatch(name)));
-  const demoNames = DEMO_STAFF_NAMES.filter((name) => available.has(normalizeForMatch(name)));
-  return demoNames.length === DEMO_STAFF_NAMES.length ? demoNames : staffNames.slice(0, 5);
+  return staffNames.slice(0, 5);
+};
+
+const buildStaffDtmfOptions = (staffNames: string[]): Record<string, string> => {
+  const names = getStaffPromptNames(staffNames);
+  const maxNamedOptions = Math.min(names.length, 8);
+  const options = Object.fromEntries(
+    names.slice(0, maxNamedOptions).map((name, index) => [String(index + 1), name])
+  );
+  if (names.length) {
+    options[String(maxNamedOptions + 1)] = "Any staff";
+  }
+  return options;
+};
+
+const buildStaffDtmfPromptText = (staffNames: string[]): string => {
+  const promptNames = getStaffPromptNames(staffNames);
+  if (!promptNames.length) {
+    return "Who would you like to book with? Please say a staff name, say any staff, or press 0 to speak with an operator.";
+  }
+
+  const options = buildStaffDtmfOptions(staffNames);
+  const namedOptions = Object.entries(options)
+    .filter(([, name]) => name !== "Any staff")
+    .map(([digit, name]) => `press ${digit} for ${escapeSsml(name)}`);
+  const anyStaffOption = Object.entries(options).find(([, name]) => name === "Any staff");
+  const dtmfText = formatNameList([
+    ...namedOptions,
+    ...(anyStaffOption ? [`press ${anyStaffOption[0]} for any staff`] : [])
+  ]);
+
+  return `Who would you like to book with? Available staff are ${escapeSsml(
+    formatNameList(promptNames)
+  )}. You can also say any staff. ${dtmfText ? `You can ${dtmfText}. ` : ""}Press 0 to speak with an operator.`;
+};
+
+const buildStaffPromptSessionAttributes = (staffNames: string[]): Record<string, string> => {
+  const options = buildStaffDtmfOptions(staffNames);
+  if (!Object.keys(options).length) {
+    return {};
+  }
+  return {
+    staffDtmfOptions: JSON.stringify(options)
+  };
 };
 
 const getServicePromptNames = (serviceNames: string[]): string[] => {
@@ -2883,17 +3000,17 @@ const buildLexMessage = (input: {
     const isRetry = (input.attemptCount ?? 1) > 1;
     const intro = isRetry ? "Sorry, I did not catch that." : "Got it.";
     if (input.missingFields?.includes("staffPreference")) {
-      return speak(STAFF_DTMF_PROMPT);
+      return speak(buildStaffDtmfPromptText(input.staffNames ?? []));
     }
     if (input.missingFields?.includes("customerName")) {
       return speak(
-        `${intro} <break time="300ms"/> What's the best name for this booking?`
+        `${intro} <break time="300ms"/> What's the best name for this booking? Press 0 to speak with an operator.`
       );
     }
     if (input.missingFields?.includes("customerPhone")) {
       const name = input.knownFields?.customerName;
       return speak(
-        `${name ? `Thanks, ${escapeSsml(name)}.` : intro} <break time="300ms"/> What phone number should we keep on the appointment?`
+        `${name ? `Thanks, ${escapeSsml(name)}.` : intro} <break time="300ms"/> What phone number should we keep on the appointment? Press 0 to speak with an operator.`
       );
     }
     if (input.missingFields?.includes("serviceName")) {
@@ -2902,14 +3019,14 @@ const buildLexMessage = (input: {
     if (input.missingFields?.includes("preferredDateTime")) {
       return input.knownFields?.requestedDate
         ? speak(
-            `${intro} <break time="300ms"/> What time works best?`
+            `${intro} <break time="300ms"/> What time works best? Press 0 to speak with an operator.`
           )
         : speak(
-            `${intro} <break time="300ms"/> What day and time works best?`
+            `${intro} <break time="300ms"/> What day and time works best? Press 0 to speak with an operator.`
           );
     }
     return speak(
-      `${intro} <break time="300ms"/> What appointment detail should I use next?`
+      `${intro} <break time="300ms"/> What appointment detail should I use next? Press 0 to speak with an operator.`
     );
   }
 
@@ -3025,8 +3142,7 @@ const buildServiceClarificationMessage = (input: {
 const buildStaffClarificationMessage = (input: {
   availableStaffNames: string[];
 }): string => {
-  void input;
-  return speak(STAFF_DTMF_PROMPT);
+  return speak(buildStaffDtmfPromptText(input.availableStaffNames));
 };
 
 const parseAlternativeSlotsAttribute = (
@@ -3738,10 +3854,15 @@ export const createAmazonConnectAIAppointment = async (
     };
   }
 
-  if (shouldEscalateToHuman(normalized)) {
+  const humanEscalationReason = getHumanEscalationReason(normalized);
+  if (humanEscalationReason) {
+    const humanFailureReason =
+      humanEscalationReason === "customer_pressed_zero"
+        ? "Caller pressed zero for operator."
+        : "Caller requested a human operator.";
     const bookingAttempt = await createAttempt({
       status: BookingAttemptStatus.NEEDS_INPUT,
-      failureReason: "Caller requested a human operator.",
+      failureReason: humanFailureReason,
       normalizedRequest: {
         intentName: normalized.intentName,
         requestedDateTimeText
@@ -3752,7 +3873,7 @@ export const createAmazonConnectAIAppointment = async (
           salonId: salon.id,
           callSessionId: callSession.id,
           requestedBy: "AMAZON_CONNECT_LEX",
-          escalationReason: "Caller requested a human operator.",
+          escalationReason: humanFailureReason,
           customerPhone: normalized.customerPhone ?? null,
           messageToCaller: "Please wait while I connect you.",
           metadata: {
@@ -3809,7 +3930,7 @@ export const createAmazonConnectAIAppointment = async (
         message,
         messageContentType: "PlainText",
         sessionAttributes: buildHumanEscalationSessionAttributes(
-          "caller_requested_human",
+          humanEscalationReason,
           escalation
         )
       },
@@ -3978,6 +4099,9 @@ export const createAmazonConnectAIAppointment = async (
       knownFields: normalized,
       attemptCount: elicitDecision.attemptCount
     });
+    const staffPromptAttributes = elicitDecision.promptMissingFields.includes("staffPreference")
+      ? buildStaffPromptSessionAttributes(staffNames)
+      : {};
     const parsed = buildInternalParsedIntent({
       intentType: "BOOK_APPOINTMENT",
       customerName: normalized.customerName,
@@ -4027,7 +4151,10 @@ export const createAmazonConnectAIAppointment = async (
           type: "ElicitSlot",
           slotToElicit: elicitDecision.slotToElicit
         },
-        sessionAttributes: buildKnownSessionAttributes(elicitDecision.sessionAttributes)
+        sessionAttributes: buildKnownSessionAttributes({
+          ...elicitDecision.sessionAttributes,
+          ...staffPromptAttributes
+        })
       },
       appointment: null,
       bookingAttempt,
@@ -4307,7 +4434,8 @@ export const createAmazonConnectAIAppointment = async (
           lastAskedSlot: "staffPreference",
           askedSlotsCount: "1",
           fallbackCount: "1",
-          errorCount: "1"
+          errorCount: "1",
+          ...buildStaffPromptSessionAttributes(staffResolution.allStaff.map((member) => member.fullName))
         })
       },
       appointment: null,

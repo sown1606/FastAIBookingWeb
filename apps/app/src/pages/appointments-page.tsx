@@ -157,6 +157,16 @@ const buildTimeSlots = (items: AppointmentItem[]) => {
   return Array.from({ length: lastHour - firstHour + 1 }, (_value, index) => firstHour + index);
 };
 
+const activeAppointmentStatuses = new Set(["SCHEDULED", "CONFIRMED", "IN_PROGRESS"]);
+
+const nearestUpcomingDateKey = (items: AppointmentItem[]) => {
+  const now = Date.now();
+  const nearest = items
+    .filter((item) => activeAppointmentStatuses.has(item.status) && new Date(item.startTime).getTime() >= now)
+    .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())[0];
+  return nearest ? localDateKey(nearest.startTime) : formatSalonDateKey(new Date());
+};
+
 export const AppointmentsPage = () => {
   const { session } = useAuth();
   const { notify } = useToast();
@@ -170,6 +180,7 @@ export const AppointmentsPage = () => {
   const [reminders, setReminders] = useState<StaffReminder[]>([]);
   const [statusFilter, setStatusFilter] = useState("");
   const [selectedDate, setSelectedDate] = useState(() => formatSalonDateKey(new Date()));
+  const [staffDateInitialized, setStaffDateInitialized] = useState(false);
   const [now, setNow] = useState(Date.now());
 
   const [customers, setCustomers] = useState<CustomerItem[]>([]);
@@ -241,6 +252,14 @@ export const AppointmentsPage = () => {
     const interval = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (isOwner || loading || staffDateInitialized) {
+      return;
+    }
+    setSelectedDate(nearestUpcomingDateKey(appointments));
+    setStaffDateInitialized(true);
+  }, [appointments, isOwner, loading, staffDateInitialized]);
 
   const createAppointment = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -438,16 +457,29 @@ export const AppointmentsPage = () => {
     [appointments, selectedDate]
   );
 
+  const upcomingAppointments = useMemo(() => {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    return appointments
+      .filter(
+        (appointment) =>
+          activeAppointmentStatuses.has(appointment.status) &&
+          new Date(appointment.startTime).getTime() >= todayStart.getTime()
+      )
+      .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+  }, [appointments]);
+
   const groupedByDay = useMemo(() => {
     const byDay = new Map<string, AppointmentItem[]>();
-    selectedDayAppointments.forEach((appointment) => {
+    const sourceAppointments = isOwner ? selectedDayAppointments : upcomingAppointments;
+    sourceAppointments.forEach((appointment) => {
       const dateKey = localDateKey(appointment.startTime);
       const list = byDay.get(dateKey) ?? [];
       list.push(appointment);
       byDay.set(dateKey, list);
     });
     return [...byDay.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  }, [selectedDayAppointments]);
+  }, [isOwner, selectedDayAppointments, upcomingAppointments]);
 
   const scheduleStaff = useMemo(() => {
     const byId = new Map<string, StaffItem>();
@@ -536,6 +568,11 @@ export const AppointmentsPage = () => {
           <span className="summary-badge">
             {t("appointments.selectedDateCount")}: {selectedDayAppointments.length}
           </span>
+          {!isOwner ? (
+            <span className="summary-badge">
+              Upcoming: {upcomingAppointments.length}
+            </span>
+          ) : null}
           <span className="summary-badge">
             {t("appointments.completedCount")}: {selectedDayAppointments.filter((item) => item.status === "COMPLETED").length}
           </span>
@@ -752,6 +789,13 @@ export const AppointmentsPage = () => {
       ) : null}
 
       {!isOwner ? <section className="card">
+        <div className="section-header">
+          <div>
+            <h2>Upcoming appointments</h2>
+            <p className="muted">All upcoming appointments are shown by date. Use the calendar above to jump to a specific day.</p>
+          </div>
+          <span className="summary-badge">{upcomingAppointments.length} upcoming</span>
+        </div>
         {groupedByDay.length ? (
           groupedByDay.map(([day, items]) => (
             <div key={day} className="day-section">

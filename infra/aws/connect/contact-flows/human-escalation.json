@@ -79,7 +79,7 @@
     {
       "Parameters": {
         "SkipWhenDTMFBufferEnabled": "false",
-        "Text": "Please wait while I connect you to our team."
+        "Text": "Please hold while I connect you to our team. If there is a short wait, you may hear quiet hold music while an operator joins."
       },
       "Identifier": "01253de2-7cc9-4992-945d-63910b9eb695",
       "Type": "MessageParticipant",
@@ -138,7 +138,7 @@
       "Type": "MessageParticipant",
       "Parameters": {
         "SkipWhenDTMFBufferEnabled": "false",
-        "Text": "No agents available."
+        "Text": "No agents are available right now. Please call back later or leave a message if voicemail is enabled."
       },
       "Transitions": {
         "NextAction": "eab531ca-686c-470f-9ed2-426e5ead1400",

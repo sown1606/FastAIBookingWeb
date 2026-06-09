@@ -45,8 +45,23 @@ interface SalonItem {
 interface SalonDetailResponse {
   id: string;
   name: string;
+  contactPhone: string | null;
+  notificationPhoneNumber: string | null;
   originalPhoneNumber: string | null;
   customerIncomingPhoneNumber: string | null;
+  timezone: string;
+  addressLine1: string | null;
+  addressLine2: string | null;
+  city: string | null;
+  state: string | null;
+  postalCode: string | null;
+  country: string;
+  owner: {
+    id: string;
+    fullName: string;
+    email: string;
+    phone: string | null;
+  };
   settings: {
     aiReceptionEnabled: boolean;
     aiTransferRingCount: number;
@@ -57,6 +72,14 @@ interface SalonDetailResponse {
     callCenterRoutingNumber: string | null;
     callCenterRoutingNote: string | null;
   } | null;
+  businessHours: Array<{
+    dayOfWeek: number;
+    isOpen: boolean;
+    openTime: string | null;
+    closeTime: string | null;
+  }>;
+  staff: StaffItem[];
+  services: ServiceItem[];
   callCenterAssignments: Array<{
     id: string;
     agent: {
@@ -72,13 +95,18 @@ interface SalonDetailResponse {
 interface StaffItem {
   id: string;
   fullName: string;
+  title?: string | null;
+  status?: string;
   currentWorkStatus: string;
+  isBookable?: boolean;
 }
 
 interface ServiceItem {
   id: string;
   name: string;
   isActive: boolean;
+  durationMinutes?: number;
+  priceCents?: number;
 }
 
 interface CustomerItem {
@@ -255,6 +283,37 @@ export const CallCenterPage = () => {
     };
     const key = routingLabelKeyByValue[value];
     return key ? t(key) : value;
+  };
+
+  const formatSalonAddress = (salon: SalonDetailResponse | null) => {
+    if (!salon) {
+      return t("common.none");
+    }
+    return [
+      salon.addressLine1,
+      salon.addressLine2,
+      [salon.city, salon.state, salon.postalCode].filter(Boolean).join(" ")
+    ]
+      .filter(Boolean)
+      .join(", ") || t("common.none");
+  };
+
+  const dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const formatBusinessHour = (hour: SalonDetailResponse["businessHours"][number]) => {
+    const day = dayLabels[hour.dayOfWeek] ?? String(hour.dayOfWeek);
+    return hour.isOpen && hour.openTime && hour.closeTime
+      ? `${day}: ${hour.openTime} - ${hour.closeTime}`
+      : `${day}: Closed`;
+  };
+
+  const formatStaffStatus = (member: StaffItem) => {
+    if (member.status && member.status !== "ACTIVE") {
+      return member.status;
+    }
+    if (member.isBookable === false) {
+      return "Not bookable";
+    }
+    return member.currentWorkStatus || "ACTIVE";
   };
 
   const loadSalonData = async (salonId: string) => {
@@ -713,6 +772,28 @@ export const CallCenterPage = () => {
   const visibleAppointments = useMemo(() => {
     return appointments.slice().sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
   }, [appointments]);
+  const contextStaff = selectedSalonDetail?.staff.length ? selectedSalonDetail.staff : staff;
+  const activeBookableStaff = contextStaff.filter(
+    (member) => (member.status ?? "ACTIVE") === "ACTIVE" && member.isBookable !== false
+  );
+  const unavailableStaff = contextStaff.filter(
+    (member) =>
+      (member.status && member.status !== "ACTIVE") ||
+      member.isBookable === false ||
+      (member.currentWorkStatus && member.currentWorkStatus !== "AVAILABLE")
+  );
+  const contextServices = selectedSalonDetail?.services.length ? selectedSalonDetail.services : services;
+  const salonBusinessPhone =
+    selectedSalonDetail?.customerIncomingPhoneNumber ??
+    selectedSalonDetail?.originalPhoneNumber ??
+    selectedSalonDetail?.contactPhone ??
+    t("common.none");
+  const ownerContact = selectedSalonDetail
+    ? [selectedSalonDetail.owner.fullName, selectedSalonDetail.owner.phone ?? selectedSalonDetail.owner.email]
+        .filter(Boolean)
+        .join(" · ")
+    : t("common.none");
+
   if (loading) {
     return <LoadingBlock />;
   }
@@ -1065,237 +1146,113 @@ export const CallCenterPage = () => {
   }
 
   return (
-    <div className="stack">
+    <div className="operator-workspace">
       <FormDialog />
 
-      <section className="card operator-focus-card">
-        <div className="section-header">
+      <aside className="card operator-context-panel">
+        <div className="section-header compact-header">
+          <div>
+            <h2>{selectedSalonDetail?.name ?? selectedSalonName}</h2>
+            <p className="muted">Salon context for this call</p>
+          </div>
+          <span className={amazonConnectReady ? "status-pill success" : "status-pill warning"}>
+            {amazonConnectReady ? t("callCenter.amazonReady") : t("callCenter.amazonPending")}
+          </span>
+        </div>
+
+        <label className="field compact">
+          <span>{t("callCenter.selectSalon")}</span>
+          <select
+            value={selectedSalonId}
+            onChange={(event) => void changeSalon(event.target.value)}
+            disabled={!salons.length}
+          >
+            {salons.map((salon) => (
+              <option key={salon.id} value={salon.id}>
+                {salon.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <div className="operator-info-list">
+          <div>
+            <span className="muted">Address</span>
+            <strong>{formatSalonAddress(selectedSalonDetail)}</strong>
+          </div>
+          <div>
+            <span className="muted">Business phone</span>
+            <strong>{salonBusinessPhone}</strong>
+          </div>
+          <div>
+            <span className="muted">Owner contact</span>
+            <strong>{ownerContact}</strong>
+          </div>
+          <div>
+            <span className="muted">Routing note</span>
+            <strong>{selectedSalonDetail?.settings?.callCenterRoutingNote || t("common.none")}</strong>
+          </div>
+        </div>
+
+        <div className="operator-context-section">
+          <h3>Business hours</h3>
+          {selectedSalonDetail?.businessHours.length ? (
+            <div className="compact-list">
+              {selectedSalonDetail.businessHours.map((hour) => (
+                <span key={hour.dayOfWeek}>{formatBusinessHour(hour)}</span>
+              ))}
+            </div>
+          ) : (
+            <p className="muted">{t("common.none")}</p>
+          )}
+        </div>
+
+        <div className="operator-context-section">
+          <h3>Active staff</h3>
+          {activeBookableStaff.length ? (
+            <div className="compact-list">
+              {activeBookableStaff.map((member) => (
+                <span key={member.id}>{member.fullName}</span>
+              ))}
+            </div>
+          ) : (
+            <p className="muted">{t("common.none")}</p>
+          )}
+        </div>
+
+        <div className="operator-context-section">
+          <h3>Off / inactive / busy</h3>
+          {unavailableStaff.length ? (
+            <div className="compact-list">
+              {unavailableStaff.map((member) => (
+                <span key={member.id}>{member.fullName} · {formatStaffStatus(member)}</span>
+              ))}
+            </div>
+          ) : (
+            <p className="muted">{t("common.none")}</p>
+          )}
+        </div>
+
+        <div className="operator-context-section">
+          <h3>Active services</h3>
+          {contextServices.length ? (
+            <div className="compact-list">
+              {contextServices.map((service) => (
+                <span key={service.id}>{service.name}</span>
+              ))}
+            </div>
+          ) : (
+            <p className="muted">{t("common.none")}</p>
+          )}
+        </div>
+      </aside>
+
+      <main className="operator-main-panel">
+        <section className="card operator-action-bar">
           <div>
             <h2>{t("callCenter.operatorSimpleTitle")}</h2>
             <p className="muted">{t("callCenter.operatorSimpleHint")}</p>
           </div>
-          <span className={amazonConnectReady ? "status-pill success" : "status-pill warning"}>
-            {amazonConnectReady ? t("callCenter.amazonReady") : t("callCenter.amazonPending")}
-          </span>
-        </div>
-
-        <div className="operator-focus-grid">
-          <label className="field">
-            <span>{t("callCenter.selectSalon")}</span>
-            <select
-              value={selectedSalonId}
-              onChange={(event) => void changeSalon(event.target.value)}
-              disabled={!salons.length}
-            >
-              {salons.map((salon) => (
-                <option key={salon.id} value={salon.id}>
-                  {salon.name}
-                </option>
-              ))}
-            </select>
-            <small>{t("callCenter.selectSalonHint")}</small>
-          </label>
-
-          <div className="simple-action-panel">
-            {ccpUrl ? (
-              <a href={ccpUrl} target="_blank" rel="noreferrer" className="button-primary">
-                {t("callCenter.ccpLink")}
-              </a>
-            ) : (
-              <button type="button" className="button-primary" disabled>
-                {t("callCenter.amazonPending")}
-              </button>
-            )}
-            {!isBasicMode ? (
-              ccpSettingsUrl ? (
-                <a href={ccpSettingsUrl} target="_blank" rel="noreferrer" className="button-secondary">
-                  {t("callCenter.ccpSettingsLink")}
-                </a>
-              ) : (
-                <button type="button" className="button-secondary" disabled>
-                  {t("callCenter.ccpSettingsLink")}
-                </button>
-              )
-            ) : null}
-            <button type="button" className="button-secondary" onClick={() => void loadQueue()}>
-              {t("callCenter.refreshQueue")}
-            </button>
-          </div>
-        </div>
-
-        <div className="metrics-grid compact-metrics">
-          <div>
-            <span className="muted">{t("callCenter.currentSalon")}</span>
-            <strong>{selectedSalonName}</strong>
-          </div>
-          <div>
-            <span className="muted">{t("callCenter.openRequests")}</span>
-            <strong>{openRequests}</strong>
-          </div>
-          <div>
-            <span className="muted">{t("callCenter.availableStaff")}</span>
-            <strong>{availableStaffCount}</strong>
-          </div>
-          <div>
-            <span className="muted">{t("callCenter.callerPhone")}</span>
-            <strong>{selectedEscalation?.callSession.callerPhone ?? t("common.none")}</strong>
-          </div>
-        </div>
-
-        {!isBasicMode ? (
-          <div className="call-center-next-steps">
-            <span>{t("callCenter.stepOpenCcp")}</span>
-            <span>{t("callCenter.stepPickSalon")}</span>
-            <span>{t("callCenter.stepHandleQueue")}</span>
-          </div>
-        ) : null}
-      </section>
-
-      {!isBasicMode ? <details className="advanced-config">
-        <summary>{t("callCenter.advancedConfig")}</summary>
-      <section className="card">
-        <div className="section-header">
-          <div>
-            <h2>{t("callCenter.pageTitle")}</h2>
-            <p className="muted">{t("callCenter.pageHint")}</p>
-          </div>
-          <span className={amazonConnectReady ? "status-pill success" : "status-pill warning"}>
-            {amazonConnectReady ? t("callCenter.amazonReady") : t("callCenter.amazonPending")}
-          </span>
-        </div>
-        <div className="card-grid integration-grid">
-          <article className="integration-card">
-            <div className="section-header">
-              <h3>{t("callCenter.runtimeTitle")}</h3>
-              <span className={amazonConnectRuntimeReady ? "status-pill success" : "status-pill warning"}>
-                {amazonConnectRuntimeReady ? t("callCenter.runtimeReady") : t("callCenter.runtimePending")}
-              </span>
-            </div>
-            <p className="muted">{amazonConnectRuntimeReady ? t("callCenter.runtimeHintReady") : t("callCenter.runtimeHintPending")}</p>
-            {missingAmazonConnectItems.length ? (
-              <ul className="config-checklist">
-                {missingAmazonConnectItems.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            ) : (
-              <div className="summary-badges">
-                <span className="summary-badge">AWS_REGION: {runtime?.amazonConnect.region ?? t("common.none")}</span>
-                <span className="summary-badge">
-                  AMAZON_CONNECT_QUEUE_ID_DEFAULT: {runtime?.amazonConnect.queueIdDefault ?? t("common.none")}
-                </span>
-              </div>
-            )}
-          </article>
-
-          <article className="integration-card">
-            <div className="section-header">
-              <h3>{t("callCenter.platformTitle")}</h3>
-              <span className={amazonConnectPlatformReady ? "status-pill success" : "status-pill warning"}>
-                {amazonConnectPlatformReady ? t("callCenter.platformReady") : t("callCenter.platformPending")}
-              </span>
-            </div>
-            <p className="muted">{amazonConnectPlatformReady ? t("callCenter.platformHintReady") : t("callCenter.platformHintPending")}</p>
-            {missingPlatformItems.length ? (
-              <ul className="config-checklist">
-                {missingPlatformItems.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            ) : (
-              <div className="summary-badges">
-                <span className="summary-badge">
-                  {t("callCenter.integrationConfigCount")}: {runtime?.amazonConnect.activeIntegrationConfigCount ?? 0}
-                </span>
-              </div>
-            )}
-          </article>
-
-          <article className="integration-card">
-            <h3>{t("callCenter.runtimeEnvTitle")}</h3>
-            <p className="muted">{t("callCenter.runtimeEnvHint")}</p>
-            <div className="summary-badges">
-              <span className={runtime?.runtimeEnv.dotenvLoadedFromFile ? "status-pill success" : "status-pill warning"}>
-                {runtime?.runtimeEnv.dotenvLoadedFromFile ? t("callCenter.dotenvLoaded") : t("callCenter.dotenvMissing")}
-              </span>
-              <span className={runtime?.runtimeEnv.dotenvExampleExists ? "status-pill info" : "status-pill warning"}>
-                {runtime?.runtimeEnv.dotenvExampleExists ? t("callCenter.exampleAvailable") : t("callCenter.exampleMissing")}
-              </span>
-            </div>
-            <div className="mobile-list">
-              <article className="mobile-item">
-                <strong>{runtime?.runtimeEnv.dotenvPath ?? t("common.none")}</strong>
-                <span>{runtime?.runtimeEnv.note ?? t("common.none")}</span>
-              </article>
-            </div>
-          </article>
-
-          <article className="integration-card">
-            <h3>{t("callCenter.envUsageTitle")}</h3>
-            <div className="mobile-list">
-              {amazonConnectRuntimeRows.map((item) => (
-                <article key={item.key} className="mobile-item">
-                  <strong>{item.key}</strong>
-                  <span>{item.value}</span>
-                  <small>{item.usage}</small>
-                </article>
-              ))}
-            </div>
-          </article>
-
-          <article className="integration-card">
-            <h3>{t("callCenter.operatorContext")}</h3>
-            <div className="staff-meta-grid">
-              <div>
-                <span className="muted">{t("callCenter.assignedSalons")}</span>
-                <strong>{runtime?.assignedSalonCount ?? 0}</strong>
-              </div>
-              <div>
-                <span className="muted">{t("callCenter.currentSalon")}</span>
-                <strong>{selectedSalonName}</strong>
-              </div>
-              <div>
-                <span className="muted">{t("callCenter.openRequests")}</span>
-                <strong>{openRequests}</strong>
-              </div>
-              <div>
-                <span className="muted">{t("callCenter.availableStaff")}</span>
-                <strong>{availableStaffCount}</strong>
-              </div>
-            </div>
-          </article>
-        </div>
-        {salons.length ? (
-          <div className="quick-actions">
-            {salons.map((salon) => (
-              <button
-                key={salon.id}
-                type="button"
-                className={salon.id === selectedSalonId ? "button-primary" : "button-secondary"}
-                onClick={() => void changeSalon(salon.id)}
-              >
-                {salon.name}
-              </button>
-            ))}
-          </div>
-        ) : (
-          <EmptyBlock message={t("callCenter.noAssignedSalons")} />
-        )}
-      </section>
-      </details> : null}
-
-      {!isBasicMode ? <section className="card-grid">
-        <article className="card simple-ccp-card">
-          <div className="section-header">
-            <div>
-              <h3>{t("callCenter.softphoneTitle")}</h3>
-              <p className="muted">{t("callCenter.directCcpHint")}</p>
-            </div>
-            <span className={amazonConnectReady ? "status-pill success" : "status-pill warning"}>
-              {amazonConnectReady ? t("callCenter.amazonReady") : t("callCenter.amazonPending")}
-            </span>
-          </div>
-          {ccpError ? <div className="form-error">{ccpError}</div> : null}
           <div className="inline-actions">
             {ccpUrl ? (
               <a href={ccpUrl} target="_blank" rel="noreferrer" className="button-primary">
@@ -1306,66 +1263,64 @@ export const CallCenterPage = () => {
                 {t("callCenter.amazonPending")}
               </button>
             )}
-            {ccpSettingsUrl ? (
-              <a href={ccpSettingsUrl} target="_blank" rel="noreferrer" className="button-secondary">
-                {t("callCenter.ccpSettingsLink")}
-              </a>
+            <button type="button" className="button-secondary" onClick={() => void loadQueue()}>
+              {t("callCenter.refreshQueue")}
+            </button>
+          </div>
+        </section>
+
+        <section className="card-grid operator-top-grid">
+          <article className="card">
+            <div className="section-header compact-header">
+              <div>
+                <h3>Selected call</h3>
+                <p className="muted">
+                  {selectedEscalation
+                    ? `${selectedEscalation.salon.name} · ${selectedEscalation.callSession.callerPhone ?? t("callCenter.unknownCaller")}`
+                    : t("callCenter.selectedEmpty")}
+                </p>
+              </div>
+              <span className="status-pill info">{openRequests} open</span>
+            </div>
+            {selectedEscalation ? (
+              <div className="operator-call-card">
+                <div className="metrics-grid compact-metrics">
+                  <div>
+                    <span className="muted">{t("common.status")}</span>
+                    <strong>{statusLabelKey(selectedEscalation.status) ? t(statusLabelKey(selectedEscalation.status)!) : selectedEscalation.status}</strong>
+                  </div>
+                  <div>
+                    <span className="muted">{t("callCenter.callerPhone")}</span>
+                    <strong>{selectedEscalation.callSession.callerPhone ?? t("common.none")}</strong>
+                  </div>
+                  <div>
+                    <span className="muted">{t("callCenter.routing")}</span>
+                    <strong>{translateRoutingOutcome(selectedEscalation.routingOutcome)}</strong>
+                  </div>
+                  <div>
+                    <span className="muted">{t("callCenter.resolution")}</span>
+                    <strong>{selectedEscalation.callSession.finalResolution ?? t("common.none")}</strong>
+                  </div>
+                </div>
+                <div className="inline-actions">
+                  <button type="button" className="button-primary" onClick={() => void acceptQueueItem()}>
+                    {t("callCenter.accept")}
+                  </button>
+                  <button type="button" className="button-secondary" onClick={() => void completeQueueItem()}>
+                    {t("callCenter.complete")}
+                  </button>
+                </div>
+              </div>
             ) : (
-              <button type="button" className="button-secondary" disabled>
-                {t("callCenter.ccpSettingsLink")}
-              </button>
+              <EmptyBlock message={t("callCenter.selectedEmpty")} />
             )}
-          </div>
-          {missingAmazonConnectItems.length ? (
-            <ul className="config-checklist compact">
-              {missingAmazonConnectItems.map((item) => <li key={item}>{item}</li>)}
-            </ul>
-          ) : null}
-        </article>
+          </article>
 
-        <article className="card">
-          <h3>{t("callCenter.operatorContext")}</h3>
-          <div className="mobile-list">
-            <article className="mobile-item">
-              <strong>{t("callCenter.callerPhone")}</strong>
-              <span>{selectedEscalation?.callSession.callerPhone ?? t("common.none")}</span>
-            </article>
-            <article className="mobile-item">
-              <strong>{t("callCenter.contactId")}</strong>
-              <span>{selectedEscalation?.callSession.providerCallId ?? t("common.none")}</span>
-            </article>
-            <article className="mobile-item">
-              <strong>{t("callCenter.queueStatus")}</strong>
-              <span>
-                {selectedEscalation?.status
-                  ? statusLabelKey(selectedEscalation.status)
-                    ? t(statusLabelKey(selectedEscalation.status)!)
-                    : selectedEscalation.status
-                  : t("common.none")}
-              </span>
-            </article>
-          </div>
-        </article>
-      </section> : null}
-
-      <section className="card">
-        <h2>{t("callCenter.queueTitle")}</h2>
-        {selectedSalonQueue.length ? (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>{t("callCenter.requested")}</th>
-                  <th>{t("callCenter.currentSalon")}</th>
-                  <th>{t("callCenter.caller")}</th>
-                  <th>{t("common.status")}</th>
-                  {!isBasicMode ? <th>{t("callCenter.routing")}</th> : null}
-                  <th>{t("callCenter.waitingTime")}</th>
-                  <th>{t("common.actions")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {selectedSalonQueue.map((item) => {
+          <article className="card">
+            <h3>{t("callCenter.queueTitle")}</h3>
+            {selectedSalonQueue.length ? (
+              <div className="compact-queue-list">
+                {selectedSalonQueue.slice(0, 6).map((item) => {
                   const waitingSince = item.connectedAt ?? item.closedAt ?? new Date().toISOString();
                   const waitingMinutes = Math.max(
                     0,
@@ -1373,394 +1328,222 @@ export const CallCenterPage = () => {
                       (new Date(waitingSince).getTime() - new Date(item.requestedAt).getTime()) / 60000
                     )
                   );
-
                   return (
-                    <tr key={item.id}>
-                      <td>{formatDateTime(item.requestedAt)}</td>
-                      <td>{item.salon.name}</td>
-                      <td>{item.callSession.callerPhone ?? t("common.none")}</td>
-                      <td>{statusLabelKey(item.status) ? t(statusLabelKey(item.status)!) : item.status}</td>
-                      {!isBasicMode ? <td>{translateRoutingOutcome(item.routingOutcome ?? item.callSession.routingOutcome)}</td> : null}
-                      <td>{t("callCenter.waitingMinutes", { count: waitingMinutes })}</td>
-                      <td>
-                        <button
-                          type="button"
-                          className="button-secondary"
-                          onClick={() => setSelectedEscalationId(item.id)}
-                        >
-                          {t("callCenter.openAction")}
-                        </button>
-                      </td>
-                    </tr>
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={item.id === selectedEscalationId ? "queue-row active" : "queue-row"}
+                      onClick={() => setSelectedEscalationId(item.id)}
+                    >
+                      <strong>{item.callSession.callerPhone ?? t("common.none")}</strong>
+                      <span>{statusLabelKey(item.status) ? t(statusLabelKey(item.status)!) : item.status}</span>
+                      <small>{t("callCenter.waitingMinutes", { count: waitingMinutes })}</small>
+                    </button>
                   );
                 })}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <EmptyBlock message={t("callCenter.queueEmpty")} />
-        )}
-      </section>
-
-      <section className="card">
-        <div className="section-header">
-          <div>
-            <h2>{t("callCenter.selectedTitle")}</h2>
-            <p className="muted">
-              {selectedEscalation
-                ? `${selectedEscalation.salon.name} · ${selectedEscalation.callSession.callerPhone ?? t("callCenter.unknownCaller")}`
-                : isBasicMode
-                  ? t("callCenter.selectedBasicHint")
-                  : t("callCenter.selectedHintEmpty")}
-            </p>
-          </div>
-          <div className="inline-actions">
-            <button type="button" className="button-secondary" onClick={() => void loadQueue()}>
-              {t("callCenter.refreshQueue")}
-            </button>
-            <button
-              type="button"
-              className="button-primary"
-              onClick={() => void acceptQueueItem()}
-              disabled={!selectedEscalationId}
-            >
-              {t("callCenter.accept")}
-            </button>
-          </div>
-        </div>
+              </div>
+            ) : (
+              <EmptyBlock message={t("callCenter.queueEmpty")} />
+            )}
+          </article>
+        </section>
 
         {selectedEscalation ? (
-          <div className="stack">
-            <div className="metrics-grid">
-              <div>
-                <span className="muted">{t("common.status")}</span>
-                <strong>
-                  {statusLabelKey(selectedEscalation.status)
-                    ? t(statusLabelKey(selectedEscalation.status)!)
-                    : selectedEscalation.status}
-                </strong>
-              </div>
-              <div>
-                <span className="muted">{t("callCenter.callerPhone")}</span>
-                <strong>{selectedEscalation.callSession.callerPhone ?? t("common.none")}</strong>
-              </div>
-              {!isBasicMode ? (
-                <div>
-                  <span className="muted">{t("callCenter.routing")}</span>
-                  <strong>{translateRoutingOutcome(selectedEscalation.routingOutcome)}</strong>
-                </div>
-              ) : null}
-              <div>
-                <span className="muted">{t("callCenter.resolution")}</span>
-                <strong>{selectedEscalation.callSession.finalResolution ?? t("common.none")}</strong>
-              </div>
+          <section className="card">
+            <h3>{t("callCenter.notesTitle")}</h3>
+            <div className="form-grid two-columns">
+              <label className="field">
+                <span>{t("callCenter.operatorNotes")}</span>
+                <textarea
+                  rows={3}
+                  value={notesForm.operatorNotes}
+                  onChange={(event) => setNotesForm((prev) => ({ ...prev, operatorNotes: event.target.value }))}
+                />
+              </label>
+              <label className="field">
+                <span>{t("callCenter.resolution")}</span>
+                <textarea
+                  rows={3}
+                  value={notesForm.resolution}
+                  onChange={(event) => setNotesForm((prev) => ({ ...prev, resolution: event.target.value }))}
+                />
+              </label>
             </div>
+            <div className="inline-actions">
+              <button type="button" className="button-secondary" onClick={() => void saveNotes()}>
+                {t("callCenter.saveNotes")}
+              </button>
+              <button type="button" className="button-secondary" onClick={() => void requestCallback()}>
+                {t("callCenter.callbackRequest")}
+              </button>
+            </div>
+          </section>
+        ) : null}
 
-            <section className="card">
-              <h3>{t("callCenter.notesTitle")}</h3>
-              <div className="form-grid two-columns">
-                <label className="field">
-                  <span>{t("callCenter.operatorNotes")}</span>
-                  <textarea
-                    rows={4}
-                    value={notesForm.operatorNotes}
-                    onChange={(event) =>
-                      setNotesForm((prev) => ({ ...prev, operatorNotes: event.target.value }))
-                    }
-                  />
-                </label>
-                {!isBasicMode ? (
-                  <label className="field">
-                    <span>{t("callCenter.qaNotes")}</span>
-                    <textarea
-                      rows={4}
-                      value={notesForm.qaNotes}
-                      onChange={(event) =>
-                        setNotesForm((prev) => ({ ...prev, qaNotes: event.target.value }))
-                      }
-                    />
-                  </label>
-                ) : null}
-                <label className="field">
-                  <span>{t("callCenter.resolution")}</span>
-                  <textarea
-                    rows={3}
-                    value={notesForm.resolution}
-                    onChange={(event) =>
-                      setNotesForm((prev) => ({ ...prev, resolution: event.target.value }))
-                    }
-                  />
-                </label>
-              </div>
-              <div className="inline-actions">
-                <button type="button" className="button-secondary" onClick={() => void saveNotes()}>
-                  {t("callCenter.saveNotes")}
-                </button>
-                <button type="button" className="button-primary" onClick={() => void completeQueueItem()}>
-                  {t("callCenter.complete")}
-                </button>
-                {!isBasicMode ? (
-                  <>
-                    <button type="button" className="button-secondary" onClick={() => void requestCallback()}>
-                      {t("callCenter.callbackRequest")}
-                    </button>
-                    <button type="button" className="button-secondary" onClick={() => void captureVoicemail()}>
-                      {t("callCenter.saveVoicemail")}
-                    </button>
-                    <button type="button" className="button-secondary" onClick={() => void sendSmsFallback()}>
-                      {t("callCenter.sendSmsFallback")}
-                    </button>
-                  </>
-                ) : null}
-              </div>
-            </section>
+        <section className="card-grid operator-booking-grid">
+          <article className="card">
+            <h3>{t("callCenter.createCustomer")}</h3>
+            <form className="form-grid two-columns" onSubmit={createCustomer}>
+              <label className="field">
+                <span>{t("customers.firstName")}</span>
+                <input
+                  disabled={!hasSelectedSalon}
+                  value={customerForm.firstName}
+                  onChange={(event) => setCustomerForm((prev) => ({ ...prev, firstName: event.target.value }))}
+                  required
+                />
+              </label>
+              <label className="field">
+                <span>{t("customers.lastName")}</span>
+                <input
+                  disabled={!hasSelectedSalon}
+                  value={customerForm.lastName}
+                  onChange={(event) => setCustomerForm((prev) => ({ ...prev, lastName: event.target.value }))}
+                  required
+                />
+              </label>
+              <label className="field">
+                <span>{t("common.phone")}</span>
+                <input
+                  type="tel"
+                  inputMode="tel"
+                  disabled={!hasSelectedSalon}
+                  value={customerForm.phone}
+                  onChange={(event) =>
+                    setCustomerForm((prev) => ({
+                      ...prev,
+                      phone: formatUsPhoneInput(event.target.value)
+                    }))
+                  }
+                  required
+                />
+              </label>
+              <button type="submit" className="button-primary" disabled={!hasSelectedSalon}>
+                {t("callCenter.createCustomer")}
+              </button>
+            </form>
+          </article>
 
-            {!isBasicMode ? <section className="card-grid">
-              <article className="card">
-                <h3>{t("callCenter.transcript")}</h3>
-                {selectedEscalation.callSession.transcripts.length ? (
-                  <div className="stack">
-                    {selectedEscalation.callSession.transcripts.map((transcript) => (
-                      <article key={transcript.id} className="inspection-box">
-                        <h4>
-                          {transcript.transcriptSource} · {formatDateTime(transcript.createdAt)}
-                        </h4>
-                        {transcript.transcriptSummary ? <p>{transcript.transcriptSummary}</p> : null}
-                        <pre>{transcript.transcriptText}</pre>
-                      </article>
-                    ))}
-                  </div>
-                ) : (
-                  <EmptyBlock message={t("callCenter.transcriptEmpty")} />
-                )}
-              </article>
+          <article className="card">
+            <h3>{t("callCenter.createBooking")}</h3>
+            <form className="form-grid two-columns" onSubmit={createBooking}>
+              <label className="field">
+                <span>{t("appointments.customer")}</span>
+                <select
+                  disabled={!hasSelectedSalon}
+                  value={bookingForm.customerId}
+                  onChange={(event) => setBookingForm((prev) => ({ ...prev, customerId: event.target.value }))}
+                  required
+                >
+                  <option value="">{t("appointments.selectCustomer")}</option>
+                  {customers.map((customer) => (
+                    <option key={customer.id} value={customer.id}>
+                      {customer.firstName} {customer.lastName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>{t("appointments.staff")}</span>
+                <select
+                  disabled={!hasSelectedSalon}
+                  value={bookingForm.staffId}
+                  onChange={(event) => setBookingForm((prev) => ({ ...prev, staffId: event.target.value }))}
+                  required
+                >
+                  <option value="">{t("appointments.selectStaff")}</option>
+                  {staff.map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {member.fullName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>{t("appointments.service")}</span>
+                <select
+                  disabled={!hasSelectedSalon}
+                  value={bookingForm.serviceId}
+                  onChange={(event) => setBookingForm((prev) => ({ ...prev, serviceId: event.target.value }))}
+                  required
+                >
+                  <option value="">{t("appointments.selectService")}</option>
+                  {services.map((service) => (
+                    <option key={service.id} value={service.id}>
+                      {service.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>{t("appointments.start")}</span>
+                <input
+                  type="datetime-local"
+                  disabled={!hasSelectedSalon}
+                  value={bookingForm.startTime}
+                  onChange={(event) => setBookingForm((prev) => ({ ...prev, startTime: event.target.value }))}
+                  required
+                />
+              </label>
+              <button type="submit" className="button-primary" disabled={!hasSelectedSalon}>
+                {t("callCenter.createBooking")}
+              </button>
+            </form>
+          </article>
+        </section>
 
-              <article className="card">
-                <h3>{t("callCenter.aiSummary")}</h3>
-                <pre>{JSON.stringify(selectedEscalation.callSession.aiSummary ?? null, null, 2)}</pre>
-                <h4>{t("callCenter.recentAiInteractions")}</h4>
-                {selectedEscalation.callSession.aiInteractions.length ? (
-                  <div className="mobile-list">
-                    {selectedEscalation.callSession.aiInteractions.map((item) => (
-                      <article key={item.id} className="mobile-item">
-                        <strong>{item.taskType}</strong>
-                        <span>{item.model ?? t("callCenter.unknownModel")}</span>
-                        <small>{formatDateTime(item.createdAt)}</small>
-                      </article>
-                    ))}
-                  </div>
-                ) : (
-                  <EmptyBlock message={t("callCenter.aiInteractionsEmpty")} />
-                )}
-              </article>
-            </section> : null}
-
-            {!isBasicMode ? <section className="card-grid">
-              <article className="card">
-                <h3>{t("callCenter.customerLookup")}</h3>
-                {selectedEscalation.customerMatches.length ? (
-                  <div className="mobile-list">
-                    {selectedEscalation.customerMatches.map((customer) => (
-                      <article key={customer.id} className="mobile-item">
-                        <strong>
-                          {customer.firstName} {customer.lastName}
-                        </strong>
-                        <span>{customer.phone}</span>
-                      </article>
-                    ))}
-                  </div>
-                ) : (
-                  <EmptyBlock message={t("callCenter.customerLookupEmpty")} />
-                )}
-              </article>
-
-              <article className="card">
-                <h3>{t("callCenter.bookingAttempts")}</h3>
-                {selectedEscalation.callSession.bookingAttempts.length ? (
-                  <div className="mobile-list">
-                    {selectedEscalation.callSession.bookingAttempts.map((attempt) => (
-                      <article key={attempt.id} className="mobile-item">
-                        <strong>{statusLabelKey(attempt.status) ? t(statusLabelKey(attempt.status)!) : attempt.status}</strong>
-                        <span>{attempt.requestedService ?? t("callCenter.noService")}</span>
-                        <small>{attempt.failureReason ?? t("callCenter.noFailureReason")}</small>
-                      </article>
-                    ))}
-                  </div>
-                ) : (
-                  <EmptyBlock message={t("callCenter.bookingAttemptsEmpty")} />
-                )}
-              </article>
-            </section> : null}
+        <section className="card">
+          <div className="section-header compact-header">
+            <div>
+              <h2>Current schedule</h2>
+              <p className="muted">{selectedSalonName}</p>
+            </div>
+            <span className="summary-badge">{visibleAppointments.length} appointments</span>
           </div>
-        ) : (
-          <EmptyBlock message={t("callCenter.selectedEmpty")} />
-        )}
-      </section>
-
-      <section className="card-grid">
-        <article className="card">
-          <h2>{t("callCenter.createCustomer")}</h2>
-          <form className="form-grid two-columns" onSubmit={createCustomer}>
-            <label className="field">
-              <span>{t("customers.firstName")}</span>
-              <input
-                disabled={!hasSelectedSalon}
-                value={customerForm.firstName}
-                onChange={(event) => setCustomerForm((prev) => ({ ...prev, firstName: event.target.value }))}
-                required
-              />
-            </label>
-            <label className="field">
-              <span>{t("customers.lastName")}</span>
-              <input
-                disabled={!hasSelectedSalon}
-                value={customerForm.lastName}
-                onChange={(event) => setCustomerForm((prev) => ({ ...prev, lastName: event.target.value }))}
-                required
-              />
-            </label>
-            <label className="field">
-              <span>{t("common.phone")}</span>
-              <input
-                type="tel"
-                inputMode="tel"
-                disabled={!hasSelectedSalon}
-                value={customerForm.phone}
-                onChange={(event) =>
-                  setCustomerForm((prev) => ({
-                    ...prev,
-                    phone: formatUsPhoneInput(event.target.value)
-                  }))
-                }
-                required
-              />
-              <small>{t("form.phoneHint")}</small>
-            </label>
-            <button type="submit" className="button-primary" disabled={!hasSelectedSalon}>
-              {t("callCenter.createCustomer")}
-            </button>
-          </form>
-        </article>
-
-        <article className="card">
-          <h2>{t("callCenter.createBooking")}</h2>
-          <form className="form-grid two-columns" onSubmit={createBooking}>
-            <label className="field">
-              <span>{t("appointments.customer")}</span>
-              <select
-                disabled={!hasSelectedSalon}
-                value={bookingForm.customerId}
-                onChange={(event) => setBookingForm((prev) => ({ ...prev, customerId: event.target.value }))}
-                required
-              >
-                <option value="">{t("appointments.selectCustomer")}</option>
-                {customers.map((customer) => (
-                  <option key={customer.id} value={customer.id}>
-                    {customer.firstName} {customer.lastName}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field">
-              <span>{t("appointments.staff")}</span>
-              <select
-                disabled={!hasSelectedSalon}
-                value={bookingForm.staffId}
-                onChange={(event) => setBookingForm((prev) => ({ ...prev, staffId: event.target.value }))}
-                required
-              >
-                <option value="">{t("appointments.selectStaff")}</option>
-                {staff.map((member) => (
-                  <option key={member.id} value={member.id}>
-                    {member.fullName}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field">
-              <span>{t("appointments.service")}</span>
-              <select
-                disabled={!hasSelectedSalon}
-                value={bookingForm.serviceId}
-                onChange={(event) => setBookingForm((prev) => ({ ...prev, serviceId: event.target.value }))}
-                required
-              >
-                <option value="">{t("appointments.selectService")}</option>
-                {services.map((service) => (
-                  <option key={service.id} value={service.id}>
-                    {service.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field">
-              <span>{t("appointments.start")}</span>
-              <input
-                type="datetime-local"
-                disabled={!hasSelectedSalon}
-                value={bookingForm.startTime}
-                onChange={(event) => setBookingForm((prev) => ({ ...prev, startTime: event.target.value }))}
-                required
-              />
-            </label>
-            <button type="submit" className="button-primary" disabled={!hasSelectedSalon}>
-              {t("callCenter.createBooking")}
-            </button>
-          </form>
-        </article>
-      </section>
-
-      <section className="card">
-        <h2>{t("callCenter.appointmentsTitle")}</h2>
-        {visibleAppointments.length ? (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>{t("appointments.time")}</th>
-                  <th>{t("appointments.customer")}</th>
-                  <th>{t("appointments.staff")}</th>
-                  <th>{t("appointments.service")}</th>
-                  <th>{t("common.status")}</th>
-                  <th>{t("common.actions")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleAppointments.map((appointment) => (
-                  <tr key={appointment.id}>
-                    <td>{formatDateTime(appointment.startTime)}</td>
-                    <td>
-                      {appointment.customer.firstName} {appointment.customer.lastName}
-                    </td>
-                    <td>{appointment.staff.fullName}</td>
-                    <td>{appointment.service.name}</td>
-                    <td>{statusLabelKey(appointment.status) ? t(statusLabelKey(appointment.status)!) : appointment.status}</td>
-                    <td>
-                      <div className="inline-actions">
-                        <button type="button" className="button-secondary" onClick={() => void reschedule(appointment)}>
-                          {t("appointments.reschedule")}
-                        </button>
-                        <button
-                          type="button"
-                          className="button-secondary"
-                          onClick={() => void updateStatus(appointment.id, appointment.status)}
-                        >
-                          {t("appointments.updateStatus")}
-                        </button>
-                        <button type="button" className="button-secondary" onClick={() => void cancel(appointment)}>
-                          {t("appointments.cancel")}
-                        </button>
-                      </div>
-                    </td>
+          {visibleAppointments.length ? (
+            <div className="table-wrap compact-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>{t("appointments.time")}</th>
+                    <th>{t("appointments.customer")}</th>
+                    <th>{t("appointments.staff")}</th>
+                    <th>{t("appointments.service")}</th>
+                    <th>{t("common.status")}</th>
+                    <th>{t("common.actions")}</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <EmptyBlock message={t("callCenter.appointmentsEmpty")} />
-        )}
-      </section>
+                </thead>
+                <tbody>
+                  {visibleAppointments.map((appointment) => (
+                    <tr key={appointment.id}>
+                      <td>{formatDateTime(appointment.startTime)}</td>
+                      <td>{appointment.customer.firstName} {appointment.customer.lastName}</td>
+                      <td>{appointment.staff.fullName}</td>
+                      <td>{appointment.service.name}</td>
+                      <td>{statusLabelKey(appointment.status) ? t(statusLabelKey(appointment.status)!) : appointment.status}</td>
+                      <td>
+                        <div className="inline-actions compact-actions">
+                          <button type="button" className="button-secondary" onClick={() => void reschedule(appointment)}>
+                            {t("appointments.reschedule")}
+                          </button>
+                          <button type="button" className="button-secondary" onClick={() => void updateStatus(appointment.id, appointment.status)}>
+                            {t("appointments.updateStatus")}
+                          </button>
+                          <button type="button" className="button-secondary" onClick={() => void cancel(appointment)}>
+                            {t("appointments.cancel")}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <EmptyBlock message={t("callCenter.appointmentsEmpty")} />
+          )}
+        </section>
+      </main>
     </div>
   );
 };

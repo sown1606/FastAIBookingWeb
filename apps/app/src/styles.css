@@ -952,6 +952,123 @@ pre {
   gap: 16px;
 }
 
+.operator-workspace {
+  display: grid;
+  gap: 16px;
+  align-items: start;
+}
+
+.operator-context-panel,
+.operator-main-panel,
+.operator-call-card,
+.operator-info-list,
+.operator-context-section,
+.compact-queue-list {
+  display: grid;
+  gap: 12px;
+}
+
+.operator-context-panel {
+  position: sticky;
+  top: 14px;
+}
+
+.compact-header {
+  gap: 10px;
+}
+
+.operator-info-list > div {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.operator-info-list strong,
+.compact-list span,
+.queue-row strong,
+.queue-row span {
+  overflow-wrap: anywhere;
+}
+
+.operator-context-section h3 {
+  margin: 0;
+  font-size: 0.92rem;
+}
+
+.compact-list {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.compact-list span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.operator-action-bar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.operator-top-grid,
+.operator-booking-grid {
+  align-items: start;
+}
+
+.queue-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  color: var(--text);
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+.queue-row.active {
+  border-color: var(--primary);
+  background: var(--surface-tint);
+}
+
+.queue-row small {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.compact-table th,
+.compact-table td {
+  padding: 9px 10px;
+}
+
+.compact-actions {
+  gap: 6px;
+}
+
+.compact-actions .button-secondary {
+  min-height: 32px;
+  padding: 6px 8px;
+  font-size: 0.78rem;
+}
+
 .operator-focus-grid {
   display: grid;
   gap: 12px;
@@ -1857,6 +1974,14 @@ pre {
 
   .operator-focus-grid {
     grid-template-columns: minmax(280px, 420px) minmax(0, 1fr);
+  }
+
+  .operator-workspace {
+    grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+  }
+
+  .operator-top-grid {
+    grid-template-columns: minmax(0, 1.25fr) minmax(260px, 0.75fr);
   }
 
   .call-center-next-steps,

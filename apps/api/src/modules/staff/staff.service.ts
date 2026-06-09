@@ -98,6 +98,29 @@ export const createStaff = async (
       }
     });
 
+    if (staff.isBookable && staff.status === StaffStatus.ACTIVE) {
+      const activeServices = await tx.service.findMany({
+        where: {
+          salonId,
+          isActive: true
+        },
+        select: {
+          id: true
+        }
+      });
+
+      if (activeServices.length) {
+        await tx.staffService.createMany({
+          data: activeServices.map((service) => ({
+            salonId,
+            staffId: staff.id,
+            serviceId: service.id
+          })),
+          skipDuplicates: true
+        });
+      }
+    }
+
     if (shouldCreateLogin && normalizedEmail) {
       const passwordHash = await hashPassword(temporaryPassword);
       await tx.user.create({
