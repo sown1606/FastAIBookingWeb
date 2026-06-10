@@ -1071,6 +1071,71 @@ pre {
   font-size: 0.92rem;
 }
 
+.operator-context-section h4 {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.operator-context-card,
+.selected-call-card,
+.queue-card,
+.operator-booking-card,
+.operator-schedule-card,
+.ccp-panel,
+.operator-staff-group,
+.operator-staff-card,
+.staff-schedule-group,
+.appointment-operator-card,
+.service-chip-list,
+.weekly-hours-list,
+.operator-customer-matches,
+.operator-booking-hints,
+.staff-schedule-list,
+.appointment-card-list,
+.schedule-highlight-row {
+  display: grid;
+  gap: 10px;
+}
+
+.ccp-panel {
+  min-width: 0;
+}
+
+.ccp-frame {
+  min-height: 320px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.ccp-frame iframe {
+  width: 100%;
+  min-height: 320px;
+}
+
+.ccp-frame-placeholder {
+  min-height: 320px;
+  display: grid;
+  place-items: center;
+  gap: 8px;
+  padding: 20px;
+  text-align: center;
+  color: var(--muted);
+  background: var(--surface-soft);
+}
+
+.ccp-frame-placeholder strong {
+  color: var(--text);
+}
+
+.ccp-status-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .compact-list {
   display: flex;
   gap: 6px;
@@ -1099,6 +1164,8 @@ pre {
 
 .operator-top-grid,
 .operator-booking-grid {
+  display: grid;
+  gap: 16px;
   align-items: start;
 }
 
@@ -1115,6 +1182,22 @@ pre {
   color: var(--text);
   padding: 10px 12px;
   cursor: pointer;
+}
+
+.queue-row-main {
+  display: grid;
+  gap: 2px;
+}
+
+.queue-row p,
+.queue-row .inline-actions {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.queue-row p {
+  color: var(--muted);
+  font-size: 0.84rem;
 }
 
 .queue-row.active {
@@ -1140,6 +1223,126 @@ pre {
   min-height: 32px;
   padding: 6px 8px;
   font-size: 0.78rem;
+}
+
+.compact-note-form {
+  gap: 10px;
+}
+
+.operator-staff-card,
+.staff-schedule-group,
+.appointment-operator-card,
+.service-chip-list > span,
+.weekly-hours-list > span,
+.operator-booking-hints,
+.customer-match-pill {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-soft);
+  padding: 10px 12px;
+}
+
+.operator-staff-card.ready,
+.appointment-operator-card.current {
+  border-color: rgba(34, 197, 94, 0.45);
+  background: #f0fdf4;
+}
+
+.operator-staff-card > div:first-child,
+.appointment-operator-card > div:first-child,
+.appointment-operator-card > div:nth-child(2) {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.operator-staff-card small,
+.service-chip-list small,
+.appointment-operator-card p {
+  color: var(--muted);
+}
+
+.staff-card-meta,
+.date-control-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.staff-card-meta span,
+.schedule-highlight-row span {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 5px 8px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.service-chip-list {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.service-chip-list > span {
+  display: grid;
+  gap: 3px;
+}
+
+.weekly-hours-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.weekly-hours-list > span {
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.operator-customer-matches {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  align-items: center;
+}
+
+.operator-customer-matches > strong {
+  grid-column: 1 / -1;
+}
+
+.customer-match-pill {
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.operator-booking-card h4 {
+  margin: 0;
+  grid-column: 1 / -1;
+}
+
+.span-two {
+  grid-column: 1 / -1;
+}
+
+.operator-booking-hints {
+  background: #f8fafc;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.schedule-highlight-row {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.appointment-card-list {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.appointment-operator-card {
+  background: var(--surface);
 }
 
 .operator-focus-grid {
@@ -2074,11 +2277,19 @@ pre {
   }
 
   .operator-workspace {
-    grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+    grid-template-columns: minmax(320px, 390px) minmax(0, 1fr);
+  }
+
+  .operator-context-panel {
+    max-width: 400px;
   }
 
   .operator-top-grid {
-    grid-template-columns: minmax(0, 1.25fr) minmax(260px, 0.75fr);
+    grid-template-columns: minmax(280px, 0.9fr) minmax(320px, 1.1fr) minmax(280px, 0.9fr);
+  }
+
+  .operator-booking-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .call-center-next-steps,

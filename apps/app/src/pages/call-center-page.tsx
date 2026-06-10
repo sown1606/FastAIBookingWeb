@@ -1,9 +1,9 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiGet, apiPatch, apiPost, extractErrorMessage } from "../lib/api";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
 import { useToast } from "../components/toast";
-import { formatDateTime } from "../lib/format";
+import { formatCurrencyCents, formatDateTime } from "../lib/format";
 import { toDateTimeLocalValue, useFormDialog } from "../components/form-dialog";
 import { formatUsPhoneInput, validateOptionalUsPhone } from "../lib/phone";
 import { useAuth } from "../auth/auth-context";
@@ -123,6 +123,8 @@ interface CustomersResponse {
 interface AppointmentItem {
   id: string;
   startTime: string;
+  endTime?: string | null;
+  notes?: string | null;
   status: string;
   customer: CustomerItem;
   staff: StaffItem;
@@ -140,6 +142,9 @@ interface QueueItem {
   requestedAt: string;
   connectedAt: string | null;
   closedAt: string | null;
+  escalationReason?: string | null;
+  messageToCaller?: string | null;
+  customerPhone?: string | null;
   salon: {
     id: string;
     name: string;
@@ -218,6 +223,346 @@ interface EscalationDetail {
   customerMatches: CustomerItem[];
 }
 
+type AmazonConnectState = {
+  name?: string;
+  type?: string;
+};
+
+type AmazonConnectStateChange = {
+  newState?: AmazonConnectState;
+};
+
+type AmazonConnectEndpoint = {
+  phoneNumber?: string;
+};
+
+type AmazonConnectConnection = {
+  getEndpoint?: () => AmazonConnectEndpoint | null;
+};
+
+type AmazonConnectContact = {
+  getContactId?: () => string;
+  getStatus?: () => AmazonConnectState;
+  getState?: () => AmazonConnectState;
+  getConnections?: () => AmazonConnectConnection[];
+  onConnected?: (callback: (contact: AmazonConnectContact) => void) => unknown;
+  onEnded?: (callback: (contact: AmazonConnectContact) => void) => unknown;
+  onRefresh?: (callback: (contact: AmazonConnectContact) => void) => unknown;
+};
+
+type AmazonConnectAgent = {
+  getStatus?: () => AmazonConnectState;
+  getState?: () => AmazonConnectState;
+  onStateChange?: (callback: (stateChange: AmazonConnectStateChange) => void) => unknown;
+  onRefresh?: (callback: (agent: AmazonConnectAgent) => void) => unknown;
+};
+
+type AmazonConnectGlobal = {
+  core?: {
+    initCCP?: (
+      container: HTMLElement,
+      options: {
+        ccpUrl: string;
+        region?: string;
+        loginPopup: boolean;
+        loginPopupAutoClose: boolean;
+        softphone: {
+          allowFramedSoftphone: boolean;
+        };
+      }
+    ) => void;
+  };
+  agent?: (callback: (agent: AmazonConnectAgent) => void) => unknown;
+  contact?: (callback: (contact: AmazonConnectContact) => void) => unknown;
+};
+
+const FALLBACK_SALON_TIMEZONE = "America/New_York";
+const ACTIVE_APPOINTMENT_STATUSES = new Set(["SCHEDULED", "CONFIRMED", "IN_PROGRESS"]);
+
+const getAmazonConnect = (): AmazonConnectGlobal | undefined => {
+  return (globalThis as typeof globalThis & { connect?: AmazonConnectGlobal }).connect;
+};
+
+const normalizeCcpUrl = (value: string | null | undefined): string | null => {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const withoutTrailingSlash = trimmed.replace(/\/+$/, "");
+  if (withoutTrailingSlash.includes("/ccp-v2")) {
+    return `${withoutTrailingSlash.replace(/\/+$/, "")}/`;
+  }
+  return `${withoutTrailingSlash}/ccp-v2/`;
+};
+
+const getDateKeyInTimezone = (date: Date, timezone = FALLBACK_SALON_TIMEZONE): string => {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value ?? String(date.getFullYear());
+  const month = parts.find((part) => part.type === "month")?.value ?? String(date.getMonth() + 1).padStart(2, "0");
+  const day = parts.find((part) => part.type === "day")?.value ?? String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const addDaysToDateKey = (dateKey: string, days: number): string => {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day + days, 12));
+  return date.toISOString().slice(0, 10);
+};
+
+const buildAppointmentDateQuery = (dateKey: string): string => {
+  const dateFrom = new Date(`${addDaysToDateKey(dateKey, -1)}T00:00:00.000Z`);
+  const dateTo = new Date(`${addDaysToDateKey(dateKey, 2)}T00:00:00.000Z`);
+  const params = new URLSearchParams({
+    page: "1",
+    limit: "100",
+    dateFrom: dateFrom.toISOString(),
+    dateTo: dateTo.toISOString()
+  });
+  return params.toString();
+};
+
+const formatTimeRange = (appointment: AppointmentItem, timezone: string): string => {
+  const start = new Date(appointment.startTime);
+  const durationMinutes = appointment.service.durationMinutes ?? 0;
+  const end = appointment.endTime
+    ? new Date(appointment.endTime)
+    : new Date(start.getTime() + durationMinutes * 60000);
+  const formatter = new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: timezone
+  });
+  if (Number.isNaN(start.getTime())) {
+    return "-";
+  }
+  return Number.isNaN(end.getTime()) ? formatter.format(start) : `${formatter.format(start)} - ${formatter.format(end)}`;
+};
+
+const formatDateKeyLabel = (dateKey: string): string => {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day, 12));
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric"
+  }).format(date);
+};
+
+const getStateName = (state: AmazonConnectState | undefined): string | null => {
+  return state?.name ?? state?.type ?? null;
+};
+
+const getCallerPhoneFromContact = (contact: AmazonConnectContact): string | null => {
+  const connections = contact.getConnections?.() ?? [];
+  for (const connection of connections) {
+    const phoneNumber = connection.getEndpoint?.()?.phoneNumber;
+    if (phoneNumber) {
+      return phoneNumber;
+    }
+  }
+  return null;
+};
+
+const getQueueCallerPhone = (item: QueueItem | EscalationDetail | null): string | null => {
+  if (!item) {
+    return null;
+  }
+  return item.callSession.callerPhone ?? item.customerPhone ?? null;
+};
+
+const getWaitingMinutes = (item: QueueItem | EscalationDetail): number => {
+  const reference =
+    item.status === "CLOSED"
+      ? item.closedAt ?? new Date().toISOString()
+      : item.connectedAt ?? new Date().toISOString();
+  return Math.max(0, Math.round((new Date(reference).getTime() - new Date(item.requestedAt).getTime()) / 60000));
+};
+
+interface AmazonConnectCcpPanelProps {
+  ccpUrl: string | null;
+  region: string | null | undefined;
+  enabled: boolean;
+  onQueueMatch: (item: QueueItem) => void;
+}
+
+const AmazonConnectCcpPanel = ({ ccpUrl, region, enabled, onQueueMatch }: AmazonConnectCcpPanelProps) => {
+  const { t } = useI18n();
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const lastMatchKeyRef = useRef("");
+  const [ccpStatus, setCcpStatus] = useState<"disabled" | "loading" | "ready" | "error">("disabled");
+  const [ccpWarning, setCcpWarning] = useState("");
+  const [agentStatus, setAgentStatus] = useState("");
+  const [contactStatus, setContactStatus] = useState("");
+  const [activeContactId, setActiveContactId] = useState("");
+  const [activeCallerPhone, setActiveCallerPhone] = useState("");
+
+  const normalizedCcpUrl = useMemo(() => normalizeCcpUrl(ccpUrl), [ccpUrl]);
+
+  const matchActiveContact = useCallback(
+    async (callerPhone: string | null, amazonConnectContactId: string | null) => {
+      if (!callerPhone && !amazonConnectContactId) {
+        return;
+      }
+      const matchKey = `${callerPhone ?? ""}:${amazonConnectContactId ?? ""}`;
+      if (lastMatchKeyRef.current === matchKey) {
+        return;
+      }
+      lastMatchKeyRef.current = matchKey;
+
+      const params = new URLSearchParams();
+      if (callerPhone) {
+        params.set("callerPhone", callerPhone);
+      }
+      if (amazonConnectContactId) {
+        params.set("amazonConnectContactId", amazonConnectContactId);
+      }
+
+      try {
+        const match = await apiGet<QueueItem | null>(`/api/v1/call-center/queue/match?${params.toString()}`);
+        if (match?.id) {
+          onQueueMatch(match);
+        }
+      } catch {
+        lastMatchKeyRef.current = "";
+      }
+    },
+    [onQueueMatch]
+  );
+
+  useEffect(() => {
+    if (!enabled || !normalizedCcpUrl || !containerRef.current) {
+      setCcpStatus("disabled");
+      return;
+    }
+
+    let cancelled = false;
+    setCcpStatus("loading");
+    setCcpWarning("");
+
+    const init = async () => {
+      try {
+        await import("amazon-connect-streams");
+        const amazonConnect = getAmazonConnect();
+        if (!amazonConnect?.core?.initCCP) {
+          throw new Error("Amazon Connect Streams global is unavailable.");
+        }
+        if (cancelled || !containerRef.current) {
+          return;
+        }
+
+        amazonConnect.core.initCCP(containerRef.current, {
+          ccpUrl: normalizedCcpUrl,
+          region: region ?? undefined,
+          loginPopup: true,
+          loginPopupAutoClose: true,
+          softphone: {
+            allowFramedSoftphone: true
+          }
+        });
+        setCcpStatus("ready");
+
+        amazonConnect.agent?.((agent) => {
+          const updateAgentStatus = (state?: AmazonConnectState) => {
+            setAgentStatus(getStateName(state ?? agent.getStatus?.() ?? agent.getState?.()) ?? "");
+          };
+          updateAgentStatus();
+          agent.onStateChange?.((stateChange) => updateAgentStatus(stateChange.newState));
+          agent.onRefresh?.((nextAgent) => updateAgentStatus(nextAgent.getStatus?.() ?? nextAgent.getState?.()));
+        });
+
+        amazonConnect.contact?.((contact) => {
+          const updateContact = (nextContact: AmazonConnectContact) => {
+            const contactId = nextContact.getContactId?.() ?? "";
+            const callerPhone = getCallerPhoneFromContact(nextContact);
+            setActiveContactId(contactId);
+            setActiveCallerPhone(callerPhone ?? "");
+            setContactStatus(getStateName(nextContact.getStatus?.() ?? nextContact.getState?.()) ?? "");
+            void matchActiveContact(callerPhone, contactId || null);
+          };
+          updateContact(contact);
+          contact.onConnected?.(updateContact);
+          contact.onRefresh?.(updateContact);
+          contact.onEnded?.(updateContact);
+        });
+      } catch {
+        if (!cancelled) {
+          setCcpStatus("error");
+          setCcpWarning(t("callCenter.errorCcpInit"));
+        }
+      }
+    };
+
+    void init();
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled, matchActiveContact, normalizedCcpUrl, region, t]);
+
+  const statusLabel =
+    ccpStatus === "ready"
+      ? t("callCenter.ccpStatusReady")
+      : ccpStatus === "loading"
+        ? t("callCenter.ccpStatusLoading")
+        : ccpStatus === "error"
+          ? t("callCenter.ccpStatusError")
+          : t("callCenter.ccpStatusDisabled");
+
+  return (
+    <article className="card ccp-panel">
+      <div className="section-header compact-header">
+        <div>
+          <h3>{t("callCenter.softphoneTitle")}</h3>
+          <p className="muted">{t("callCenter.ccpApprovedOriginHint")}</p>
+        </div>
+        <span className={ccpStatus === "ready" ? "status-pill success" : ccpStatus === "error" ? "status-pill warning" : "status-pill info"}>
+          {statusLabel}
+        </span>
+      </div>
+
+      <div className="ccp-frame" ref={containerRef}>
+        {!enabled || !normalizedCcpUrl ? (
+          <div className="ccp-frame-placeholder">
+            <strong>{t("callCenter.softphoneDisabled")}</strong>
+            <span>{t("callCenter.softphoneMissingRuntimeInfo")}</span>
+          </div>
+        ) : null}
+      </div>
+
+      {ccpWarning ? <p className="form-error">{ccpWarning}</p> : null}
+
+      <div className="operator-info-list ccp-status-grid">
+        <div>
+          <span className="muted">{t("callCenter.agentState")}</span>
+          <strong>{agentStatus || t("common.none")}</strong>
+        </div>
+        <div>
+          <span className="muted">{t("callCenter.contactState")}</span>
+          <strong>{contactStatus || t("common.none")}</strong>
+        </div>
+        <div>
+          <span className="muted">{t("callCenter.contactId")}</span>
+          <strong>{activeContactId || t("common.none")}</strong>
+        </div>
+        <div>
+          <span className="muted">{t("callCenter.callerPhone")}</span>
+          <strong>{activeCallerPhone || t("common.none")}</strong>
+        </div>
+      </div>
+
+      {normalizedCcpUrl ? (
+        <a href={normalizedCcpUrl} target="_blank" rel="noreferrer" className="button-secondary">
+          {t("callCenter.ccpLink")}
+        </a>
+      ) : null}
+    </article>
+  );
+};
+
 export const CallCenterPage = () => {
   const { session } = useAuth();
   const { notify } = useToast();
@@ -238,6 +583,7 @@ export const CallCenterPage = () => {
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [selectedEscalationId, setSelectedEscalationId] = useState("");
   const [selectedEscalation, setSelectedEscalation] = useState<EscalationDetail | null>(null);
+  const [scheduleDateKey, setScheduleDateKey] = useState(() => getDateKeyInTimezone(new Date()));
   const [customerForm, setCustomerForm] = useState({
     firstName: "",
     lastName: "",
@@ -247,18 +593,17 @@ export const CallCenterPage = () => {
     customerId: "",
     staffId: "",
     serviceId: "",
-    startTime: ""
+    startTime: "",
+    notes: ""
   });
   const [notesForm, setNotesForm] = useState({
     operatorNotes: "",
     qaNotes: "",
     resolution: ""
   });
-  const [ccpError] = useState("");
   const isOwner = session?.user.role === "SALON_OWNER";
   const configuredCcpUrl = import.meta.env.VITE_AMAZON_CONNECT_CCP_URL?.trim();
   const ccpUrl = configuredCcpUrl || runtime?.amazonConnect.ccpUrl || null;
-  const ccpSettingsUrl = ccpUrl ? `${ccpUrl.replace(/\/+$/, "")}/settings` : null;
 
   const appointmentStatusOptions = useMemo(
     () => ["SCHEDULED", "CONFIRMED", "CANCELED", "NO_SHOW"].map((value) => ({
@@ -298,24 +643,24 @@ export const CallCenterPage = () => {
       .join(", ") || t("common.none");
   };
 
-  const dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const getBusinessDayLabel = (dayOfWeek: number) => {
+    const key = `callCenter.weekday.${dayOfWeek}` as Parameters<typeof t>[0];
+    return t(key);
+  };
+
   const formatBusinessHour = (hour: SalonDetailResponse["businessHours"][number]) => {
-    const day = dayLabels[hour.dayOfWeek] ?? String(hour.dayOfWeek);
+    const day = getBusinessDayLabel(hour.dayOfWeek);
     return hour.isOpen && hour.openTime && hour.closeTime
       ? `${day}: ${hour.openTime} - ${hour.closeTime}`
-      : `${day}: Closed`;
+      : `${day}: ${t("callCenter.closed")}`;
   };
 
   const getTodayDayOfWeek = (timezone: string) => {
-    const label = new Intl.DateTimeFormat("en-US", {
-      weekday: "short",
-      timeZone: timezone
-    }).format(new Date());
-    const dayIndex = dayLabels.findIndex((day) => day === label);
-    return dayIndex >= 0 ? dayIndex : new Date().getDay();
+    const todayKey = getDateKeyInTimezone(new Date(), timezone);
+    return new Date(`${todayKey}T12:00:00.000Z`).getUTCDay();
   };
 
-  const summarizeUnknown = (value: unknown): string => {
+  const formatAiSummary = (value: unknown, allowJsonFallback = false): string => {
     if (!value) {
       return t("common.none");
     }
@@ -324,14 +669,37 @@ export const CallCenterPage = () => {
     }
     if (typeof value === "object") {
       const record = value as Record<string, unknown>;
-      const readable =
-        record.summary ??
-        record.aiSummary ??
-        record.intent ??
-        record.result ??
-        record.message;
-      if (typeof readable === "string" && readable.trim()) {
-        return readable;
+      const fields: Array<[string, Parameters<typeof t>[0]]> = [
+        ["summary", "callCenter.summary"],
+        ["aiSummary", "callCenter.summary"],
+        ["transcriptSummary", "calls.transcriptSummary"],
+        ["intent", "callCenter.intent"],
+        ["customerIntent", "callCenter.intent"],
+        ["requestedService", "appointments.service"],
+        ["requestedStaff", "appointments.staff"],
+        ["requestedTime", "appointments.time"],
+        ["message", "callCenter.message"],
+        ["result", "callCenter.result"]
+      ];
+      const readableParts = fields
+        .map(([field, labelKey]) => {
+          const fieldValue = record[field];
+          if (typeof fieldValue === "string" && fieldValue.trim()) {
+            return `${t(labelKey)}: ${fieldValue}`;
+          }
+          if (typeof fieldValue === "number" || typeof fieldValue === "boolean") {
+            return `${t(labelKey)}: ${String(fieldValue)}`;
+          }
+          return null;
+        })
+        .filter((item): item is string => Boolean(item));
+
+      if (readableParts.length) {
+        return readableParts.join(" · ");
+      }
+
+      if (!allowJsonFallback) {
+        return t("callCenter.aiSummaryUnavailable");
       }
       try {
         const serialized = JSON.stringify(value);
@@ -348,21 +716,27 @@ export const CallCenterPage = () => {
 
   const formatStaffStatus = (member: StaffItem) => {
     if (member.status && member.status !== "ACTIVE") {
-      return member.status;
+      return statusLabelKey(member.status) ? t(statusLabelKey(member.status)!) : member.status;
     }
     if (member.isBookable === false) {
-      return "Not bookable";
+      return t("callCenter.notBookable");
     }
-    return member.currentWorkStatus || "ACTIVE";
+    if (!member.currentWorkStatus || member.currentWorkStatus === "AVAILABLE") {
+      return t("callCenter.availableNow");
+    }
+    return statusLabelKey(member.currentWorkStatus)
+      ? t(statusLabelKey(member.currentWorkStatus)!)
+      : member.currentWorkStatus;
   };
 
-  const loadSalonData = async (salonId: string) => {
+  const loadSalonData = async (salonId: string, dateKey = scheduleDateKey) => {
+    const appointmentQuery = buildAppointmentDateQuery(dateKey);
     const [salonDetail, staffItems, serviceItems, customerItems, appointmentItems] = await Promise.all([
       apiGet<SalonDetailResponse>(`/api/v1/call-center/salons/${salonId}`),
       apiGet<StaffItem[]>(`/api/v1/call-center/salons/${salonId}/staff`),
       apiGet<ServiceItem[]>(`/api/v1/call-center/salons/${salonId}/services`),
       apiGet<CustomersResponse>(`/api/v1/call-center/salons/${salonId}/customers?page=1&limit=100`),
-      apiGet<AppointmentsResponse>(`/api/v1/call-center/salons/${salonId}/appointments?page=1&limit=50`)
+      apiGet<AppointmentsResponse>(`/api/v1/call-center/salons/${salonId}/appointments?${appointmentQuery}`)
     ]);
 
     setSelectedSalonDetail(salonDetail);
@@ -396,11 +770,25 @@ export const CallCenterPage = () => {
       resolution: detail.resolution ?? ""
     });
     setSelectedSalonId(detail.salon.id);
+    const callerPhone = detail.customerPhone ?? detail.callSession.callerPhone ?? detail.callbackPhone ?? "";
     setBookingForm((prev) => ({
       ...prev,
       customerId: detail.customerMatches[0]?.id ?? prev.customerId
     }));
-    await loadSalonData(detail.salon.id);
+    if (!detail.customerMatches.length && callerPhone) {
+      setCustomerForm((prev) => ({
+        ...prev,
+        phone: prev.phone || formatUsPhoneInput(callerPhone)
+      }));
+    }
+    await loadSalonData(detail.salon.id, scheduleDateKey);
+    if (detail.customerMatches.length) {
+      setCustomers((prev) => {
+        const existingIds = new Set(prev.map((customer) => customer.id));
+        const missingMatches = detail.customerMatches.filter((customer) => !existingIds.has(customer.id));
+        return missingMatches.length ? [...missingMatches, ...prev] : prev;
+      });
+    }
   };
 
   const load = async () => {
@@ -443,7 +831,19 @@ export const CallCenterPage = () => {
   const changeSalon = async (salonId: string) => {
     setSelectedSalonId(salonId);
     try {
-      await loadSalonData(salonId);
+      await loadSalonData(salonId, scheduleDateKey);
+    } catch (changeError) {
+      notify("error", extractErrorMessage(changeError));
+    }
+  };
+
+  const changeScheduleDate = async (dateKey: string) => {
+    setScheduleDateKey(dateKey);
+    if (!selectedSalonId) {
+      return;
+    }
+    try {
+      await loadSalonData(selectedSalonId, dateKey);
     } catch (changeError) {
       notify("error", extractErrorMessage(changeError));
     }
@@ -483,8 +883,8 @@ export const CallCenterPage = () => {
         startTime: new Date(bookingForm.startTime).toISOString(),
         status: "CONFIRMED"
       });
-      setBookingForm({ customerId: "", staffId: "", serviceId: "", startTime: "" });
-      await loadSalonData(selectedSalonId);
+      setBookingForm({ customerId: "", staffId: "", serviceId: "", startTime: "", notes: "" });
+      await loadSalonData(selectedSalonId, scheduleDateKey);
       if (selectedEscalationId) {
         await loadEscalationDetail(selectedEscalationId);
       }
@@ -513,7 +913,7 @@ export const CallCenterPage = () => {
       await apiPatch(`/api/v1/call-center/salons/${selectedSalonId}/appointments/${appointment.id}/reschedule`, {
         startTime: new Date(values.startTime).toISOString()
       });
-      await loadSalonData(selectedSalonId);
+      await loadSalonData(selectedSalonId, scheduleDateKey);
       notify("success", t("callCenter.rescheduled"));
     } catch (rescheduleError) {
       notify("error", extractErrorMessage(rescheduleError));
@@ -546,7 +946,7 @@ export const CallCenterPage = () => {
       await apiPatch(`/api/v1/call-center/salons/${selectedSalonId}/appointments/${appointmentId}`, {
         status: values.status
       });
-      await loadSalonData(selectedSalonId);
+      await loadSalonData(selectedSalonId, scheduleDateKey);
       notify("success", t("callCenter.updated"));
     } catch (updateError) {
       notify("error", extractErrorMessage(updateError));
@@ -572,21 +972,22 @@ export const CallCenterPage = () => {
       await apiPatch(`/api/v1/call-center/salons/${selectedSalonId}/appointments/${appointment.id}/cancel`, {
         reason: values.reason || undefined
       });
-      await loadSalonData(selectedSalonId);
+      await loadSalonData(selectedSalonId, scheduleDateKey);
       notify("success", t("callCenter.canceled"));
     } catch (cancelError) {
       notify("error", extractErrorMessage(cancelError));
     }
   };
 
-  const acceptQueueItem = async () => {
-    if (!selectedEscalationId) {
+  const acceptQueueItem = async (queueItemId = selectedEscalationId) => {
+    if (!queueItemId) {
       return;
     }
 
     try {
-      await apiPost(`/api/v1/call-center/queue/${selectedEscalationId}/accept`, {});
-      await Promise.all([loadQueue(), loadEscalationDetail(selectedEscalationId)]);
+      await apiPost(`/api/v1/call-center/queue/${queueItemId}/accept`, {});
+      setSelectedEscalationId(queueItemId);
+      await Promise.all([loadQueue(), loadEscalationDetail(queueItemId)]);
       notify("success", t("callCenter.accepted"));
     } catch (acceptError) {
       notify("error", extractErrorMessage(acceptError));
@@ -607,18 +1008,20 @@ export const CallCenterPage = () => {
     }
   };
 
-  const completeQueueItem = async () => {
-    if (!selectedEscalationId) {
+  const completeQueueItem = async (queueItemId = selectedEscalationId) => {
+    if (!queueItemId) {
       return;
     }
+    const isSelectedItem = queueItemId === selectedEscalationId;
 
     try {
-      await apiPost(`/api/v1/call-center/queue/${selectedEscalationId}/complete`, {
-        resolution: notesForm.resolution || t("callCenter.completeDefaultResolution"),
-        operatorNotes: notesForm.operatorNotes || null,
-        qaNotes: notesForm.qaNotes || null
+      await apiPost(`/api/v1/call-center/queue/${queueItemId}/complete`, {
+        resolution: isSelectedItem && notesForm.resolution ? notesForm.resolution : t("callCenter.completeDefaultResolution"),
+        operatorNotes: isSelectedItem && notesForm.operatorNotes ? notesForm.operatorNotes : null,
+        qaNotes: isSelectedItem && notesForm.qaNotes ? notesForm.qaNotes : null
       });
-      await Promise.all([loadQueue(), loadEscalationDetail(selectedEscalationId)]);
+      setSelectedEscalationId(queueItemId);
+      await Promise.all([loadQueue(), loadEscalationDetail(queueItemId)]);
       notify("success", t("callCenter.completed"));
     } catch (completeError) {
       notify("error", extractErrorMessage(completeError));
@@ -763,11 +1166,22 @@ export const CallCenterPage = () => {
     }
   };
 
-  const selectedSalonQueue = selectedSalonId
-    ? queue.filter((item) => item.salon.id === selectedSalonId)
-    : queue;
+  const handleQueueMatch = useCallback((item: QueueItem) => {
+    setQueue((prev) => {
+      const existingIndex = prev.findIndex((queueItem) => queueItem.id === item.id);
+      if (existingIndex === -1) {
+        return [item, ...prev];
+      }
+      return prev.map((queueItem) => (queueItem.id === item.id ? item : queueItem));
+    });
+    setSelectedSalonId(item.salon.id);
+    setSelectedEscalationId(item.id);
+  }, []);
+
+  const salonTimezone = selectedSalonDetail?.timezone || FALLBACK_SALON_TIMEZONE;
+  const todayDateKey = getDateKeyInTimezone(new Date(), salonTimezone);
+  const selectedSalonQueue = selectedSalonId ? queue.filter((item) => item.salon.id === selectedSalonId) : queue;
   const openRequests = selectedSalonQueue.filter((item) => item.status !== "CLOSED").length;
-  const availableStaffCount = staff.filter((member) => member.currentWorkStatus === "AVAILABLE").length;
   const amazonConnectRuntimeReady = Boolean(runtime?.amazonConnect.configured);
   const amazonConnectPlatformReady = Boolean(runtime?.amazonConnect.adminConfigured);
   const amazonConnectReady = Boolean(amazonConnectRuntimeReady && ccpUrl);
@@ -776,6 +1190,8 @@ export const CallCenterPage = () => {
   const selectedSalonName =
     selectedEscalation?.salon.name ?? salons.find((item) => item.id === selectedSalonId)?.name ?? t("common.none");
   const hasSelectedSalon = Boolean(selectedSalonId);
+  const contextStaff = selectedSalonDetail?.staff.length ? selectedSalonDetail.staff : staff;
+  const contextServices = selectedSalonDetail?.services.length ? selectedSalonDetail.services : services;
   const amazonConnectRuntimeRows = [
     {
       key: "AWS_REGION",
@@ -810,19 +1226,62 @@ export const CallCenterPage = () => {
   ];
 
   const visibleAppointments = useMemo(() => {
-    return appointments.slice().sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
-  }, [appointments]);
-  const contextStaff = selectedSalonDetail?.staff.length ? selectedSalonDetail.staff : staff;
-  const activeBookableStaff = contextStaff.filter(
-    (member) => (member.status ?? "ACTIVE") === "ACTIVE" && member.isBookable !== false
-  );
-  const unavailableStaff = contextStaff.filter(
-    (member) =>
-      (member.status && member.status !== "ACTIVE") ||
-      member.isBookable === false ||
-      (member.currentWorkStatus && member.currentWorkStatus !== "AVAILABLE")
-  );
-  const contextServices = selectedSalonDetail?.services.length ? selectedSalonDetail.services : services;
+    return appointments
+      .filter((appointment) => getDateKeyInTimezone(new Date(appointment.startTime), salonTimezone) === scheduleDateKey)
+      .slice()
+      .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+  }, [appointments, salonTimezone, scheduleDateKey]);
+  const getAppointmentEndDate = (appointment: AppointmentItem) => {
+    const start = new Date(appointment.startTime);
+    if (appointment.endTime) {
+      return new Date(appointment.endTime);
+    }
+    return new Date(start.getTime() + (appointment.service.durationMinutes ?? 0) * 60000);
+  };
+  const isAppointmentCurrent = (appointment: AppointmentItem) => {
+    if (appointment.status === "IN_PROGRESS") {
+      return true;
+    }
+    if (!ACTIVE_APPOINTMENT_STATUSES.has(appointment.status)) {
+      return false;
+    }
+    const now = new Date();
+    const start = new Date(appointment.startTime);
+    const end = getAppointmentEndDate(appointment);
+    return start.getTime() <= now.getTime() && end.getTime() >= now.getTime();
+  };
+  const isAppointmentUpcoming = (appointment: AppointmentItem) => {
+    return ACTIVE_APPOINTMENT_STATUSES.has(appointment.status) && new Date(appointment.startTime).getTime() > Date.now();
+  };
+  const formatCustomerName = (customer: CustomerItem) => {
+    return `${customer.firstName} ${customer.lastName}`.trim() || customer.phone || t("common.none");
+  };
+  const staffScheduleSummaries = useMemo(() => {
+    return contextStaff.map((member) => {
+      const memberAppointments = visibleAppointments.filter((appointment) => appointment.staff.id === member.id);
+      const currentAppointment = memberAppointments.find(isAppointmentCurrent) ?? null;
+      const nextAppointment = memberAppointments.find(isAppointmentUpcoming) ?? null;
+      const isActive = (member.status ?? "ACTIVE") === "ACTIVE";
+      const isWorkAvailable = !member.currentWorkStatus || member.currentWorkStatus === "AVAILABLE";
+      const canTakeBookings = isActive && member.isBookable !== false && isWorkAvailable && !currentAppointment;
+      return {
+        staff: member,
+        appointments: memberAppointments,
+        currentAppointment,
+        nextAppointment,
+        canTakeBookings
+      };
+    });
+  }, [contextStaff, visibleAppointments]);
+  const activeBookableStaff = staffScheduleSummaries.filter((summary) => summary.canTakeBookings);
+  const unavailableStaff = staffScheduleSummaries.filter((summary) => !summary.canTakeBookings);
+  const availableStaffCount = activeBookableStaff.length;
+  const scheduleGroups = staffScheduleSummaries.filter((summary) => summary.appointments.length);
+  const selectedService = services.find((service) => service.id === bookingForm.serviceId) ?? null;
+  const selectedStaffSchedule = staffScheduleSummaries.find((summary) => summary.staff.id === bookingForm.staffId) ?? null;
+  const selectedStaffNextAvailability = selectedStaffSchedule?.nextAppointment
+    ? `${t("callCenter.nextAppointment")}: ${formatTimeRange(selectedStaffSchedule.nextAppointment, salonTimezone)}`
+    : t("callCenter.noMoreAppointmentsToday");
   const salonBusinessPhone =
     selectedSalonDetail?.customerIncomingPhoneNumber ??
     selectedSalonDetail?.originalPhoneNumber ??
@@ -844,6 +1303,8 @@ export const CallCenterPage = () => {
   const latestBookingAttempt = selectedEscalation?.callSession.bookingAttempts
     .slice()
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+  const selectedCallerPhone = getQueueCallerPhone(selectedEscalation);
+  const selectedWaitingMinutes = selectedEscalation ? getWaitingMinutes(selectedEscalation) : 0;
 
   if (loading) {
     return <LoadingBlock />;
@@ -1200,193 +1661,232 @@ export const CallCenterPage = () => {
     <div className="operator-workspace">
       <FormDialog />
 
-      <aside className="card operator-context-panel">
-        <div className="section-header compact-header">
-          <div>
-            <h2>{selectedSalonDetail?.name ?? selectedSalonName}</h2>
-            <p className="muted">Salon context for this call</p>
+      <aside className="operator-context-panel">
+        <section className="card operator-context-card">
+          <div className="section-header compact-header">
+            <div>
+              <h2>{selectedSalonDetail?.name ?? selectedSalonName}</h2>
+              <p className="muted">{t("callCenter.operatorContextHint")}</p>
+            </div>
+            <span className={amazonConnectReady ? "status-pill success" : "status-pill warning"}>
+              {amazonConnectReady ? t("callCenter.amazonReady") : t("callCenter.amazonPending")}
+            </span>
           </div>
-          <span className={amazonConnectReady ? "status-pill success" : "status-pill warning"}>
-            {amazonConnectReady ? t("callCenter.amazonReady") : t("callCenter.amazonPending")}
-          </span>
-        </div>
 
-        <label className="field compact">
-          <span>{t("callCenter.selectSalon")}</span>
-          <select
-            value={selectedSalonId}
-            onChange={(event) => void changeSalon(event.target.value)}
-            disabled={!salons.length}
-          >
-            {salons.map((salon) => (
-              <option key={salon.id} value={salon.id}>
-                {salon.name}
-              </option>
-            ))}
-          </select>
-        </label>
+          <label className="field compact">
+            <span>{t("callCenter.selectSalon")}</span>
+            <select
+              value={selectedSalonId}
+              onChange={(event) => void changeSalon(event.target.value)}
+              disabled={!salons.length}
+            >
+              {salons.map((salon) => (
+                <option key={salon.id} value={salon.id}>
+                  {salon.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </section>
 
-        <div className="operator-info-list">
-          <div>
-            <span className="muted">{t("common.addressLine1")}</span>
-            <strong>{formatSalonAddress(selectedSalonDetail)}</strong>
-          </div>
-          <div>
-            <span className="muted">{t("callCenter.businessPhone")}</span>
-            <strong>{salonBusinessPhone}</strong>
-          </div>
-          <div>
-            <span className="muted">{t("callCenter.customerIncomingPhone")}</span>
-            <strong>{customerIncomingPhone}</strong>
-          </div>
-          <div>
-            <span className="muted">{t("callCenter.originalSalonPhone")}</span>
-            <strong>{originalSalonPhone}</strong>
-          </div>
-          <div>
-            <span className="muted">{t("callCenter.ownerContact")}</span>
-            <strong>{ownerContact}</strong>
-          </div>
-          <div>
-            <span className="muted">{t("callCenter.routingNumber")}</span>
-            <strong>{selectedSalonDetail?.settings?.callCenterRoutingNumber || t("common.none")}</strong>
-          </div>
-          <div>
-            <span className="muted">{t("callCenter.todayBusinessHours")}</span>
-            <strong>{todayBusinessHour ? formatBusinessHour(todayBusinessHour) : t("common.none")}</strong>
-          </div>
-        </div>
-
-        <div className="operator-routing-note">
+        <section className="card operator-routing-note">
           <span>{t("callCenter.routingNote")}</span>
-          <strong>{selectedSalonDetail?.settings?.callCenterRoutingNote || t("common.none")}</strong>
-        </div>
+          <strong>{selectedSalonDetail?.settings?.callCenterRoutingNote || t("callCenter.noRoutingNote")}</strong>
+        </section>
 
-        <div className="operator-context-section">
-          <details className="advanced-config">
-            <summary>{t("callCenter.weeklyBusinessHours")}</summary>
-            {selectedSalonDetail?.businessHours.length ? (
-              <div className="compact-list">
-                {selectedSalonDetail.businessHours.map((hour) => (
-                  <span key={hour.dayOfWeek}>{formatBusinessHour(hour)}</span>
-                ))}
-              </div>
-            ) : (
-              <p className="muted">{t("common.none")}</p>
-            )}
-          </details>
-        </div>
-
-        <div className="operator-info-list">
-          <div>
-            <span className="muted">{t("callCenter.callerPhone")}</span>
-            <strong>{selectedEscalation?.callSession.callerPhone ?? t("common.none")}</strong>
-          </div>
-        </div>
-
-        <div className="operator-context-section">
-          <h3>{t("callCenter.activeBookableStaff")}</h3>
-          {activeBookableStaff.length ? (
-            <div className="compact-list">
-              {activeBookableStaff.map((member) => (
-                <span key={member.id}>{member.fullName}</span>
-              ))}
+        <section className="card operator-context-section">
+          <h3>{t("callCenter.salonInformation")}</h3>
+          <div className="operator-info-list">
+            <div>
+              <span className="muted">{t("profile.salonName")}</span>
+              <strong>{selectedSalonDetail?.name ?? t("common.none")}</strong>
             </div>
-          ) : (
-            <p className="muted">{t("common.none")}</p>
-          )}
-        </div>
-
-        <div className="operator-context-section">
-          <h3>{t("callCenter.busyInactiveStaff")}</h3>
-          {unavailableStaff.length ? (
-            <div className="compact-list">
-              {unavailableStaff.map((member) => (
-                <span key={member.id}>{member.fullName} · {formatStaffStatus(member)}</span>
-              ))}
+            <div>
+              <span className="muted">{t("common.addressLine1")}</span>
+              <strong>{formatSalonAddress(selectedSalonDetail)}</strong>
             </div>
-          ) : (
-            <p className="muted">{t("common.none")}</p>
-          )}
-        </div>
-
-        <div className="operator-context-section">
-          <h3>{t("callCenter.activeServices")}</h3>
-          {contextServices.length ? (
-            <div className="compact-list">
-              {contextServices.map((service) => (
-                <span key={service.id}>{service.name}</span>
-              ))}
+            <div>
+              <span className="muted">{t("common.timezone")}</span>
+              <strong>{selectedSalonDetail?.timezone ?? t("common.none")}</strong>
             </div>
-          ) : (
-            <p className="muted">{t("common.none")}</p>
-          )}
-        </div>
-      </aside>
-
-      <main className="operator-main-panel">
-        <section className="card operator-action-bar">
-          <div>
-            <h2>{t("callCenter.operatorSimpleTitle")}</h2>
-            <p className="muted">{t("callCenter.operatorSimpleHint")}</p>
-          </div>
-          <div className="inline-actions">
-            {ccpUrl ? (
-              <a href={ccpUrl} target="_blank" rel="noreferrer" className="button-primary">
-                {t("callCenter.ccpLink")}
-              </a>
-            ) : (
-              <button type="button" className="button-primary" disabled>
-                {t("callCenter.amazonPending")}
-              </button>
-            )}
-            <button type="button" className="button-secondary" onClick={() => void loadQueue()}>
-              {t("callCenter.refreshQueue")}
-            </button>
+            <div>
+              <span className="muted">{t("callCenter.customerIncomingPhone")}</span>
+              <strong>{customerIncomingPhone}</strong>
+            </div>
+            <div>
+              <span className="muted">{t("callCenter.originalSalonPhone")}</span>
+              <strong>{originalSalonPhone}</strong>
+            </div>
+            <div>
+              <span className="muted">{t("callCenter.businessPhone")}</span>
+              <strong>{salonBusinessPhone}</strong>
+            </div>
+            <div>
+              <span className="muted">{t("callCenter.contactPhone")}</span>
+              <strong>{selectedSalonDetail?.contactPhone ?? t("common.none")}</strong>
+            </div>
+            <div>
+              <span className="muted">{t("callCenter.notificationPhone")}</span>
+              <strong>{selectedSalonDetail?.notificationPhoneNumber ?? t("common.none")}</strong>
+            </div>
+            <div>
+              <span className="muted">{t("callCenter.ownerContact")}</span>
+              <strong>{ownerContact}</strong>
+            </div>
+            <div>
+              <span className="muted">{t("common.email")}</span>
+              <strong>{selectedSalonDetail?.owner.email ?? t("common.none")}</strong>
+            </div>
+            <div>
+              <span className="muted">{t("callCenter.routingNumber")}</span>
+              <strong>{selectedSalonDetail?.settings?.callCenterRoutingNumber || t("common.none")}</strong>
+            </div>
           </div>
         </section>
 
-        <section className="card-grid operator-top-grid">
-          <article className="card">
+        <section className="card operator-context-section">
+          <h3>{t("callCenter.businessHours")}</h3>
+          <div className="operator-info-list">
+            <div>
+              <span className="muted">{t("callCenter.todayBusinessHours")}</span>
+              <strong>{todayBusinessHour ? formatBusinessHour(todayBusinessHour) : t("common.none")}</strong>
+            </div>
+          </div>
+          {selectedSalonDetail?.businessHours.length ? (
+            <div className="weekly-hours-list">
+              {selectedSalonDetail.businessHours.map((hour) => (
+                <span key={hour.dayOfWeek}>{formatBusinessHour(hour)}</span>
+              ))}
+            </div>
+          ) : (
+            <p className="muted">{t("common.none")}</p>
+          )}
+        </section>
+
+        <section className="card operator-context-section">
+          <div className="section-header compact-header">
+            <h3>{t("callCenter.staffToday")}</h3>
+            <span className="summary-badge">{visibleAppointments.length}</span>
+          </div>
+
+          <div className="operator-staff-group">
+            <h4>{t("callCenter.activeBookableStaff")}</h4>
+            {activeBookableStaff.length ? (
+              activeBookableStaff.map((summary) => (
+                <article key={summary.staff.id} className="operator-staff-card ready">
+                  <div>
+                    <strong>{summary.staff.fullName}</strong>
+                    <span>{summary.staff.title || t("common.none")}</span>
+                  </div>
+                  <div className="staff-card-meta">
+                    <span>{formatStaffStatus(summary.staff)}</span>
+                    <span>{summary.staff.isBookable === false ? t("callCenter.bookableOff") : t("callCenter.bookableOn")}</span>
+                    <span>{t("callCenter.totalAppointmentsToday", { count: summary.appointments.length })}</span>
+                  </div>
+                  <small>{t("callCenter.currentAppointment")}: {summary.currentAppointment ? formatTimeRange(summary.currentAppointment, salonTimezone) : t("common.none")}</small>
+                  <small>{t("callCenter.nextAppointment")}: {summary.nextAppointment ? formatTimeRange(summary.nextAppointment, salonTimezone) : t("common.none")}</small>
+                </article>
+              ))
+            ) : (
+              <p className="muted">{t("callCenter.noReadyStaff")}</p>
+            )}
+          </div>
+
+          <div className="operator-staff-group">
+            <h4>{t("callCenter.busyInactiveStaff")}</h4>
+            {unavailableStaff.length ? (
+              unavailableStaff.map((summary) => (
+                <article key={summary.staff.id} className="operator-staff-card">
+                  <div>
+                    <strong>{summary.staff.fullName}</strong>
+                    <span>{summary.staff.title || t("common.none")}</span>
+                  </div>
+                  <div className="staff-card-meta">
+                    <span>{formatStaffStatus(summary.staff)}</span>
+                    <span>{summary.staff.isBookable === false ? t("callCenter.bookableOff") : t("callCenter.bookableOn")}</span>
+                    <span>{t("callCenter.totalAppointmentsToday", { count: summary.appointments.length })}</span>
+                  </div>
+                  <small>{t("callCenter.currentAppointment")}: {summary.currentAppointment ? formatTimeRange(summary.currentAppointment, salonTimezone) : t("common.none")}</small>
+                  <small>{t("callCenter.nextAppointment")}: {summary.nextAppointment ? formatTimeRange(summary.nextAppointment, salonTimezone) : t("common.none")}</small>
+                </article>
+              ))
+            ) : (
+              <p className="muted">{t("callCenter.noBusyStaff")}</p>
+            )}
+          </div>
+        </section>
+
+        <section className="card operator-context-section">
+          <h3>{t("callCenter.activeServices")}</h3>
+          {contextServices.length ? (
+            <div className="service-chip-list">
+              {contextServices.map((service) => (
+                <span key={service.id}>
+                  <strong>{service.name}</strong>
+                  <small>
+                    {service.durationMinutes ? t("callCenter.durationMinutes", { count: service.durationMinutes }) : t("common.none")}
+                    {typeof service.priceCents === "number" ? ` · ${formatCurrencyCents(service.priceCents)}` : ""}
+                  </small>
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="muted">{t("common.none")}</p>
+          )}
+        </section>
+      </aside>
+
+      <main className="operator-main-panel">
+        <section className="operator-top-grid">
+          <AmazonConnectCcpPanel
+            ccpUrl={ccpUrl}
+            region={runtime?.amazonConnect.region}
+            enabled={amazonConnectRuntimeReady && Boolean(ccpUrl)}
+            onQueueMatch={handleQueueMatch}
+          />
+
+          <article className="card selected-call-card">
             <div className="section-header compact-header">
               <div>
-                <h3>Selected call</h3>
+                <h3>{t("callCenter.selectedTitle")}</h3>
                 <p className="muted">
                   {selectedEscalation
-                    ? `${selectedEscalation.salon.name} · ${selectedEscalation.callSession.callerPhone ?? t("callCenter.unknownCaller")}`
+                    ? `${selectedEscalation.salon.name} · ${selectedCallerPhone ?? t("callCenter.unknownCaller")}`
                     : t("callCenter.selectedEmpty")}
                 </p>
               </div>
-              <span className="status-pill info">{openRequests} open</span>
+              <span className="status-pill info">{t("callCenter.openRequestsCount", { count: openRequests })}</span>
             </div>
+
             {selectedEscalation ? (
               <div className="operator-call-card">
                 <div className="metrics-grid compact-metrics">
+                  <div>
+                    <span className="muted">{t("callCenter.callerPhone")}</span>
+                    <strong>{selectedCallerPhone ?? t("common.none")}</strong>
+                  </div>
                   <div>
                     <span className="muted">{t("common.status")}</span>
                     <strong>{statusLabelKey(selectedEscalation.status) ? t(statusLabelKey(selectedEscalation.status)!) : selectedEscalation.status}</strong>
                   </div>
                   <div>
-                    <span className="muted">{t("callCenter.callerPhone")}</span>
-                    <strong>{selectedEscalation.callSession.callerPhone ?? t("common.none")}</strong>
-                  </div>
-                  <div>
-                    <span className="muted">{t("callCenter.routing")}</span>
-                    <strong>{translateRoutingOutcome(selectedEscalation.routingOutcome)}</strong>
-                  </div>
-                  <div>
-                    <span className="muted">{t("callCenter.resolution")}</span>
-                    <strong>{selectedEscalation.callSession.finalResolution ?? t("common.none")}</strong>
+                    <span className="muted">{t("callCenter.waitingTime")}</span>
+                    <strong>{t("callCenter.waitingMinutes", { count: selectedWaitingMinutes })}</strong>
                   </div>
                   <div>
                     <span className="muted">{t("callCenter.escalationReason")}</span>
                     <strong>{selectedEscalation.escalationReason ?? t("common.none")}</strong>
                   </div>
                 </div>
+
                 <div className="operator-call-summary">
                   <div>
+                    <span className="muted">{t("callCenter.messageToCaller")}</span>
+                    <p>{selectedEscalation.messageToCaller ?? t("common.none")}</p>
+                  </div>
+                  <div>
                     <span className="muted">{t("callCenter.aiSummary")}</span>
-                    <p>{summarizeUnknown(selectedEscalation.callSession.aiSummary)}</p>
+                    <p>{formatAiSummary(selectedEscalation.callSession.aiSummary)}</p>
                   </div>
                   <div>
                     <span className="muted">{t("calls.transcriptSummary")}</span>
@@ -1396,14 +1896,63 @@ export const CallCenterPage = () => {
                     <span className="muted">{t("callCenter.bookingAttempts")}</span>
                     <p>
                       {latestBookingAttempt
-                        ? `${statusLabelKey(latestBookingAttempt.status) ? t(statusLabelKey(latestBookingAttempt.status)!) : latestBookingAttempt.status} · ${latestBookingAttempt.requestedService ?? t("callCenter.noService")}`
+                        ? `${statusLabelKey(latestBookingAttempt.status) ? t(statusLabelKey(latestBookingAttempt.status)!) : latestBookingAttempt.status} · ${latestBookingAttempt.requestedService ?? t("callCenter.noService")} · ${latestBookingAttempt.failureReason ?? t("callCenter.noFailureReason")}`
                         : t("callCenter.bookingAttemptsEmpty")}
                     </p>
                   </div>
                 </div>
-                <div className="inline-actions">
+
+                <div className="operator-customer-matches">
+                  <strong>{t("callCenter.customerMatches")}</strong>
+                  {selectedEscalation.customerMatches.length ? (
+                    selectedEscalation.customerMatches.slice(0, 3).map((customer) => (
+                      <button
+                        type="button"
+                        key={customer.id}
+                        className="customer-match-pill"
+                        onClick={() => setBookingForm((prev) => ({ ...prev, customerId: customer.id }))}
+                      >
+                        {formatCustomerName(customer)} · {customer.phone}
+                      </button>
+                    ))
+                  ) : (
+                    <span className="muted">{t("callCenter.customerLookupEmpty")}</span>
+                  )}
+                </div>
+
+                <div className="form-grid two-columns compact-note-form">
+                  <label className="field">
+                    <span>{t("callCenter.operatorNotes")}</span>
+                    <textarea
+                      rows={3}
+                      value={notesForm.operatorNotes}
+                      onChange={(event) => setNotesForm((prev) => ({ ...prev, operatorNotes: event.target.value }))}
+                      placeholder={t("callCenter.operatorNotesPlaceholder")}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>{t("callCenter.resolution")}</span>
+                    <textarea
+                      rows={3}
+                      value={notesForm.resolution}
+                      onChange={(event) => setNotesForm((prev) => ({ ...prev, resolution: event.target.value }))}
+                      placeholder={t("callCenter.resolutionPlaceholder")}
+                    />
+                  </label>
+                </div>
+
+                <div className="inline-actions compact-actions">
                   <button type="button" className="button-primary" onClick={() => void acceptQueueItem()}>
                     {t("callCenter.accept")}
+                  </button>
+                  <button type="button" className="button-secondary" onClick={() => void saveNotes()}>
+                    {t("callCenter.saveNotes")}
+                  </button>
+                  <button type="button" className="button-secondary" onClick={() => void requestCallback()}>
+                    {t("callCenter.callBackAction")}
+                  </button>
+                  <button type="button" className="button-secondary" onClick={() => void sendSmsFallback()}>
+                    {t("callCenter.sendSmsAction")}
                   </button>
                   <button type="button" className="button-secondary" onClick={() => void completeQueueItem()}>
                     {t("callCenter.complete")}
@@ -1415,29 +1964,72 @@ export const CallCenterPage = () => {
             )}
           </article>
 
-          <article className="card">
-            <h3>{t("callCenter.queueTitle")}</h3>
+          <article className="card queue-card">
+            <div className="section-header compact-header">
+              <div>
+                <h3>{t("callCenter.queueTitle")}</h3>
+                <p className="muted">{t("callCenter.queueHint")}</p>
+              </div>
+              <button type="button" className="button-secondary" onClick={() => void loadQueue()}>
+                {t("callCenter.refreshQueue")}
+              </button>
+            </div>
+
             {selectedSalonQueue.length ? (
               <div className="compact-queue-list">
-                {selectedSalonQueue.slice(0, 6).map((item) => {
-                  const waitingSince = item.connectedAt ?? item.closedAt ?? new Date().toISOString();
-                  const waitingMinutes = Math.max(
-                    0,
-                    Math.round(
-                      (new Date(waitingSince).getTime() - new Date(item.requestedAt).getTime()) / 60000
-                    )
-                  );
+                {selectedSalonQueue.map((item) => {
+                  const waitingMinutes = getWaitingMinutes(item);
+                  const callerPhone = getQueueCallerPhone(item) ?? t("common.none");
                   return (
-                    <button
+                    <article
                       key={item.id}
-                      type="button"
                       className={item.id === selectedEscalationId ? "queue-row active" : "queue-row"}
                       onClick={() => setSelectedEscalationId(item.id)}
                     >
-                      <strong>{item.callSession.callerPhone ?? t("common.none")}</strong>
-                      <span>{statusLabelKey(item.status) ? t(statusLabelKey(item.status)!) : item.status}</span>
+                      <div className="queue-row-main">
+                        <strong>{callerPhone}</strong>
+                        <span>{item.salon.name}</span>
+                      </div>
+                      <span className="status-pill info">
+                        {statusLabelKey(item.status) ? t(statusLabelKey(item.status)!) : item.status}
+                      </span>
                       <small>{t("callCenter.waitingMinutes", { count: waitingMinutes })}</small>
-                    </button>
+                      {waitingMinutes > 60 ? <span className="status-pill warning">{t("callCenter.waitingTooLong")}</span> : null}
+                      <p>{item.escalationReason ?? t("common.none")}</p>
+                      <p>{item.messageToCaller ?? t("common.none")}</p>
+                      <div className="inline-actions compact-actions">
+                        <button
+                          type="button"
+                          className="button-secondary"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setSelectedEscalationId(item.id);
+                          }}
+                        >
+                          {t("callCenter.openAction")}
+                        </button>
+                        <button
+                          type="button"
+                          className="button-secondary"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void acceptQueueItem(item.id);
+                          }}
+                        >
+                          {t("callCenter.accept")}
+                        </button>
+                        <button
+                          type="button"
+                          className="button-secondary"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void completeQueueItem(item.id);
+                          }}
+                        >
+                          {t("callCenter.complete")}
+                        </button>
+                      </div>
+                    </article>
                   );
                 })}
               </div>
@@ -1447,66 +2039,17 @@ export const CallCenterPage = () => {
           </article>
         </section>
 
-        {selectedEscalation ? (
-          <section className="card">
-            <div className="section-header compact-header">
-              <div>
-                <h3>{t("callCenter.customerLookup")}</h3>
-                <p className="muted">{t("callCenter.customerLookupHint")}</p>
-              </div>
-              <span className="summary-badge">{selectedEscalation.customerMatches.length}</span>
+        <section className="card operator-booking-card">
+          <div className="section-header compact-header">
+            <div>
+              <h3>{t("callCenter.customerAndBooking")}</h3>
+              <p className="muted">{t("callCenter.customerAndBookingHint")}</p>
             </div>
-            {selectedEscalation.customerMatches.length ? (
-              <div className="mobile-list">
-                {selectedEscalation.customerMatches.slice(0, 3).map((customer) => (
-                  <article key={customer.id} className="mobile-item">
-                    <strong>{customer.firstName} {customer.lastName}</strong>
-                    <span>{customer.phone}</span>
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <EmptyBlock message={t("callCenter.customerLookupEmpty")} />
-            )}
-          </section>
-        ) : null}
+          </div>
 
-        {selectedEscalation ? (
-          <section className="card">
-            <h3>{t("callCenter.notesTitle")}</h3>
-            <div className="form-grid two-columns">
-              <label className="field">
-                <span>{t("callCenter.operatorNotes")}</span>
-                <textarea
-                  rows={3}
-                  value={notesForm.operatorNotes}
-                  onChange={(event) => setNotesForm((prev) => ({ ...prev, operatorNotes: event.target.value }))}
-                />
-              </label>
-              <label className="field">
-                <span>{t("callCenter.resolution")}</span>
-                <textarea
-                  rows={3}
-                  value={notesForm.resolution}
-                  onChange={(event) => setNotesForm((prev) => ({ ...prev, resolution: event.target.value }))}
-                />
-              </label>
-            </div>
-            <div className="inline-actions">
-              <button type="button" className="button-secondary" onClick={() => void saveNotes()}>
-                {t("callCenter.saveNotes")}
-              </button>
-              <button type="button" className="button-secondary" onClick={() => void requestCallback()}>
-                {t("callCenter.callbackRequest")}
-              </button>
-            </div>
-          </section>
-        ) : null}
-
-        <section className="card-grid operator-booking-grid">
-          <article className="card">
-            <h3>{t("callCenter.createCustomer")}</h3>
+          <div className="operator-booking-grid">
             <form className="form-grid two-columns" onSubmit={createCustomer}>
+              <h4>{t("callCenter.createCustomer")}</h4>
               <label className="field">
                 <span>{t("customers.firstName")}</span>
                 <input
@@ -1545,11 +2088,9 @@ export const CallCenterPage = () => {
                 {t("callCenter.createCustomer")}
               </button>
             </form>
-          </article>
 
-          <article className="card">
-            <h3>{t("callCenter.createBooking")}</h3>
             <form className="form-grid two-columns" onSubmit={createBooking}>
+              <h4>{t("callCenter.createBooking")}</h4>
               <label className="field">
                 <span>{t("appointments.customer")}</span>
                 <select
@@ -1561,7 +2102,7 @@ export const CallCenterPage = () => {
                   <option value="">{t("appointments.selectCustomer")}</option>
                   {customers.map((customer) => (
                     <option key={customer.id} value={customer.id}>
-                      {customer.firstName} {customer.lastName}
+                      {formatCustomerName(customer)} · {customer.phone}
                     </option>
                   ))}
                 </select>
@@ -1608,43 +2149,86 @@ export const CallCenterPage = () => {
                   required
                 />
               </label>
+              <label className="field span-two">
+                <span>{t("appointments.notes")}</span>
+                <textarea
+                  rows={3}
+                  disabled={!hasSelectedSalon}
+                  value={bookingForm.notes}
+                  onChange={(event) => setBookingForm((prev) => ({ ...prev, notes: event.target.value }))}
+                />
+              </label>
+              <div className="operator-booking-hints span-two">
+                <span>
+                  {selectedService
+                    ? `${selectedService.name} · ${selectedService.durationMinutes ? t("callCenter.durationMinutes", { count: selectedService.durationMinutes }) : t("common.none")}${typeof selectedService.priceCents === "number" ? ` · ${formatCurrencyCents(selectedService.priceCents)}` : ""}`
+                    : t("callCenter.selectServiceForDetails")}
+                </span>
+                <span>{bookingForm.staffId ? selectedStaffNextAvailability : t("callCenter.selectStaffForAvailability")}</span>
+              </div>
               <button type="submit" className="button-primary" disabled={!hasSelectedSalon}>
                 {t("callCenter.createBooking")}
               </button>
             </form>
-          </article>
+          </div>
         </section>
 
-        <section className="card">
+        <section className="card operator-schedule-card">
           <div className="section-header compact-header">
             <div>
-              <h2>Current schedule</h2>
-              <p className="muted">{selectedSalonName}</p>
+              <h2>{t("callCenter.todayScheduleTitle")}</h2>
+              <p className="muted">{selectedSalonName} · {formatDateKeyLabel(scheduleDateKey)}</p>
             </div>
-            <span className="summary-badge">{visibleAppointments.length} appointments</span>
+            <span className="summary-badge">{t("callCenter.appointmentCount", { count: visibleAppointments.length })}</span>
           </div>
-          {visibleAppointments.length ? (
-            <div className="table-wrap compact-table">
-              <table>
-                <thead>
-                  <tr>
-                    <th>{t("appointments.time")}</th>
-                    <th>{t("appointments.customer")}</th>
-                    <th>{t("appointments.staff")}</th>
-                    <th>{t("appointments.service")}</th>
-                    <th>{t("common.status")}</th>
-                    <th>{t("common.actions")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibleAppointments.map((appointment) => (
-                    <tr key={appointment.id}>
-                      <td>{formatDateTime(appointment.startTime)}</td>
-                      <td>{appointment.customer.firstName} {appointment.customer.lastName}</td>
-                      <td>{appointment.staff.fullName}</td>
-                      <td>{appointment.service.name}</td>
-                      <td>{statusLabelKey(appointment.status) ? t(statusLabelKey(appointment.status)!) : appointment.status}</td>
-                      <td>
+
+          <div className="date-control-row">
+            <button type="button" className="button-secondary" onClick={() => void changeScheduleDate(addDaysToDateKey(scheduleDateKey, -1))}>
+              {t("callCenter.previousDay")}
+            </button>
+            <button type="button" className="button-primary" onClick={() => void changeScheduleDate(todayDateKey)}>
+              {t("common.today")}
+            </button>
+            <button type="button" className="button-secondary" onClick={() => void changeScheduleDate(addDaysToDateKey(scheduleDateKey, 1))}>
+              {t("callCenter.nextDay")}
+            </button>
+          </div>
+
+          {scheduleGroups.length ? (
+            <div className="staff-schedule-list">
+              {scheduleGroups.map((group) => (
+                <article key={group.staff.id} className="staff-schedule-group">
+                  <div className="section-header compact-header">
+                    <div>
+                      <h3>{group.staff.fullName}</h3>
+                      <p className="muted">{group.staff.title || t("common.none")}</p>
+                    </div>
+                    <span className="summary-badge">{t("callCenter.appointmentCount", { count: group.appointments.length })}</span>
+                  </div>
+                  <div className="schedule-highlight-row">
+                    <span>
+                      <strong>{t("callCenter.currentAppointment")}</strong>
+                      {group.currentAppointment ? formatTimeRange(group.currentAppointment, salonTimezone) : t("common.none")}
+                    </span>
+                    <span>
+                      <strong>{t("callCenter.nextAppointment")}</strong>
+                      {group.nextAppointment ? formatTimeRange(group.nextAppointment, salonTimezone) : t("common.none")}
+                    </span>
+                  </div>
+                  <div className="appointment-card-list">
+                    {group.appointments.map((appointment) => (
+                      <article key={appointment.id} className={isAppointmentCurrent(appointment) ? "appointment-operator-card current" : "appointment-operator-card"}>
+                        <div>
+                          <strong>{formatTimeRange(appointment, salonTimezone)}</strong>
+                          <span>{formatCustomerName(appointment.customer)} · {appointment.customer.phone}</span>
+                        </div>
+                        <div>
+                          <span>{appointment.service.name}</span>
+                          <span className="status-pill info">
+                            {statusLabelKey(appointment.status) ? t(statusLabelKey(appointment.status)!) : appointment.status}
+                          </span>
+                        </div>
+                        {appointment.notes ? <p>{appointment.notes}</p> : null}
                         <div className="inline-actions compact-actions">
                           <button type="button" className="button-secondary" onClick={() => void reschedule(appointment)}>
                             {t("appointments.reschedule")}
@@ -1656,16 +2240,119 @@ export const CallCenterPage = () => {
                             {t("appointments.cancel")}
                           </button>
                         </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      </article>
+                    ))}
+                  </div>
+                </article>
+              ))}
             </div>
           ) : (
-            <EmptyBlock message={t("callCenter.appointmentsEmpty")} />
+            <EmptyBlock message={t("callCenter.scheduleEmptyForDay")} />
           )}
         </section>
+
+        <details className="advanced-config operator-advanced-details" open={!isBasicMode && Boolean(selectedEscalation)}>
+          <summary>{t("callCenter.advancedCallDetails")}</summary>
+          <div className="card stack">
+            {selectedEscalation ? (
+              <>
+                <article className="inspection-box">
+                  <h3>{t("callCenter.transcript")}</h3>
+                  {selectedEscalation.callSession.transcripts.length ? (
+                    selectedEscalation.callSession.transcripts.map((transcript) => (
+                      <div key={transcript.id} className="stack">
+                        {transcript.transcriptSummary ? <p>{transcript.transcriptSummary}</p> : null}
+                        <pre>{transcript.transcriptText}</pre>
+                      </div>
+                    ))
+                  ) : (
+                    <EmptyBlock message={t("callCenter.transcriptEmpty")} />
+                  )}
+                </article>
+
+                <article className="inspection-box">
+                  <h3>{t("callCenter.aiSummary")}</h3>
+                  {isBasicMode ? (
+                    <p>{formatAiSummary(selectedEscalation.callSession.aiSummary)}</p>
+                  ) : (
+                    <pre>{JSON.stringify(selectedEscalation.callSession.aiSummary ?? null, null, 2)}</pre>
+                  )}
+                </article>
+
+                <article className="inspection-box">
+                  <h3>{t("callCenter.bookingAttempts")}</h3>
+                  {selectedEscalation.callSession.bookingAttempts.length ? (
+                    <div className="mobile-list">
+                      {selectedEscalation.callSession.bookingAttempts.map((attempt) => (
+                        <article key={attempt.id} className="mobile-item">
+                          <strong>
+                            {statusLabelKey(attempt.status) ? t(statusLabelKey(attempt.status)!) : attempt.status}
+                          </strong>
+                          <span>
+                            {attempt.requestedService ?? t("callCenter.noService")} · {attempt.requestedStaff ?? t("common.unassigned")}
+                          </span>
+                          <small>{attempt.failureReason ?? t("callCenter.noFailureReason")}</small>
+                        </article>
+                      ))}
+                    </div>
+                  ) : (
+                    <EmptyBlock message={t("callCenter.bookingAttemptsEmpty")} />
+                  )}
+                </article>
+
+                <article className="inspection-box">
+                  <h3>{t("callCenter.recentAiInteractions")}</h3>
+                  {selectedEscalation.callSession.aiInteractions.length ? (
+                    <div className="mobile-list">
+                      {selectedEscalation.callSession.aiInteractions.map((interaction) => (
+                        <article key={interaction.id} className="mobile-item">
+                          <strong>{interaction.taskType}</strong>
+                          <span>{interaction.model ?? t("callCenter.unknownModel")}</span>
+                          <small>{formatDateTime(interaction.createdAt, salonTimezone)}</small>
+                        </article>
+                      ))}
+                    </div>
+                  ) : (
+                    <EmptyBlock message={t("callCenter.aiInteractionsEmpty")} />
+                  )}
+                </article>
+              </>
+            ) : (
+              <EmptyBlock message={t("callCenter.selectedEmpty")} />
+            )}
+
+            {!isBasicMode ? (
+              <article className="inspection-box">
+                <h3>{t("callCenter.advancedConfig")}</h3>
+                <div className="table-wrap compact-table">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>{t("callCenter.envItem")}</th>
+                        <th>{t("callCenter.envValue")}</th>
+                        <th>{t("callCenter.envUsage")}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {amazonConnectRuntimeRows.map((row) => (
+                        <tr key={row.key}>
+                          <td>{row.key}</td>
+                          <td>{row.value}</td>
+                          <td>{row.usage}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {missingAmazonConnectItems.length || missingPlatformItems.length ? (
+                  <p className="muted">
+                    {[...missingAmazonConnectItems, ...missingPlatformItems].join(", ")}
+                  </p>
+                ) : null}
+              </article>
+            ) : null}
+          </div>
+        </details>
       </main>
     </div>
   );
