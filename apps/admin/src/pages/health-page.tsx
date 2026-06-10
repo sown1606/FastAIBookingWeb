@@ -7,6 +7,14 @@ import { useI18n } from "../lib/i18n";
 interface HealthStatus {
   status: string;
   timestamp: string;
+  integrations?: {
+    pushNotifications?: {
+      configured: boolean;
+      status: string;
+      code: string;
+      missing: string[];
+    };
+  };
 }
 
 interface OverviewMetrics {
@@ -101,6 +109,13 @@ export const HealthPage = () => {
           <div>
             <span className="muted">{t("health.openEscalations")}</span>
             <strong>{overview?.openEscalationCount ?? 0}</strong>
+          </div>
+          <div>
+            <span className="muted">{t("health.pushNotifications")}</span>
+            <strong>{readiness?.integrations?.pushNotifications?.configured ? t("status.READY") : t("status.NEEDS_SETUP")}</strong>
+            <div className="muted">
+              {readiness?.integrations?.pushNotifications?.code ?? "PUSH_NOTIFICATIONS_NOT_CONFIGURED"}
+            </div>
           </div>
         </div>
       </section>

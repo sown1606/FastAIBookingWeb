@@ -306,6 +306,46 @@ export const CallCenterPage = () => {
       : `${day}: Closed`;
   };
 
+  const getTodayDayOfWeek = (timezone: string) => {
+    const label = new Intl.DateTimeFormat("en-US", {
+      weekday: "short",
+      timeZone: timezone
+    }).format(new Date());
+    const dayIndex = dayLabels.findIndex((day) => day === label);
+    return dayIndex >= 0 ? dayIndex : new Date().getDay();
+  };
+
+  const summarizeUnknown = (value: unknown): string => {
+    if (!value) {
+      return t("common.none");
+    }
+    if (typeof value === "string") {
+      return value.length > 360 ? `${value.slice(0, 360)}...` : value;
+    }
+    if (typeof value === "object") {
+      const record = value as Record<string, unknown>;
+      const readable =
+        record.summary ??
+        record.aiSummary ??
+        record.intent ??
+        record.result ??
+        record.message;
+      if (typeof readable === "string" && readable.trim()) {
+        return readable;
+      }
+      try {
+        const serialized = JSON.stringify(value);
+        if (!serialized) {
+          return t("common.none");
+        }
+        return serialized.length > 360 ? `${serialized.slice(0, 360)}...` : serialized;
+      } catch {
+        return t("common.none");
+      }
+    }
+    return String(value);
+  };
+
   const formatStaffStatus = (member: StaffItem) => {
     if (member.status && member.status !== "ACTIVE") {
       return member.status;
@@ -788,11 +828,22 @@ export const CallCenterPage = () => {
     selectedSalonDetail?.originalPhoneNumber ??
     selectedSalonDetail?.contactPhone ??
     t("common.none");
+  const customerIncomingPhone = selectedSalonDetail?.customerIncomingPhoneNumber ?? t("common.none");
+  const originalSalonPhone = selectedSalonDetail?.originalPhoneNumber ?? selectedSalonDetail?.contactPhone ?? t("common.none");
   const ownerContact = selectedSalonDetail
     ? [selectedSalonDetail.owner.fullName, selectedSalonDetail.owner.phone ?? selectedSalonDetail.owner.email]
         .filter(Boolean)
         .join(" · ")
     : t("common.none");
+  const todayBusinessHour = selectedSalonDetail?.businessHours.find(
+    (hour) => hour.dayOfWeek === getTodayDayOfWeek(selectedSalonDetail.timezone)
+  );
+  const latestTranscript = selectedEscalation?.callSession.transcripts
+    .slice()
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+  const latestBookingAttempt = selectedEscalation?.callSession.bookingAttempts
+    .slice()
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
 
   if (loading) {
     return <LoadingBlock />;
@@ -1177,38 +1228,64 @@ export const CallCenterPage = () => {
 
         <div className="operator-info-list">
           <div>
-            <span className="muted">Address</span>
+            <span className="muted">{t("common.addressLine1")}</span>
             <strong>{formatSalonAddress(selectedSalonDetail)}</strong>
           </div>
           <div>
-            <span className="muted">Business phone</span>
+            <span className="muted">{t("callCenter.businessPhone")}</span>
             <strong>{salonBusinessPhone}</strong>
           </div>
           <div>
-            <span className="muted">Owner contact</span>
+            <span className="muted">{t("callCenter.customerIncomingPhone")}</span>
+            <strong>{customerIncomingPhone}</strong>
+          </div>
+          <div>
+            <span className="muted">{t("callCenter.originalSalonPhone")}</span>
+            <strong>{originalSalonPhone}</strong>
+          </div>
+          <div>
+            <span className="muted">{t("callCenter.ownerContact")}</span>
             <strong>{ownerContact}</strong>
           </div>
           <div>
-            <span className="muted">Routing note</span>
-            <strong>{selectedSalonDetail?.settings?.callCenterRoutingNote || t("common.none")}</strong>
+            <span className="muted">{t("callCenter.routingNumber")}</span>
+            <strong>{selectedSalonDetail?.settings?.callCenterRoutingNumber || t("common.none")}</strong>
+          </div>
+          <div>
+            <span className="muted">{t("callCenter.todayBusinessHours")}</span>
+            <strong>{todayBusinessHour ? formatBusinessHour(todayBusinessHour) : t("common.none")}</strong>
+          </div>
+        </div>
+
+        <div className="operator-routing-note">
+          <span>{t("callCenter.routingNote")}</span>
+          <strong>{selectedSalonDetail?.settings?.callCenterRoutingNote || t("common.none")}</strong>
+        </div>
+
+        <div className="operator-context-section">
+          <details className="advanced-config">
+            <summary>{t("callCenter.weeklyBusinessHours")}</summary>
+            {selectedSalonDetail?.businessHours.length ? (
+              <div className="compact-list">
+                {selectedSalonDetail.businessHours.map((hour) => (
+                  <span key={hour.dayOfWeek}>{formatBusinessHour(hour)}</span>
+                ))}
+              </div>
+            ) : (
+              <p className="muted">{t("common.none")}</p>
+            )}
+          </details>
+        </div>
+
+        <div className="operator-info-list">
+          <div>
+            <span className="muted">{t("callCenter.callerPhone")}</span>
+            <strong>{selectedEscalation?.callSession.callerPhone ?? t("common.none")}</strong>
           </div>
         </div>
 
         <div className="operator-context-section">
-          <h3>Business hours</h3>
-          {selectedSalonDetail?.businessHours.length ? (
-            <div className="compact-list">
-              {selectedSalonDetail.businessHours.map((hour) => (
-                <span key={hour.dayOfWeek}>{formatBusinessHour(hour)}</span>
-              ))}
-            </div>
-          ) : (
-            <p className="muted">{t("common.none")}</p>
-          )}
-        </div>
-
-        <div className="operator-context-section">
-          <h3>Active staff</h3>
+          <h3>{t("callCenter.activeBookableStaff")}</h3>
           {activeBookableStaff.length ? (
             <div className="compact-list">
               {activeBookableStaff.map((member) => (
@@ -1221,7 +1298,7 @@ export const CallCenterPage = () => {
         </div>
 
         <div className="operator-context-section">
-          <h3>Off / inactive / busy</h3>
+          <h3>{t("callCenter.busyInactiveStaff")}</h3>
           {unavailableStaff.length ? (
             <div className="compact-list">
               {unavailableStaff.map((member) => (
@@ -1234,7 +1311,7 @@ export const CallCenterPage = () => {
         </div>
 
         <div className="operator-context-section">
-          <h3>Active services</h3>
+          <h3>{t("callCenter.activeServices")}</h3>
           {contextServices.length ? (
             <div className="compact-list">
               {contextServices.map((service) => (
@@ -1301,6 +1378,28 @@ export const CallCenterPage = () => {
                     <span className="muted">{t("callCenter.resolution")}</span>
                     <strong>{selectedEscalation.callSession.finalResolution ?? t("common.none")}</strong>
                   </div>
+                  <div>
+                    <span className="muted">{t("callCenter.escalationReason")}</span>
+                    <strong>{selectedEscalation.escalationReason ?? t("common.none")}</strong>
+                  </div>
+                </div>
+                <div className="operator-call-summary">
+                  <div>
+                    <span className="muted">{t("callCenter.aiSummary")}</span>
+                    <p>{summarizeUnknown(selectedEscalation.callSession.aiSummary)}</p>
+                  </div>
+                  <div>
+                    <span className="muted">{t("calls.transcriptSummary")}</span>
+                    <p>{latestTranscript?.transcriptSummary || t("common.none")}</p>
+                  </div>
+                  <div>
+                    <span className="muted">{t("callCenter.bookingAttempts")}</span>
+                    <p>
+                      {latestBookingAttempt
+                        ? `${statusLabelKey(latestBookingAttempt.status) ? t(statusLabelKey(latestBookingAttempt.status)!) : latestBookingAttempt.status} · ${latestBookingAttempt.requestedService ?? t("callCenter.noService")}`
+                        : t("callCenter.bookingAttemptsEmpty")}
+                    </p>
+                  </div>
                 </div>
                 <div className="inline-actions">
                   <button type="button" className="button-primary" onClick={() => void acceptQueueItem()}>
@@ -1347,6 +1446,30 @@ export const CallCenterPage = () => {
             )}
           </article>
         </section>
+
+        {selectedEscalation ? (
+          <section className="card">
+            <div className="section-header compact-header">
+              <div>
+                <h3>{t("callCenter.customerLookup")}</h3>
+                <p className="muted">{t("callCenter.customerLookupHint")}</p>
+              </div>
+              <span className="summary-badge">{selectedEscalation.customerMatches.length}</span>
+            </div>
+            {selectedEscalation.customerMatches.length ? (
+              <div className="mobile-list">
+                {selectedEscalation.customerMatches.slice(0, 3).map((customer) => (
+                  <article key={customer.id} className="mobile-item">
+                    <strong>{customer.firstName} {customer.lastName}</strong>
+                    <span>{customer.phone}</span>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <EmptyBlock message={t("callCenter.customerLookupEmpty")} />
+            )}
+          </section>
+        ) : null}
 
         {selectedEscalation ? (
           <section className="card">

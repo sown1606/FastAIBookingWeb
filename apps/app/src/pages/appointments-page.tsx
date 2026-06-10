@@ -33,6 +33,9 @@ interface AppointmentItem {
     id: string;
     name: string;
   };
+  salon?: {
+    timezone?: string | null;
+  };
   workSessions?: Array<{
     id: string;
     status: string;
@@ -76,14 +79,17 @@ interface StaffReminder {
   appointment: AppointmentItem;
 }
 
-const SALON_TIMEZONE = "America/New_York";
+const FALLBACK_SALON_TIMEZONE = "America/New_York";
 
 const formatHourLabel = (hour: number) => {
   const displayHour = ((hour + 11) % 12) + 1;
   return `${displayHour} ${hour >= 12 ? "PM" : "AM"}`;
 };
 
-const formatTimeOnly = (value: string) => {
+const resolveAppointmentTimezone = (items: AppointmentItem[]) =>
+  items.find((item) => item.salon?.timezone)?.salon?.timezone ?? FALLBACK_SALON_TIMEZONE;
+
+const formatTimeOnly = (value: string, timezone: string) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
     return "-";
@@ -91,16 +97,16 @@ const formatTimeOnly = (value: string) => {
   return date.toLocaleTimeString([], {
     hour: "numeric",
     minute: "2-digit",
-    timeZone: SALON_TIMEZONE
+    timeZone: timezone
   });
 };
 
-const formatSalonDateKey = (date: Date) => {
+const formatSalonDateKey = (date: Date, timezone = FALLBACK_SALON_TIMEZONE) => {
   const parts = new Intl.DateTimeFormat("en-US", {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-    timeZone: SALON_TIMEZONE
+    timeZone: timezone
   }).formatToParts(date);
   const year = parts.find((part) => part.type === "year")?.value ?? "1970";
   const month = parts.find((part) => part.type === "month")?.value ?? "01";
@@ -108,25 +114,25 @@ const formatSalonDateKey = (date: Date) => {
   return `${year}-${month}-${day}`;
 };
 
-const minutesFromDayStart = (value: string) => {
+const minutesFromDayStart = (value: string, timezone: string) => {
   const date = new Date(value);
   const parts = new Intl.DateTimeFormat("en-US", {
     hour: "numeric",
     minute: "2-digit",
     hourCycle: "h23",
-    timeZone: SALON_TIMEZONE
+    timeZone: timezone
   }).formatToParts(date);
   const hour = Number(parts.find((part) => part.type === "hour")?.value ?? 0);
   const minute = Number(parts.find((part) => part.type === "minute")?.value ?? 0);
   return hour * 60 + minute;
 };
 
-const localDateKey = (value: string) => {
+const localDateKey = (value: string, timezone = FALLBACK_SALON_TIMEZONE) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
     return "unknown";
   }
-  return formatSalonDateKey(date);
+  return formatSalonDateKey(date, timezone);
 };
 
 const shiftDateKey = (dateKey: string, days: number) => {
@@ -146,12 +152,12 @@ const formatSelectedDateLabel = (dateKey: string, locale: "vi" | "en") => {
   }).format(date);
 };
 
-const buildTimeSlots = (items: AppointmentItem[]) => {
+const buildTimeSlots = (items: AppointmentItem[], timezone: string) => {
   if (!items.length) {
     return Array.from({ length: 10 }, (_value, index) => index + 9);
   }
-  const starts = items.map((item) => minutesFromDayStart(item.startTime));
-  const ends = items.map((item) => minutesFromDayStart(item.endTime));
+  const starts = items.map((item) => minutesFromDayStart(item.startTime, timezone));
+  const ends = items.map((item) => minutesFromDayStart(item.endTime, timezone));
   const firstHour = Math.max(0, Math.min(9, Math.floor(Math.min(...starts) / 60)));
   const lastHour = Math.min(23, Math.max(18, Math.ceil(Math.max(...ends) / 60)));
   return Array.from({ length: lastHour - firstHour + 1 }, (_value, index) => firstHour + index);
@@ -159,12 +165,19 @@ const buildTimeSlots = (items: AppointmentItem[]) => {
 
 const activeAppointmentStatuses = new Set(["SCHEDULED", "CONFIRMED", "IN_PROGRESS"]);
 
-const nearestUpcomingDateKey = (items: AppointmentItem[]) => {
+const nearestUsefulStaffDateKey = (items: AppointmentItem[], timezone: string) => {
+  const todayKey = formatSalonDateKey(new Date(), timezone);
+  const hasToday = items.some(
+    (item) => activeAppointmentStatuses.has(item.status) && localDateKey(item.startTime, timezone) === todayKey
+  );
+  if (hasToday) {
+    return todayKey;
+  }
   const now = Date.now();
   const nearest = items
     .filter((item) => activeAppointmentStatuses.has(item.status) && new Date(item.startTime).getTime() >= now)
     .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())[0];
-  return nearest ? localDateKey(nearest.startTime) : formatSalonDateKey(new Date());
+  return nearest ? localDateKey(nearest.startTime, timezone) : todayKey;
 };
 
 export const AppointmentsPage = () => {
@@ -195,6 +208,8 @@ export const AppointmentsPage = () => {
   });
 
   const isOwner = session?.user.role === "SALON_OWNER";
+  const salonTimezone = useMemo(() => resolveAppointmentTimezone(appointments), [appointments]);
+  const todayDateKey = useMemo(() => formatSalonDateKey(new Date(), salonTimezone), [salonTimezone]);
   const appointmentStatusOptions = [
     { value: "SCHEDULED", label: t("status.SCHEDULED") },
     { value: "CONFIRMED", label: t("status.CONFIRMED") },
@@ -257,9 +272,9 @@ export const AppointmentsPage = () => {
     if (isOwner || loading || staffDateInitialized) {
       return;
     }
-    setSelectedDate(nearestUpcomingDateKey(appointments));
+    setSelectedDate(nearestUsefulStaffDateKey(appointments, salonTimezone));
     setStaffDateInitialized(true);
-  }, [appointments, isOwner, loading, staffDateInitialized]);
+  }, [appointments, isOwner, loading, salonTimezone, staffDateInitialized]);
 
   const createAppointment = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -453,8 +468,30 @@ export const AppointmentsPage = () => {
   };
 
   const selectedDayAppointments = useMemo(
-    () => appointments.filter((appointment) => localDateKey(appointment.startTime) === selectedDate),
-    [appointments, selectedDate]
+    () =>
+      appointments
+        .filter((appointment) => localDateKey(appointment.startTime, salonTimezone) === selectedDate)
+        .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()),
+    [appointments, salonTimezone, selectedDate]
+  );
+
+  const todayAppointments = useMemo(
+    () =>
+      appointments
+        .filter((appointment) => localDateKey(appointment.startTime, salonTimezone) === todayDateKey)
+        .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()),
+    [appointments, salonTimezone, todayDateKey]
+  );
+
+  const dailySummary = useMemo(
+    () => ({
+      total: selectedDayAppointments.length,
+      confirmed: selectedDayAppointments.filter((item) => item.status === "CONFIRMED").length,
+      inProgress: selectedDayAppointments.filter((item) => item.status === "IN_PROGRESS").length,
+      completed: selectedDayAppointments.filter((item) => item.status === "COMPLETED").length,
+      canceledOrNoShow: selectedDayAppointments.filter((item) => item.status === "CANCELED" || item.status === "NO_SHOW").length
+    }),
+    [selectedDayAppointments]
   );
 
   const upcomingAppointments = useMemo(() => {
@@ -469,17 +506,27 @@ export const AppointmentsPage = () => {
       .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
   }, [appointments]);
 
+  const currentOrNextStaffAppointment = useMemo(() => {
+    const current = appointments
+      .filter((item) => item.status === "IN_PROGRESS")
+      .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())[0];
+    if (current) {
+      return current;
+    }
+    return upcomingAppointments[0] ?? null;
+  }, [appointments, upcomingAppointments]);
+
   const groupedByDay = useMemo(() => {
     const byDay = new Map<string, AppointmentItem[]>();
     const sourceAppointments = isOwner ? selectedDayAppointments : upcomingAppointments;
     sourceAppointments.forEach((appointment) => {
-      const dateKey = localDateKey(appointment.startTime);
+      const dateKey = localDateKey(appointment.startTime, salonTimezone);
       const list = byDay.get(dateKey) ?? [];
       list.push(appointment);
       byDay.set(dateKey, list);
     });
     return [...byDay.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  }, [isOwner, selectedDayAppointments, upcomingAppointments]);
+  }, [isOwner, salonTimezone, selectedDayAppointments, upcomingAppointments]);
 
   const scheduleStaff = useMemo(() => {
     const byId = new Map<string, StaffItem>();
@@ -504,6 +551,26 @@ export const AppointmentsPage = () => {
     }
     return "schedule-appointment";
   };
+
+  const renderStaffAppointmentActions = (item: AppointmentItem) => (
+    <>
+      {item.status === "SCHEDULED" || item.status === "CONFIRMED" ? (
+        <button type="button" className="button-primary" onClick={() => void startWork(item.id)}>
+          {t("appointments.startWork")}
+        </button>
+      ) : null}
+      {item.status === "IN_PROGRESS" ? (
+        <>
+          <button type="button" className="button-secondary" onClick={() => void extendWork(item.id)}>
+            {t("appointments.extend")}
+          </button>
+          <button type="button" className="button-primary" onClick={() => void finishWork(item.id)}>
+            {t("appointments.done")}
+          </button>
+        </>
+      ) : null}
+    </>
+  );
 
   if (loading) {
     return <LoadingBlock />;
@@ -555,35 +622,48 @@ export const AppointmentsPage = () => {
           >
             {">"}
           </button>
+          <button
+            type="button"
+            className={selectedDate === todayDateKey ? "button-primary" : "button-secondary"}
+            onClick={() => setSelectedDate(todayDateKey)}
+          >
+            {t("common.today")}
+          </button>
           <label className="field compact">
             <span>{t("appointments.selectDate")}</span>
             <input
               type="date"
               value={selectedDate}
-              onChange={(event) => setSelectedDate(event.target.value || formatSalonDateKey(new Date()))}
+              onChange={(event) => setSelectedDate(event.target.value || todayDateKey)}
             />
           </label>
         </div>
         <div className="summary-badges">
           <span className="summary-badge">
-            {t("appointments.selectedDateCount")}: {selectedDayAppointments.length}
+            {t("appointments.selectedDateCount")}: {dailySummary.total}
+          </span>
+          <span className="summary-badge">
+            {t("appointments.confirmedCount")}: {dailySummary.confirmed}
           </span>
           {!isOwner ? (
             <span className="summary-badge">
-              Upcoming: {upcomingAppointments.length}
+              {t("appointments.upcomingCount")}: {upcomingAppointments.length}
             </span>
           ) : null}
           <span className="summary-badge">
-            {t("appointments.completedCount")}: {selectedDayAppointments.filter((item) => item.status === "COMPLETED").length}
+            {t("appointments.inProgressCount")}: {dailySummary.inProgress}
           </span>
           <span className="summary-badge">
-            {t("appointments.inProgressCount")}: {selectedDayAppointments.filter((item) => item.status === "IN_PROGRESS").length}
+            {t("appointments.completedCount")}: {dailySummary.completed}
+          </span>
+          <span className="summary-badge">
+            {t("appointments.canceledNoShowCount")}: {dailySummary.canceledOrNoShow}
           </span>
         </div>
       </section>
 
       {isOwner ? (
-        <section className="card">
+        <section id="create-appointment" className={isBasicMode ? "card basic-secondary-section" : "card"}>
           <h2>{t("appointments.createTitle")}</h2>
           <form className="form-grid two-columns" onSubmit={createAppointment}>
             <label className="field">
@@ -650,7 +730,7 @@ export const AppointmentsPage = () => {
       ) : null}
 
       {isOwner ? (
-        <section className="card">
+        <section className={isBasicMode ? "card basic-primary-section" : "card"}>
           <div className="section-header">
             <div>
               <h2>{t("appointments.scheduleBoard")}</h2>
@@ -662,7 +742,7 @@ export const AppointmentsPage = () => {
           </div>
           {groupedByDay.length && scheduleStaff.length ? (
             groupedByDay.map(([day, items]) => {
-              const timeSlots = buildTimeSlots(items);
+              const timeSlots = buildTimeSlots(items, salonTimezone);
               const firstHour = timeSlots[0] ?? 9;
               return (
                 <div key={day} className="schedule-day">
@@ -713,8 +793,8 @@ export const AppointmentsPage = () => {
                         if (staffIndex < 0) {
                           return null;
                         }
-                        const startMinutes = minutesFromDayStart(item.startTime);
-                        const endMinutes = Math.max(minutesFromDayStart(item.endTime), startMinutes + 15);
+                        const startMinutes = minutesFromDayStart(item.startTime, salonTimezone);
+                        const endMinutes = Math.max(minutesFromDayStart(item.endTime, salonTimezone), startMinutes + 15);
                         const startRow = Math.max(2, Math.floor((startMinutes - firstHour * 60) / 60) + 2);
                         const span = Math.max(1, Math.ceil((endMinutes - startMinutes) / 60));
                         const statusKey = statusLabelKey(item.status);
@@ -733,8 +813,8 @@ export const AppointmentsPage = () => {
                               </span>
                               <strong>
                                 {t("appointments.timeRange", {
-                                  start: formatTimeOnly(item.startTime),
-                                  end: formatTimeOnly(item.endTime)
+                                  start: formatTimeOnly(item.startTime, salonTimezone),
+                                  end: formatTimeOnly(item.endTime, salonTimezone)
                                 })}
                               </strong>
                             </div>
@@ -743,6 +823,7 @@ export const AppointmentsPage = () => {
                                 {item.customer.firstName} {item.customer.lastName}
                               </strong>
                               <span>{item.service.name}</span>
+                              <span>{item.staff.fullName}</span>
                               {item.notes ? <small>{item.notes}</small> : null}
                             </div>
                             <div className="schedule-appointment-actions">
@@ -765,7 +846,18 @@ export const AppointmentsPage = () => {
               );
             })
           ) : (
-            <EmptyBlock message={scheduleStaff.length ? t("appointments.noOwner") : t("appointments.noStaffColumns")} />
+            <div className="state-block">
+              <p>{scheduleStaff.length ? t("appointments.noOwnerSelectedDate") : t("appointments.noStaffColumns")}</p>
+              {scheduleStaff.length ? (
+                <button
+                  type="button"
+                  className="button-primary"
+                  onClick={() => document.getElementById("create-appointment")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                >
+                  {t("appointments.create")}
+                </button>
+              ) : null}
+            </div>
           )}
         </section>
       ) : null}
@@ -788,95 +880,151 @@ export const AppointmentsPage = () => {
         </section>
       ) : null}
 
-      {!isOwner ? <section className="card">
-        <div className="section-header">
-          <div>
-            <h2>Upcoming appointments</h2>
-            <p className="muted">All upcoming appointments are shown by date. Use the calendar above to jump to a specific day.</p>
-          </div>
-          <span className="summary-badge">{upcomingAppointments.length} upcoming</span>
-        </div>
-        {groupedByDay.length ? (
-          groupedByDay.map(([day, items]) => (
-            <div key={day} className="day-section">
-              <h3>{day}</h3>
-              <div className="entity-grid">
-                {items.map((item) => (
-                  <article key={item.id} className="appointment-card">
+      {!isOwner && isBasicMode ? (
+        <>
+          <section className="card">
+            <div className="section-header">
+              <div>
+                <h2>{t("appointments.currentNextTitle")}</h2>
+                <p className="muted">{t("appointments.staffBasicHint")}</p>
+              </div>
+              <span className="summary-badge">{t("appointments.todayCount")}: {todayAppointments.length}</span>
+            </div>
+            {currentOrNextStaffAppointment ? (
+              <article className="appointment-card appointment-card-featured">
+                <div className="appointment-card-header">
+                  <div className="appointment-card-copy">
+                    <strong>
+                      {currentOrNextStaffAppointment.customer.firstName} {currentOrNextStaffAppointment.customer.lastName}
+                    </strong>
+                    <span className="muted">{currentOrNextStaffAppointment.service.name}</span>
+                  </div>
+                  <span
+                    className={
+                      currentOrNextStaffAppointment.status === "COMPLETED"
+                        ? "status-pill success"
+                        : currentOrNextStaffAppointment.status === "IN_PROGRESS"
+                          ? "status-pill info"
+                          : "status-pill"
+                    }
+                  >
+                    {statusLabelKey(currentOrNextStaffAppointment.status)
+                      ? t(statusLabelKey(currentOrNextStaffAppointment.status)!)
+                      : currentOrNextStaffAppointment.status}
+                  </span>
+                </div>
+                <div className="appointment-card-meta">
+                  <div>
+                    <span className="muted">{t("appointments.time")}</span>
+                    <strong>{formatDateTime(currentOrNextStaffAppointment.startTime)}</strong>
+                  </div>
+                  <div>
+                    <span className="muted">{t("appointments.staff")}</span>
+                    <strong>{currentOrNextStaffAppointment.staff.fullName}</strong>
+                  </div>
+                </div>
+                {countdownText(currentOrNextStaffAppointment) ? (
+                  <span className="timer-pill">{countdownText(currentOrNextStaffAppointment)}</span>
+                ) : null}
+                <div className="inline-actions">{renderStaffAppointmentActions(currentOrNextStaffAppointment)}</div>
+              </article>
+            ) : (
+              <EmptyBlock message={t("appointments.noStaff")} />
+            )}
+          </section>
+
+          <section className="card">
+            <div className="section-header">
+              <div>
+                <h2>{selectedDate === todayDateKey ? t("appointments.todaySchedule") : t("appointments.selectedDaySchedule")}</h2>
+                <p className="muted">{formatSelectedDateLabel(selectedDate, locale)}</p>
+              </div>
+              <span className="summary-badge">{selectedDayAppointments.length} {t("nav.appointments")}</span>
+            </div>
+            {selectedDayAppointments.length ? (
+              <div className="mobile-list">
+                {selectedDayAppointments.map((item) => (
+                  <article key={item.id} className="mobile-item">
                     <div className="appointment-card-header">
                       <div className="appointment-card-copy">
                         <strong>
-                          {item.customer.firstName} {item.customer.lastName}
+                          {formatTimeOnly(item.startTime, salonTimezone)} · {item.customer.firstName} {item.customer.lastName}
                         </strong>
                         <span className="muted">{item.service.name}</span>
                       </div>
-                      <span className={item.status === "COMPLETED" ? "status-pill success" : item.status === "IN_PROGRESS" ? "status-pill info" : "status-pill"}>
+                      <span className={item.status === "IN_PROGRESS" ? "status-pill info" : "status-pill"}>
                         {statusLabelKey(item.status) ? t(statusLabelKey(item.status)!) : item.status}
                       </span>
                     </div>
-                    <div className="appointment-card-meta">
-                      <div>
-                        <span className="muted">{t("appointments.time")}</span>
-                        <strong>{formatDateTime(item.startTime)}</strong>
+                    {item.notes ? <p className="muted">{item.notes}</p> : null}
+                    <div className="inline-actions">{renderStaffAppointmentActions(item)}</div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <EmptyBlock message={t("appointments.noStaffSelectedDate")} />
+            )}
+          </section>
+        </>
+      ) : null}
+
+      {!isOwner && !isBasicMode ? (
+        <section className="card">
+          <div className="section-header">
+            <div>
+              <h2>{t("appointments.upcomingTitle")}</h2>
+              <p className="muted">{t("appointments.upcomingHint")}</p>
+            </div>
+            <span className="summary-badge">{upcomingAppointments.length} {t("appointments.upcomingCount")}</span>
+          </div>
+          {groupedByDay.length ? (
+            groupedByDay.map(([day, items]) => (
+              <div key={day} className="day-section">
+                <h3>{day}</h3>
+                <div className="entity-grid">
+                  {items.map((item) => (
+                    <article key={item.id} className="appointment-card">
+                      <div className="appointment-card-header">
+                        <div className="appointment-card-copy">
+                          <strong>
+                            {item.customer.firstName} {item.customer.lastName}
+                          </strong>
+                          <span className="muted">{item.service.name}</span>
+                        </div>
+                        <span className={item.status === "COMPLETED" ? "status-pill success" : item.status === "IN_PROGRESS" ? "status-pill info" : "status-pill"}>
+                          {statusLabelKey(item.status) ? t(statusLabelKey(item.status)!) : item.status}
+                        </span>
                       </div>
-                      <div>
-                        <span className="muted">{t("appointments.staff")}</span>
-                        <strong>{item.staff.fullName}</strong>
-                      </div>
-                      {!isBasicMode ? (
+                      <div className="appointment-card-meta">
+                        <div>
+                          <span className="muted">{t("appointments.time")}</span>
+                          <strong>{formatDateTime(item.startTime)}</strong>
+                        </div>
+                        <div>
+                          <span className="muted">{t("appointments.staff")}</span>
+                          <strong>{item.staff.fullName}</strong>
+                        </div>
                         <div>
                           <span className="muted">{t("appointments.source")}</span>
                           <strong>{item.source}</strong>
                         </div>
-                      ) : null}
-                    </div>
-                    <div className="summary-badges">
-                      {countdownText(item) ? <span className="summary-badge">{countdownText(item)}</span> : null}
-                      {item.notes ? <span className="summary-badge">{t("appointments.notes")}</span> : null}
-                    </div>
-                    {item.notes ? <p className="muted">{item.notes}</p> : <p className="muted">{t("appointments.noNotes")}</p>}
-                    <div className="inline-actions">
-                      {isOwner ? (
-                        <>
-                          <button type="button" className="button-secondary" onClick={() => void updateStatus(item)}>
-                            {t("appointments.updateStatus")}
-                          </button>
-                          <button type="button" className="button-secondary" onClick={() => void rescheduleAppointment(item)}>
-                            {t("appointments.reschedule")}
-                          </button>
-                          <button type="button" className="button-secondary" onClick={() => void cancelAppointment(item)}>
-                            {t("appointments.cancel")}
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          {item.status !== "IN_PROGRESS" && item.status !== "COMPLETED" && item.status !== "CANCELED" ? (
-                            <button type="button" className="button-primary" onClick={() => startWork(item.id)}>
-                              {t("appointments.startWork")}
-                            </button>
-                          ) : null}
-                          {item.status === "IN_PROGRESS" ? (
-                            <>
-                              <button type="button" className="button-secondary" onClick={() => void extendWork(item.id)}>
-                                {t("appointments.extend")}
-                              </button>
-                              <button type="button" className="button-primary" onClick={() => void finishWork(item.id)}>
-                                {t("appointments.done")}
-                              </button>
-                            </>
-                          ) : null}
-                        </>
-                      )}
-                    </div>
-                  </article>
-                ))}
+                      </div>
+                      <div className="summary-badges">
+                        {countdownText(item) ? <span className="summary-badge">{countdownText(item)}</span> : null}
+                        {item.notes ? <span className="summary-badge">{t("appointments.notes")}</span> : null}
+                      </div>
+                      {item.notes ? <p className="muted">{item.notes}</p> : <p className="muted">{t("appointments.noNotes")}</p>}
+                      <div className="inline-actions">{renderStaffAppointmentActions(item)}</div>
+                    </article>
+                  ))}
+                </div>
               </div>
-            </div>
-          ))
-        ) : (
-          <EmptyBlock message={isOwner ? t("appointments.noOwner") : t("appointments.noStaff")} />
-        )}
-      </section> : null}
+            ))
+          ) : (
+            <EmptyBlock message={t("appointments.noStaff")} />
+          )}
+        </section>
+      ) : null}
     </div>
   );
 };

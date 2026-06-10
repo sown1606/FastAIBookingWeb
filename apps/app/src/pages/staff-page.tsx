@@ -8,6 +8,7 @@ import { DemoAvatar } from "../components/avatar";
 import { getStaffTitleLabel, getStaffTitleOptions } from "../lib/form-options";
 import { formatUsPhoneInput, requiredLabel, validateOptionalUsPhone } from "../lib/phone";
 import { statusLabelKey, useI18n } from "../lib/i18n";
+import { InfoHint } from "../components/info-hint";
 
 interface StaffItem {
   id: string;
@@ -297,6 +298,7 @@ export const StaffPage = () => {
           <span className="summary-badge">{t("staff.summaryLoginReady")}: {loginReadyCount}</span>
           <span className="summary-badge">{t("staff.summaryBookable")}: {bookableStaffCount}</span>
         </div>
+        <p className="muted">{t("staff.availabilityNote")}</p>
       </section>
 
       <section className="card">
@@ -349,7 +351,10 @@ export const StaffPage = () => {
             </select>
           </label>
           <label className="field checkbox-row">
-            <span>{t("staff.isBookableField")}</span>
+            <span>
+              {t("staff.isBookableField")}
+              <InfoHint text={t("hints.staffBookable")} />
+            </span>
             <input
               type="checkbox"
               checked={form.isBookable}
@@ -404,6 +409,9 @@ export const StaffPage = () => {
                       <span className={item.isBookable ? "status-pill info" : "status-pill"}>
                         {t("staff.bookable")}: {item.isBookable ? t("common.statusOn") : t("common.statusOff")}
                       </span>
+                      {item.status === "ACTIVE" && item.isBookable ? (
+                        <span className="status-pill success">{t("staff.canTakeBookings")}</span>
+                      ) : null}
                     </div>
                   </div>
 

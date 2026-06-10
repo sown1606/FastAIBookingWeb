@@ -341,6 +341,57 @@ p {
   font-size: 0.8rem;
 }
 
+.field span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-weight: 800;
+}
+
+.info-hint {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--primary-strong);
+  font-size: 0.74rem;
+  font-weight: 900;
+  cursor: help;
+}
+
+.info-hint-bubble {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  z-index: 20;
+  width: min(240px, 74vw);
+  transform: translateX(-50%);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--text);
+  color: #fff;
+  padding: 8px 10px;
+  box-shadow: var(--shadow-md);
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.35;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease;
+}
+
+.info-hint:hover .info-hint-bubble,
+.info-hint:focus .info-hint-bubble,
+.info-hint:focus-within .info-hint-bubble {
+  opacity: 1;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
@@ -575,6 +626,68 @@ tbody tr:last-child td {
   color: var(--text);
   font-size: 0.84rem;
   font-weight: 700;
+}
+
+.advanced-config {
+  border: 1px solid rgba(11, 111, 95, 0.1);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.advanced-config > summary {
+  cursor: pointer;
+  padding: 14px 16px;
+  color: var(--primary-strong);
+  font-weight: 900;
+}
+
+.advanced-config > .card,
+.advanced-config > .card-grid {
+  margin: 0;
+  border-radius: 0 0 8px 8px;
+  border-left: 0;
+  border-right: 0;
+  border-bottom: 0;
+  box-shadow: none;
+}
+
+.simple-callout {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid rgba(11, 111, 95, 0.1);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.simple-callout p {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.compact-list {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.compact-list span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.production-snapshot {
+  border-color: rgba(11, 111, 95, 0.18);
+  background: linear-gradient(180deg, rgba(229, 243, 237, 0.68), rgba(255, 255, 255, 0.98));
 }
 
 .integration-grid {

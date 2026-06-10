@@ -20,6 +20,7 @@ import {
 } from "../lib/form-options";
 import { formatUsPhoneInput, validateOptionalUsPhone } from "../lib/phone";
 import { getStatusLabel, useI18n } from "../lib/i18n";
+import { InfoHint } from "../components/info-hint";
 
 interface SalonSettings {
   currency: string;
@@ -1235,6 +1236,65 @@ export const SalonDetailPage = () => {
         </div>
       </section>
 
+      <section className="card production-snapshot">
+        <div className="section-header">
+          <div>
+            <h3>{t("salonDetail.productionSnapshot")}</h3>
+            <p className="muted">{t("salonDetail.productionSnapshotHint")}</p>
+          </div>
+          <span className={settingsForm.callCenterEnabled ? "status-pill success" : "status-pill warning"}>
+            {t("salonDetail.humanCallCenter")} {formatOnOff(settingsForm.callCenterEnabled)}
+          </span>
+        </div>
+        <div className="metrics-grid">
+          <div>
+            <span className="muted">{t("salonDetail.customerIncomingPhone")}</span>
+            <strong>{profileForm.customerIncomingPhoneNumber || t("common.none")}</strong>
+          </div>
+          <div>
+            <span className="muted">{t("salonDetail.originalSalonPhone")}</span>
+            <strong>{profileForm.originalPhoneNumber || t("common.none")}</strong>
+          </div>
+          <div>
+            <span className="muted">{t("salonDetail.notificationPhone")}</span>
+            <strong>{profileForm.notificationPhoneNumber || t("common.none")}</strong>
+          </div>
+          <div>
+            <span className="muted">AI Reception</span>
+            <strong>{formatOnOff(settingsForm.aiReceptionEnabled)}</strong>
+          </div>
+          <div>
+            <span className="muted">{t("salonDetail.ringCountBeforeAi")}</span>
+            <strong>{settingsForm.aiTransferRingCount}</strong>
+          </div>
+          <div>
+            <span className="muted">{t("salonDetail.humanCallCenter")}</span>
+            <strong>{formatOnOff(settingsForm.callCenterEnabled)}</strong>
+          </div>
+          <div>
+            <span className="muted">{t("salonDetail.routingNumber")}</span>
+            <strong>{settingsForm.callCenterRoutingNumber || t("common.none")}</strong>
+          </div>
+          <div>
+            <span className="muted">{t("salonDetail.assignedOperators")}</span>
+            <strong>{assignedAgents.length}</strong>
+          </div>
+        </div>
+        <div className="simple-callout">
+          <strong>{t("salonDetail.callCenterNote")}</strong>
+          <p>{settingsForm.callCenterRoutingNote || t("common.none")}</p>
+        </div>
+        {assignedAgents.length ? (
+          <div className="compact-list">
+            {assignedAgents.map((agent) => (
+              <span key={agent.id}>{agent.fullName} · {agent.email}</span>
+            ))}
+          </div>
+        ) : (
+          <p className="muted">{t("salonDetail.assignedAgentsEmpty")}</p>
+        )}
+      </section>
+
       <section className="control-center-grid">
         <article className="control-tile">
           <div className="section-header">
@@ -1843,7 +1903,10 @@ export const SalonDetailPage = () => {
               <p className="muted">{t("salonDetail.aiReceptionFallbackHint")}</p>
             </div>
             <label className="field checkbox-row">
-              <span>{t("salonDetail.aiReceptionOn")}</span>
+              <span>
+                {t("salonDetail.aiReceptionOn")}
+                <InfoHint text={t("hints.aiReception")} />
+              </span>
               <input
                 type="checkbox"
                 checked={settingsForm.aiReceptionEnabled}
@@ -1853,7 +1916,10 @@ export const SalonDetailPage = () => {
               />
             </label>
             <label className="field">
-              <span>{t("salonDetail.ringCountBeforeAi")}</span>
+              <span>
+                {t("salonDetail.ringCountBeforeAi")}
+                <InfoHint text={t("hints.ringCount")} />
+              </span>
               <input
                 type="number"
                 min={1}
@@ -1865,7 +1931,10 @@ export const SalonDetailPage = () => {
               />
             </label>
             <label className="field checkbox-row">
-              <span>{t("salonDetail.humanCallCenterOn")}</span>
+              <span>
+                {t("salonDetail.humanCallCenterOn")}
+                <InfoHint text={t("hints.callCenter")} />
+              </span>
               <input
                 type="checkbox"
                 checked={settingsForm.callCenterEnabled}
@@ -1942,7 +2011,10 @@ export const SalonDetailPage = () => {
               <small>{t("salonDetail.callCenterRoutingNumberHint")}</small>
             </label>
             <label className="field">
-              <span>{t("salonDetail.callCenterNote")}</span>
+              <span>
+                {t("salonDetail.callCenterNote")}
+                <InfoHint text={t("hints.routingNote")} />
+              </span>
               <textarea
                 rows={3}
                 value={settingsForm.callCenterRoutingNote}
@@ -1952,7 +2024,10 @@ export const SalonDetailPage = () => {
               />
             </label>
             <label className="field">
-              <span>{t("salonDetail.notificationRecipients")}</span>
+              <span>
+                {t("salonDetail.notificationRecipients")}
+                <InfoHint text={t("hints.notificationRecipients")} />
+              </span>
               <textarea
                 rows={3}
                 value={settingsForm.notificationRecipientsText}

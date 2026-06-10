@@ -27,6 +27,14 @@ const getAmazonConnectHealth = async () => {
   };
 };
 
+const getPushNotificationHealth = () => ({
+  configured: env.integrationStatuses.pushNotifications.configured,
+  ready: env.integrationStatuses.pushNotifications.configured,
+  status: env.integrationStatuses.pushNotifications.configured ? "configured" : "not_configured",
+  code: env.integrationStatuses.pushNotifications.code,
+  missing: env.integrationStatuses.pushNotifications.missing
+});
+
 healthRouter.get(
   "/",
   asyncHandler(async (_req, res) => {
@@ -56,11 +64,13 @@ healthRouter.get(
   asyncHandler(async (_req, res) => {
     await prisma.$queryRaw`SELECT 1`;
     const amazonConnect = await getAmazonConnectHealth();
+    const pushNotifications = getPushNotificationHealth();
     return sendSuccess(res, {
       data: {
         status: amazonConnect.ready ? "ready" : "degraded",
         integrations: {
-          amazonConnect
+          amazonConnect,
+          pushNotifications
         },
         timestamp: new Date().toISOString()
       }
@@ -73,11 +83,13 @@ healthRouter.get(
   asyncHandler(async (_req, res) => {
     await prisma.$queryRaw`SELECT 1`;
     const amazonConnect = await getAmazonConnectHealth();
+    const pushNotifications = getPushNotificationHealth();
     return sendSuccess(res, {
       data: {
         status: amazonConnect.ready ? "ready" : "degraded",
         integrations: {
-          amazonConnect
+          amazonConnect,
+          pushNotifications
         },
         timestamp: new Date().toISOString()
       }

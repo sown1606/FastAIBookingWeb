@@ -27,8 +27,7 @@ const ownerBasicNav = [
   { to: "/appointments", labelKey: "nav.appointments" },
   { to: "/staff", labelKey: "nav.staff" },
   { to: "/services", labelKey: "nav.services" },
-  { to: "/salon-profile", labelKey: "nav.salonProfile" },
-  { to: "/call-center", labelKey: "nav.callCenter" }
+  { to: "/salon-profile", labelKey: "nav.salonProfile" }
 ];
 
 const staffNav = [

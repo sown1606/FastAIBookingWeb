@@ -180,6 +180,11 @@ const envSchema = z.object({
   VERTEX_CLIENT_EMAIL: z.string().optional(),
   VERTEX_CLIENT_ID: z.string().optional(),
   VERTEX_CLIENT_CERT_URL: z.string().optional(),
+  FIREBASE_PROJECT_ID: z.string().optional(),
+  FIREBASE_CLIENT_EMAIL: z.string().optional(),
+  FIREBASE_PRIVATE_KEY: z.string().optional(),
+  FIREBASE_SERVICE_ACCOUNT_JSON: z.string().optional(),
+  FIREBASE_WEB_PUSH_VAPID_KEY: z.string().optional(),
   TWILIO_PHONE_NUMBER: z.string().optional(),
   AI_PROVIDER: z.enum(["amazon", "lex", "vertex"]).default("amazon"),
   CALL_PROVIDER: z.enum(["amazon_connect", "callrail"]).default("amazon_connect")
@@ -218,6 +223,11 @@ const hasVertexCredentialFile = (() => {
 const hasVertexCredentialEnv =
   Boolean(asNonEmpty(base.VERTEX_CLIENT_EMAIL) ?? asNonEmpty(base.VERTEX_SERVICE_ACCOUNT_EMAIL)) &&
   Boolean(asNonEmpty(base.VERTEX_PRIVATE_KEY));
+const hasFirebaseServiceAccountJson = Boolean(asNonEmpty(base.FIREBASE_SERVICE_ACCOUNT_JSON));
+const hasFirebaseServiceAccountEnv =
+  Boolean(asNonEmpty(base.FIREBASE_PROJECT_ID)) &&
+  Boolean(asNonEmpty(base.FIREBASE_CLIENT_EMAIL)) &&
+  Boolean(asNonEmpty(base.FIREBASE_PRIVATE_KEY));
 
 const runtimeEnv = {
   workingDirectory: runtimeWorkingDirectory,
@@ -366,6 +376,23 @@ const integrationStatuses = {
       !asNonEmpty(base.FASTAIBOOKING_API_BASE_URL) ? "FASTAIBOOKING_API_BASE_URL" : null,
       !asNonEmpty(base.FASTAIBOOKING_API_INTERNAL_TOKEN) ? "FASTAIBOOKING_API_INTERNAL_TOKEN" : null
     ].filter((value): value is string => Boolean(value))
+  },
+  pushNotifications: {
+    configured: Boolean(
+      (hasFirebaseServiceAccountJson || hasFirebaseServiceAccountEnv) &&
+        asNonEmpty(base.FIREBASE_WEB_PUSH_VAPID_KEY)
+    ),
+    code:
+      (hasFirebaseServiceAccountJson || hasFirebaseServiceAccountEnv) &&
+      asNonEmpty(base.FIREBASE_WEB_PUSH_VAPID_KEY)
+        ? "PUSH_NOTIFICATIONS_CONFIGURED"
+        : "PUSH_NOTIFICATIONS_NOT_CONFIGURED",
+    missing: [
+      !hasFirebaseServiceAccountJson && !hasFirebaseServiceAccountEnv
+        ? "FIREBASE_SERVICE_ACCOUNT_JSON or FIREBASE_PROJECT_ID/FIREBASE_CLIENT_EMAIL/FIREBASE_PRIVATE_KEY"
+        : null,
+      !asNonEmpty(base.FIREBASE_WEB_PUSH_VAPID_KEY) ? "FIREBASE_WEB_PUSH_VAPID_KEY" : null
+    ].filter((value): value is string => Boolean(value))
   }
 };
 
@@ -430,6 +457,11 @@ export const env = {
   VERTEX_PROJECT_ID: resolvedVertexProjectId,
   VERTEX_LOCATION: resolvedVertexLocation,
   VERTEX_MODEL: resolvedVertexModel,
+  FIREBASE_PROJECT_ID: asNonEmpty(base.FIREBASE_PROJECT_ID),
+  FIREBASE_CLIENT_EMAIL: asNonEmpty(base.FIREBASE_CLIENT_EMAIL),
+  FIREBASE_PRIVATE_KEY: asNonEmpty(base.FIREBASE_PRIVATE_KEY),
+  FIREBASE_SERVICE_ACCOUNT_JSON: asNonEmpty(base.FIREBASE_SERVICE_ACCOUNT_JSON),
+  FIREBASE_WEB_PUSH_VAPID_KEY: asNonEmpty(base.FIREBASE_WEB_PUSH_VAPID_KEY),
   integrationStatuses,
   runtimeEnv
 };

@@ -7,6 +7,7 @@ import { useToast } from "../components/toast";
 import { formatCurrencyCents, formatDateTime } from "../lib/format";
 import { statusLabelKey, useI18n } from "../lib/i18n";
 import { useUiMode } from "../lib/ui-mode";
+import { InfoHint } from "../components/info-hint";
 
 interface AppointmentItem {
   id: string;
@@ -244,10 +245,12 @@ export const DashboardPage = () => {
               <p className="muted">{t("dashboard.commandCenterHint")}</p>
               <div className="summary-badges">
                 <span className={settings?.aiReceptionEnabled ? "status-pill success" : "status-pill warning"}>
-                  {t("dashboard.aiReceptionStatus")}: {settings?.aiReceptionEnabled ? t("dashboard.ready") : t("dashboard.needsSetup")}
+                  {t("dashboard.aiReceptionStatus")}: {settings?.aiReceptionEnabled ? t("common.statusOn") : t("common.statusOff")}
+                  <InfoHint text={t("hints.aiReception")} />
                 </span>
                 <span className={settings?.callCenterEnabled ? "status-pill success" : "status-pill warning"}>
-                  {t("dashboard.callCenterStatus")}: {settings?.callCenterEnabled ? t("dashboard.ready") : t("dashboard.needsSetup")}
+                  {t("dashboard.callCenterStatus")}: {settings?.callCenterEnabled ? t("common.statusOn") : t("common.statusOff")}
+                  <InfoHint text={t("hints.callCenter")} />
                 </span>
                 <span className="status-pill info">
                   {t("dashboard.todayStatus")}: {todayAppointments.length ? t("dashboard.todayOpenStatus") : t("dashboard.todayQuietStatus")}
@@ -326,6 +329,7 @@ export const DashboardPage = () => {
 
           <section className={isBasicMode ? "quick-actions primary-actions" : "quick-actions"}>
             <Link to="/appointments">{isBasicMode ? t("dashboard.viewSchedule") : t("nav.appointments")}</Link>
+            {isBasicMode ? <Link to="/appointments#create-appointment">{t("dashboard.addAppointment")}</Link> : null}
             {!isBasicMode ? <Link to="/customers">{t("nav.customers")}</Link> : null}
             <Link to="/staff">{isBasicMode ? t("dashboard.manageStaff") : t("nav.staff")}</Link>
             <Link to="/services">{isBasicMode ? t("dashboard.manageServices") : t("nav.services")}</Link>

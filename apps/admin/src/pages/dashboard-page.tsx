@@ -130,84 +130,21 @@ export const DashboardPage = () => {
         </div>
         <div className="hero-stats">
           <article className="hero-stat-card">
-            <span>{t("dashboard.totalOwners")}</span>
-            <strong>{metrics.totalOwners}</strong>
+            <span>{t("dashboard.totalSalons")}</span>
+            <strong>{metrics.totalSalons}</strong>
           </article>
           <article className="hero-stat-card">
-            <span>{t("dashboard.callCenterAgents")}</span>
-            <strong>{metrics.callCenterAgentCount ?? 0}</strong>
+            <span>{t("dashboard.activeSalons")}</span>
+            <strong>{metrics.activeSalons}</strong>
           </article>
           <article className="hero-stat-card">
             <span>{t("dashboard.openEscalations")}</span>
             <strong>{metrics.openEscalationCount ?? 0}</strong>
           </article>
-        </div>
-      </section>
-
-      <section className="card-grid">
-        <article className="card stat-card">
-          <h3>{t("dashboard.totalSalons")}</h3>
-          <strong>{metrics.totalSalons}</strong>
-        </article>
-        <article className="card stat-card">
-          <h3>{t("dashboard.activeSalons")}</h3>
-          <strong>{metrics.activeSalons}</strong>
-        </article>
-        <article className="card stat-card">
-          <h3>{t("dashboard.suspendedSalons")}</h3>
-          <strong>{metrics.suspendedSalons}</strong>
-        </article>
-        <article className="card stat-card">
-          <h3>{t("dashboard.totalAppointments")}</h3>
-          <strong>{metrics.totalAppointments}</strong>
-        </article>
-        <article className="card stat-card">
-          <h3>{t("dashboard.callCenterAgents")}</h3>
-          <strong>{metrics.callCenterAgentCount ?? 0}</strong>
-        </article>
-        <article className="card stat-card">
-          <h3>{t("dashboard.openEscalations")}</h3>
-          <strong>{metrics.openEscalationCount ?? 0}</strong>
-        </article>
-      </section>
-
-      <section className="card">
-        <div className="section-header">
-          <div>
-            <h3>{t("dashboard.integrationStatus")}</h3>
-            <p className="muted">{t("dashboard.integrationHint")}</p>
-          </div>
-        </div>
-        <div className="integration-grid">
-        {integrations.map((integration) => (
-          <article key={integration.label} className="integration-card">
-            <div className="section-header">
-              <h3>{integration.label}</h3>
-              <span
-                className={
-                  integration.value.configured ? "status-pill success" : "status-pill warning"
-                }
-              >
-                {integration.value.configured ? t("dashboard.ready") : t("dashboard.pending")}
-              </span>
-            </div>
-            <div className="key-value-grid">
-              <div>
-                <span className="muted">{t("health.activeConfig")}</span>
-                <strong>{integration.value.activeConfigCount}</strong>
-              </div>
-              <div>
-                <span className="muted">{t("common.status")}</span>
-                <strong>{integration.value.configured ? t("status.READY") : t("status.NEEDS_SETUP")}</strong>
-              </div>
-            </div>
-            <p className="muted">
-              {integration.value.missing.length
-                ? t("dashboard.integrationMissing", { items: integration.value.missing.join(", ") })
-                : t("dashboard.integrationReady")}
-            </p>
+          <article className="hero-stat-card">
+            <span>Amazon Connect</span>
+            <strong>{integrationSummary.amazonConnect.configured ? t("dashboard.ready") : t("dashboard.pending")}</strong>
           </article>
-        ))}
         </div>
       </section>
 
@@ -275,6 +212,69 @@ export const DashboardPage = () => {
           <EmptyBlock message={t("dashboard.noSalons")} />
         )}
       </section>
+
+      <details className="advanced-config">
+        <summary>{t("dashboard.operationalDetails")}</summary>
+        <section className="card-grid">
+          <article className="card stat-card">
+            <h3>{t("dashboard.totalOwners")}</h3>
+            <strong>{metrics.totalOwners}</strong>
+          </article>
+          <article className="card stat-card">
+            <h3>{t("dashboard.suspendedSalons")}</h3>
+            <strong>{metrics.suspendedSalons}</strong>
+          </article>
+          <article className="card stat-card">
+            <h3>{t("dashboard.totalAppointments")}</h3>
+            <strong>{metrics.totalAppointments}</strong>
+          </article>
+          <article className="card stat-card">
+            <h3>{t("dashboard.callCenterAgents")}</h3>
+            <strong>{metrics.callCenterAgentCount ?? 0}</strong>
+          </article>
+        </section>
+      </details>
+
+      <details className="advanced-config">
+        <summary>{t("dashboard.integrationStatus")}</summary>
+        <section className="card">
+          <div>
+            <h3>{t("dashboard.integrationStatus")}</h3>
+            <p className="muted">{t("dashboard.integrationHint")}</p>
+          </div>
+          <div className="integration-grid">
+            {integrations.map((integration) => (
+              <article key={integration.label} className="integration-card">
+                <div className="section-header">
+                  <h3>{integration.label}</h3>
+                  <span
+                    className={
+                      integration.value.configured ? "status-pill success" : "status-pill warning"
+                    }
+                  >
+                    {integration.value.configured ? t("dashboard.ready") : t("dashboard.pending")}
+                  </span>
+                </div>
+                <div className="key-value-grid">
+                  <div>
+                    <span className="muted">{t("health.activeConfig")}</span>
+                    <strong>{integration.value.activeConfigCount}</strong>
+                  </div>
+                  <div>
+                    <span className="muted">{t("common.status")}</span>
+                    <strong>{integration.value.configured ? t("status.READY") : t("status.NEEDS_SETUP")}</strong>
+                  </div>
+                </div>
+                <p className="muted">
+                  {integration.value.missing.length
+                    ? t("dashboard.integrationMissing", { items: integration.value.missing.join(", ") })
+                    : t("dashboard.integrationReady")}
+                </p>
+              </article>
+            ))}
+          </div>
+        </section>
+      </details>
     </div>
   );
 };

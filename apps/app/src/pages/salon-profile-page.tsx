@@ -12,6 +12,7 @@ import {
 import { formatDateTime } from "../lib/format";
 import { formatUsPhoneInput, validateOptionalUsPhone } from "../lib/phone";
 import { useI18n } from "../lib/i18n";
+import { InfoHint } from "../components/info-hint";
 
 interface SalonProfile {
   id: string;
@@ -109,6 +110,19 @@ interface AiReceptionCallLogsResponse {
   items: AiReceptionCallLog[];
 }
 
+interface PushHealthStatus {
+  configured: boolean;
+  status: string;
+  code: string;
+  missing: string[];
+}
+
+interface ReadinessStatus {
+  integrations?: {
+    pushNotifications?: PushHealthStatus;
+  };
+}
+
 const aiReceptionStatusClasses: Record<AiReceptionConfig["status"], string> = {
   not_configured: "status-pill warning",
   pending: "status-pill info",
@@ -139,6 +153,7 @@ export const SalonProfilePage = () => {
   const [error, setError] = useState("");
   const [aiReception, setAiReception] = useState<AiReceptionConfig | null>(null);
   const [aiReceptionCallLogs, setAiReceptionCallLogs] = useState<AiReceptionCallLog[]>([]);
+  const [pushHealth, setPushHealth] = useState<PushHealthStatus | null>(null);
   const [aiReceptionSubmitting, setAiReceptionSubmitting] = useState(false);
 
   const [profileForm, setProfileForm] = useState({
@@ -216,10 +231,12 @@ export const SalonProfilePage = () => {
     setError("");
     setLoading(true);
     try {
-      const [profileResult, settingsResult] = await Promise.all([
+      const [profileResult, settingsResult, readinessResult] = await Promise.all([
         apiGet<SalonProfile>("/api/v1/salon/profile"),
-        apiGet<SalonSettings>("/api/v1/salon/settings")
+        apiGet<SalonSettings>("/api/v1/salon/settings"),
+        apiGet<ReadinessStatus>("/api/v1/health/readiness")
       ]);
+      setPushHealth(readinessResult.integrations?.pushNotifications ?? null);
 
       setProfileForm({
         name: profileResult.name,
@@ -714,7 +731,10 @@ export const SalonProfilePage = () => {
               <p className="muted">{t("profile.aiReceptionTitleHint")}</p>
             </div>
             <label className="field checkbox-row">
-              <span>{t("profile.aiForwarding")}</span>
+              <span>
+                {t("profile.aiForwarding")}
+                <InfoHint text={t("hints.aiReception")} />
+              </span>
               <input
                 type="checkbox"
                 checked={settingsForm.aiReceptionEnabled}
@@ -727,7 +747,10 @@ export const SalonProfilePage = () => {
               />
             </label>
             <label className="field">
-              <span>{t("profile.ringCount")}</span>
+              <span>
+                {t("profile.ringCount")}
+                <InfoHint text={t("hints.ringCount")} />
+              </span>
               <input
                 type="number"
                 min={1}
@@ -770,7 +793,10 @@ export const SalonProfilePage = () => {
               <p className="muted">{t("profile.callCenterFallbackHint")}</p>
             </div>
             <label className="field checkbox-row">
-              <span>{t("profile.callCenterEnabled")}</span>
+              <span>
+                {t("profile.callCenterEnabled")}
+                <InfoHint text={t("hints.callCenter")} />
+              </span>
               <input
                 type="checkbox"
                 checked={settingsForm.callCenterEnabled}
@@ -838,7 +864,10 @@ export const SalonProfilePage = () => {
               <small>{t("profile.routingNumberHint")}</small>
             </label>
             <label className="field">
-              <span>{t("profile.routingNote")}</span>
+              <span>
+                {t("profile.routingNote")}
+                <InfoHint text={t("hints.routingNote")} />
+              </span>
               <textarea
                 rows={3}
                 value={settingsForm.callCenterRoutingNote}
@@ -858,7 +887,10 @@ export const SalonProfilePage = () => {
               <p className="muted">{t("profile.notificationsHint")}</p>
             </div>
             <label className="field">
-              <span>{t("profile.notificationRecipients")}</span>
+              <span>
+                {t("profile.notificationRecipients")}
+                <InfoHint text={t("hints.notificationRecipients")} />
+              </span>
               <textarea
                 rows={4}
                 value={settingsForm.notificationRecipientsText}
@@ -872,6 +904,16 @@ export const SalonProfilePage = () => {
               />
               <small>{t("profile.notificationRecipientsHint")}</small>
             </label>
+            <div className="simple-callout">
+              <strong>{t("profile.pushStatusTitle")}</strong>
+              <p>
+                {pushHealth?.configured
+                  ? t("profile.pushConfigured")
+                  : t("profile.pushNotConfigured", {
+                      code: pushHealth?.code ?? "PUSH_NOTIFICATIONS_NOT_CONFIGURED"
+                    })}
+              </p>
+            </div>
             <label className="field">
               <span>{t("profile.callLogVisibility")}</span>
               <select
