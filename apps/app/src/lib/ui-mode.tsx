@@ -1,9 +1,7 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext } from "react";
 import type { ReactNode } from "react";
 
 export type UiMode = "basic" | "advanced";
-
-const STORAGE_KEY = "fastaibooking.uiMode";
 
 interface UiModeContextValue {
   mode: UiMode;
@@ -13,30 +11,14 @@ interface UiModeContextValue {
 
 const UiModeContext = createContext<UiModeContextValue | null>(null);
 
-const resolveInitialMode = (): UiMode => {
-  if (typeof window === "undefined") {
-    return "basic";
-  }
-  return window.localStorage.getItem(STORAGE_KEY) === "advanced" ? "advanced" : "basic";
+const basicModeValue: UiModeContextValue = {
+  mode: "basic",
+  setMode: () => undefined,
+  isBasicMode: true
 };
 
 export const UiModeProvider = ({ children }: { children: ReactNode }) => {
-  const [mode, setMode] = useState<UiMode>(resolveInitialMode);
-
-  useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEY, mode);
-  }, [mode]);
-
-  const value = useMemo<UiModeContextValue>(
-    () => ({
-      mode,
-      setMode,
-      isBasicMode: mode === "basic"
-    }),
-    [mode]
-  );
-
-  return <UiModeContext.Provider value={value}>{children}</UiModeContext.Provider>;
+  return <UiModeContext.Provider value={basicModeValue}>{children}</UiModeContext.Provider>;
 };
 
 export const useUiMode = () => {

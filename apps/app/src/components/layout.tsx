@@ -2,32 +2,15 @@ import { Link, NavLink, useLocation } from "react-router-dom";
 import { DemoAvatar } from "./avatar";
 import { LanguageSwitcher } from "./language-switcher";
 import { useI18n, type TranslationKey } from "../lib/i18n";
-import { useUiMode, type UiMode } from "../lib/ui-mode";
 import type { AuthUser } from "../types";
 
 const ownerNav = [
   { to: "/dashboard", labelKey: "nav.dashboard" },
+  { to: "/appointments", labelKey: "nav.appointments" },
+  { to: "/staff", labelKey: "nav.staff" },
+  { to: "/services", labelKey: "nav.services" },
   { to: "/salon-profile", labelKey: "nav.salonProfile" },
-  { to: "/staff", labelKey: "nav.staff" },
-  { to: "/services", labelKey: "nav.services" },
-  { to: "/business-hours", labelKey: "nav.businessHours" },
-  { to: "/customers", labelKey: "nav.customers" },
-  { to: "/appointments", labelKey: "nav.appointments" },
-  { to: "/availability", labelKey: "nav.availability" },
-  { to: "/messages", labelKey: "nav.messages" },
-  { to: "/alerts", labelKey: "nav.alerts" },
-  { to: "/call-center", labelKey: "nav.callCenter" },
-  { to: "/calls", labelKey: "nav.calls" },
-  { to: "/ai-logs", labelKey: "nav.aiLogs" },
-  { to: "/billing", labelKey: "nav.billing" }
-];
-
-const ownerBasicNav = [
-  { to: "/dashboard", labelKey: "nav.dashboard" },
-  { to: "/appointments", labelKey: "nav.appointments" },
-  { to: "/staff", labelKey: "nav.staff" },
-  { to: "/services", labelKey: "nav.services" },
-  { to: "/salon-profile", labelKey: "nav.salonProfile" }
+  { to: "/call-center", labelKey: "nav.callCenter" }
 ];
 
 const staffNav = [
@@ -69,12 +52,9 @@ export const AppLayout = ({
 }) => {
   const location = useLocation();
   const { t } = useI18n();
-  const { mode, setMode } = useUiMode();
   const nav =
     user.role === "SALON_OWNER"
-      ? mode === "basic"
-        ? ownerBasicNav
-        : ownerNav
+      ? ownerNav
       : user.role === "CALL_CENTER_AGENT"
         ? callCenterNav
         : staffNav;
@@ -109,18 +89,6 @@ export const AppLayout = ({
             </div>
           </div>
           <div className="topbar-actions">
-            <div className="mode-switch" aria-label={t("layout.viewMode")}>
-              {(["basic", "advanced"] as UiMode[]).map((item) => (
-                <button
-                  key={item}
-                  type="button"
-                  className={mode === item ? "active" : ""}
-                  onClick={() => setMode(item)}
-                >
-                  {item === "basic" ? t("layout.basic") : t("layout.advanced")}
-                </button>
-              ))}
-            </div>
             <LanguageSwitcher compact />
             <span className="user-pill">
               <DemoAvatar

@@ -135,6 +135,13 @@ interface AppointmentsResponse {
   items: AppointmentItem[];
 }
 
+interface StaffScheduleSummary {
+  staff: StaffItem;
+  appointments: AppointmentItem[];
+  currentAppointment: AppointmentItem | null;
+  nextAppointment: AppointmentItem | null;
+}
+
 interface QueueItem {
   id: string;
   status: string;
@@ -379,8 +386,18 @@ const getWaitingMinutes = (item: QueueItem | EscalationDetail): number => {
   const reference =
     item.status === "CLOSED"
       ? item.closedAt ?? new Date().toISOString()
-      : item.connectedAt ?? new Date().toISOString();
+      : new Date().toISOString();
   return Math.max(0, Math.round((new Date(reference).getTime() - new Date(item.requestedAt).getTime()) / 60000));
+};
+
+const getWaitBadgeKey = (minutes: number): "callCenter.urgentWait" | "callCenter.longWait" | null => {
+  if (minutes > 60) {
+    return "callCenter.urgentWait";
+  }
+  if (minutes > 30) {
+    return "callCenter.longWait";
+  }
+  return null;
 };
 
 interface AmazonConnectCcpPanelProps {
@@ -556,7 +573,7 @@ const AmazonConnectCcpPanel = ({ ccpUrl, region, enabled, onQueueMatch }: Amazon
 
       {normalizedCcpUrl ? (
         <a href={normalizedCcpUrl} target="_blank" rel="noreferrer" className="button-secondary">
-          {t("callCenter.ccpLink")}
+          {t("callCenter.openConnectNewTab")}
         </a>
       ) : null}
     </article>
@@ -712,21 +729,6 @@ export const CallCenterPage = () => {
       }
     }
     return String(value);
-  };
-
-  const formatStaffStatus = (member: StaffItem) => {
-    if (member.status && member.status !== "ACTIVE") {
-      return statusLabelKey(member.status) ? t(statusLabelKey(member.status)!) : member.status;
-    }
-    if (member.isBookable === false) {
-      return t("callCenter.notBookable");
-    }
-    if (!member.currentWorkStatus || member.currentWorkStatus === "AVAILABLE") {
-      return t("callCenter.availableNow");
-    }
-    return statusLabelKey(member.currentWorkStatus)
-      ? t(statusLabelKey(member.currentWorkStatus)!)
-      : member.currentWorkStatus;
   };
 
   const loadSalonData = async (salonId: string, dateKey = scheduleDateKey) => {
@@ -1256,37 +1258,64 @@ export const CallCenterPage = () => {
   const formatCustomerName = (customer: CustomerItem) => {
     return `${customer.firstName} ${customer.lastName}`.trim() || customer.phone || t("common.none");
   };
-  const staffScheduleSummaries = useMemo(() => {
+  const staffScheduleSummaries = useMemo<StaffScheduleSummary[]>(() => {
     return contextStaff.map((member) => {
       const memberAppointments = visibleAppointments.filter((appointment) => appointment.staff.id === member.id);
       const currentAppointment = memberAppointments.find(isAppointmentCurrent) ?? null;
       const nextAppointment = memberAppointments.find(isAppointmentUpcoming) ?? null;
-      const isActive = (member.status ?? "ACTIVE") === "ACTIVE";
-      const isWorkAvailable = !member.currentWorkStatus || member.currentWorkStatus === "AVAILABLE";
-      const canTakeBookings = isActive && member.isBookable !== false && isWorkAvailable && !currentAppointment;
       return {
         staff: member,
         appointments: memberAppointments,
         currentAppointment,
-        nextAppointment,
-        canTakeBookings
+        nextAppointment
       };
     });
   }, [contextStaff, visibleAppointments]);
-  const activeBookableStaff = staffScheduleSummaries.filter((summary) => summary.canTakeBookings);
-  const unavailableStaff = staffScheduleSummaries.filter((summary) => !summary.canTakeBookings);
-  const availableStaffCount = activeBookableStaff.length;
+  const getStaffAvailabilityLabel = (summary: StaffScheduleSummary) => {
+    if ((summary.staff.status ?? "ACTIVE") !== "ACTIVE") {
+      return t("callCenter.staffInactive");
+    }
+    if (summary.staff.isBookable === false || summary.staff.currentWorkStatus === "OFFLINE") {
+      return t("callCenter.staffNotTakingBookings");
+    }
+    if (summary.currentAppointment) {
+      return t("callCenter.staffWithCustomer");
+    }
+    return t("callCenter.staffAvailable");
+  };
+  const getStaffNextFreeHint = (summary: StaffScheduleSummary) => {
+    if (summary.currentAppointment) {
+      const end = getAppointmentEndDate(summary.currentAppointment);
+      const time = new Intl.DateTimeFormat(undefined, {
+        hour: "numeric",
+        minute: "2-digit",
+        timeZone: salonTimezone
+      }).format(end);
+      return t("callCenter.freeAfter", { time });
+    }
+    if (summary.nextAppointment) {
+      return t("callCenter.nextAppointmentHint", {
+        timeRange: formatTimeRange(summary.nextAppointment, salonTimezone)
+      });
+    }
+    return t("callCenter.staffCanTakeToday");
+  };
+  const availableStaffSummaries = staffScheduleSummaries.filter((summary) => {
+    return (
+      (summary.staff.status ?? "ACTIVE") === "ACTIVE" &&
+      summary.staff.isBookable !== false &&
+      summary.staff.currentWorkStatus !== "OFFLINE" &&
+      !summary.currentAppointment
+    );
+  });
+  const availableStaffCount = availableStaffSummaries.length;
+  const nextAvailableStaffSummary = availableStaffSummaries[0] ?? null;
   const scheduleGroups = staffScheduleSummaries.filter((summary) => summary.appointments.length);
   const selectedService = services.find((service) => service.id === bookingForm.serviceId) ?? null;
   const selectedStaffSchedule = staffScheduleSummaries.find((summary) => summary.staff.id === bookingForm.staffId) ?? null;
-  const selectedStaffNextAvailability = selectedStaffSchedule?.nextAppointment
-    ? `${t("callCenter.nextAppointment")}: ${formatTimeRange(selectedStaffSchedule.nextAppointment, salonTimezone)}`
+  const selectedStaffNextAvailability = selectedStaffSchedule
+    ? getStaffNextFreeHint(selectedStaffSchedule)
     : t("callCenter.noMoreAppointmentsToday");
-  const salonBusinessPhone =
-    selectedSalonDetail?.customerIncomingPhoneNumber ??
-    selectedSalonDetail?.originalPhoneNumber ??
-    selectedSalonDetail?.contactPhone ??
-    t("common.none");
   const customerIncomingPhone = selectedSalonDetail?.customerIncomingPhoneNumber ?? t("common.none");
   const originalSalonPhone = selectedSalonDetail?.originalPhoneNumber ?? selectedSalonDetail?.contactPhone ?? t("common.none");
   const ownerContact = selectedSalonDetail
@@ -1662,18 +1691,47 @@ export const CallCenterPage = () => {
       <FormDialog />
 
       <aside className="operator-context-panel">
-        <section className="card operator-context-card">
+        <section className="card operator-active-call-banner">
           <div className="section-header compact-header">
             <div>
-              <h2>{selectedSalonDetail?.name ?? selectedSalonName}</h2>
-              <p className="muted">{t("callCenter.operatorContextHint")}</p>
+              <span className="eyebrow">{t("callCenter.activeCall")}</span>
+              <h2>
+                {selectedEscalation
+                  ? t("callCenter.handlingCallFor", { salonName: selectedEscalation.salon.name })
+                  : t("callCenter.noActiveCall")}
+              </h2>
             </div>
             <span className={amazonConnectReady ? "status-pill success" : "status-pill warning"}>
               {amazonConnectReady ? t("callCenter.amazonReady") : t("callCenter.amazonPending")}
             </span>
           </div>
 
-          <label className="field compact">
+          <div className="operator-label-list compact">
+            <div className="operator-label-row">
+              <span>{t("profile.salonName")}</span>
+              <strong>{selectedSalonDetail?.name ?? selectedSalonName}</strong>
+            </div>
+            <div className="operator-label-row">
+              <span>{t("callCenter.callerPhone")}</span>
+              <strong>{selectedCallerPhone ?? t("callCenter.unknownCaller")}</strong>
+            </div>
+            <div className="operator-label-row">
+              <span>{t("common.status")}</span>
+              <strong>
+                {selectedEscalation
+                  ? statusLabelKey(selectedEscalation.status)
+                    ? t(statusLabelKey(selectedEscalation.status)!)
+                    : selectedEscalation.status
+                  : t("common.none")}
+              </strong>
+            </div>
+            <div className="operator-label-row">
+              <span>{t("callCenter.waitingTime")}</span>
+              <strong>{selectedEscalation ? t("callCenter.waitingMinutes", { count: selectedWaitingMinutes }) : t("common.none")}</strong>
+            </div>
+          </div>
+
+          <label className="field compact manual-salon-selector">
             <span>{t("callCenter.selectSalon")}</span>
             <select
               value={selectedSalonId}
@@ -1686,6 +1744,7 @@ export const CallCenterPage = () => {
                 </option>
               ))}
             </select>
+            <small className="muted">{t("callCenter.selectSalonHint")}</small>
           </label>
         </section>
 
@@ -1696,49 +1755,41 @@ export const CallCenterPage = () => {
 
         <section className="card operator-context-section">
           <h3>{t("callCenter.salonInformation")}</h3>
-          <div className="operator-info-list">
-            <div>
-              <span className="muted">{t("profile.salonName")}</span>
+          <div className="operator-label-list">
+            <div className="operator-label-row">
+              <span>{t("profile.salonName")}</span>
               <strong>{selectedSalonDetail?.name ?? t("common.none")}</strong>
             </div>
-            <div>
-              <span className="muted">{t("common.addressLine1")}</span>
+            <div className="operator-label-row">
+              <span>{t("common.addressLine1")}</span>
               <strong>{formatSalonAddress(selectedSalonDetail)}</strong>
             </div>
-            <div>
-              <span className="muted">{t("common.timezone")}</span>
+            <div className="operator-label-row">
+              <span>{t("common.timezone")}</span>
               <strong>{selectedSalonDetail?.timezone ?? t("common.none")}</strong>
             </div>
-            <div>
-              <span className="muted">{t("callCenter.customerIncomingPhone")}</span>
-              <strong>{customerIncomingPhone}</strong>
-            </div>
-            <div>
-              <span className="muted">{t("callCenter.originalSalonPhone")}</span>
+            <div className="operator-label-row">
+              <span>{t("callCenter.businessPhone")}</span>
               <strong>{originalSalonPhone}</strong>
             </div>
-            <div>
-              <span className="muted">{t("callCenter.businessPhone")}</span>
-              <strong>{salonBusinessPhone}</strong>
+            <div className="operator-label-row">
+              <span>{t("callCenter.customerIncomingPhone")}</span>
+              <strong>{customerIncomingPhone}</strong>
             </div>
-            <div>
-              <span className="muted">{t("callCenter.contactPhone")}</span>
+            <div className="operator-label-row">
+              <span>{t("callCenter.contactPhone")}</span>
               <strong>{selectedSalonDetail?.contactPhone ?? t("common.none")}</strong>
             </div>
-            <div>
-              <span className="muted">{t("callCenter.notificationPhone")}</span>
-              <strong>{selectedSalonDetail?.notificationPhoneNumber ?? t("common.none")}</strong>
-            </div>
-            <div>
-              <span className="muted">{t("callCenter.ownerContact")}</span>
+            <div className="operator-label-row">
+              <span>{t("callCenter.ownerContact")}</span>
               <strong>{ownerContact}</strong>
             </div>
-            <div>
-              <span className="muted">{t("common.email")}</span>
-              <strong>{selectedSalonDetail?.owner.email ?? t("common.none")}</strong>
+            <div className="operator-label-row">
+              <span>{t("callCenter.notificationPhone")}</span>
+              <strong>{selectedSalonDetail?.notificationPhoneNumber ?? t("common.none")}</strong>
             </div>
-            <div>
-              <span className="muted">{t("callCenter.routingNumber")}</span>
+            <div className="operator-label-row">
+              <span>{t("callCenter.routingNumber")}</span>
               <strong>{selectedSalonDetail?.settings?.callCenterRoutingNumber || t("common.none")}</strong>
             </div>
           </div>
@@ -1746,72 +1797,64 @@ export const CallCenterPage = () => {
 
         <section className="card operator-context-section">
           <h3>{t("callCenter.businessHours")}</h3>
-          <div className="operator-info-list">
-            <div>
-              <span className="muted">{t("callCenter.todayBusinessHours")}</span>
+          <div className="business-hours-list">
+            <div className="business-hour-row today">
+              <span>{t("callCenter.todayBusinessHours")}</span>
               <strong>{todayBusinessHour ? formatBusinessHour(todayBusinessHour) : t("common.none")}</strong>
             </div>
+            {selectedSalonDetail?.businessHours.length
+              ? selectedSalonDetail.businessHours.map((hour) => (
+                  <div key={hour.dayOfWeek} className="business-hour-row">
+                    <span>{getBusinessDayLabel(hour.dayOfWeek)}</span>
+                    <strong>{hour.isOpen && hour.openTime && hour.closeTime ? `${hour.openTime} - ${hour.closeTime}` : t("callCenter.closed")}</strong>
+                  </div>
+                ))
+              : null}
           </div>
-          {selectedSalonDetail?.businessHours.length ? (
-            <div className="weekly-hours-list">
-              {selectedSalonDetail.businessHours.map((hour) => (
-                <span key={hour.dayOfWeek}>{formatBusinessHour(hour)}</span>
-              ))}
-            </div>
-          ) : (
+          {!selectedSalonDetail?.businessHours.length ? (
             <p className="muted">{t("common.none")}</p>
-          )}
+          ) : null}
         </section>
 
         <section className="card operator-context-section">
           <div className="section-header compact-header">
             <h3>{t("callCenter.staffToday")}</h3>
-            <span className="summary-badge">{visibleAppointments.length}</span>
+            <span className="summary-badge">{t("callCenter.staffAvailableNowCount", { count: availableStaffCount })}</span>
           </div>
 
           <div className="operator-staff-group">
-            <h4>{t("callCenter.activeBookableStaff")}</h4>
-            {activeBookableStaff.length ? (
-              activeBookableStaff.map((summary) => (
-                <article key={summary.staff.id} className="operator-staff-card ready">
-                  <div>
-                    <strong>{summary.staff.fullName}</strong>
-                    <span>{summary.staff.title || t("common.none")}</span>
-                  </div>
-                  <div className="staff-card-meta">
-                    <span>{formatStaffStatus(summary.staff)}</span>
-                    <span>{summary.staff.isBookable === false ? t("callCenter.bookableOff") : t("callCenter.bookableOn")}</span>
-                    <span>{t("callCenter.totalAppointmentsToday", { count: summary.appointments.length })}</span>
-                  </div>
-                  <small>{t("callCenter.currentAppointment")}: {summary.currentAppointment ? formatTimeRange(summary.currentAppointment, salonTimezone) : t("common.none")}</small>
-                  <small>{t("callCenter.nextAppointment")}: {summary.nextAppointment ? formatTimeRange(summary.nextAppointment, salonTimezone) : t("common.none")}</small>
-                </article>
-              ))
+            {staffScheduleSummaries.length ? (
+              staffScheduleSummaries.map((summary) => {
+                const isAvailableNow = availableStaffSummaries.some((item) => item.staff.id === summary.staff.id);
+                return (
+                  <article key={summary.staff.id} className={isAvailableNow ? "operator-staff-card ready" : "operator-staff-card"}>
+                    <div>
+                      <strong>{summary.staff.fullName}</strong>
+                      <span>{summary.staff.title || t("common.none")}</span>
+                    </div>
+                    <div className="staff-card-meta">
+                      <span className="staff-availability-label">{getStaffAvailabilityLabel(summary)}</span>
+                      <span>{summary.staff.isBookable === false ? t("callCenter.bookableOff") : t("callCenter.bookableOn")}</span>
+                      <span>{t("callCenter.totalAppointmentsToday", { count: summary.appointments.length })}</span>
+                    </div>
+                    <small>{getStaffNextFreeHint(summary)}</small>
+                    <small>
+                      {t("callCenter.currentAppointment")}:{" "}
+                      {summary.currentAppointment
+                        ? `${formatTimeRange(summary.currentAppointment, salonTimezone)} · ${formatCustomerName(summary.currentAppointment.customer)} · ${summary.currentAppointment.service.name}`
+                        : t("common.none")}
+                    </small>
+                    <small>
+                      {t("callCenter.nextAppointment")}:{" "}
+                      {summary.nextAppointment
+                        ? `${formatTimeRange(summary.nextAppointment, salonTimezone)} · ${formatCustomerName(summary.nextAppointment.customer)} · ${summary.nextAppointment.service.name}`
+                        : t("common.none")}
+                    </small>
+                  </article>
+                );
+              })
             ) : (
-              <p className="muted">{t("callCenter.noReadyStaff")}</p>
-            )}
-          </div>
-
-          <div className="operator-staff-group">
-            <h4>{t("callCenter.busyInactiveStaff")}</h4>
-            {unavailableStaff.length ? (
-              unavailableStaff.map((summary) => (
-                <article key={summary.staff.id} className="operator-staff-card">
-                  <div>
-                    <strong>{summary.staff.fullName}</strong>
-                    <span>{summary.staff.title || t("common.none")}</span>
-                  </div>
-                  <div className="staff-card-meta">
-                    <span>{formatStaffStatus(summary.staff)}</span>
-                    <span>{summary.staff.isBookable === false ? t("callCenter.bookableOff") : t("callCenter.bookableOn")}</span>
-                    <span>{t("callCenter.totalAppointmentsToday", { count: summary.appointments.length })}</span>
-                  </div>
-                  <small>{t("callCenter.currentAppointment")}: {summary.currentAppointment ? formatTimeRange(summary.currentAppointment, salonTimezone) : t("common.none")}</small>
-                  <small>{t("callCenter.nextAppointment")}: {summary.nextAppointment ? formatTimeRange(summary.nextAppointment, salonTimezone) : t("common.none")}</small>
-                </article>
-              ))
-            ) : (
-              <p className="muted">{t("callCenter.noBusyStaff")}</p>
+              <p className="muted">{t("callCenter.noStaffToday")}</p>
             )}
           </div>
         </section>
@@ -1819,15 +1862,15 @@ export const CallCenterPage = () => {
         <section className="card operator-context-section">
           <h3>{t("callCenter.activeServices")}</h3>
           {contextServices.length ? (
-            <div className="service-chip-list">
+            <div className="service-row-list">
               {contextServices.map((service) => (
-                <span key={service.id}>
+                <div key={service.id} className="service-row">
                   <strong>{service.name}</strong>
                   <small>
                     {service.durationMinutes ? t("callCenter.durationMinutes", { count: service.durationMinutes }) : t("common.none")}
                     {typeof service.priceCents === "number" ? ` · ${formatCurrencyCents(service.priceCents)}` : ""}
                   </small>
-                </span>
+                </div>
               ))}
             </div>
           ) : (
@@ -1864,6 +1907,10 @@ export const CallCenterPage = () => {
                   <div>
                     <span className="muted">{t("callCenter.callerPhone")}</span>
                     <strong>{selectedCallerPhone ?? t("common.none")}</strong>
+                  </div>
+                  <div>
+                    <span className="muted">{t("profile.salonName")}</span>
+                    <strong>{selectedEscalation.salon.name}</strong>
                   </div>
                   <div>
                     <span className="muted">{t("common.status")}</span>
@@ -1979,6 +2026,7 @@ export const CallCenterPage = () => {
               <div className="compact-queue-list">
                 {selectedSalonQueue.map((item) => {
                   const waitingMinutes = getWaitingMinutes(item);
+                  const waitingBadgeKey = getWaitBadgeKey(waitingMinutes);
                   const callerPhone = getQueueCallerPhone(item) ?? t("common.none");
                   return (
                     <article
@@ -1989,14 +2037,19 @@ export const CallCenterPage = () => {
                       <div className="queue-row-main">
                         <strong>{callerPhone}</strong>
                         <span>{item.salon.name}</span>
+                        <small>{formatDateTime(item.requestedAt, salonTimezone)}</small>
                       </div>
                       <span className="status-pill info">
                         {statusLabelKey(item.status) ? t(statusLabelKey(item.status)!) : item.status}
                       </span>
                       <small>{t("callCenter.waitingMinutes", { count: waitingMinutes })}</small>
-                      {waitingMinutes > 60 ? <span className="status-pill warning">{t("callCenter.waitingTooLong")}</span> : null}
-                      <p>{item.escalationReason ?? t("common.none")}</p>
-                      <p>{item.messageToCaller ?? t("common.none")}</p>
+                      {waitingBadgeKey ? <span className="status-pill warning">{t(waitingBadgeKey)}</span> : null}
+                      <p>
+                        <strong>{t("callCenter.escalationReason")}:</strong> {item.escalationReason ?? t("common.none")}
+                      </p>
+                      <p>
+                        <strong>{t("callCenter.messageToCaller")}:</strong> {item.messageToCaller ?? t("common.none")}
+                      </p>
                       <div className="inline-actions compact-actions">
                         <button
                           type="button"
@@ -2192,7 +2245,57 @@ export const CallCenterPage = () => {
             <button type="button" className="button-secondary" onClick={() => void changeScheduleDate(addDaysToDateKey(scheduleDateKey, 1))}>
               {t("callCenter.nextDay")}
             </button>
+            <label className="field compact date-input-field">
+              <span>{t("callCenter.dateInput")}</span>
+              <input
+                type="date"
+                value={scheduleDateKey}
+                onChange={(event) => {
+                  if (event.target.value) {
+                    void changeScheduleDate(event.target.value);
+                  }
+                }}
+              />
+            </label>
           </div>
+
+          <div className="schedule-summary-grid">
+            <div>
+              <span className="muted">{t("callCenter.totalAppointments")}</span>
+              <strong>{visibleAppointments.length}</strong>
+            </div>
+            <div>
+              <span className="muted">{t("callCenter.staffAvailableNow")}</span>
+              <strong>{availableStaffCount}</strong>
+            </div>
+            <div>
+              <span className="muted">{t("callCenter.nextAvailableStaff")}</span>
+              <strong>
+                {nextAvailableStaffSummary
+                  ? `${nextAvailableStaffSummary.staff.fullName} · ${getStaffNextFreeHint(nextAvailableStaffSummary)}`
+                  : t("common.none")}
+              </strong>
+            </div>
+          </div>
+
+          <section className="available-staff-card">
+            <div className="section-header compact-header">
+              <h3>{t("callCenter.whoIsAvailable")}</h3>
+              <span className="summary-badge">{availableStaffCount}</span>
+            </div>
+            {availableStaffSummaries.length ? (
+              <div className="available-staff-list">
+                {availableStaffSummaries.map((summary) => (
+                  <div key={summary.staff.id} className="available-staff-row">
+                    <strong>{summary.staff.fullName}</strong>
+                    <span>{getStaffNextFreeHint(summary)}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="muted">{t("callCenter.noAvailableStaffNow")}</p>
+            )}
+          </section>
 
           {scheduleGroups.length ? (
             <div className="staff-schedule-list">
@@ -2201,7 +2304,9 @@ export const CallCenterPage = () => {
                   <div className="section-header compact-header">
                     <div>
                       <h3>{group.staff.fullName}</h3>
-                      <p className="muted">{group.staff.title || t("common.none")}</p>
+                      <p className="muted">
+                        {group.staff.title || t("common.none")} · {getStaffAvailabilityLabel(group)} · {getStaffNextFreeHint(group)}
+                      </p>
                     </div>
                     <span className="summary-badge">{t("callCenter.appointmentCount", { count: group.appointments.length })}</span>
                   </div>

@@ -1038,10 +1038,77 @@ pre {
 }
 
 .operator-info-list strong,
+.operator-label-list strong,
 .compact-list span,
 .queue-row strong,
 .queue-row span {
   overflow-wrap: anywhere;
+}
+
+.operator-active-call-banner {
+  display: grid;
+  gap: 12px;
+  border-color: rgba(27, 77, 114, 0.24);
+  background: linear-gradient(135deg, #f5fbff 0%, #ffffff 70%);
+  box-shadow: var(--shadow-sm);
+}
+
+.operator-active-call-banner h2 {
+  margin: 3px 0 0;
+  font-size: 1.04rem;
+  line-height: 1.25;
+}
+
+.operator-label-list,
+.business-hours-list,
+.service-row-list,
+.available-staff-list {
+  display: grid;
+  gap: 8px;
+}
+
+.operator-label-list.compact {
+  gap: 6px;
+}
+
+.operator-label-row,
+.business-hour-row,
+.service-row,
+.available-staff-row,
+.schedule-summary-grid > div {
+  display: grid;
+  gap: 3px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-soft);
+}
+
+.operator-label-row span,
+.business-hour-row span,
+.service-row small,
+.available-staff-row span,
+.schedule-summary-grid span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.operator-label-row strong,
+.business-hour-row strong,
+.service-row strong,
+.available-staff-row strong,
+.schedule-summary-grid strong {
+  overflow-wrap: anywhere;
+}
+
+.business-hour-row.today {
+  border-color: rgba(27, 77, 114, 0.24);
+  background: var(--surface-tint);
+}
+
+.manual-salon-selector small {
+  line-height: 1.35;
 }
 
 .operator-routing-note {
@@ -1080,6 +1147,7 @@ pre {
 }
 
 .operator-context-card,
+.operator-active-call-banner,
 .selected-call-card,
 .queue-card,
 .operator-booking-card,
@@ -1093,9 +1161,11 @@ pre {
 .weekly-hours-list,
 .operator-customer-matches,
 .operator-booking-hints,
+.available-staff-card,
 .staff-schedule-list,
 .appointment-card-list,
-.schedule-highlight-row {
+.schedule-highlight-row,
+.schedule-summary-grid {
   display: grid;
   gap: 10px;
 }
@@ -1277,12 +1347,16 @@ pre {
   display: inline-flex;
   gap: 4px;
   align-items: center;
-  border-radius: 999px;
+  border-radius: 8px;
   background: var(--surface);
   border: 1px solid var(--border);
   padding: 5px 8px;
   font-size: 0.78rem;
   font-weight: 700;
+}
+
+.staff-availability-label {
+  color: var(--primary);
 }
 
 .service-chip-list {
@@ -1343,6 +1417,26 @@ pre {
 
 .appointment-operator-card {
   background: var(--surface);
+}
+
+.schedule-summary-grid {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.available-staff-card {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.available-staff-row {
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  align-items: center;
+}
+
+.date-input-field {
+  min-width: 170px;
 }
 
 .operator-focus-grid {
