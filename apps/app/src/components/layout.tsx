@@ -1,6 +1,7 @@
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { DemoAvatar } from "./avatar";
 import { LanguageSwitcher } from "./language-switcher";
+import { NotificationBell } from "./notification-bell";
 import { useI18n, type TranslationKey } from "../lib/i18n";
 import type { AuthUser } from "../types";
 
@@ -21,6 +22,9 @@ const staffNav = [
 const callCenterNav = [
   { to: "/call-center", labelKey: "nav.callCenter" }
 ];
+
+const isCallCenterRole = (role: AuthUser["role"]) =>
+  role === "CALL_CENTER_AGENT" || role === "OPERATOR";
 
 const resolveTitleKey = (pathname: string): TranslationKey => {
   if (pathname === "/dashboard") return "nav.dashboard";
@@ -55,13 +59,13 @@ export const AppLayout = ({
   const nav =
     user.role === "SALON_OWNER"
       ? ownerNav
-      : user.role === "CALL_CENTER_AGENT"
+      : isCallCenterRole(user.role)
         ? callCenterNav
         : staffNav;
   const roleLabel =
     user.role === "SALON_OWNER"
       ? t("layout.ownerSpace")
-      : user.role === "CALL_CENTER_AGENT"
+      : isCallCenterRole(user.role)
         ? t("layout.operatorSpace")
         : t("layout.staffSpace");
 
@@ -89,6 +93,7 @@ export const AppLayout = ({
             </div>
           </div>
           <div className="topbar-actions">
+            <NotificationBell />
             <LanguageSwitcher compact />
             <span className="user-pill">
               <DemoAvatar
@@ -96,7 +101,7 @@ export const AppLayout = ({
                 variant={
                   user.role === "SALON_OWNER"
                     ? "owner"
-                    : user.role === "CALL_CENTER_AGENT"
+                    : isCallCenterRole(user.role)
                       ? "operator"
                       : "staff"
                 }

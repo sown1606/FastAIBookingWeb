@@ -18,6 +18,7 @@ import {
 import { sendSms } from "../../lib/sms";
 import { validateAppointmentSlot } from "../availability/availability.service";
 import { createSalonAlert } from "../alerts/alerts.service";
+import { sendPushToSalonOwnerAndAssignedStaff } from "../notifications/notifications.service";
 
 interface CreateAppointmentInput {
   customerId: string;
@@ -373,6 +374,51 @@ const sendAppointmentCustomerNotifications = async (
   }
 };
 
+const sendAppointmentPushNotifications = async (
+  appointment: Awaited<ReturnType<typeof getAppointmentDetail>>,
+  eventType: "created" | "updated" | "rescheduled" | "canceled",
+  affectedStaffIds: string[] = [appointment.staffId]
+): Promise<void> => {
+  try {
+    const serviceName = getNotificationServiceLabel(appointment);
+    const appointmentTime = formatNotificationTime(appointment.startTime, appointment.salon.timezone);
+    const customerName = `${appointment.customer.firstName} ${appointment.customer.lastName}`.trim();
+    const title =
+      eventType === "created"
+        ? "New appointment"
+        : eventType === "rescheduled"
+          ? "Appointment rescheduled"
+          : eventType === "canceled"
+            ? "Appointment canceled"
+            : "Appointment updated";
+    const body = `${customerName || "Customer"} - ${serviceName} with ${appointment.staff.fullName} at ${appointmentTime}.`;
+    const payload = {
+      title,
+      body,
+      type: `appointment_${eventType}`,
+      salonId: appointment.salonId,
+      url: `/appointments?appointmentId=${encodeURIComponent(appointment.id)}`,
+      data: {
+        type: `appointment_${eventType}`,
+        appointmentId: appointment.id,
+        salonId: appointment.salonId,
+        staffId: appointment.staffId
+      }
+    };
+
+    await sendPushToSalonOwnerAndAssignedStaff(appointment.salonId, affectedStaffIds, payload);
+  } catch (error) {
+    logger.warn(
+      {
+        appointmentId: appointment.id,
+        eventType,
+        error: error instanceof Error ? error.message : String(error)
+      },
+      "Appointment push notification failed. Continuing without blocking appointment workflow."
+    );
+  }
+};
+
 export const createAppointment = async (
   salonId: string,
   actorUserId: string,
@@ -463,6 +509,7 @@ export const createAppointment = async (
   if (created.source !== AppointmentSource.AI) {
     await sendAppointmentCustomerNotifications(created, "created");
   }
+  await sendAppointmentPushNotifications(created, "created");
   return created;
 };
 
@@ -646,6 +693,10 @@ export const updateAppointment = async (
   });
 
   await sendAppointmentCustomerNotifications(updatedAppointment, "updated");
+  await sendAppointmentPushNotifications(updatedAppointment, "updated", [
+    existing.staffId,
+    updatedAppointment.staffId
+  ]);
   return updatedAppointment;
 };
 
@@ -730,6 +781,7 @@ export const cancelAppointment = async (
   });
 
   await sendAppointmentCustomerNotifications(canceledAppointment, "canceled");
+  await sendAppointmentPushNotifications(canceledAppointment, "canceled", [existing.staffId]);
   return canceledAppointment;
 };
 
@@ -815,6 +867,10 @@ export const rescheduleAppointment = async (
   });
 
   await sendAppointmentCustomerNotifications(rescheduledAppointment, "updated");
+  await sendAppointmentPushNotifications(rescheduledAppointment, "rescheduled", [
+    existing.staffId,
+    rescheduledAppointment.staffId
+  ]);
   return rescheduledAppointment;
 };
 

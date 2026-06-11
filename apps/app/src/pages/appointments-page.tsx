@@ -1,5 +1,6 @@
 import { Fragment, FormEvent, useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
+import { useSearchParams } from "react-router-dom";
 import { apiGet, apiPatch, apiPost, extractErrorMessage } from "../lib/api";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
 import { useToast } from "../components/toast";
@@ -186,6 +187,7 @@ export const AppointmentsPage = () => {
   const { openFormDialog, FormDialog } = useFormDialog();
   const { t, locale } = useI18n();
   const { isBasicMode } = useUiMode();
+  const [searchParams] = useSearchParams();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -208,6 +210,7 @@ export const AppointmentsPage = () => {
   });
 
   const isOwner = session?.user.role === "SALON_OWNER";
+  const highlightedAppointmentId = searchParams.get("appointmentId") ?? "";
   const salonTimezone = useMemo(() => resolveAppointmentTimezone(appointments), [appointments]);
   const todayDateKey = useMemo(() => formatSalonDateKey(new Date(), salonTimezone), [salonTimezone]);
   const appointmentStatusOptions = [
@@ -275,6 +278,32 @@ export const AppointmentsPage = () => {
     setSelectedDate(nearestUsefulStaffDateKey(appointments, salonTimezone));
     setStaffDateInitialized(true);
   }, [appointments, isOwner, loading, salonTimezone, staffDateInitialized]);
+
+  useEffect(() => {
+    if (!highlightedAppointmentId || loading) {
+      return;
+    }
+    const appointment = appointments.find((item) => item.id === highlightedAppointmentId);
+    if (!appointment) {
+      return;
+    }
+    const appointmentDate = localDateKey(appointment.startTime, salonTimezone);
+    if (selectedDate !== appointmentDate) {
+      setSelectedDate(appointmentDate);
+    }
+  }, [appointments, highlightedAppointmentId, loading, salonTimezone, selectedDate]);
+
+  useEffect(() => {
+    if (!highlightedAppointmentId || loading) {
+      return;
+    }
+    const timeout = window.setTimeout(() => {
+      document
+        .getElementById(`appointment-${highlightedAppointmentId}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 120);
+    return () => window.clearTimeout(timeout);
+  }, [highlightedAppointmentId, loading, selectedDate]);
 
   const createAppointment = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -552,6 +581,9 @@ export const AppointmentsPage = () => {
     return "schedule-appointment";
   };
 
+  const getHighlightedClass = (appointmentId: string) =>
+    appointmentId === highlightedAppointmentId ? " highlighted" : "";
+
   const renderStaffAppointmentActions = (item: AppointmentItem) => (
     <>
       {item.status === "SCHEDULED" || item.status === "CONFIRMED" ? (
@@ -800,8 +832,9 @@ export const AppointmentsPage = () => {
                         const statusKey = statusLabelKey(item.status);
                         return (
                           <article
+                            id={`appointment-${item.id}`}
                             key={item.id}
-                            className={getAppointmentToneClass(item)}
+                            className={`${getAppointmentToneClass(item)}${getHighlightedClass(item.id)}`}
                             style={{
                               gridColumn: staffIndex + 2,
                               gridRow: `${startRow} / span ${span}`
@@ -891,7 +924,10 @@ export const AppointmentsPage = () => {
               <span className="summary-badge">{t("appointments.todayCount")}: {todayAppointments.length}</span>
             </div>
             {currentOrNextStaffAppointment ? (
-              <article className="appointment-card appointment-card-featured">
+              <article
+                id={`appointment-${currentOrNextStaffAppointment.id}`}
+                className={`appointment-card appointment-card-featured${getHighlightedClass(currentOrNextStaffAppointment.id)}`}
+              >
                 <div className="appointment-card-header">
                   <div className="appointment-card-copy">
                     <strong>
@@ -944,7 +980,11 @@ export const AppointmentsPage = () => {
             {selectedDayAppointments.length ? (
               <div className="mobile-list">
                 {selectedDayAppointments.map((item) => (
-                  <article key={item.id} className="mobile-item">
+                  <article
+                    id={`appointment-${item.id}`}
+                    key={item.id}
+                    className={`mobile-item${getHighlightedClass(item.id)}`}
+                  >
                     <div className="appointment-card-header">
                       <div className="appointment-card-copy">
                         <strong>
@@ -983,7 +1023,11 @@ export const AppointmentsPage = () => {
                 <h3>{day}</h3>
                 <div className="entity-grid">
                   {items.map((item) => (
-                    <article key={item.id} className="appointment-card">
+                    <article
+                      id={`appointment-${item.id}`}
+                      key={item.id}
+                      className={`appointment-card${getHighlightedClass(item.id)}`}
+                    >
                       <div className="appointment-card-header">
                         <div className="appointment-card-copy">
                           <strong>

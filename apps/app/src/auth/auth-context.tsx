@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { apiGet, apiPost, registerSessionInvalidationHandler } from "../lib/api";
 import { clearSession, getSession, setSession } from "../lib/auth-storage";
+import { unregisterFirebaseMessagingToken } from "../lib/firebase-messaging";
 import type { AuthSession, AuthUser } from "../types";
 
 interface OwnerRegistrationPayload {
@@ -39,7 +40,7 @@ interface MeResponse {
   id: string;
   email: string;
   fullName: string;
-  role: "PLATFORM_ADMIN" | "SALON_OWNER" | "STAFF" | "CALL_CENTER_AGENT";
+  role: "PLATFORM_ADMIN" | "SALON_OWNER" | "STAFF" | "CALL_CENTER_AGENT" | "OPERATOR";
   salonId: string | null;
   staffId: string | null;
 }
@@ -56,7 +57,12 @@ const normalizeUser = (input: MeResponse): AuthUser => ({
 });
 
 const assertRoleSupported = (role: AuthUser["role"]) => {
-  if (role === "SALON_OWNER" || role === "STAFF" || role === "CALL_CENTER_AGENT") {
+  if (
+    role === "SALON_OWNER" ||
+    role === "STAFF" ||
+    role === "CALL_CENTER_AGENT" ||
+    role === "OPERATOR"
+  ) {
     return;
   }
   throw new Error("This account cannot access the salon app.");
@@ -148,8 +154,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         });
       },
       logout: async () => {
-        const current = getSession();
         try {
+          await unregisterFirebaseMessagingToken().catch(() => undefined);
+          const current = getSession();
           if (current?.refreshToken) {
             await apiPost<null, { refreshToken: string }>("/api/v1/auth/logout", {
               refreshToken: current.refreshToken

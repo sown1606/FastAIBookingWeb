@@ -33,6 +33,9 @@ services:
       PORT: 3000
       DATABASE_HOST: postgres
       DATABASE_URL: postgresql://${DATABASE_USER:-postgres}:${DATABASE_PASSWORD:-postgres}@postgres:5432/${DATABASE_NAME:-fastaibooking}
+      FIREBASE_SERVICE_ACCOUNT_PATH: ${FIREBASE_SERVICE_ACCOUNT_PATH:-/run/secrets/firebase/fastaibooking-firebase-adminsdk.json}
+    volumes:
+      - ./secrets/firebase:/run/secrets/firebase:ro
     expose:
       - "3000"
     healthcheck:
@@ -88,6 +91,13 @@ services:
         VITE_ADMIN_BASE_URL: ${VITE_ADMIN_BASE_URL:-https://admin-new-nail.kendemo.com}
         VITE_AMAZON_CONNECT_CCP_URL: ${VITE_AMAZON_CONNECT_CCP_URL:-}
         VITE_APP_NAME: ${VITE_OWNER_APP_NAME:-FastAIBooking}
+        VITE_FIREBASE_API_KEY: ${VITE_FIREBASE_API_KEY:-AIzaSyBiGCcPrzXDuD_jz6nrEMN5zK1okkRW7nY}
+        VITE_FIREBASE_AUTH_DOMAIN: ${VITE_FIREBASE_AUTH_DOMAIN:-fastaibooking.firebaseapp.com}
+        VITE_FIREBASE_PROJECT_ID: ${VITE_FIREBASE_PROJECT_ID:-fastaibooking}
+        VITE_FIREBASE_STORAGE_BUCKET: ${VITE_FIREBASE_STORAGE_BUCKET:-fastaibooking.firebasestorage.app}
+        VITE_FIREBASE_MESSAGING_SENDER_ID: ${VITE_FIREBASE_MESSAGING_SENDER_ID:-127983871800}
+        VITE_FIREBASE_APP_ID: ${VITE_FIREBASE_APP_ID:-1:127983871800:web:7e37bf6d0eca926c4b43cd}
+        VITE_FIREBASE_VAPID_KEY: ${VITE_FIREBASE_VAPID_KEY:-BJSSMx7m9z3QsTM1AlUWMVuodsy0UQ6qKzW8wlQ2H6yIRGIM0p1A6yHMg5dS5er9Xfa1HE_LOyrJk6XgO6TYElE}
     container_name: fastaibooking-app
     restart: unless-stopped
     expose:

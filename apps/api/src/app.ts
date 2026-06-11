@@ -28,6 +28,7 @@ import { customersRouter } from "./modules/customers/customers.routes";
 import { feedbackRouter } from "./modules/feedback/feedback.routes";
 import { healthRouter } from "./modules/health/health.routes";
 import { messagesRouter } from "./modules/messages/messages.routes";
+import { notificationsRouter } from "./modules/notifications/notifications.routes";
 import { ownerRouter } from "./modules/owner/owner.routes";
 import { salonRouter } from "./modules/salon/salon.routes";
 import { servicesRouter } from "./modules/services/services.routes";
@@ -84,6 +85,7 @@ app.use(`${PUBLIC_API_PREFIX}/ai`, aiInternalRouter);
 app.use(`${PUBLIC_API_PREFIX}/integrations/amazon-connect`, amazonConnectIntegrationRouter);
 app.use(`${PUBLIC_API_PREFIX}/integrations/callrail`, callrailWebhookRouter);
 app.use(`${PUBLIC_API_PREFIX}/feedback`, feedbackRouter);
+app.use(`${PUBLIC_API_PREFIX}/notifications`, authenticate, notificationsRouter);
 
 app.use(
   `${PUBLIC_API_PREFIX}/call-center`,

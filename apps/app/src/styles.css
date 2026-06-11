@@ -179,6 +179,137 @@ textarea:focus-visible {
   flex-wrap: wrap;
 }
 
+.notification-bell {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.notification-bell-button {
+  position: relative;
+  width: 42px;
+  height: 42px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--primary-strong);
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(17, 43, 36, 0.05);
+}
+
+.notification-bell-button svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.notification-badge {
+  position: absolute;
+  top: -4px;
+  right: -5px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--danger);
+  color: #fff;
+  border: 2px solid var(--surface);
+  font-size: 0.68rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.notification-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 40;
+  width: min(360px, calc(100vw - 28px));
+  max-height: min(70vh, 520px);
+  overflow: auto;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+}
+
+.notification-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.notification-actions .button-secondary {
+  min-height: 34px;
+  padding: 6px 10px;
+  white-space: nowrap;
+}
+
+.notification-list {
+  display: grid;
+  gap: 8px;
+}
+
+.notification-item {
+  width: 100%;
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.notification-item:hover {
+  border-color: var(--primary);
+}
+
+.notification-item.unread {
+  border-color: rgba(180, 35, 24, 0.35);
+  background: linear-gradient(180deg, #fff7f5, var(--surface));
+  box-shadow: inset 3px 0 0 var(--danger);
+}
+
+.notification-item > span:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.notification-item strong,
+.notification-item span {
+  overflow-wrap: anywhere;
+}
+
+.notification-item small {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.notification-empty {
+  padding: 16px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  text-align: center;
+}
+
 .mode-switch {
   display: inline-flex;
   align-items: center;
@@ -1642,6 +1773,17 @@ pre {
   background: linear-gradient(180deg, rgba(223, 243, 237, 0.78), rgba(255, 255, 255, 0.98));
 }
 
+.appointment-card.highlighted,
+.mobile-item.highlighted,
+.schedule-appointment.highlighted,
+.appointment-operator-card.highlighted {
+  border-color: var(--accent);
+  box-shadow:
+    0 0 0 3px rgba(240, 111, 97, 0.18),
+    var(--shadow-sm);
+  scroll-margin-top: 96px;
+}
+
 .appointment-card-header {
   display: flex;
   justify-content: space-between;
@@ -2475,6 +2617,16 @@ pre {
 
   .topbar-actions > * {
     width: 100%;
+  }
+
+  .topbar-actions > .notification-bell {
+    width: auto;
+  }
+
+  .notification-menu {
+    left: 0;
+    right: auto;
+    width: min(360px, calc(100vw - 28px));
   }
 
   .language-switcher.compact {

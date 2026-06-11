@@ -133,6 +133,8 @@ model User {
   staffProfile             Staff?                      @relation("StaffUser", fields: [staffId], references: [id], onDelete: SetNull)
   ownedSalon               Salon?                      @relation("SalonOwner")
   refreshTokens            RefreshToken[]
+  pushTokens               PushToken[]
+  notifications            UserNotification[]
   passwordResetTokens      PasswordResetToken[]
   appointmentsCreated      Appointment[]               @relation("AppointmentCreatedBy")
   appointmentStatusChanges AppointmentStatusHistory[]  @relation("AppointmentStatusChangedBy")
@@ -189,6 +191,8 @@ model Salon {
   auditLogs                   AuditLog[]
   callCenterAssignments       CallCenterSalonAssignment[]
   alerts                      Alert[]
+  pushTokens                  PushToken[]
+  userNotifications           UserNotification[]
   callEscalations             CallEscalation[]
   chatMessages                ChatMessage[]
   workSessions                StaffWorkSession[]
@@ -254,6 +258,7 @@ model Staff {
   appointments        Appointment[]
   workSessions        StaffWorkSession[]
   reminders           StaffReminder[]
+  pushTokens          PushToken[]
   chatMessages        ChatMessage[]
   staffServices       StaffService[]
   createdAt           DateTime           @default(now())
@@ -460,6 +465,45 @@ model Alert {
 
   @@index([salonId, readAt, createdAt])
   @@index([alertType, createdAt])
+}
+
+model PushToken {
+  id         String   @id @default(uuid())
+  token      String   @unique
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role       Role
+  salonId    String?
+  salon      Salon?   @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  staffId    String?
+  staff      Staff?   @relation(fields: [staffId], references: [id], onDelete: SetNull)
+  platform   String   @default("web")
+  lastSeenAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([userId])
+  @@index([salonId, role])
+  @@index([staffId])
+}
+
+model UserNotification {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  salonId   String?
+  salon     Salon?    @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  title     String
+  body      String
+  type      String
+  priority  String    @default("NORMAL")
+  data      Json?
+  url       String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt, createdAt])
+  @@index([salonId, type, createdAt])
 }
 
 model CustomerFeedback {

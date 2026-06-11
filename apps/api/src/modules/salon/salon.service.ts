@@ -1,7 +1,9 @@
 import { prisma } from "../../db/prisma";
 import { createAuditLog } from "../../lib/audit";
 import { AppError } from "../../lib/errors";
+import { logger } from "../../lib/logger";
 import { requireUsPhone } from "../../utils/phone";
+import { sendPushToAssignedCallCenterAgentsOrOperators } from "../notifications/notifications.service";
 import { buildSalonRoutingSummary } from "./routing-summary";
 
 interface UpdateSalonProfileInput {
@@ -65,6 +67,42 @@ const normalizeNotificationRecipients = (
         .filter((item) => item.length > 0)
     )
   );
+};
+
+const normalizeOptionalTextForCompare = (value: string | null | undefined): string | null => {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+};
+
+const sendCallCenterRoutingNotePush = async (salonId: string): Promise<void> => {
+  try {
+    const salon = await prisma.salon.findUnique({
+      where: { id: salonId },
+      select: {
+        name: true
+      }
+    });
+
+    await sendPushToAssignedCallCenterAgentsOrOperators(salonId, {
+      title: "Operator note updated",
+      body: `${salon?.name ?? "A salon"} updated call center routing notes.`,
+      type: "call_center_routing_note_updated",
+      salonId,
+      url: `/call-center?salonId=${encodeURIComponent(salonId)}`,
+      data: {
+        type: "call_center_routing_note_updated",
+        salonId
+      }
+    });
+  } catch (error) {
+    logger.warn(
+      {
+        salonId,
+        error: error instanceof Error ? error.message : String(error)
+      },
+      "Call center routing-note push notification failed."
+    );
+  }
 };
 
 export const getSalonProfile = async (salonId: string) => {
@@ -143,6 +181,16 @@ export const updateSalonSettings = async (
   actorUserId: string,
   input: UpdateSalonSettingsInput
 ) => {
+  const previousSettings = await prisma.salonSetting.findUnique({
+    where: { salonId },
+    select: {
+      callCenterRoutingNote: true
+    }
+  });
+  const hasRoutingNoteInput = Object.prototype.hasOwnProperty.call(
+    input,
+    "callCenterRoutingNote"
+  );
   const data = {
     ...input,
     aiForwardingEnabled: input.aiReceptionEnabled,
@@ -189,6 +237,14 @@ export const updateSalonSettings = async (
     entityId: settings.id,
     metadata: data
   });
+
+  if (
+    hasRoutingNoteInput &&
+    normalizeOptionalTextForCompare(previousSettings?.callCenterRoutingNote) !==
+      normalizeOptionalTextForCompare(settings.callCenterRoutingNote)
+  ) {
+    await sendCallCenterRoutingNotePush(salonId);
+  }
 
   return {
     ...settings,

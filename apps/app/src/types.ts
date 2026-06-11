@@ -1,4 +1,4 @@
-export type Role = "PLATFORM_ADMIN" | "SALON_OWNER" | "STAFF" | "CALL_CENTER_AGENT";
+export type Role = "PLATFORM_ADMIN" | "SALON_OWNER" | "STAFF" | "CALL_CENTER_AGENT" | "OPERATOR";
 
 export interface AuthUser {
   id: string;

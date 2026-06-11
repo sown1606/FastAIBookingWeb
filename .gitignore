@@ -9,3 +9,6 @@ apps/api/generated
 fastAibooking.pem
 apps.zip
 .vercel
+secrets/
+firebase-notification-setup.local.md
+*.firebase-adminsdk.json

@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { apiGet, apiPatch, apiPost, extractErrorMessage } from "../lib/api";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
 import { useToast } from "../components/toast";
@@ -586,6 +586,7 @@ export const CallCenterPage = () => {
   const { openFormDialog, FormDialog } = useFormDialog();
   const { t } = useI18n();
   const { isBasicMode } = useUiMode();
+  const [searchParams] = useSearchParams();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -621,6 +622,8 @@ export const CallCenterPage = () => {
   const isOwner = session?.user.role === "SALON_OWNER";
   const configuredCcpUrl = import.meta.env.VITE_AMAZON_CONNECT_CCP_URL?.trim();
   const ccpUrl = configuredCcpUrl || runtime?.amazonConnect.ccpUrl || null;
+  const targetSalonId = searchParams.get("salonId") ?? "";
+  const targetEscalationId = searchParams.get("escalationId") ?? "";
 
   const appointmentStatusOptions = useMemo(
     () => ["SCHEDULED", "CONFIRMED", "CANCELED", "NO_SHOW"].map((value) => ({
@@ -804,12 +807,18 @@ export const CallCenterPage = () => {
 
       setRuntime(runtimeResult);
       setSalons(salonItems);
-      const initialSalonId = salonItems[0]?.id ?? "";
+      const initialSalonId =
+        targetSalonId && salonItems.some((item) => item.id === targetSalonId)
+          ? targetSalonId
+          : salonItems[0]?.id ?? "";
       if (initialSalonId) {
         setSelectedSalonId(initialSalonId);
         await loadSalonData(initialSalonId);
       }
       await loadQueue(false);
+      if (targetEscalationId) {
+        setSelectedEscalationId(targetEscalationId);
+      }
     } catch (loadError) {
       setError(extractErrorMessage(loadError));
     } finally {
@@ -850,6 +859,25 @@ export const CallCenterPage = () => {
       notify("error", extractErrorMessage(changeError));
     }
   };
+
+  useEffect(() => {
+    if (
+      loading ||
+      !targetSalonId ||
+      targetSalonId === selectedSalonId ||
+      !salons.some((salon) => salon.id === targetSalonId)
+    ) {
+      return;
+    }
+    void changeSalon(targetSalonId);
+  }, [loading, salons, selectedSalonId, targetSalonId]);
+
+  useEffect(() => {
+    if (loading || !targetEscalationId || targetEscalationId === selectedEscalationId) {
+      return;
+    }
+    setSelectedEscalationId(targetEscalationId);
+  }, [loading, selectedEscalationId, targetEscalationId]);
 
   const createCustomer = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

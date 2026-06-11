@@ -10,6 +10,7 @@ import {
 import { env } from "../../config/env";
 import { prisma } from "../../db/prisma";
 import { AppError } from "../../lib/errors";
+import { logger } from "../../lib/logger";
 import { sendSms } from "../../lib/sms";
 import { createSalonAlert } from "../alerts/alerts.service";
 import {
@@ -21,6 +22,7 @@ import {
 } from "../appointments/appointments.service";
 import { normalizePhoneForMatching } from "../calls/providers/callrail.provider";
 import { createCustomer, searchCustomers } from "../customers/customers.service";
+import { sendPushToAssignedCallCenterAgentsOrOperators } from "../notifications/notifications.service";
 import { listServices } from "../services/services.service";
 import { listStaff } from "../staff/staff.service";
 
@@ -40,6 +42,48 @@ const buildAgentActor = (agentUserId: string): CallCenterWorkspaceActor => ({
   userId: agentUserId,
   role: Role.CALL_CENTER_AGENT
 });
+
+const sendCallEscalationQueuePush = async (input: {
+  salonId: string;
+  escalationId: string;
+  callSessionId: string;
+  customerPhone?: string | null;
+}): Promise<void> => {
+  try {
+    const salon = await prisma.salon.findUnique({
+      where: {
+        id: input.salonId
+      },
+      select: {
+        name: true
+      }
+    });
+
+    await sendPushToAssignedCallCenterAgentsOrOperators(input.salonId, {
+      title: "Caller waiting for operator",
+      body: `${salon?.name ?? "A salon"} has a caller in the operator queue${input.customerPhone ? ` from ${input.customerPhone}` : ""}.`,
+      type: "call_escalation_queued",
+      priority: "URGENT",
+      salonId: input.salonId,
+      url: `/call-center?escalationId=${encodeURIComponent(input.escalationId)}`,
+      data: {
+        type: "call_escalation_queued",
+        salonId: input.salonId,
+        escalationId: input.escalationId,
+        callSessionId: input.callSessionId
+      }
+    });
+  } catch (error) {
+    logger.warn(
+      {
+        salonId: input.salonId,
+        escalationId: input.escalationId,
+        error: error instanceof Error ? error.message : String(error)
+      },
+      "Call escalation push notification failed."
+    );
+  }
+};
 
 const getAccessibleSalonIds = async (actor: CallCenterWorkspaceActor): Promise<string[]> => {
   if (actor.role === Role.SALON_OWNER) {
@@ -468,6 +512,14 @@ export const createOrUpdateCallEscalation = async (input: {
     routingOutcome === CallRoutingOutcome.QUEUED
       ? input.messageToCaller ?? "Please wait while I connect you."
       : "No agents available.";
+  const previousEscalation = await prisma.callEscalation.findUnique({
+    where: {
+      callSessionId: input.callSessionId
+    },
+    select: {
+      status: true
+    }
+  });
 
   const escalation = await prisma.callEscalation.upsert({
     where: {
@@ -530,6 +582,18 @@ export const createOrUpdateCallEscalation = async (input: {
     },
     sendSms: false
   });
+
+  if (
+    status === CallEscalationStatus.QUEUED &&
+    previousEscalation?.status !== CallEscalationStatus.QUEUED
+  ) {
+    await sendCallEscalationQueuePush({
+      salonId: input.salonId,
+      escalationId: escalation.id,
+      callSessionId: input.callSessionId,
+      customerPhone: input.customerPhone
+    });
+  }
 
   return escalation;
 };
