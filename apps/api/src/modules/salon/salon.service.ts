@@ -3,7 +3,10 @@ import { createAuditLog } from "../../lib/audit";
 import { AppError } from "../../lib/errors";
 import { logger } from "../../lib/logger";
 import { requireUsPhone } from "../../utils/phone";
-import { sendPushToAssignedCallCenterAgentsOrOperators } from "../notifications/notifications.service";
+import {
+  sendPushToActiveSalonStaff,
+  sendPushToAssignedCallCenterAgentsOrOperators
+} from "../notifications/notifications.service";
 import { buildSalonRoutingSummary } from "./routing-summary";
 
 interface UpdateSalonProfileInput {
@@ -83,17 +86,31 @@ const sendCallCenterRoutingNotePush = async (salonId: string): Promise<void> => 
       }
     });
 
-    await sendPushToAssignedCallCenterAgentsOrOperators(salonId, {
-      title: "Operator note updated",
-      body: `${salon?.name ?? "A salon"} updated call center routing notes.`,
-      type: "call_center_routing_note_updated",
-      salonId,
-      url: `/call-center?salonId=${encodeURIComponent(salonId)}`,
-      data: {
+    const salonName = salon?.name ?? "A salon";
+    await Promise.all([
+      sendPushToAssignedCallCenterAgentsOrOperators(salonId, {
+        title: "Operator note updated",
+        body: `${salonName} updated call center routing notes.`,
         type: "call_center_routing_note_updated",
-        salonId
-      }
-    });
+        salonId,
+        url: `/call-center?salonId=${encodeURIComponent(salonId)}`,
+        data: {
+          type: "call_center_routing_note_updated",
+          salonId
+        }
+      }),
+      sendPushToActiveSalonStaff(salonId, {
+        title: "Owner note updated",
+        body: `${salonName} updated today's staff note.`,
+        type: "staff_owner_note_updated",
+        salonId,
+        url: "/dashboard",
+        data: {
+          type: "staff_owner_note_updated",
+          salonId
+        }
+      })
+    ]);
   } catch (error) {
     logger.warn(
       {
@@ -124,6 +141,31 @@ export const getSalonProfile = async (salonId: string) => {
     throw new AppError("Salon not found.", 404, "SALON_NOT_FOUND");
   }
   return salon;
+};
+
+export const getSalonOperatorNote = async (salonId: string) => {
+  const salon = await prisma.salon.findUnique({
+    where: { id: salonId },
+    select: {
+      id: true,
+      name: true,
+      settings: {
+        select: {
+          callCenterRoutingNote: true
+        }
+      }
+    }
+  });
+
+  if (!salon) {
+    throw new AppError("Salon not found.", 404, "SALON_NOT_FOUND");
+  }
+
+  return {
+    salonId: salon.id,
+    salonName: salon.name,
+    callCenterRoutingNote: salon.settings?.callCenterRoutingNote ?? null
+  };
 };
 
 export const updateSalonProfile = async (

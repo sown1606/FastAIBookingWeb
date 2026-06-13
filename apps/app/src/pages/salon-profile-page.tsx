@@ -863,7 +863,7 @@ export const SalonProfilePage = () => {
               />
               <small>{t("profile.routingNumberHint")}</small>
             </label>
-            <label className="field">
+            <label className="field routing-note-field">
               <span>
                 {t("profile.routingNote")}
                 <InfoHint text={t("hints.routingNote")} />
@@ -871,6 +871,7 @@ export const SalonProfilePage = () => {
               <textarea
                 rows={3}
                 value={settingsForm.callCenterRoutingNote}
+                placeholder={t("profile.routingNotePlaceholder")}
                 onChange={(event) =>
                   setSettingsForm((prev) => ({
                     ...prev,
@@ -878,6 +879,7 @@ export const SalonProfilePage = () => {
                   }))
                 }
               />
+              <small>{t("profile.routingNoteVisibilityHint")}</small>
             </label>
           </div>
 

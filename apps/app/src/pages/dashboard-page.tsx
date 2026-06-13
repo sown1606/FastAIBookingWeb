@@ -74,6 +74,12 @@ interface SalonProfileSummary {
   name: string;
 }
 
+interface SalonOperatorNote {
+  salonId: string;
+  salonName: string;
+  callCenterRoutingNote: string | null;
+}
+
 const isSameLocalDay = (value: string, reference: Date) => {
   const date = new Date(value);
   return (
@@ -98,6 +104,7 @@ export const DashboardPage = () => {
   const [customerCount, setCustomerCount] = useState(0);
   const [settings, setSettings] = useState<SalonSettings | null>(null);
   const [salonProfile, setSalonProfile] = useState<SalonProfileSummary | null>(null);
+  const [operatorNote, setOperatorNote] = useState<SalonOperatorNote | null>(null);
 
   const load = async () => {
     setError("");
@@ -111,6 +118,7 @@ export const DashboardPage = () => {
         setCustomerCount(0);
         setSettings(null);
         setSalonProfile(null);
+        setOperatorNote(null);
         return;
       }
 
@@ -132,13 +140,16 @@ export const DashboardPage = () => {
         setCustomerCount(customers.pagination.total);
         setSettings(salonSettings);
         setSalonProfile(profile);
+        setOperatorNote(null);
       } else {
+        const note = await apiGet<SalonOperatorNote>("/api/v1/salon/operator-note");
         setBilling(null);
         setStaffCount(0);
         setServiceCount(0);
         setCustomerCount(0);
         setSettings(null);
         setSalonProfile(null);
+        setOperatorNote(note);
       }
     } catch (loadError) {
       setError(extractErrorMessage(loadError));
@@ -368,6 +379,10 @@ export const DashboardPage = () => {
                 </article>
               </div>
             </div>
+          </section>
+          <section className={operatorNote?.callCenterRoutingNote ? "card operator-routing-note has-note" : "card operator-routing-note is-empty"}>
+            <span>{t("dashboard.staffOwnerNoteTitle")}</span>
+            <strong>{operatorNote?.callCenterRoutingNote?.trim() || t("dashboard.staffOwnerNoteEmpty")}</strong>
           </section>
           <section className="card">
             <div className="section-header">

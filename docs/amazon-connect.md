@@ -63,6 +63,74 @@ FASTAIBOOKING_API_INTERNAL_TOKEN=
 
 Do not expose AWS credentials or internal backend tokens in frontend `VITE_*` env variables.
 
+## Embedded CCP Requirements
+
+The operator dashboard embeds the Amazon Connect CCP from `apps/app`, so the web app origins must be added to the Amazon Connect instance Approved origins. Without this, the CCP iframe can stay blank/gray or fail with browser frame restrictions.
+
+Required origins:
+
+- `https://app-new-nail.kendemo.com`
+- `http://localhost:5173`
+
+The CCP URL must use the Connect instance alias and `/ccp-v2/`:
+
+```dotenv
+VITE_AMAZON_CONNECT_CCP_URL=https://<instance-alias>.my.connect.aws/ccp-v2/
+```
+
+For the current FastAIBooking instance, the format is:
+
+```dotenv
+VITE_AMAZON_CONNECT_CCP_URL=https://fastaibooking.my.connect.aws/ccp-v2/
+```
+
+Use the repeatable helper to verify and add Approved origins:
+
+```bash
+AWS_PROFILE=nailnew AWS_REGION=us-east-1 APP_ORIGIN=https://app-new-nail.kendemo.com ./scripts/aws/ensure-connect-approved-origins.sh
+```
+
+AWS CLI commands used for manual verification:
+
+```bash
+aws sts get-caller-identity --profile nailnew
+aws configure get region --profile nailnew
+aws connect list-instances --profile nailnew --region us-east-1
+
+INSTANCE_ID="<connect-instance-id>"
+
+aws connect list-approved-origins \
+  --profile nailnew \
+  --region us-east-1 \
+  --instance-id "$INSTANCE_ID"
+
+aws connect associate-approved-origin \
+  --profile nailnew \
+  --region us-east-1 \
+  --instance-id "$INSTANCE_ID" \
+  --origin "https://app-new-nail.kendemo.com"
+
+aws connect associate-approved-origin \
+  --profile nailnew \
+  --region us-east-1 \
+  --instance-id "$INSTANCE_ID" \
+  --origin "http://localhost:5173"
+
+aws connect list-queues \
+  --profile nailnew \
+  --region us-east-1 \
+  --instance-id "$INSTANCE_ID"
+```
+
+Troubleshooting blank embedded CCP:
+
+- Confirm the browser origin is listed in Amazon Connect Approved origins.
+- Confirm the URL uses `https://<instance-alias>.my.connect.aws/ccp-v2/`, not old `/ccp#`.
+- Open the CCP URL in a new tab and log in to Amazon Connect.
+- Allow browser cookies/popups needed by Amazon Connect login and softphone.
+- Check for frame blocking such as `X-Frame-Options: sameorigin`; this usually means the origin or CCP URL is wrong.
+- Confirm the AWS region and Connect instance alias/id are the intended `us-east-1` FastAIBooking instance.
+
 ## Live Contact Flow Checklist
 
 - Use `CALL_PROVIDER=amazon_connect` and `AI_PROVIDER=amazon` or `AI_PROVIDER=lex`.

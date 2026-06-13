@@ -1,4 +1,4 @@
-import { Prisma, Role } from "@prisma/client";
+import { Prisma, Role, StaffStatus } from "@prisma/client";
 import { prisma } from "../../db/prisma";
 import { getFirebaseMessaging } from "../../lib/firebase-admin";
 import { logger } from "../../lib/logger";
@@ -136,6 +136,27 @@ const getSalonOwnerUserIds = async (salonId: string): Promise<string[]> => {
   });
 
   return salon ? [salon.ownerId] : [];
+};
+
+const getActiveSalonStaffUserIds = async (salonId: string): Promise<string[]> => {
+  const staffUsers = await prisma.user.findMany({
+    where: {
+      role: Role.STAFF,
+      salonId,
+      isActive: true,
+      staffProfile: {
+        is: {
+          salonId,
+          status: StaffStatus.ACTIVE
+        }
+      }
+    },
+    select: {
+      id: true
+    }
+  });
+
+  return staffUsers.map((user) => user.id);
 };
 
 export const registerPushToken = async (input: RegisterPushTokenInput) => {
@@ -303,6 +324,13 @@ export const sendPushToSalonOwner = async (
   payload: PushPayload
 ): Promise<PushSendResult> => {
   return sendPushToUserIds(await getSalonOwnerUserIds(salonId), payload);
+};
+
+export const sendPushToActiveSalonStaff = async (
+  salonId: string,
+  payload: PushPayload
+): Promise<PushSendResult> => {
+  return sendPushToUserIds(await getActiveSalonStaffUserIds(salonId), payload);
 };
 
 export const sendPushToSalonOwnerAndAssignedStaff = async (

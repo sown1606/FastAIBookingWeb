@@ -7,6 +7,7 @@ import { validate } from "../../middleware/validate";
 import { requireRoles } from "../../middleware/auth";
 import { isValidUsPhone } from "../../utils/phone";
 import {
+  getSalonOperatorNote,
   getSalonProfile,
   getSalonSettings,
   updateSalonProfile,
@@ -58,6 +59,17 @@ const settingsUpdateSchema = z.object({
 });
 
 export const salonRouter = Router();
+
+salonRouter.get(
+  "/operator-note",
+  requireRoles(Role.SALON_OWNER, Role.STAFF),
+  asyncHandler(async (req, res) => {
+    const note = await getSalonOperatorNote(req.auth!.salonId!);
+    return sendSuccess(res, {
+      data: note
+    });
+  })
+);
 
 salonRouter.use(requireRoles(Role.SALON_OWNER));
 

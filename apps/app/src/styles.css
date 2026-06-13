@@ -177,6 +177,7 @@ textarea:focus-visible {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  min-width: 0;
 }
 
 .notification-bell {
@@ -249,6 +250,8 @@ textarea:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  min-width: 0;
+  flex-wrap: wrap;
 }
 
 .notification-actions .button-secondary {
@@ -290,6 +293,8 @@ textarea:focus-visible {
   justify-content: space-between;
   gap: 10px;
   align-items: flex-start;
+  min-width: 0;
+  flex-wrap: wrap;
 }
 
 .notification-item strong,
@@ -340,6 +345,7 @@ textarea:focus-visible {
 .topbar-copy {
   display: grid;
   gap: 6px;
+  min-width: 0;
 }
 
 .topbar-meta {
@@ -360,6 +366,8 @@ textarea:focus-visible {
   color: var(--primary-strong);
   font-size: 0.78rem;
   font-weight: 800;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .user-pill {
@@ -374,12 +382,36 @@ textarea:focus-visible {
   color: var(--text);
   font-weight: 700;
   max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .page-content {
   width: 100%;
   max-width: none;
   padding: 16px 14px 32px;
+  min-width: 0;
+}
+
+.main-shell,
+.page-content,
+.card,
+.section-header,
+.form-grid,
+.metrics-grid,
+.table-wrap,
+.operator-workspace,
+.operator-main-panel,
+.operator-context-panel {
+  min-width: 0;
+}
+
+.section-header > *,
+.metrics-grid > *,
+.card > *,
+.mobile-item,
+.entity-card,
+.appointment-card {
+  min-width: 0;
 }
 
 .stack {
@@ -396,6 +428,7 @@ textarea:focus-visible {
   display: grid;
   gap: 14px;
   box-shadow: var(--shadow-sm);
+  overflow-wrap: anywhere;
 }
 
 .card-grid {
@@ -583,6 +616,7 @@ textarea:focus-visible {
 td input,
 td select {
   width: 100%;
+  max-width: 100%;
   min-height: 44px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -638,6 +672,11 @@ td input:disabled {
   align-items: center;
   justify-content: center;
   gap: 8px;
+  max-width: 100%;
+  min-width: 0;
+  white-space: normal;
+  text-align: center;
+  overflow-wrap: anywhere;
   transition:
     background 160ms ease,
     color 160ms ease,
@@ -690,6 +729,9 @@ td input:disabled {
   color: var(--muted);
   font-size: 0.8rem;
   font-weight: 800;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .status-pill.success {
@@ -711,7 +753,8 @@ td input:disabled {
 }
 
 .table-wrap {
-  overflow: auto;
+  overflow-x: auto;
+  max-width: 100%;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
@@ -729,6 +772,7 @@ td {
   padding: 12px;
   text-align: left;
   vertical-align: middle;
+  overflow-wrap: anywhere;
 }
 
 th {
@@ -1056,8 +1100,10 @@ pre {
 .quick-actions {
   display: flex;
   gap: 8px;
-  overflow-x: auto;
+  flex-wrap: wrap;
+  overflow-x: visible;
   padding-bottom: 4px;
+  min-width: 0;
 }
 
 .quick-actions a,
@@ -1067,9 +1113,10 @@ pre {
   background: var(--surface);
   color: var(--text);
   padding: 12px 14px;
-  white-space: nowrap;
+  white-space: normal;
   min-height: 44px;
   box-shadow: var(--shadow-sm);
+  overflow-wrap: anywhere;
 }
 
 .quick-actions a:hover,
@@ -1151,8 +1198,24 @@ pre {
 }
 
 .operator-context-panel {
-  position: sticky;
-  top: 14px;
+  display: contents;
+  position: static;
+}
+
+.operator-context-panel > .operator-active-call-banner {
+  order: 0;
+}
+
+.operator-context-panel > .operator-routing-note {
+  order: 1;
+}
+
+.operator-main-panel {
+  order: 2;
+}
+
+.operator-context-panel > .operator-context-section {
+  order: 3;
 }
 
 .compact-header {
@@ -1252,6 +1315,16 @@ pre {
   box-shadow: var(--shadow-sm);
 }
 
+.operator-routing-note.has-note {
+  border-color: rgba(240, 111, 97, 0.44);
+  background: #fff0eb;
+}
+
+.operator-routing-note.is-empty {
+  border-style: dashed;
+  background: var(--surface-soft);
+}
+
 .operator-routing-note span {
   color: #b54708;
   font-size: 0.78rem;
@@ -1262,6 +1335,10 @@ pre {
 .operator-routing-note strong {
   overflow-wrap: anywhere;
   line-height: 1.4;
+}
+
+.operator-routing-note .button-secondary {
+  justify-self: start;
 }
 
 .operator-context-section h3 {
@@ -1333,6 +1410,36 @@ pre {
   color: var(--text);
 }
 
+.ccp-help-box {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(181, 71, 8, 0.28);
+  border-radius: 8px;
+  background: #fff7ed;
+  color: #7c2d12;
+}
+
+.ccp-help-box .button-secondary {
+  justify-self: start;
+}
+
+.ccp-technical-details {
+  display: grid;
+  gap: 6px;
+}
+
+.ccp-technical-details summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.ccp-technical-details p {
+  margin: 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
 .ccp-status-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -1370,10 +1477,14 @@ pre {
   align-items: start;
 }
 
+.operator-booking-grid .form-grid.two-columns {
+  grid-template-columns: 1fr;
+}
+
 .queue-row {
   width: 100%;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   align-items: center;
   text-align: left;
@@ -1391,14 +1502,27 @@ pre {
 }
 
 .queue-row p,
-.queue-row .inline-actions {
+.queue-row .inline-actions,
+.queue-row-details {
   grid-column: 1 / -1;
   margin: 0;
 }
 
-.queue-row p {
+.queue-row p,
+.queue-row-details {
   color: var(--muted);
   font-size: 0.84rem;
+}
+
+.queue-row-details {
+  display: grid;
+  gap: 6px;
+}
+
+.queue-row-details summary {
+  cursor: pointer;
+  color: var(--primary-strong);
+  font-weight: 800;
 }
 
 .queue-row.active {
@@ -1517,10 +1641,16 @@ pre {
   grid-column: 1 / -1;
 }
 
+.booking-customer-matches {
+  grid-column: 1 / -1;
+}
+
 .customer-match-pill {
   color: var(--text);
   cursor: pointer;
   text-align: left;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .operator-booking-card h4 {
@@ -1667,6 +1797,20 @@ pre {
 .operator-call-summary p {
   color: var(--text);
   overflow-wrap: anywhere;
+}
+
+.selected-call-card .operator-call-summary p {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+
+.routing-note-field {
+  border: 1px solid rgba(240, 111, 97, 0.28);
+  border-radius: 8px;
+  background: #fff7f5;
+  padding: 12px;
 }
 
 .mobile-list {
@@ -2512,22 +2656,6 @@ pre {
     grid-template-columns: minmax(280px, 420px) minmax(0, 1fr);
   }
 
-  .operator-workspace {
-    grid-template-columns: minmax(320px, 390px) minmax(0, 1fr);
-  }
-
-  .operator-context-panel {
-    max-width: 400px;
-  }
-
-  .operator-top-grid {
-    grid-template-columns: minmax(280px, 0.9fr) minmax(320px, 1.1fr) minmax(280px, 0.9fr);
-  }
-
-  .operator-booking-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .call-center-next-steps,
   .phone-flow-steps {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2566,6 +2694,58 @@ pre {
 
   .dashboard-hero-copy h2 {
     font-size: 2.15rem;
+  }
+}
+
+@media (min-width: 900px) {
+  .queue-row {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+}
+
+@media (min-width: 1200px) {
+  .operator-workspace {
+    grid-template-columns: minmax(300px, 340px) minmax(0, 1fr);
+  }
+
+  .operator-context-panel {
+    display: grid;
+    order: 0;
+    max-width: 340px;
+  }
+
+  .operator-main-panel,
+  .operator-context-panel > * {
+    order: 0;
+  }
+}
+
+@media (min-width: 1200px) and (min-height: 760px) {
+  .operator-context-panel {
+    position: sticky;
+    top: 18px;
+    max-height: calc(100vh - 36px);
+    overflow: auto;
+    padding-right: 2px;
+  }
+}
+
+@media (min-width: 1600px) {
+  .operator-workspace {
+    grid-template-columns: minmax(320px, 360px) minmax(0, 1fr);
+  }
+
+  .operator-context-panel {
+    max-width: 360px;
+  }
+
+  .operator-top-grid,
+  .operator-booking-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .operator-booking-grid .form-grid.two-columns {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

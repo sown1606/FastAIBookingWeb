@@ -69,6 +69,55 @@ test("owner workspace routes keep salon data scoped to the authenticated salon",
   assert.match(callsRoutes, /listCalls\(req\.auth!\.salonId!, query\)/);
 });
 
+test("staff can read the owner operator note without owner edit access", () => {
+  const salonRoutes = readApi("modules/salon/salon.routes.ts");
+  const salonService = readApi("modules/salon/salon.service.ts");
+  const dashboard = readRepo("apps/app/src/pages/dashboard-page.tsx");
+
+  const noteRouteIndex = salonRoutes.indexOf('"/operator-note"');
+  const ownerGuardIndex = salonRoutes.indexOf("salonRouter.use(requireRoles(Role.SALON_OWNER))");
+
+  assert.notEqual(noteRouteIndex, -1);
+  assert.notEqual(ownerGuardIndex, -1);
+  assert.ok(noteRouteIndex < ownerGuardIndex);
+  assert.match(salonRoutes, /"\/operator-note",\s*requireRoles\(Role\.SALON_OWNER, Role\.STAFF\)/s);
+  assert.match(salonService, /export const getSalonOperatorNote/);
+  assert.match(salonService, /callCenterRoutingNote: salon\.settings\?\.callCenterRoutingNote \?\? null/);
+  assert.match(dashboard, /apiGet<SalonOperatorNote>\("\/api\/v1\/salon\/operator-note"\)/);
+  assert.match(dashboard, /dashboard\.staffOwnerNoteTitle/);
+});
+
+test("notification APIs are authenticated, role-limited, and scoped to current user", () => {
+  const app = readApi("app.ts");
+  const routes = readApi("modules/notifications/notifications.routes.ts");
+  const service = readApi("modules/notifications/notifications.service.ts");
+  const bell = readRepo("apps/app/src/components/notification-bell.tsx");
+  const pushBridge = readRepo("apps/app/src/App.tsx");
+  const authContext = readRepo("apps/app/src/auth/auth-context.tsx");
+
+  assert.match(app, /app\.use\(`\$\{PUBLIC_API_PREFIX\}\/notifications`, authenticate, notificationsRouter\)/);
+  for (const role of ["SALON_OWNER", "STAFF", "CALL_CENTER_AGENT", "OPERATOR"]) {
+    assert.match(routes, new RegExp(`"${role}"`));
+  }
+  assert.doesNotMatch(routes, /"PLATFORM_ADMIN"/);
+  for (const endpoint of [
+    '"/inbox"',
+    '"/unread-count"',
+    '"/register-token"',
+    '"/:id/read"',
+    '"/read-all"',
+    '"/unregister-token"'
+  ]) {
+    assert.match(routes, new RegExp(endpoint.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+  assert.match(service, /listUserNotificationInbox[\s\S]*where:\s*\{\s*userId: input\.userId\s*\}/);
+  assert.match(service, /markUserNotificationRead[\s\S]*id: notificationId,\s*userId/s);
+  assert.match(service, /markAllUserNotificationsRead[\s\S]*userId,\s*readAt: null/s);
+  assert.match(bell, /navigate\(notification\.url\)/);
+  assert.match(pushBridge, /window\.dispatchEvent\(new Event\(NOTIFICATIONS_CHANGED_EVENT\)\)/);
+  assert.match(authContext, /unregisterFirebaseMessagingToken\(\)\.catch\(\(\) => undefined\)/);
+});
+
 test("operator call-center access is limited to assigned salon workflows", () => {
   const app = readApi("app.ts");
   const routes = readApi("modules/call-center/call-center.routes.ts");
@@ -76,7 +125,7 @@ test("operator call-center access is limited to assigned salon workflows", () =>
   const ownerApp = readRepo("apps/app/src/App.tsx");
 
   assert.match(app, /requireRoles\(Role\.CALL_CENTER_AGENT, Role\.SALON_OWNER\)/);
-  assert.match(ownerApp, /path="call-center"[\s\S]*?RequireRole roles=\{\["SALON_OWNER", "CALL_CENTER_AGENT"\]\}/);
+  assert.match(ownerApp, /path="call-center"[\s\S]*?RequireRole roles=\{\["SALON_OWNER", "CALL_CENTER_AGENT", "OPERATOR"\]\}/);
   assert.match(routes, /listEscalationQueue\(\s*\{\s*userId: req\.auth!\.userId,\s*role: req\.auth!\.role,\s*salonId: req\.auth!\.salonId\s*\}/s);
   assert.match(service, /export const assertCallCenterSalonAccess/);
   assert.match(service, /salonId_agentUserId/);

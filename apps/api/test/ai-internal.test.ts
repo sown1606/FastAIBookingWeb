@@ -567,6 +567,19 @@ const setupPrismaMock = () => {
     return log;
   });
 
+  patch(prisma.callEscalation as any, "findUnique", async (args: any) => {
+    const escalation = state.escalations.find(
+      (item) => item.callSessionId === args.where.callSessionId
+    );
+    if (!escalation) {
+      return null;
+    }
+    if (args.select?.status) {
+      return { status: escalation.status };
+    }
+    return escalation;
+  });
+
   patch(prisma.callEscalation as any, "upsert", async (args: any) => {
     let escalation = state.escalations.find(
       (item) => item.callSessionId === args.where.callSessionId
@@ -578,6 +591,16 @@ const setupPrismaMock = () => {
       state.escalations.push(escalation);
     }
     return escalation;
+  });
+
+  patch(prisma.user as any, "findMany", async () => []);
+  patch(prisma.userNotification as any, "createMany", async (args: any) => ({
+    count: Array.isArray(args.data) ? args.data.length : 0
+  }));
+  patch(prisma.pushToken as any, "findMany", async () => []);
+  patch(prisma.callCenterSalonAssignment as any, "findMany", async (args: any) => {
+    const salon = findSalon(args?.where?.salonId);
+    return salon?.callCenterAssignments ?? [];
   });
 };
 
