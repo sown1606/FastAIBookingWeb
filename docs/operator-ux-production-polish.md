@@ -70,4 +70,16 @@ Date: 2026-06-14
 
 ## Deploy Result
 
-Pending in this pass.
+- Commit `eb06b0a` (`Polish app UX and staff notifications`) pushed to `origin/main`.
+- `npm run deploy:ec2` completed successfully.
+- Remote deploy rebuilt `admin`, `api`, and `app`; Prisma reported no pending migrations.
+- Remote containers after deploy:
+  - `fastaibooking-api`: healthy
+  - `fastaibooking-app`: running
+  - `fastaibooking-nginx`: running
+  - `fastaibooking-postgres`: healthy
+- `curl -fsS https://api-new-nail.kendemo.com/health/liveness` passed.
+- `curl -fsS https://api-new-nail.kendemo.com/health/readiness` passed.
+- Readiness reported Amazon Connect ready and push notifications configured.
+- API log tail after deploy showed external unauthenticated probe attempts returning 401; no deploy startup failure was observed.
+- Manual owner/staff/operator browser smoke remains to be run with real login sessions.
