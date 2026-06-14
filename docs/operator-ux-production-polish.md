@@ -53,6 +53,10 @@ Date: 2026-06-14
 - Notification bell loads inbox/unread count, marks one notification read, marks all read, and navigates to `notification.url`.
 - Foreground Firebase messages dispatch the notification refresh event.
 - Logout unregisters the browser token on a best-effort basis.
+- Production API smoke verified demo owner/staff/call-center logins.
+- Production API smoke updated the owner note, verified staff `/salon/staff-note`, verified call-center salon detail, verified staff/operator inbox notifications, then restored the seeded demo note.
+- Production API smoke covered notification inbox, unread count, register token, unregister token, mark one read, and read all.
+- The queued demo escalation was inspected and left open; completing it would consume the only current queued demo item.
 
 ## Tests Run
 
