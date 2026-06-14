@@ -61,6 +61,17 @@ const settingsUpdateSchema = z.object({
 export const salonRouter = Router();
 
 salonRouter.get(
+  "/staff-note",
+  requireRoles(Role.SALON_OWNER, Role.STAFF),
+  asyncHandler(async (req, res) => {
+    const note = await getSalonOperatorNote(req.auth!.salonId!);
+    return sendSuccess(res, {
+      data: note
+    });
+  })
+);
+
+salonRouter.get(
   "/operator-note",
   requireRoles(Role.SALON_OWNER, Role.STAFF),
   asyncHandler(async (req, res) => {

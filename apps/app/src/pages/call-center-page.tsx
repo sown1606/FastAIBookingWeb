@@ -407,10 +407,17 @@ interface AmazonConnectCcpPanelProps {
   ccpUrl: string | null;
   region: string | null | undefined;
   enabled: boolean;
+  showTechnicalDetails: boolean;
   onQueueMatch: (item: QueueItem) => void;
 }
 
-const AmazonConnectCcpPanel = ({ ccpUrl, region, enabled, onQueueMatch }: AmazonConnectCcpPanelProps) => {
+const AmazonConnectCcpPanel = ({
+  ccpUrl,
+  region,
+  enabled,
+  showTechnicalDetails,
+  onQueueMatch
+}: AmazonConnectCcpPanelProps) => {
   const { t } = useI18n();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const lastMatchKeyRef = useRef("");
@@ -587,7 +594,7 @@ const AmazonConnectCcpPanel = ({ ccpUrl, region, enabled, onQueueMatch }: Amazon
               {t("callCenter.openConnectNewTab")}
             </a>
           ) : null}
-          {ccpDebugDetails ? (
+          {showTechnicalDetails && ccpDebugDetails ? (
             <details className="ccp-technical-details">
               <summary>{t("callCenter.technicalDetails")}</summary>
               <p>{ccpDebugDetails}</p>
@@ -605,10 +612,12 @@ const AmazonConnectCcpPanel = ({ ccpUrl, region, enabled, onQueueMatch }: Amazon
           <span className="muted">{t("callCenter.contactState")}</span>
           <strong>{contactStatus || t("common.none")}</strong>
         </div>
-        <div>
-          <span className="muted">{t("callCenter.contactId")}</span>
-          <strong>{activeContactId || t("common.none")}</strong>
-        </div>
+        {showTechnicalDetails ? (
+          <div>
+            <span className="muted">{t("callCenter.contactId")}</span>
+            <strong>{activeContactId || t("common.none")}</strong>
+          </div>
+        ) : null}
         <div>
           <span className="muted">{t("callCenter.callerPhone")}</span>
           <strong>{activeCallerPhone || t("common.none")}</strong>
@@ -1990,6 +1999,7 @@ export const CallCenterPage = () => {
             ccpUrl={ccpUrl}
             region={runtime?.amazonConnect.region}
             enabled={amazonConnectRuntimeReady && Boolean(ccpUrl)}
+            showTechnicalDetails={!isBasicMode}
             onQueueMatch={handleQueueMatch}
           />
 
@@ -2027,7 +2037,7 @@ export const CallCenterPage = () => {
                   </div>
                   <div>
                     <span className="muted">{t("callCenter.escalationReason")}</span>
-                    <strong>{selectedEscalation.escalationReason ?? t("common.none")}</strong>
+                    <strong className="text-clamp-3">{selectedEscalation.escalationReason ?? t("common.none")}</strong>
                   </div>
                 </div>
 
@@ -2483,77 +2493,73 @@ export const CallCenterPage = () => {
           )}
         </section>
 
-        <details className="advanced-config operator-advanced-details">
-          <summary>{t("callCenter.advancedCallDetails")}</summary>
-          <div className="card stack">
-            {selectedEscalation ? (
-              <>
-                <article className="inspection-box">
-                  <h3>{t("callCenter.transcript")}</h3>
-                  {selectedEscalation.callSession.transcripts.length ? (
-                    selectedEscalation.callSession.transcripts.map((transcript) => (
-                      <div key={transcript.id} className="stack">
-                        {transcript.transcriptSummary ? <p>{transcript.transcriptSummary}</p> : null}
-                        <pre>{transcript.transcriptText}</pre>
-                      </div>
-                    ))
-                  ) : (
-                    <EmptyBlock message={t("callCenter.transcriptEmpty")} />
-                  )}
-                </article>
+        {!isBasicMode ? (
+          <details className="advanced-config operator-advanced-details">
+            <summary>{t("callCenter.advancedCallDetails")}</summary>
+            <div className="card stack">
+              {selectedEscalation ? (
+                <>
+                  <article className="inspection-box">
+                    <h3>{t("callCenter.transcript")}</h3>
+                    {selectedEscalation.callSession.transcripts.length ? (
+                      selectedEscalation.callSession.transcripts.map((transcript) => (
+                        <div key={transcript.id} className="stack">
+                          {transcript.transcriptSummary ? <p>{transcript.transcriptSummary}</p> : null}
+                          <pre>{transcript.transcriptText}</pre>
+                        </div>
+                      ))
+                    ) : (
+                      <EmptyBlock message={t("callCenter.transcriptEmpty")} />
+                    )}
+                  </article>
 
-                <article className="inspection-box">
-                  <h3>{t("callCenter.aiSummary")}</h3>
-                  {isBasicMode ? (
-                    <p>{formatAiSummary(selectedEscalation.callSession.aiSummary)}</p>
-                  ) : (
+                  <article className="inspection-box">
+                    <h3>{t("callCenter.aiSummary")}</h3>
                     <pre>{JSON.stringify(selectedEscalation.callSession.aiSummary ?? null, null, 2)}</pre>
-                  )}
-                </article>
+                  </article>
 
-                <article className="inspection-box">
-                  <h3>{t("callCenter.bookingAttempts")}</h3>
-                  {selectedEscalation.callSession.bookingAttempts.length ? (
-                    <div className="mobile-list">
-                      {selectedEscalation.callSession.bookingAttempts.map((attempt) => (
-                        <article key={attempt.id} className="mobile-item">
-                          <strong>
-                            {statusLabelKey(attempt.status) ? t(statusLabelKey(attempt.status)!) : attempt.status}
-                          </strong>
-                          <span>
-                            {attempt.requestedService ?? t("callCenter.noService")} · {attempt.requestedStaff ?? t("common.unassigned")}
-                          </span>
-                          <small>{attempt.failureReason ?? t("callCenter.noFailureReason")}</small>
-                        </article>
-                      ))}
-                    </div>
-                  ) : (
-                    <EmptyBlock message={t("callCenter.bookingAttemptsEmpty")} />
-                  )}
-                </article>
+                  <article className="inspection-box">
+                    <h3>{t("callCenter.bookingAttempts")}</h3>
+                    {selectedEscalation.callSession.bookingAttempts.length ? (
+                      <div className="mobile-list">
+                        {selectedEscalation.callSession.bookingAttempts.map((attempt) => (
+                          <article key={attempt.id} className="mobile-item">
+                            <strong>
+                              {statusLabelKey(attempt.status) ? t(statusLabelKey(attempt.status)!) : attempt.status}
+                            </strong>
+                            <span>
+                              {attempt.requestedService ?? t("callCenter.noService")} · {attempt.requestedStaff ?? t("common.unassigned")}
+                            </span>
+                            <small>{attempt.failureReason ?? t("callCenter.noFailureReason")}</small>
+                          </article>
+                        ))}
+                      </div>
+                    ) : (
+                      <EmptyBlock message={t("callCenter.bookingAttemptsEmpty")} />
+                    )}
+                  </article>
 
-                <article className="inspection-box">
-                  <h3>{t("callCenter.recentAiInteractions")}</h3>
-                  {selectedEscalation.callSession.aiInteractions.length ? (
-                    <div className="mobile-list">
-                      {selectedEscalation.callSession.aiInteractions.map((interaction) => (
-                        <article key={interaction.id} className="mobile-item">
-                          <strong>{interaction.taskType}</strong>
-                          <span>{interaction.model ?? t("callCenter.unknownModel")}</span>
-                          <small>{formatDateTime(interaction.createdAt, salonTimezone)}</small>
-                        </article>
-                      ))}
-                    </div>
-                  ) : (
-                    <EmptyBlock message={t("callCenter.aiInteractionsEmpty")} />
-                  )}
-                </article>
-              </>
-            ) : (
-              <EmptyBlock message={t("callCenter.selectedEmpty")} />
-            )}
+                  <article className="inspection-box">
+                    <h3>{t("callCenter.recentAiInteractions")}</h3>
+                    {selectedEscalation.callSession.aiInteractions.length ? (
+                      <div className="mobile-list">
+                        {selectedEscalation.callSession.aiInteractions.map((interaction) => (
+                          <article key={interaction.id} className="mobile-item">
+                            <strong>{interaction.taskType}</strong>
+                            <span>{interaction.model ?? t("callCenter.unknownModel")}</span>
+                            <small>{formatDateTime(interaction.createdAt, salonTimezone)}</small>
+                          </article>
+                        ))}
+                      </div>
+                    ) : (
+                      <EmptyBlock message={t("callCenter.aiInteractionsEmpty")} />
+                    )}
+                  </article>
+                </>
+              ) : (
+                <EmptyBlock message={t("callCenter.selectedEmpty")} />
+              )}
 
-            {!isBasicMode ? (
               <article className="inspection-box">
                 <h3>{t("callCenter.advancedConfig")}</h3>
                 <div className="table-wrap compact-table">
@@ -2582,9 +2588,9 @@ export const CallCenterPage = () => {
                   </p>
                 ) : null}
               </article>
-            ) : null}
-          </div>
-        </details>
+            </div>
+          </details>
+        ) : null}
       </main>
     </div>
   );

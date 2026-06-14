@@ -100,13 +100,13 @@ const sendCallCenterRoutingNotePush = async (salonId: string): Promise<void> => 
         }
       }),
       sendPushToActiveSalonStaff(salonId, {
-        title: "Owner note updated",
-        body: `${salonName} updated today's staff note.`,
-        type: "staff_owner_note_updated",
+        title: "Ghi chú từ chủ tiệm đã cập nhật",
+        body: `${salonName} vừa cập nhật ghi chú hôm nay.`,
+        type: "salon_owner_note_updated",
         salonId,
         url: "/dashboard",
         data: {
-          type: "staff_owner_note_updated",
+          type: "salon_owner_note_updated",
           salonId
         }
       })

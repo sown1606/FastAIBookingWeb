@@ -74,17 +74,20 @@ test("staff can read the owner operator note without owner edit access", () => {
   const salonService = readApi("modules/salon/salon.service.ts");
   const dashboard = readRepo("apps/app/src/pages/dashboard-page.tsx");
 
-  const noteRouteIndex = salonRoutes.indexOf('"/operator-note"');
+  const noteRouteIndex = salonRoutes.indexOf('"/staff-note"');
   const ownerGuardIndex = salonRoutes.indexOf("salonRouter.use(requireRoles(Role.SALON_OWNER))");
 
   assert.notEqual(noteRouteIndex, -1);
   assert.notEqual(ownerGuardIndex, -1);
   assert.ok(noteRouteIndex < ownerGuardIndex);
+  assert.match(salonRoutes, /"\/staff-note",\s*requireRoles\(Role\.SALON_OWNER, Role\.STAFF\)/s);
   assert.match(salonRoutes, /"\/operator-note",\s*requireRoles\(Role\.SALON_OWNER, Role\.STAFF\)/s);
   assert.match(salonService, /export const getSalonOperatorNote/);
   assert.match(salonService, /callCenterRoutingNote: salon\.settings\?\.callCenterRoutingNote \?\? null/);
-  assert.match(dashboard, /apiGet<SalonOperatorNote>\("\/api\/v1\/salon\/operator-note"\)/);
+  assert.match(dashboard, /apiGet<SalonOperatorNote>\("\/api\/v1\/salon\/staff-note"\)/);
   assert.match(dashboard, /dashboard\.staffOwnerNoteTitle/);
+  assert.match(salonService, /type: "salon_owner_note_updated"/);
+  assert.match(salonService, /url: "\/dashboard"/);
 });
 
 test("notification APIs are authenticated, role-limited, and scoped to current user", () => {

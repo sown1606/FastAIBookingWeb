@@ -142,7 +142,7 @@ export const DashboardPage = () => {
         setSalonProfile(profile);
         setOperatorNote(null);
       } else {
-        const note = await apiGet<SalonOperatorNote>("/api/v1/salon/operator-note");
+        const note = await apiGet<SalonOperatorNote>("/api/v1/salon/staff-note");
         setBilling(null);
         setStaffCount(0);
         setServiceCount(0);

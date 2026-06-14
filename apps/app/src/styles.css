@@ -234,6 +234,7 @@ textarea:focus-visible {
   right: 0;
   z-index: 40;
   width: min(360px, calc(100vw - 28px));
+  max-width: calc(100vw - 28px);
   max-height: min(70vh, 520px);
   overflow: auto;
   display: grid;
@@ -401,8 +402,24 @@ textarea:focus-visible {
 .table-wrap,
 .operator-workspace,
 .operator-main-panel,
-.operator-context-panel {
+.operator-context-panel,
+.operator-top-grid,
+.operator-booking-grid,
+.notification-menu,
+.notification-item {
   min-width: 0;
+}
+
+.section-header,
+.table-wrap,
+.operator-workspace,
+.operator-main-panel,
+.operator-context-panel,
+.operator-top-grid,
+.operator-booking-grid,
+.notification-menu,
+.notification-item {
+  overflow-wrap: anywhere;
 }
 
 .section-header > *,
@@ -1512,6 +1529,7 @@ pre {
 .queue-row-details {
   color: var(--muted);
   font-size: 0.84rem;
+  overflow-wrap: anywhere;
 }
 
 .queue-row-details {
@@ -1797,6 +1815,14 @@ pre {
 .operator-call-summary p {
   color: var(--text);
   overflow-wrap: anywhere;
+}
+
+.text-clamp-3 {
+  display: -webkit-box;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
 }
 
 .selected-call-card .operator-call-summary p {
@@ -2703,7 +2729,18 @@ pre {
   }
 }
 
-@media (min-width: 1200px) {
+@media (min-width: 1100px) {
+  .operator-top-grid,
+  .operator-booking-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 480px), 1fr));
+  }
+
+  .operator-booking-grid .form-grid.two-columns {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1500px) {
   .operator-workspace {
     grid-template-columns: minmax(300px, 340px) minmax(0, 1fr);
   }
@@ -2718,9 +2755,14 @@ pre {
   .operator-context-panel > * {
     order: 0;
   }
+
+  .operator-top-grid,
+  .operator-booking-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
+  }
 }
 
-@media (min-width: 1200px) and (min-height: 760px) {
+@media (min-width: 1500px) and (min-height: 820px) {
   .operator-context-panel {
     position: sticky;
     top: 18px;
@@ -2737,15 +2779,6 @@ pre {
 
   .operator-context-panel {
     max-width: 360px;
-  }
-
-  .operator-top-grid,
-  .operator-booking-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .operator-booking-grid .form-grid.two-columns {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -2804,9 +2837,11 @@ pre {
   }
 
   .notification-menu {
-    left: 0;
-    right: auto;
-    width: min(360px, calc(100vw - 28px));
+    position: fixed;
+    top: 68px;
+    left: 14px;
+    right: 14px;
+    width: auto;
   }
 
   .language-switcher.compact {
