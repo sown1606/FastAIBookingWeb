@@ -56,7 +56,12 @@ Date: 2026-06-14
 - Production API smoke verified demo owner/staff/call-center logins.
 - Production API smoke updated the owner note, verified staff `/salon/staff-note`, verified call-center salon detail, verified staff/operator inbox notifications, then restored the seeded demo note.
 - Production API smoke covered notification inbox, unread count, register token, unregister token, mark one read, and read all.
-- The queued demo escalation was inspected and left open; completing it would consume the only current queued demo item.
+- Browser smoke verified no horizontal overflow on `/call-center` at 390px, 768px, 1024px, 1366px, and 1440px.
+- Browser smoke verified no horizontal overflow on staff and owner dashboard checks.
+- Browser smoke verified the notification menu stayed within the viewport at 390px, 768px, 1024px, 1366px, and 1440px.
+- Operator smoke selected and accepted queued escalation `e44f2681-85af-48bd-8ec8-581ec9d6194c`.
+- Operator smoke created appointment `48a32b30-c06c-4fd8-bf33-97406bdb1966`.
+- Operator smoke completed the queued escalation; final status was `CLOSED`.
 
 ## Tests Run
 
