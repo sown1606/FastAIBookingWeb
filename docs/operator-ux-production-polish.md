@@ -71,8 +71,11 @@ Date: 2026-06-14
 ## Deploy Result
 
 - Commit `eb06b0a` (`Polish app UX and staff notifications`) pushed to `origin/main`.
+- Follow-up docs commit `8d17bf0` (`Document deployment result`) pushed to `origin/main`.
 - `npm run deploy:ec2` completed successfully.
+- A second deploy was run from a clean temporary worktree at `8d17bf0` so unrelated local dirty files were not shipped.
 - Remote deploy rebuilt `admin`, `api`, and `app`; Prisma reported no pending migrations.
+- The Firebase service-account mount was restored after the clean rsync and the API was restarted.
 - Remote containers after deploy:
   - `fastaibooking-api`: healthy
   - `fastaibooking-app`: running
