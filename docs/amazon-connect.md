@@ -84,6 +84,13 @@ For the current FastAIBooking instance, the format is:
 VITE_AMAZON_CONNECT_CCP_URL=https://fastaibooking.my.connect.aws/ccp-v2/
 ```
 
+Current production values:
+
+- Direct CCP URL: `https://fastaibooking.my.connect.aws/ccp-v2/`
+- App origin: `https://app-new-nail.kendemo.com`
+- Amazon Connect instance alias: `fastaibooking`
+- Region: `us-east-1`
+
 Use the repeatable helper to verify and add Approved origins:
 
 ```bash
@@ -103,6 +110,12 @@ aws connect list-approved-origins \
   --profile nailnew \
   --region us-east-1 \
   --instance-id "$INSTANCE_ID"
+
+aws connect disassociate-approved-origin \
+  --profile nailnew \
+  --region us-east-1 \
+  --instance-id "$INSTANCE_ID" \
+  --origin "https://app-new-nail.kendemo.com"
 
 aws connect associate-approved-origin \
   --profile nailnew \
@@ -127,9 +140,11 @@ Troubleshooting blank embedded CCP:
 - Confirm the browser origin is listed in Amazon Connect Approved origins.
 - Confirm the URL uses `https://<instance-alias>.my.connect.aws/ccp-v2/`, not old `/ccp#`.
 - Open the CCP URL in a new tab and log in to Amazon Connect.
-- Allow browser cookies/popups needed by Amazon Connect login and softphone.
-- Check for frame blocking such as `X-Frame-Options: sameorigin`; this usually means the origin or CCP URL is wrong.
+- If the browser console shows `frame-ancestors 'self'`, Amazon Connect did not allow this app origin to embed the CCP yet. Verify the exact account, region, instance id, and Approved origins with AWS CLI. If the origin is present but the iframe is still blocked, disassociate and associate the production origin again, wait 1-3 minutes, then hard reload.
+- Allow browser cookies/popups needed by Amazon Connect login and softphone after the frame-ancestor check passes.
+- Check for frame blocking such as `X-Frame-Options: sameorigin` or CSP `frame-ancestors 'self'`; this usually means the origin has not applied to the intended Connect instance or the CCP URL is wrong.
 - Confirm the AWS region and Connect instance alias/id are the intended `us-east-1` FastAIBooking instance.
+- If embedding is blocked but direct CCP works, use the dashboard side-by-side with the direct CCP popup from `https://fastaibooking.my.connect.aws/ccp-v2/` until Approved origins propagates.
 
 ## Live Contact Flow Checklist
 

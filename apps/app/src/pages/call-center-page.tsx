@@ -282,7 +282,15 @@ type AmazonConnectGlobal = {
         };
         softphone: {
           allowFramedSoftphone: boolean;
+          allowEarlyGum?: boolean;
         };
+        pageOptions?: {
+          enableAudioDeviceSettings?: boolean;
+          enablePhoneTypeSettings?: boolean;
+        };
+        ccpAckTimeout?: number;
+        ccpSynTimeout?: number;
+        ccpLoadTimeout?: number;
       }
     ) => void;
   };
@@ -292,6 +300,7 @@ type AmazonConnectGlobal = {
 
 const FALLBACK_SALON_TIMEZONE = "America/New_York";
 const ACTIVE_APPOINTMENT_STATUSES = new Set(["SCHEDULED", "CONFIRMED", "IN_PROGRESS"]);
+const CCP_FRAME_BLOCKED_ERROR = "frame-ancestors 'self'";
 
 const getAmazonConnect = (): AmazonConnectGlobal | undefined => {
   return (globalThis as typeof globalThis & { connect?: AmazonConnectGlobal }).connect;
@@ -445,9 +454,10 @@ const AmazonConnectCcpPanel = ({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const lastMatchKeyRef = useRef("");
   const initializedCcpKeyRef = useRef("");
-  const [ccpStatus, setCcpStatus] = useState<"disabled" | "loading" | "ready" | "error">("disabled");
+  const [ccpStatus, setCcpStatus] = useState<"disabled" | "loading" | "ready" | "blocked" | "error">("disabled");
   const [ccpWarning, setCcpWarning] = useState("");
   const [ccpDebugDetails, setCcpDebugDetails] = useState("");
+  const [ccpErrorSignature, setCcpErrorSignature] = useState("");
   const [retryNonce, setRetryNonce] = useState(0);
   const [agentStatus, setAgentStatus] = useState("");
   const [contactStatus, setContactStatus] = useState("");
@@ -491,11 +501,22 @@ const AmazonConnectCcpPanel = ({
     window.open(ccpValidation.url, "_blank", "noopener,noreferrer");
   }, [ccpValidation.url]);
 
+  const showFrameBlockedError = useCallback(
+    (details?: string) => {
+      setCcpStatus("blocked");
+      setCcpWarning(t("callCenter.ccpFrameBlocked"));
+      setCcpErrorSignature(CCP_FRAME_BLOCKED_ERROR);
+      setCcpDebugDetails(details ?? t("callCenter.ccpFrameBlockedDetails", { ccpUrl: ccpValidation.url ?? "" }));
+    },
+    [ccpValidation.url, t]
+  );
+
   const retryCcp = useCallback(() => {
     clearCcpContainer();
     setCcpStatus("loading");
     setCcpWarning("");
     setCcpDebugDetails("");
+    setCcpErrorSignature("");
     setRetryNonce((value) => value + 1);
   }, [clearCcpContainer]);
 
@@ -536,6 +557,7 @@ const AmazonConnectCcpPanel = ({
       setCcpStatus("disabled");
       setCcpWarning("");
       setCcpDebugDetails("");
+      setCcpErrorSignature("");
       return;
     }
 
@@ -544,6 +566,7 @@ const AmazonConnectCcpPanel = ({
       setCcpStatus("error");
       setCcpWarning(ccpConfigError);
       setCcpDebugDetails(ccpUrl?.trim() || t("common.none"));
+      setCcpErrorSignature("");
       return;
     }
 
@@ -562,14 +585,23 @@ const AmazonConnectCcpPanel = ({
     setCcpStatus("loading");
     setCcpWarning("");
     setCcpDebugDetails("");
+    setCcpErrorSignature("");
+    const handleSecurityPolicyViolation = (event: SecurityPolicyViolationEvent) => {
+      const directive = event.effectiveDirective || event.violatedDirective || "";
+      if (!directive.toLowerCase().includes("frame-ancestors")) {
+        return;
+      }
+      showFrameBlockedError(
+        `${CCP_FRAME_BLOCKED_ERROR}; blockedURI=${event.blockedURI || validatedCcpUrl}; appOrigin=${appOrigin || "unknown"}`
+      );
+    };
+    window.addEventListener("securitypolicyviolation", handleSecurityPolicyViolation);
     const slowLoadTimer = window.setTimeout(() => {
       if (cancelled || ready) {
         return;
       }
-      setCcpStatus((current) => (current === "ready" ? current : "error"));
-      setCcpWarning(t("callCenter.ccpHelpText"));
-      setCcpDebugDetails(t("callCenter.ccpSlowLoadDetails", { ccpUrl: ccpValidation.url ?? "" }));
-    }, 15000);
+      showFrameBlockedError(t("callCenter.ccpFrameBlockedDetails", { ccpUrl: validatedCcpUrl }));
+    }, 30000);
 
     const init = async () => {
       try {
@@ -596,8 +628,16 @@ const AmazonConnectCcpPanel = ({
             left: 0
           },
           softphone: {
-            allowFramedSoftphone: true
-          }
+            allowFramedSoftphone: true,
+            allowEarlyGum: true
+          },
+          pageOptions: {
+            enableAudioDeviceSettings: true,
+            enablePhoneTypeSettings: true
+          },
+          ccpAckTimeout: 10000,
+          ccpSynTimeout: 5000,
+          ccpLoadTimeout: 30000
         });
 
         amazonConnect.agent?.((agent) => {
@@ -607,6 +647,7 @@ const AmazonConnectCcpPanel = ({
             setCcpStatus("ready");
             setCcpWarning("");
             setCcpDebugDetails("");
+            setCcpErrorSignature("");
             setAgentStatus(getStateName(state ?? agent.getStatus?.() ?? agent.getState?.()) ?? "");
           };
           updateAgentStatus();
@@ -618,11 +659,6 @@ const AmazonConnectCcpPanel = ({
           const updateContact = (nextContact: AmazonConnectContact) => {
             const contactId = nextContact.getContactId?.() ?? "";
             const callerPhone = getCallerPhoneFromContact(nextContact);
-            ready = true;
-            window.clearTimeout(slowLoadTimer);
-            setCcpStatus("ready");
-            setCcpWarning("");
-            setCcpDebugDetails("");
             setActiveContactId(contactId);
             setActiveCallerPhone(callerPhone ?? "");
             setContactStatus(getStateName(nextContact.getStatus?.() ?? nextContact.getState?.()) ?? "");
@@ -640,6 +676,7 @@ const AmazonConnectCcpPanel = ({
           setCcpDebugDetails(
             initError instanceof Error ? initError.message : t("callCenter.errorCcpInit")
           );
+          setCcpErrorSignature("");
         }
       }
     };
@@ -648,6 +685,7 @@ const AmazonConnectCcpPanel = ({
     return () => {
       cancelled = true;
       window.clearTimeout(slowLoadTimer);
+      window.removeEventListener("securitypolicyviolation", handleSecurityPolicyViolation);
     };
   }, [
     ccpConfigError,
@@ -658,6 +696,7 @@ const AmazonConnectCcpPanel = ({
     matchActiveContact,
     region,
     retryNonce,
+    showFrameBlockedError,
     t
   ]);
 
@@ -666,9 +705,12 @@ const AmazonConnectCcpPanel = ({
       ? t("callCenter.ccpStatusReady")
       : ccpStatus === "loading"
         ? t("callCenter.ccpStatusLoading")
+        : ccpStatus === "blocked"
+          ? t("callCenter.ccpStatusFrameBlocked")
         : ccpStatus === "error"
           ? t("callCenter.ccpStatusError")
           : t("callCenter.ccpStatusDisabled");
+  const isFrameBlocked = ccpStatus === "blocked";
 
   return (
     <article className="card ccp-panel">
@@ -677,7 +719,7 @@ const AmazonConnectCcpPanel = ({
           <h3>{t("callCenter.softphoneTitle")}</h3>
           <p className="muted">{t("callCenter.ccpApprovedOriginHint")}</p>
         </div>
-        <span className={ccpStatus === "ready" ? "status-pill success" : ccpStatus === "error" ? "status-pill warning" : "status-pill info"}>
+        <span className={ccpStatus === "ready" ? "status-pill success" : ccpStatus === "error" || ccpStatus === "blocked" ? "status-pill warning" : "status-pill info"}>
           {statusLabel}
         </span>
       </div>
@@ -695,10 +737,20 @@ const AmazonConnectCcpPanel = ({
         <div className="ccp-help-box">
           <strong>{ccpWarning}</strong>
           <ul className="ccp-checklist">
-            <li>{t("callCenter.ccpChecklistLogin")}</li>
-            <li>{t("callCenter.ccpChecklistPopups")}</li>
-            <li>{t("callCenter.ccpChecklistCookies")}</li>
-            <li>{t("callCenter.ccpChecklistOrigin")}</li>
+            {isFrameBlocked ? (
+              <>
+                <li>{t("callCenter.ccpCspChecklistCli")}</li>
+                <li>{t("callCenter.ccpCspChecklistReapply")}</li>
+                <li>{t("callCenter.ccpCspChecklistReload")}</li>
+              </>
+            ) : (
+              <>
+                <li>{t("callCenter.ccpChecklistLogin")}</li>
+                <li>{t("callCenter.ccpChecklistPopups")}</li>
+                <li>{t("callCenter.ccpChecklistCookies")}</li>
+                <li>{t("callCenter.ccpChecklistOrigin")}</li>
+              </>
+            )}
           </ul>
           <div className="ccp-diagnostics">
             <div>
@@ -713,6 +765,18 @@ const AmazonConnectCcpPanel = ({
               <span>{t("callCenter.ccpDiagnosticApprovedOrigin")}</span>
               <strong>{approvedOrigin}</strong>
             </div>
+            {ccpErrorSignature ? (
+              <>
+                <div>
+                  <span>{t("callCenter.ccpDiagnosticError")}</span>
+                  <strong>{ccpErrorSignature}</strong>
+                </div>
+                <div>
+                  <span>{t("callCenter.ccpDiagnosticCli")}</span>
+                  <strong>aws connect list-approved-origins --instance-id &lt;id&gt; --region us-east-1</strong>
+                </div>
+              </>
+            ) : null}
           </div>
           <div className="ccp-help-actions">
             {ccpValidation.url ? (
