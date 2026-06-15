@@ -139,6 +139,10 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Accept-Language",
+                "value": "{{language}}"
               }
             ],
             "url": {
@@ -170,6 +174,12 @@
                   "  pm.response.to.have.status(201);",
                   "});",
                   "const json = pm.response.json();",
+                  "pm.test(\"data.user.language exists\", function () {",
+                  "  pm.expect(json).to.have.nested.property(\"data.user.language\");",
+                  "});",
+                  "pm.test(\"data.user.language is supported\", function () {",
+                  "  pm.expect([\"vi-VN\", \"en-US\"]).to.include(json.data.user.language);",
+                  "});",
                   "if (json && json.data) {",
                   "  if (json.data.user && json.data.user.id) pm.collectionVariables.set(\"ownerUserId\", json.data.user.id);",
                   "  if (json.data.salon && json.data.salon.id) pm.collectionVariables.set(\"salonId\", json.data.salon.id);",
@@ -187,6 +197,10 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Accept-Language",
+                "value": "{{language}}"
               }
             ],
             "url": {
@@ -207,7 +221,96 @@
               "raw": "{\n  \"email\": \"{{ownerEmail}}\",\n  \"password\": \"{{ownerPassword}}\"\n}"
             }
           },
-          "response": [],
+          "response": [
+            {
+              "name": "Owner login vi-VN",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "vi-VN"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/auth/login-owner",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "auth",
+                    "login-owner"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"{{ownerEmail}}\",\n  \"password\": \"{{ownerPassword}}\"\n}"
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"message\": \"Đăng nhập chủ salon thành công.\",\n  \"data\": {\n    \"user\": {\n      \"id\": \"...\",\n      \"email\": \"owner.demo@fastaibooking.local\",\n      \"fullName\": \"Kiet Nguyen\",\n      \"role\": \"SALON_OWNER\",\n      \"salonId\": \"...\",\n      \"staffId\": null,\n      \"language\": \"vi-VN\"\n    },\n    \"accessToken\": \"...\",\n    \"refreshToken\": \"...\"\n  }\n}"
+            },
+            {
+              "name": "Owner login en-US",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "en-US"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/auth/login-owner",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "auth",
+                    "login-owner"
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"{{ownerEmail}}\",\n  \"password\": \"{{ownerPassword}}\"\n}"
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"message\": \"Owner login successful.\",\n  \"data\": {\n    \"user\": {\n      \"id\": \"...\",\n      \"email\": \"owner.demo@fastaibooking.local\",\n      \"fullName\": \"Kiet Nguyen\",\n      \"role\": \"SALON_OWNER\",\n      \"salonId\": \"...\",\n      \"staffId\": null,\n      \"language\": \"en-US\"\n    },\n    \"accessToken\": \"...\",\n    \"refreshToken\": \"...\"\n  }\n}"
+            }
+          ],
           "event": [
             {
               "listen": "test",
@@ -218,6 +321,12 @@
                   "  pm.response.to.have.status(200);",
                   "});",
                   "const json = pm.response.json();",
+                  "pm.test(\"data.user.language exists\", function () {",
+                  "  pm.expect(json).to.have.nested.property(\"data.user.language\");",
+                  "});",
+                  "pm.test(\"data.user.language is supported\", function () {",
+                  "  pm.expect([\"vi-VN\", \"en-US\"]).to.include(json.data.user.language);",
+                  "});",
                   "if (json && json.data) {",
                   "  pm.collectionVariables.set(\"ownerAccessToken\", json.data.accessToken || \"\");",
                   "  pm.collectionVariables.set(\"ownerRefreshToken\", json.data.refreshToken || \"\");",
@@ -238,6 +347,10 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Accept-Language",
+                "value": "{{language}}"
               }
             ],
             "url": {
@@ -269,12 +382,76 @@
                   "  pm.response.to.have.status(200);",
                   "});",
                   "const json = pm.response.json();",
+                  "pm.test(\"data.user.language exists\", function () {",
+                  "  pm.expect(json).to.have.nested.property(\"data.user.language\");",
+                  "});",
+                  "pm.test(\"data.user.language is supported\", function () {",
+                  "  pm.expect([\"vi-VN\", \"en-US\"]).to.include(json.data.user.language);",
+                  "});",
                   "if (json && json.data) {",
                   "  pm.collectionVariables.set(\"ownerAccessToken\", json.data.accessToken || \"\");",
                   "  pm.collectionVariables.set(\"ownerRefreshToken\", json.data.refreshToken || \"\");",
                   "  if (json.data.user && json.data.user.salonId) {",
                   "    pm.collectionVariables.set(\"salonId\", json.data.user.salonId);",
                   "  }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login Staff",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept-Language",
+                "value": "{{language}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login-staff",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login-staff"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{staffEmail}}\",\n  \"password\": \"{{staffPassword}}\"\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "const json = pm.response.json();",
+                  "pm.test(\"data.user.language exists\", function () {",
+                  "  pm.expect(json).to.have.nested.property(\"data.user.language\");",
+                  "});",
+                  "pm.test(\"data.user.language is supported\", function () {",
+                  "  pm.expect([\"vi-VN\", \"en-US\"]).to.include(json.data.user.language);",
+                  "});",
+                  "if (json && json.data) {",
+                  "  pm.collectionVariables.set(\"staffAccessToken\", json.data.accessToken || \"\");",
+                  "  pm.collectionVariables.set(\"staffRefreshToken\", json.data.refreshToken || \"\");",
                   "}"
                 ]
               }
@@ -466,7 +643,12 @@
           "name": "Get Me",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "Accept-Language",
+                "value": "{{language}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/auth/me",
               "host": [
@@ -491,7 +673,27 @@
               ]
             }
           },
-          "response": []
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "const json = pm.response.json();",
+                  "pm.test(\"data.language exists\", function () {",
+                  "  pm.expect(json).to.have.nested.property(\"data.language\");",
+                  "});",
+                  "pm.test(\"data.language is supported\", function () {",
+                  "  pm.expect([\"vi-VN\", \"en-US\"]).to.include(json.data.language);",
+                  "});"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -735,7 +937,7 @@
             "description": "",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fullName\": \"Test Technician\",\n  \"email\": \"staff+{{$timestamp}}@example.com\",\n  \"phone\": \"+15551230000\",\n  \"title\": \"Nail Technician\",\n  \"isBookable\": true\n}"
+              "raw": "{\n  \"fullName\": \"Kelly\",\n  \"email\": \"kelly.demo@fastaibooking.local\",\n  \"phone\": \"(732) 555-0103\",\n  \"title\": \"pedicure\",\n  \"isBookable\": true,\n  \"avatarUrl\": \"https://example.com/kelly.jpg\"\n}"
             },
             "auth": {
               "type": "bearer",
@@ -792,7 +994,7 @@
             "description": "",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fullName\": \"Test Technician Updated\",\n  \"title\": \"Senior Nail Technician\",\n  \"isBookable\": true\n}"
+              "raw": "{\n  \"fullName\": \"Kelly\",\n  \"email\": \"kelly.demo@fastaibooking.local\",\n  \"phone\": \"(732) 555-0103\",\n  \"title\": \"pedicure\",\n  \"isBookable\": true,\n  \"avatarUrl\": \"https://example.com/kelly.jpg\"\n}"
             },
             "auth": {
               "type": "bearer",
@@ -2973,6 +3175,10 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Accept-Language",
+                "value": "{{language}}"
               }
             ],
             "url": {
@@ -3004,6 +3210,12 @@
                   "  pm.response.to.have.status(200);",
                   "});",
                   "const json = pm.response.json();",
+                  "pm.test(\"data.user.language exists\", function () {",
+                  "  pm.expect(json).to.have.nested.property(\"data.user.language\");",
+                  "});",
+                  "pm.test(\"data.user.language is supported\", function () {",
+                  "  pm.expect([\"vi-VN\", \"en-US\"]).to.include(json.data.user.language);",
+                  "});",
                   "if (json && json.data) {",
                   "  pm.collectionVariables.set(\"agentAccessToken\", json.data.accessToken || \"\");",
                   "  pm.collectionVariables.set(\"agentRefreshToken\", json.data.refreshToken || \"\");",
@@ -3694,6 +3906,26 @@
     },
     {
       "key": "assignedSalonId",
+      "value": ""
+    },
+    {
+      "key": "language",
+      "value": "vi-VN"
+    },
+    {
+      "key": "staffEmail",
+      "value": "staff.demo@fastaibooking.local"
+    },
+    {
+      "key": "staffPassword",
+      "value": "Staff123!"
+    },
+    {
+      "key": "staffAccessToken",
+      "value": ""
+    },
+    {
+      "key": "staffRefreshToken",
       "value": ""
     }
   ]

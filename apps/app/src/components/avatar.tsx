@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+
 type AvatarVariant = "owner" | "staff" | "operator" | "customer";
 
 const avatarSrc: Record<AvatarVariant, string> = {
@@ -10,18 +12,32 @@ const avatarSrc: Record<AvatarVariant, string> = {
 export const DemoAvatar = ({
   name,
   variant = "staff",
-  size = "md"
+  size = "md",
+  src
 }: {
   name: string;
   variant?: AvatarVariant;
   size?: "sm" | "md" | "lg";
+  src?: string | null;
 }) => {
+  const fallbackSrc = avatarSrc[variant];
+  const [imageSrc, setImageSrc] = useState(src?.trim() || fallbackSrc);
+
+  useEffect(() => {
+    setImageSrc(src?.trim() || fallbackSrc);
+  }, [src, fallbackSrc]);
+
   return (
     <img
       className={`avatar avatar-${size}`}
-      src={avatarSrc[variant]}
+      src={imageSrc}
       alt={name}
       loading="lazy"
+      onError={() => {
+        if (imageSrc !== fallbackSrc) {
+          setImageSrc(fallbackSrc);
+        }
+      }}
     />
   );
 };

@@ -4,6 +4,7 @@ import { useI18n } from "../lib/i18n";
 type FieldType =
   | "text"
   | "email"
+  | "url"
   | "tel"
   | "password"
   | "number"

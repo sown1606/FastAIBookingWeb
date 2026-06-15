@@ -2250,12 +2250,13 @@ pre {
 .staff-grid {
   display: grid;
   gap: 14px;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
 }
 
 .staff-card {
   display: grid;
   gap: 14px;
+  min-width: 0;
   padding: 16px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -2270,9 +2271,8 @@ pre {
 }
 
 .staff-card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
+  display: grid;
+  align-items: start;
   gap: 12px;
 }
 
@@ -2289,6 +2289,11 @@ pre {
   align-items: center;
   gap: 12px;
   min-width: 0;
+  width: 100%;
+}
+
+.staff-identity .avatar {
+  flex: 0 0 auto;
 }
 
 .staff-identity-copy {
@@ -2297,21 +2302,27 @@ pre {
   min-width: 0;
 }
 
-.staff-identity-copy strong,
-.staff-contact-grid strong {
-  overflow-wrap: anywhere;
+.staff-identity-copy strong {
+  line-height: 1.25;
+  font-size: 1.05rem;
+  word-break: normal;
+  overflow-wrap: break-word;
 }
 
 .staff-identity-copy span {
   color: var(--muted);
   font-size: 0.9rem;
+  line-height: 1.3;
+  word-break: normal;
+  overflow-wrap: break-word;
 }
 
 .staff-chip-row {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: flex-start;
+  min-width: 0;
 }
 
 .staff-contact-grid {
@@ -2323,10 +2334,15 @@ pre {
 .staff-contact-grid > div {
   display: grid;
   gap: 4px;
+  min-width: 0;
   padding: 12px;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.84);
   border: 1px solid rgba(11, 111, 95, 0.08);
+}
+
+.staff-contact-grid strong {
+  overflow-wrap: anywhere;
 }
 
 .staff-meta-grid {

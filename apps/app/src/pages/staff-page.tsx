@@ -16,6 +16,7 @@ interface StaffItem {
   email: string | null;
   phone: string | null;
   title: string | null;
+  avatarUrl: string | null;
   status: "ACTIVE" | "INACTIVE";
   isBookable: boolean;
   user?: {
@@ -50,6 +51,7 @@ export const StaffPage = () => {
     email: "",
     phone: "",
     title: "",
+    avatarUrl: "",
     isBookable: true
   });
 
@@ -80,6 +82,7 @@ export const StaffPage = () => {
     const email = form.email.trim().toLowerCase();
     const phone = form.phone.trim();
     const title = form.title.trim();
+    const avatarUrl = form.avatarUrl.trim();
     if (fullName.length < 2 || !email || !phone) {
       notify("error", t("form.requiredAll"));
       return;
@@ -94,6 +97,7 @@ export const StaffPage = () => {
         email,
         phone,
         title: title || undefined,
+        avatarUrl: avatarUrl || undefined,
         isBookable: form.isBookable,
         createLogin: true
       });
@@ -102,6 +106,7 @@ export const StaffPage = () => {
         email: "",
         phone: "",
         title: "",
+        avatarUrl: "",
         isBookable: true
       });
       notify("success", t("staff.created"));
@@ -120,6 +125,12 @@ export const StaffPage = () => {
         { name: "phone", label: t("common.phone"), type: "tel", required: true },
         { name: "title", label: t("staff.title"), type: "select", options: staffTitleOptions },
         {
+          name: "avatarUrl",
+          label: t("staff.avatarUrl"),
+          type: "url",
+          placeholder: t("staff.avatarUrlPlaceholder")
+        },
+        {
           name: "isBookable",
           label: t("staff.isBookableField"),
           type: "select",
@@ -135,6 +146,7 @@ export const StaffPage = () => {
         email: item.email ?? "",
         phone: formatUsPhoneInput(item.phone ?? ""),
         title: item.title ?? "",
+        avatarUrl: item.avatarUrl ?? "",
         isBookable: item.isBookable ? "true" : "false"
       },
       confirmLabel: t("staff.save")
@@ -146,6 +158,7 @@ export const StaffPage = () => {
     const email = values.email.trim().toLowerCase();
     const phone = values.phone.trim();
     const title = values.title.trim();
+    const avatarUrl = values.avatarUrl.trim();
     if (fullName.length < 2 || !email || !phone) {
       notify("error", t("form.requiredAll"));
       return;
@@ -160,6 +173,7 @@ export const StaffPage = () => {
         email,
         phone,
         title: title || null,
+        avatarUrl: avatarUrl || null,
         isBookable: values.isBookable === "true"
       });
       notify("success", t("staff.updated"));
@@ -350,6 +364,16 @@ export const StaffPage = () => {
               ))}
             </select>
           </label>
+          <label className="field">
+            <span>{t("staff.avatarUrl")}</span>
+            <input
+              type="url"
+              placeholder={t("staff.avatarUrlPlaceholder")}
+              value={form.avatarUrl}
+              onChange={(event) => setForm((prev) => ({ ...prev, avatarUrl: event.target.value }))}
+            />
+            <small>{t("staff.avatarUrlHint")}</small>
+          </label>
           <label className="field checkbox-row">
             <span>
               {t("staff.isBookableField")}
@@ -396,7 +420,7 @@ export const StaffPage = () => {
                 >
                   <div className="staff-card-header">
                     <div className="staff-identity">
-                      <DemoAvatar name={item.fullName} variant="staff" size="lg" />
+                      <DemoAvatar name={item.fullName} variant="staff" size="lg" src={item.avatarUrl} />
                       <div className="staff-identity-copy">
                         <strong>{item.fullName}</strong>
                         <span>{titleLabel}</span>

@@ -35,11 +35,19 @@ const usPhoneSchema = z
   .max(25)
   .refine((value) => isValidUsPhone(value), "Phone must be a valid US phone number.");
 
+const avatarUrlSchema = z
+  .preprocess(
+    (value) => (typeof value === "string" ? value.trim() : value),
+    z.union([z.string().max(2048).url(), z.literal(""), z.null()])
+  )
+  .optional();
+
 const createStaffSchema = z.object({
   fullName: z.string().min(2).max(120),
   email: z.string().email(),
   phone: usPhoneSchema,
   title: z.string().max(120).optional(),
+  avatarUrl: avatarUrlSchema,
   isBookable: z.boolean().optional(),
   createLogin: z.boolean().optional(),
   password: z.string().min(8).max(128).optional()
@@ -50,6 +58,7 @@ const updateStaffSchema = z.object({
   email: z.string().email().optional(),
   phone: usPhoneSchema.optional(),
   title: z.string().max(120).nullable().optional(),
+  avatarUrl: avatarUrlSchema,
   isBookable: z.boolean().optional()
 });
 
@@ -59,7 +68,8 @@ const resetStaffAccessSchema = z.object({
 
 const updateStaffSelfSchema = z.object({
   fullName: z.string().min(2).max(120).optional(),
-  phone: usPhoneSchema.optional()
+  phone: usPhoneSchema.optional(),
+  avatarUrl: avatarUrlSchema
 });
 
 export const staffRouter = Router();

@@ -9,6 +9,7 @@ import { signAccessToken, signRefreshToken, verifyRefreshToken } from "../../lib
 import { sendPasswordResetEmail } from "../../lib/mailer";
 import { hashPassword, verifyPassword } from "../../lib/password";
 import { getCurrentBillingPeriod } from "../../utils/date";
+import { DEFAULT_LANGUAGE, resolveUserLanguage, SupportedLanguage } from "../../utils/language";
 import { requireUsPhone } from "../../utils/phone";
 
 interface RegisterOwnerInput {
@@ -107,7 +108,8 @@ const normalizeOptionalPhone = (value: string | undefined, label: string): strin
 };
 
 export const registerSalonOwner = async (
-  input: RegisterOwnerInput
+  input: RegisterOwnerInput,
+  requestLanguage: SupportedLanguage = DEFAULT_LANGUAGE
 ): Promise<{
   user: {
     id: string;
@@ -116,6 +118,7 @@ export const registerSalonOwner = async (
     role: Role;
     salonId: string | null;
     staffId: string | null;
+    language: SupportedLanguage;
   };
   salon: {
     id: string;
@@ -146,6 +149,7 @@ export const registerSalonOwner = async (
         fullName: input.fullName,
         passwordHash,
         phone: ownerPhone,
+        language: requestLanguage,
         role: Role.SALON_OWNER
       }
     });
@@ -223,7 +227,8 @@ export const registerSalonOwner = async (
         email: user.email,
         role: user.role,
         salonId: salon.id,
-        staffId: null
+        staffId: null,
+        language: requestLanguage
       },
       salon: {
         id: salon.id,
@@ -251,7 +256,8 @@ export const registerSalonOwner = async (
 
 export const loginWithEmailPassword = async (
   input: LoginInput,
-  expectedRole?: Role
+  expectedRole?: Role,
+  requestLanguage: SupportedLanguage = DEFAULT_LANGUAGE
 ): Promise<{
   user: {
     id: string;
@@ -260,6 +266,7 @@ export const loginWithEmailPassword = async (
     role: Role;
     salonId: string | null;
     staffId: string | null;
+    language: SupportedLanguage;
   };
   accessToken: string;
   refreshToken: string;
@@ -300,7 +307,8 @@ export const loginWithEmailPassword = async (
       fullName: user.fullName,
       role: user.role,
       salonId: user.salonId,
-      staffId: user.staffId
+      staffId: user.staffId,
+      language: resolveUserLanguage(user.language, requestLanguage)
     },
     ...tokens
   };
@@ -503,6 +511,7 @@ export const getAuthenticatedUserProfile = async (
   role: Role;
   salonId: string | null;
   staffId: string | null;
+  language: SupportedLanguage;
   salon: {
     id: string;
     name: string;
@@ -555,6 +564,7 @@ export const getAuthenticatedUserProfile = async (
     role: user.role,
     salonId: user.salonId,
     staffId: user.staffId,
+    language: resolveUserLanguage(user.language, DEFAULT_LANGUAGE),
     salon: user.salon,
     staff: user.staffProfile
   };

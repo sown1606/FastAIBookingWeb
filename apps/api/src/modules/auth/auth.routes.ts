@@ -6,6 +6,7 @@ import { authenticate } from "../../middleware/auth";
 import { validate } from "../../middleware/validate";
 import { sendSuccess } from "../../utils/response";
 import { isValidUsPhone } from "../../utils/phone";
+import { resolveRequestLanguage, SupportedLanguage } from "../../utils/language";
 import {
   changePassword,
   forgotPassword,
@@ -67,15 +68,39 @@ const changePasswordSchema = z.object({
 
 export const authRouter = Router();
 
+const authMessages = {
+  registerOwner: {
+    "vi-VN": "Đăng ký chủ salon thành công.",
+    "en-US": "Salon owner registered successfully."
+  },
+  login: {
+    "vi-VN": "Đăng nhập thành công.",
+    "en-US": "Login successful."
+  },
+  loginOwner: {
+    "vi-VN": "Đăng nhập chủ salon thành công.",
+    "en-US": "Owner login successful."
+  },
+  loginStaff: {
+    "vi-VN": "Đăng nhập nhân viên thành công.",
+    "en-US": "Staff login successful."
+  },
+  loginCallCenter: {
+    "vi-VN": "Đăng nhập tổng đài thành công.",
+    "en-US": "Call center login successful."
+  }
+} satisfies Record<string, Record<SupportedLanguage, string>>;
+
 authRouter.post(
   "/register-owner",
   validate(registerOwnerSchema),
   asyncHandler(async (req, res) => {
     const payload = req.body as z.infer<typeof registerOwnerSchema>;
-    const result = await registerSalonOwner(payload);
+    const requestLanguage = resolveRequestLanguage(req);
+    const result = await registerSalonOwner(payload, requestLanguage);
     return sendSuccess(res, {
       statusCode: 201,
-      message: "Salon owner registered successfully.",
+      message: authMessages.registerOwner[result.user.language],
       data: result
     });
   })
@@ -86,9 +111,10 @@ authRouter.post(
   validate(loginSchema),
   asyncHandler(async (req, res) => {
     const payload = req.body as z.infer<typeof loginSchema>;
-    const result = await loginWithEmailPassword(payload);
+    const requestLanguage = resolveRequestLanguage(req);
+    const result = await loginWithEmailPassword(payload, undefined, requestLanguage);
     return sendSuccess(res, {
-      message: "Login successful.",
+      message: authMessages.login[result.user.language],
       data: result
     });
   })
@@ -99,9 +125,10 @@ authRouter.post(
   validate(loginSchema),
   asyncHandler(async (req, res) => {
     const payload = req.body as z.infer<typeof loginSchema>;
-    const result = await loginWithEmailPassword(payload, Role.SALON_OWNER);
+    const requestLanguage = resolveRequestLanguage(req);
+    const result = await loginWithEmailPassword(payload, Role.SALON_OWNER, requestLanguage);
     return sendSuccess(res, {
-      message: "Owner login successful.",
+      message: authMessages.loginOwner[result.user.language],
       data: result
     });
   })
@@ -112,9 +139,10 @@ authRouter.post(
   validate(loginSchema),
   asyncHandler(async (req, res) => {
     const payload = req.body as z.infer<typeof loginSchema>;
-    const result = await loginWithEmailPassword(payload, Role.STAFF);
+    const requestLanguage = resolveRequestLanguage(req);
+    const result = await loginWithEmailPassword(payload, Role.STAFF, requestLanguage);
     return sendSuccess(res, {
-      message: "Staff login successful.",
+      message: authMessages.loginStaff[result.user.language],
       data: result
     });
   })
@@ -125,9 +153,10 @@ authRouter.post(
   validate(loginSchema),
   asyncHandler(async (req, res) => {
     const payload = req.body as z.infer<typeof loginSchema>;
-    const result = await loginWithEmailPassword(payload, Role.CALL_CENTER_AGENT);
+    const requestLanguage = resolveRequestLanguage(req);
+    const result = await loginWithEmailPassword(payload, Role.CALL_CENTER_AGENT, requestLanguage);
     return sendSuccess(res, {
-      message: "Call center login successful.",
+      message: authMessages.loginCallCenter[result.user.language],
       data: result
     });
   })

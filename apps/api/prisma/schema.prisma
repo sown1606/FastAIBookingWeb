@@ -124,6 +124,7 @@ model User {
   passwordHash             String
   fullName                 String
   phone                    String?
+  language                 String?
   role                     Role
   isEmailVerified          Boolean                     @default(false)
   isActive                 Boolean                     @default(true)
@@ -250,6 +251,7 @@ model Staff {
   email               String?
   phone               String?
   title               String?
+  avatarUrl           String?
   status              StaffStatus        @default(ACTIVE)
   currentWorkStatus   StaffWorkStatus    @default(AVAILABLE)
   activeAppointmentId String?

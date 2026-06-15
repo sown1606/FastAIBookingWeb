@@ -13,6 +13,7 @@ interface CreateStaffInput {
   email?: string;
   phone?: string;
   title?: string;
+  avatarUrl?: string | null;
   isBookable?: boolean;
   createLogin?: boolean;
   password?: string;
@@ -23,12 +24,14 @@ interface UpdateStaffInput {
   email?: string | null;
   phone?: string | null;
   title?: string | null;
+  avatarUrl?: string | null;
   isBookable?: boolean;
 }
 
 interface UpdateOwnStaffProfileInput {
   fullName?: string;
   phone?: string | null;
+  avatarUrl?: string | null;
 }
 
 const staffWithUserInclude = {
@@ -48,6 +51,31 @@ const normalizeEmail = (email?: string | null): string | null => {
   }
   const trimmed = email.trim().toLowerCase();
   return trimmed.length ? trimmed : null;
+};
+
+const normalizeAvatarUrl = (value: string | null | undefined): string | null | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === null) {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (trimmed.length > 2048) {
+    throw new AppError("Avatar URL must be 2048 characters or fewer.", 400, "INVALID_AVATAR_URL");
+  }
+
+  try {
+    new URL(trimmed);
+  } catch {
+    throw new AppError("Avatar URL must be a valid URL.", 400, "INVALID_AVATAR_URL");
+  }
+
+  return trimmed;
 };
 
 export const listStaff = async (salonId: string, includeInactive = false) => {
@@ -73,6 +101,7 @@ export const createStaff = async (
     throw new AppError("Staff email is required.", 400, "STAFF_EMAIL_REQUIRED");
   }
   const normalizedPhone = requireUsPhone(input.phone, "Staff phone");
+  const normalizedAvatarUrl = normalizeAvatarUrl(input.avatarUrl);
   const shouldCreateLogin = input.createLogin ?? true;
   const temporaryPassword = input.password ?? generateSecureToken(6);
 
@@ -94,6 +123,7 @@ export const createStaff = async (
         email: normalizedEmail,
         phone: normalizedPhone,
         title: input.title,
+        avatarUrl: normalizedAvatarUrl ?? null,
         isBookable: input.isBookable ?? true
       }
     });
@@ -207,6 +237,7 @@ export const updateStaff = async (
       : input.phone === null
         ? null
         : requireUsPhone(input.phone, "Staff phone");
+  const normalizedAvatarUrl = normalizeAvatarUrl(input.avatarUrl);
 
   if (input.email !== undefined && !normalizedEmail) {
     throw new AppError("Staff email is required.", 400, "STAFF_EMAIL_REQUIRED");
@@ -236,6 +267,7 @@ export const updateStaff = async (
           input.email === undefined ? existing.email : normalizedEmail === null ? null : normalizedEmail,
         phone: input.phone === undefined ? existing.phone : normalizedPhone,
         title: input.title === undefined ? existing.title : input.title ?? null,
+        avatarUrl: input.avatarUrl === undefined ? existing.avatarUrl : normalizedAvatarUrl ?? null,
         isBookable: input.isBookable ?? existing.isBookable
       }
     });
@@ -482,6 +514,10 @@ export const updateStaffSelfProfile = async (
         : input.phone === null
           ? null
           : requireUsPhone(input.phone, "Staff phone");
+    const nextAvatarUrl =
+      input.avatarUrl === undefined
+        ? user.staffProfile.avatarUrl
+        : normalizeAvatarUrl(input.avatarUrl) ?? null;
 
     await tx.user.update({
       where: { id: user.id },
@@ -495,7 +531,8 @@ export const updateStaffSelfProfile = async (
       where: { id: user.staffProfile.id },
       data: {
         fullName: nextFullName,
-        phone: nextPhone
+        phone: nextPhone,
+        avatarUrl: nextAvatarUrl
       }
     });
 
