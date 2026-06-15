@@ -273,6 +273,13 @@ type AmazonConnectGlobal = {
         region?: string;
         loginPopup: boolean;
         loginPopupAutoClose: boolean;
+        loginOptions?: {
+          autoClose: boolean;
+          height: number;
+          width: number;
+          top: number;
+          left: number;
+        };
         softphone: {
           allowFramedSoftphone: boolean;
         };
@@ -290,17 +297,33 @@ const getAmazonConnect = (): AmazonConnectGlobal | undefined => {
   return (globalThis as typeof globalThis & { connect?: AmazonConnectGlobal }).connect;
 };
 
-const normalizeCcpUrl = (value: string | null | undefined): string | null => {
-  const trimmed = value?.trim();
+const validateCcpUrl = (
+  value: string | null | undefined
+): { url: string | null; error: string | null } => {
+  const trimmed = value?.trim() ?? "";
   if (!trimmed) {
-    return null;
+    return { url: null, error: "missing" };
   }
-  const withoutLegacyCcp = trimmed.replace(/\/ccp#.*$/, "").replace(/\/ccp\/?$/, "");
-  const withoutTrailingSlash = withoutLegacyCcp.replace(/\/+$/, "");
-  if (withoutTrailingSlash.includes("/ccp-v2")) {
-    return `${withoutTrailingSlash.replace(/\/+$/, "")}/`;
+  const lowered = trimmed.toLowerCase();
+  if (lowered.includes("app-new-nail.kendemo.com")) {
+    return { url: null, error: "app-url" };
   }
-  return `${withoutTrailingSlash}/ccp-v2/`;
+  if (!lowered.includes("/ccp-v2")) {
+    return { url: null, error: "missing-ccp-v2" };
+  }
+
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== "https:") {
+      return { url: null, error: "invalid" };
+    }
+    url.hash = "";
+    url.search = "";
+    url.pathname = url.pathname.replace(/\/+$/, "");
+    return { url: `${url.toString()}/`, error: null };
+  } catch {
+    return { url: null, error: "invalid" };
+  }
 };
 
 const getDateKeyInTimezone = (date: Date, timezone = FALLBACK_SALON_TIMEZONE): string => {
@@ -421,15 +444,60 @@ const AmazonConnectCcpPanel = ({
   const { t } = useI18n();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const lastMatchKeyRef = useRef("");
+  const initializedCcpKeyRef = useRef("");
   const [ccpStatus, setCcpStatus] = useState<"disabled" | "loading" | "ready" | "error">("disabled");
   const [ccpWarning, setCcpWarning] = useState("");
   const [ccpDebugDetails, setCcpDebugDetails] = useState("");
+  const [retryNonce, setRetryNonce] = useState(0);
   const [agentStatus, setAgentStatus] = useState("");
   const [contactStatus, setContactStatus] = useState("");
   const [activeContactId, setActiveContactId] = useState("");
   const [activeCallerPhone, setActiveCallerPhone] = useState("");
 
-  const normalizedCcpUrl = useMemo(() => normalizeCcpUrl(ccpUrl), [ccpUrl]);
+  const ccpValidation = useMemo(() => validateCcpUrl(ccpUrl), [ccpUrl]);
+  const appOrigin = typeof window === "undefined" ? "" : window.location.origin;
+  const approvedOrigin = appOrigin || "https://app-new-nail.kendemo.com";
+  const ccpConfigError =
+    ccpValidation.error === "missing"
+      ? t("callCenter.ccpConfigMissing")
+      : ccpValidation.error === "app-url"
+        ? t("callCenter.ccpConfigAppUrl")
+        : ccpValidation.error === "missing-ccp-v2"
+          ? t("callCenter.ccpConfigMissingCcpV2")
+          : ccpValidation.error === "invalid"
+            ? t("callCenter.ccpConfigInvalid")
+            : "";
+
+  useEffect(() => {
+    if (import.meta.env.DEV) {
+      console.info("[Amazon Connect CCP]", {
+        origin: appOrigin,
+        ccpUrl: ccpValidation.url ?? ccpUrl ?? null
+      });
+    }
+  }, [appOrigin, ccpUrl, ccpValidation.url]);
+
+  const clearCcpContainer = useCallback(() => {
+    if (containerRef.current) {
+      containerRef.current.innerHTML = "";
+    }
+    initializedCcpKeyRef.current = "";
+  }, []);
+
+  const openCcpWindow = useCallback(() => {
+    if (!ccpValidation.url) {
+      return;
+    }
+    window.open(ccpValidation.url, "_blank", "noopener,noreferrer");
+  }, [ccpValidation.url]);
+
+  const retryCcp = useCallback(() => {
+    clearCcpContainer();
+    setCcpStatus("loading");
+    setCcpWarning("");
+    setCcpDebugDetails("");
+    setRetryNonce((value) => value + 1);
+  }, [clearCcpContainer]);
 
   const matchActiveContact = useCallback(
     async (callerPhone: string | null, amazonConnectContactId: string | null) => {
@@ -463,15 +531,34 @@ const AmazonConnectCcpPanel = ({
   );
 
   useEffect(() => {
-    if (!enabled || !normalizedCcpUrl || !containerRef.current) {
+    if (!enabled) {
+      clearCcpContainer();
       setCcpStatus("disabled");
       setCcpWarning("");
       setCcpDebugDetails("");
       return;
     }
 
+    if (!ccpValidation.url) {
+      clearCcpContainer();
+      setCcpStatus("error");
+      setCcpWarning(ccpConfigError);
+      setCcpDebugDetails(ccpUrl?.trim() || t("common.none"));
+      return;
+    }
+
+    if (!containerRef.current) {
+      return;
+    }
+
     let cancelled = false;
     let ready = false;
+    const validatedCcpUrl = ccpValidation.url;
+    const initKey = `${validatedCcpUrl}:${retryNonce}`;
+    if (initializedCcpKeyRef.current === initKey) {
+      return;
+    }
+    containerRef.current.innerHTML = "";
     setCcpStatus("loading");
     setCcpWarning("");
     setCcpDebugDetails("");
@@ -481,7 +568,7 @@ const AmazonConnectCcpPanel = ({
       }
       setCcpStatus((current) => (current === "ready" ? current : "error"));
       setCcpWarning(t("callCenter.ccpHelpText"));
-      setCcpDebugDetails(t("callCenter.ccpSlowLoadDetails", { ccpUrl: normalizedCcpUrl }));
+      setCcpDebugDetails(t("callCenter.ccpSlowLoadDetails", { ccpUrl: ccpValidation.url ?? "" }));
     }, 15000);
 
     const init = async () => {
@@ -494,12 +581,20 @@ const AmazonConnectCcpPanel = ({
         if (cancelled || !containerRef.current) {
           return;
         }
+        initializedCcpKeyRef.current = initKey;
 
         amazonConnect.core.initCCP(containerRef.current, {
-          ccpUrl: normalizedCcpUrl,
+          ccpUrl: validatedCcpUrl,
           region: region ?? undefined,
           loginPopup: true,
           loginPopupAutoClose: true,
+          loginOptions: {
+            autoClose: true,
+            height: 700,
+            width: 600,
+            top: 0,
+            left: 0
+          },
           softphone: {
             allowFramedSoftphone: true
           }
@@ -554,7 +649,17 @@ const AmazonConnectCcpPanel = ({
       cancelled = true;
       window.clearTimeout(slowLoadTimer);
     };
-  }, [enabled, matchActiveContact, normalizedCcpUrl, region, t]);
+  }, [
+    ccpConfigError,
+    ccpUrl,
+    ccpValidation.url,
+    clearCcpContainer,
+    enabled,
+    matchActiveContact,
+    region,
+    retryNonce,
+    t
+  ]);
 
   const statusLabel =
     ccpStatus === "ready"
@@ -578,10 +683,10 @@ const AmazonConnectCcpPanel = ({
       </div>
 
       <div className="ccp-frame" ref={containerRef}>
-        {!enabled || !normalizedCcpUrl ? (
+        {!enabled || !ccpValidation.url ? (
           <div className="ccp-frame-placeholder">
             <strong>{t("callCenter.softphoneDisabled")}</strong>
-            <span>{t("callCenter.softphoneMissingRuntimeInfo")}</span>
+            <span>{ccpConfigError || t("callCenter.softphoneMissingRuntimeInfo")}</span>
           </div>
         ) : null}
       </div>
@@ -589,13 +694,40 @@ const AmazonConnectCcpPanel = ({
       {ccpWarning ? (
         <div className="ccp-help-box">
           <strong>{ccpWarning}</strong>
-          {normalizedCcpUrl ? (
-            <a href={normalizedCcpUrl} target="_blank" rel="noreferrer" className="button-secondary">
-              {t("callCenter.openConnectNewTab")}
-            </a>
-          ) : null}
-          {showTechnicalDetails && ccpDebugDetails ? (
-            <details className="ccp-technical-details">
+          <ul className="ccp-checklist">
+            <li>{t("callCenter.ccpChecklistLogin")}</li>
+            <li>{t("callCenter.ccpChecklistPopups")}</li>
+            <li>{t("callCenter.ccpChecklistCookies")}</li>
+            <li>{t("callCenter.ccpChecklistOrigin")}</li>
+          </ul>
+          <div className="ccp-diagnostics">
+            <div>
+              <span>{t("callCenter.ccpDiagnosticOrigin")}</span>
+              <strong>{appOrigin || t("common.none")}</strong>
+            </div>
+            <div>
+              <span>{t("callCenter.ccpDiagnosticUrl")}</span>
+              <strong>{ccpValidation.url ?? ccpUrl ?? t("common.none")}</strong>
+            </div>
+            <div>
+              <span>{t("callCenter.ccpDiagnosticApprovedOrigin")}</span>
+              <strong>{approvedOrigin}</strong>
+            </div>
+          </div>
+          <div className="ccp-help-actions">
+            {ccpValidation.url ? (
+              <>
+                <button type="button" className="button-secondary" onClick={openCcpWindow}>
+                  {t("callCenter.openConnectCcp")}
+                </button>
+                <button type="button" className="button-secondary" onClick={retryCcp}>
+                  {t("callCenter.retryCcp")}
+                </button>
+              </>
+            ) : null}
+          </div>
+          {ccpDebugDetails ? (
+            <details className="ccp-technical-details" open={showTechnicalDetails}>
               <summary>{t("callCenter.technicalDetails")}</summary>
               <p>{ccpDebugDetails}</p>
             </details>
@@ -624,8 +756,8 @@ const AmazonConnectCcpPanel = ({
         </div>
       </div>
 
-      {normalizedCcpUrl ? (
-        <a href={normalizedCcpUrl} target="_blank" rel="noreferrer" className="button-secondary">
+      {ccpValidation.url ? (
+        <a href={ccpValidation.url} target="_blank" rel="noreferrer" className="button-secondary">
           {t("callCenter.openConnectNewTab")}
         </a>
       ) : null}
@@ -1998,7 +2130,7 @@ export const CallCenterPage = () => {
           <AmazonConnectCcpPanel
             ccpUrl={ccpUrl}
             region={runtime?.amazonConnect.region}
-            enabled={amazonConnectRuntimeReady && Boolean(ccpUrl)}
+            enabled={amazonConnectRuntimeReady}
             showTechnicalDetails={!isBasicMode}
             onQueueMatch={handleQueueMatch}
           />

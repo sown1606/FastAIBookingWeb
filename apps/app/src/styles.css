@@ -1441,6 +1441,37 @@ pre {
   justify-self: start;
 }
 
+.ccp-checklist {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.ccp-diagnostics {
+  display: grid;
+  gap: 8px;
+}
+
+.ccp-diagnostics > div {
+  display: grid;
+  gap: 2px;
+}
+
+.ccp-diagnostics span {
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.ccp-diagnostics strong {
+  overflow-wrap: anywhere;
+}
+
+.ccp-help-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .ccp-technical-details {
   display: grid;
   gap: 6px;
