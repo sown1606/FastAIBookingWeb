@@ -22,7 +22,7 @@ const supportedPushRoles = new Set([
 
 const pushTokenSchema = z.object({
   token: z.string().trim().min(20).max(4096),
-  platform: z.string().trim().min(2).max(32).optional().default("web")
+  platform: z.enum(["android", "ios", "web"]).optional().default("web")
 });
 
 const inboxQuerySchema = z.object({

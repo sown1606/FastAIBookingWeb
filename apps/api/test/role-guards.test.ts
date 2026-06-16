@@ -113,11 +113,15 @@ test("notification APIs are authenticated, role-limited, and scoped to current u
   ]) {
     assert.match(routes, new RegExp(endpoint.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
+  assert.match(routes, /platform:\s*z\.enum\(\["android",\s*"ios",\s*"web"\]\)\.optional\(\)\.default\("web"\)/);
+  assert.match(routes, /registerPushToken\(\{\s*token: payload\.token,\s*platform: payload\.platform/s);
+  assert.match(routes, /unregisterPushToken\(req\.auth!\.userId,\s*payload\.token\)/);
   assert.match(service, /listUserNotificationInbox[\s\S]*where:\s*\{\s*userId: input\.userId\s*\}/);
   assert.match(service, /markUserNotificationRead[\s\S]*id: notificationId,\s*userId/s);
   assert.match(service, /markAllUserNotificationsRead[\s\S]*userId,\s*readAt: null/s);
   assert.match(bell, /navigate\(notification\.url\)/);
   assert.match(pushBridge, /window\.dispatchEvent\(new Event\(NOTIFICATIONS_CHANGED_EVENT\)\)/);
+  assert.match(pushBridge, /registerFirebaseMessagingToken\(\)/);
   assert.match(authContext, /unregisterFirebaseMessagingToken\(\)\.catch\(\(\) => undefined\)/);
 });
 

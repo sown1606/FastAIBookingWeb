@@ -815,6 +815,19 @@ pre {
   gap: 6px;
 }
 
+.demo-account-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.compact-button {
+  min-height: 34px;
+  padding: 6px 10px;
+  font-size: 0.82rem;
+}
+
 .control-center-grid {
   display: grid;
   gap: 14px;

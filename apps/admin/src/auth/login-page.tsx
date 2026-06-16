@@ -5,6 +5,11 @@ import { extractErrorMessage } from "../lib/api";
 import { useToast } from "../components/toast";
 import { useI18n } from "../lib/i18n";
 
+const adminDemoAccount = {
+  email: "admin@fastaibooking.local",
+  password: "Admin123!"
+};
+
 export const LoginPage = () => {
   const navigate = useNavigate();
   const { login } = useAuth();
@@ -37,6 +42,16 @@ export const LoginPage = () => {
       notify("error", message);
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const copyDemoAccount = async () => {
+    try {
+      await navigator.clipboard.writeText(`${adminDemoAccount.email} / ${adminDemoAccount.password}`);
+      notify("success", t("login.demoCopied"));
+    } catch {
+      setEmail(adminDemoAccount.email);
+      setPassword(adminDemoAccount.password);
     }
   };
 
@@ -76,7 +91,12 @@ export const LoginPage = () => {
         </form>
         <div className="mobile-item">
           <strong>{t("login.demoTitle")}</strong>
-          <span className="muted">admin@fastaibooking.local / Admin123!</span>
+          <div className="demo-account-row">
+            <span className="muted">{adminDemoAccount.email} / {adminDemoAccount.password}</span>
+            <button type="button" className="button-secondary compact-button" onClick={() => void copyDemoAccount()}>
+              {t("common.copy")}
+            </button>
+          </div>
         </div>
       </div>
     </div>

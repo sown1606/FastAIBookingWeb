@@ -1,5 +1,6 @@
 import axios, { AxiosError, type AxiosRequestConfig, type AxiosResponse } from "axios";
 import { clearSession, getSession, setSession } from "./auth-storage";
+import { localizeApiErrorMessage } from "./api-error-messages";
 import type { ApiEnvelope, ApiErrorEnvelope, AuthSession } from "../types";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
@@ -92,12 +93,12 @@ export const registerSessionInvalidationHandler = (handler: (() => void) | null)
 
 export const extractErrorMessage = (error: unknown): string => {
   if (axios.isAxiosError(error) && isApiErrorEnvelope(error.response?.data)) {
-    return error.response?.data.error.message ?? "Request failed.";
+    return localizeApiErrorMessage(error.response?.data.error.message ?? "Request failed.");
   }
   if (error instanceof Error) {
-    return error.message;
+    return localizeApiErrorMessage(error.message);
   }
-  return "Unexpected error.";
+  return localizeApiErrorMessage("Unexpected error.");
 };
 
 export const apiGet = async <T>(url: string, config?: AxiosRequestConfig): Promise<T> => {

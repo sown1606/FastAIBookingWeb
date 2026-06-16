@@ -26,6 +26,7 @@ interface FormDialogField {
   min?: number;
   max?: number;
   placeholder?: string;
+  helpText?: string;
   options?: FormDialogOption[];
   rows?: number;
 }
@@ -145,6 +146,7 @@ export const useFormDialog = () => {
                       setValues((prev) => ({ ...prev, [field.name]: event.target.value }))
                     }
                   />
+                  {field.helpText ? <small>{field.helpText}</small> : null}
                 </label>
               );
             }
@@ -169,6 +171,7 @@ export const useFormDialog = () => {
                       </option>
                     ))}
                   </select>
+                  {field.helpText ? <small>{field.helpText}</small> : null}
                 </label>
               );
             }
@@ -212,6 +215,7 @@ export const useFormDialog = () => {
                     setValues((prev) => ({ ...prev, [field.name]: event.target.value }))
                   }
                 />
+                {field.helpText ? <small>{field.helpText}</small> : null}
               </label>
             );
           })}

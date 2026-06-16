@@ -7,11 +7,12 @@ import { useToast } from "../components/toast";
 import { useAuth } from "../auth/auth-context";
 import { formatDateTime } from "../lib/format";
 import type { Pagination } from "../types";
-import { toDateTimeLocalValue, useFormDialog } from "../components/form-dialog";
+import { useFormDialog } from "../components/form-dialog";
 import { statusLabelKey, useI18n } from "../lib/i18n";
 import { DemoAvatar } from "../components/avatar";
 import { requiredLabel } from "../lib/phone";
 import { useUiMode } from "../lib/ui-mode";
+import { dateTimeLocalToUtcIso, utcToDateTimeLocalInTimeZone } from "../lib/timezone";
 
 interface AppointmentItem {
   id: string;
@@ -72,6 +73,10 @@ interface CustomersResponse {
   items: CustomerItem[];
 }
 
+interface SalonProfileTimezone {
+  timezone: string;
+}
+
 interface StaffReminder {
   id: string;
   reminderType: string;
@@ -87,8 +92,8 @@ const formatHourLabel = (hour: number) => {
   return `${displayHour} ${hour >= 12 ? "PM" : "AM"}`;
 };
 
-const resolveAppointmentTimezone = (items: AppointmentItem[]) =>
-  items.find((item) => item.salon?.timezone)?.salon?.timezone ?? FALLBACK_SALON_TIMEZONE;
+const resolveAppointmentTimezone = (items: AppointmentItem[], salonProfileTimezone: string) =>
+  salonProfileTimezone || items.find((item) => item.salon?.timezone)?.salon?.timezone || FALLBACK_SALON_TIMEZONE;
 
 const formatTimeOnly = (value: string, timezone: string) => {
   const date = new Date(value);
@@ -201,6 +206,7 @@ export const AppointmentsPage = () => {
   const [customers, setCustomers] = useState<CustomerItem[]>([]);
   const [staff, setStaff] = useState<StaffItem[]>([]);
   const [services, setServices] = useState<ServiceItem[]>([]);
+  const [salonProfileTimezone, setSalonProfileTimezone] = useState("");
 
   const [form, setForm] = useState({
     customerId: "",
@@ -211,7 +217,10 @@ export const AppointmentsPage = () => {
 
   const isOwner = session?.user.role === "SALON_OWNER";
   const highlightedAppointmentId = searchParams.get("appointmentId") ?? "";
-  const salonTimezone = useMemo(() => resolveAppointmentTimezone(appointments), [appointments]);
+  const salonTimezone = useMemo(
+    () => resolveAppointmentTimezone(appointments, salonProfileTimezone),
+    [appointments, salonProfileTimezone]
+  );
   const todayDateKey = useMemo(() => formatSalonDateKey(new Date(), salonTimezone), [salonTimezone]);
   const appointmentStatusOptions = [
     { value: "SCHEDULED", label: t("status.SCHEDULED") },
@@ -239,19 +248,22 @@ export const AppointmentsPage = () => {
       setAppointments(appointmentResponse.items);
 
       if (isOwner) {
-        const [customerResponse, staffResponse, serviceResponse] = await Promise.all([
+        const [customerResponse, staffResponse, serviceResponse, salonProfile] = await Promise.all([
           apiGet<CustomersResponse>("/api/v1/customers?page=1&limit=100"),
           apiGet<StaffItem[]>("/api/v1/staff?includeInactive=false"),
-          apiGet<ServiceItem[]>("/api/v1/services")
+          apiGet<ServiceItem[]>("/api/v1/services"),
+          apiGet<SalonProfileTimezone>("/api/v1/salon/profile")
         ]);
         setCustomers(customerResponse.items);
         setStaff(staffResponse);
         setServices(serviceResponse.filter((item) => item.isActive));
+        setSalonProfileTimezone(salonProfile.timezone || "");
         setReminders([]);
       } else {
         setCustomers([]);
         setStaff([]);
         setServices([]);
+        setSalonProfileTimezone("");
         const reminderResult = await apiGet<StaffReminder[]>("/api/v1/staff/me/reminders");
         setReminders(reminderResult);
       }
@@ -314,8 +326,8 @@ export const AppointmentsPage = () => {
       notify("error", t("form.requiredAll"));
       return;
     }
-    const startTime = new Date(form.startTime);
-    if (Number.isNaN(startTime.getTime())) {
+    const startTimeIso = dateTimeLocalToUtcIso(form.startTime, salonTimezone);
+    if (!startTimeIso) {
       notify("error", t("form.dateInvalid"));
       return;
     }
@@ -324,7 +336,7 @@ export const AppointmentsPage = () => {
         customerId: form.customerId,
         staffId: form.staffId,
         serviceId: form.serviceId,
-        startTime: startTime.toISOString(),
+        startTime: startTimeIso,
         source: "DASHBOARD"
       });
       setForm({
@@ -368,23 +380,31 @@ export const AppointmentsPage = () => {
     const values = await openFormDialog({
       title: t("appointments.reschedule"),
       description: `${appointment.customer.firstName} ${appointment.customer.lastName}`,
-      fields: [{ name: "startTime", label: t("appointments.start"), type: "datetime-local", required: true }],
+      fields: [
+        {
+          name: "startTime",
+          label: t("appointments.start"),
+          type: "datetime-local",
+          required: true,
+          helpText: t("appointments.startTimezoneHint")
+        }
+      ],
       initialValues: {
-        startTime: toDateTimeLocalValue(appointment.startTime)
+        startTime: utcToDateTimeLocalInTimeZone(appointment.startTime, appointment.salon?.timezone || salonTimezone)
       },
       confirmLabel: t("appointments.reschedule")
     });
     if (!values?.startTime) {
       return;
     }
-    const startTime = new Date(values.startTime);
-    if (Number.isNaN(startTime.getTime())) {
+    const startTimeIso = dateTimeLocalToUtcIso(values.startTime, appointment.salon?.timezone || salonTimezone);
+    if (!startTimeIso) {
       notify("error", t("form.dateInvalid"));
       return;
     }
     try {
       await apiPatch<unknown, { startTime: string }>(`/api/v1/appointments/${appointment.id}/reschedule`, {
-        startTime: startTime.toISOString()
+        startTime: startTimeIso
       });
       notify("success", t("appointments.reschedule"));
       await load();
@@ -751,6 +771,7 @@ export const AppointmentsPage = () => {
                 onChange={(event) => setForm((prev) => ({ ...prev, startTime: event.target.value }))}
                 required
               />
+              <small>{t("appointments.startTimezoneHint")}</small>
             </label>
             <div className="form-actions">
               <button type="submit" className="button-primary">

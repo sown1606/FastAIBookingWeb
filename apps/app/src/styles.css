@@ -1067,6 +1067,29 @@ pre {
   overflow-wrap: anywhere;
 }
 
+.demo-account-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.demo-account-row span {
+  display: grid;
+  gap: 2px;
+}
+
+.demo-account-row span strong {
+  color: var(--text);
+  font-size: 0.84rem;
+}
+
+.compact-button {
+  min-height: 34px;
+  padding: 6px 10px;
+  font-size: 0.82rem;
+}
+
 .mobile-hero,
 .dashboard-hero {
   border-radius: 8px;

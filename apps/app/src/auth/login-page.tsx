@@ -6,13 +6,41 @@ import { useToast } from "../components/toast";
 import { useI18n } from "../lib/i18n";
 import { AuthFrame } from "./auth-frame";
 
+type LoginMode = "owner" | "staff" | "call-center";
+
+const demoAccounts: Array<{
+  mode: LoginMode;
+  labelKey: "auth.login.owner" | "auth.login.staff" | "auth.login.operator";
+  email: string;
+  password: string;
+}> = [
+  {
+    mode: "owner",
+    labelKey: "auth.login.owner",
+    email: "owner.demo@fastaibooking.local",
+    password: "Owner123!"
+  },
+  {
+    mode: "staff",
+    labelKey: "auth.login.staff",
+    email: "staff.demo@fastaibooking.local",
+    password: "Staff123!"
+  },
+  {
+    mode: "call-center",
+    labelKey: "auth.login.operator",
+    email: "agent.demo@fastaibooking.local",
+    password: "Agent123!"
+  }
+];
+
 export const LoginPage = () => {
   const navigate = useNavigate();
   const { login } = useAuth();
   const { notify } = useToast();
   const { t } = useI18n();
 
-  const [mode, setMode] = useState<"owner" | "staff" | "call-center">("owner");
+  const [mode, setMode] = useState<LoginMode>("owner");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -42,6 +70,17 @@ export const LoginPage = () => {
     }
   };
 
+  const copyDemoAccount = async (account: (typeof demoAccounts)[number]) => {
+    try {
+      await navigator.clipboard.writeText(`${account.email} / ${account.password}`);
+      notify("success", t("auth.login.demoCopied"));
+    } catch {
+      setEmail(account.email);
+      setPassword(account.password);
+      setMode(account.mode);
+    }
+  };
+
   return (
     <AuthFrame>
       <div className="auth-heading">
@@ -53,7 +92,7 @@ export const LoginPage = () => {
             <span>{t("auth.login.role")}</span>
             <select
               value={mode}
-              onChange={(event) => setMode(event.target.value as "owner" | "staff" | "call-center")}
+              onChange={(event) => setMode(event.target.value as LoginMode)}
             >
               <option value="owner">{t("auth.login.owner")}</option>
               <option value="staff">{t("auth.login.staff")}</option>
@@ -87,9 +126,17 @@ export const LoginPage = () => {
       </form>
       <div className="demo-account-card">
         <strong>{t("auth.login.demoTitle")}</strong>
-        <span>{t("auth.login.ownerDemo")}</span>
-        <span>{t("auth.login.staffDemo")}</span>
-        <span>{t("auth.login.operatorDemo")}</span>
+        {demoAccounts.map((account) => (
+          <div key={account.mode} className="demo-account-row">
+            <span>
+              <strong>{t(account.labelKey)}</strong>
+              {account.email} / {account.password}
+            </span>
+            <button type="button" className="button-secondary compact-button" onClick={() => void copyDemoAccount(account)}>
+              {t("common.copy")}
+            </button>
+          </div>
+        ))}
       </div>
       <div className="auth-links">
         <Link to="/register">{t("auth.login.createOwner")}</Link>
