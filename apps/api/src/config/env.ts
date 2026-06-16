@@ -26,7 +26,10 @@ const fallbackDotenvExamplePath =
 const resolvedDotenvExamplePath = fs.existsSync(dotenvExamplePath)
   ? dotenvExamplePath
   : fallbackDotenvExamplePath ?? dotenvExamplePath;
-const dotenvResult = dotenv.config({ path: loadedDotenvPath ?? dotenvPath });
+const dotenvResult = dotenv.config({
+  path: loadedDotenvPath ?? dotenvPath,
+  override: process.env.NODE_ENV !== "test"
+});
 
 const toBoolean = (value: string | undefined, defaultValue: boolean): boolean => {
   if (value === undefined) {

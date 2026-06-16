@@ -450,10 +450,18 @@ export const resetStaffAccess = async (
       tx
     );
 
-    return tx.staff.findUniqueOrThrow({
+    const staffWithUser = await tx.staff.findUniqueOrThrow({
       where: { id: existing.id },
       include: staffWithUserInclude
     });
+
+    return {
+      staff: staffWithUser,
+      invitation: {
+        email: staffWithUser.user?.email ?? normalizeEmail(staffWithUser.email),
+        temporaryPassword: newPassword
+      }
+    };
   });
 };
 

@@ -36,6 +36,28 @@ interface BillingUsage {
   };
 }
 
+interface StaffInvitation {
+  email: string;
+  temporaryPassword: string;
+}
+
+interface StaffCreateResponse {
+  staff: StaffItem;
+  billingUsage: BillingUsage;
+  invitation?: {
+    email?: string | null;
+    temporaryPassword?: string | null;
+  };
+}
+
+interface StaffResetAccessResponse {
+  staff: StaffItem;
+  invitation?: {
+    email?: string | null;
+    temporaryPassword?: string | null;
+  };
+}
+
 export const StaffPage = () => {
   const { notify } = useToast();
   const { openFormDialog, FormDialog } = useFormDialog();
@@ -45,6 +67,7 @@ export const StaffPage = () => {
   const [error, setError] = useState("");
   const [staff, setStaff] = useState<StaffItem[]>([]);
   const [billing, setBilling] = useState<BillingUsage | null>(null);
+  const [lastStaffInvitation, setLastStaffInvitation] = useState<StaffInvitation | null>(null);
 
   const [form, setForm] = useState({
     fullName: "",
@@ -76,6 +99,15 @@ export const StaffPage = () => {
     void load();
   }, []);
 
+  const copyInvitationValue = async (value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      notify("success", t("staff.copied"));
+    } catch {
+      notify("error", t("staff.copyFailed"));
+    }
+  };
+
   const createStaffMember = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const fullName = form.fullName.trim();
@@ -92,7 +124,7 @@ export const StaffPage = () => {
       return;
     }
     try {
-      await apiPost<unknown, unknown>("/api/v1/staff", {
+      const result = await apiPost<StaffCreateResponse, unknown>("/api/v1/staff", {
         fullName,
         email,
         phone,
@@ -101,6 +133,12 @@ export const StaffPage = () => {
         isBookable: form.isBookable,
         createLogin: true
       });
+      if (result.invitation?.temporaryPassword) {
+        setLastStaffInvitation({
+          email: result.invitation.email ?? email,
+          temporaryPassword: result.invitation.temporaryPassword
+        });
+      }
       setForm({
         fullName: "",
         email: "",
@@ -109,7 +147,10 @@ export const StaffPage = () => {
         avatarUrl: "",
         isBookable: true
       });
-      notify("success", t("staff.created"));
+      notify(
+        "success",
+        result.invitation?.temporaryPassword ? t("staff.createdWithPassword") : t("staff.created")
+      );
       await load();
     } catch (createError) {
       notify("error", extractErrorMessage(createError));
@@ -220,10 +261,17 @@ export const StaffPage = () => {
       return;
     }
     try {
-      await apiPost<unknown, { newPassword: string }>(`/api/v1/staff/${item.id}/reset-access`, {
-        newPassword: values.newPassword
+      const result = await apiPost<StaffResetAccessResponse, { newPassword: string }>(
+        `/api/v1/staff/${item.id}/reset-access`,
+        {
+          newPassword: values.newPassword
+        }
+      );
+      setLastStaffInvitation({
+        email: result.invitation?.email ?? item.user?.email ?? item.email ?? t("staff.emailMissing"),
+        temporaryPassword: result.invitation?.temporaryPassword ?? values.newPassword
       });
-      notify("success", t("staff.accessReset"));
+      notify("success", t("staff.accessResetWithPassword"));
       await load();
     } catch (resetError) {
       notify("error", extractErrorMessage(resetError));
@@ -392,6 +440,39 @@ export const StaffPage = () => {
           </div>
         </form>
       </section>
+
+      {lastStaffInvitation ? (
+        <section className="staff-invitation-card" aria-live="polite">
+          <div>
+            <h2>{t("staff.invitationTitle")}</h2>
+            <p className="muted">{t("staff.invitationNote")}</p>
+          </div>
+          <div className="staff-invitation-grid">
+            <div>
+              <span className="muted">{t("staff.invitationEmail")}</span>
+              <strong>{lastStaffInvitation.email}</strong>
+              <button
+                type="button"
+                className="button-secondary"
+                onClick={() => void copyInvitationValue(lastStaffInvitation.email)}
+              >
+                {t("staff.copyEmail")}
+              </button>
+            </div>
+            <div>
+              <span className="muted">{t("staff.invitationPassword")}</span>
+              <strong>{lastStaffInvitation.temporaryPassword}</strong>
+              <button
+                type="button"
+                className="button-secondary"
+                onClick={() => void copyInvitationValue(lastStaffInvitation.temporaryPassword)}
+              >
+                {t("staff.copyPassword")}
+              </button>
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       <section className="card">
         <div className="section-header">

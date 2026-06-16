@@ -125,6 +125,45 @@ test("notification APIs are authenticated, role-limited, and scoped to current u
   assert.match(authContext, /unregisterFirebaseMessagingToken\(\)\.catch\(\(\) => undefined\)/);
 });
 
+test("staff create and reset-access return immediate invitation passwords", () => {
+  const routes = readApi("modules/staff/staff.routes.ts");
+  const service = readApi("modules/staff/staff.service.ts");
+
+  assert.match(routes, /createLogin:\s*z\.boolean\(\)\.optional\(\)/);
+  assert.match(routes, /password:\s*z\.string\(\)\.min\(8\)\.max\(128\)\.optional\(\)/);
+  assert.match(routes, /resetStaffAccess\(req\.auth!\.salonId!,\s*id,\s*req\.auth!\.userId,\s*newPassword\)/);
+  assert.match(service, /const shouldCreateLogin = input\.createLogin \?\? true/);
+  assert.match(service, /const temporaryPassword = input\.password \?\? generateSecureToken\(6\)/);
+  assert.match(service, /role:\s*Role\.STAFF/);
+  assert.match(service, /invitation:\s*\{\s*email:\s*normalizedEmail,\s*temporaryPassword:\s*shouldCreateLogin \? temporaryPassword : undefined\s*\}/s);
+  assert.match(service, /if \(existing\.user\)[\s\S]*await tx\.user\.update/);
+  assert.match(service, /else[\s\S]*await tx\.user\.create\(\{[\s\S]*role:\s*Role\.STAFF/s);
+  assert.match(service, /invitation:\s*\{\s*email:\s*staffWithUser\.user\?\.email \?\? normalizeEmail\(staffWithUser\.email\),\s*temporaryPassword:\s*newPassword\s*\}/s);
+});
+
+test("staff invitation and password reset use the unified transactional mailer", () => {
+  const envConfig = readApi("config/env.ts");
+  const mailer = readApi("lib/mailer.ts");
+  const server = readApi("server.ts");
+
+  assert.match(envConfig, /dotenv\.config\(\{\s*path:\s*loadedDotenvPath \?\? dotenvPath,\s*override:\s*process\.env\.NODE_ENV !== "test"\s*\}\)/s);
+  assert.match(server, /logger\.info\(`Email provider: \$\{emailConfig\.provider\}`\)/);
+  assert.match(server, /logger\.info\(`SMTP host: \$\{emailConfig\.smtpHost \?\? "not configured"\}`\)/);
+  assert.match(server, /logger\.info\(`SMTP from: \$\{emailConfig\.smtpFrom \?\? "not configured"\}`\)/);
+  assert.match(mailer, /export const sendTransactionalEmail/);
+  assert.match(mailer, /provider === "aws" \|\| provider === "aws_ses" \|\| provider === "ses"/);
+  assert.match(mailer, /env\.AWS_SES_FROM_EMAIL/);
+  assert.match(mailer, /provider:\s*"smtp"/);
+  assert.match(mailer, /provider:\s*"demo"/);
+  assert.match(mailer, /"SMTP email send failed\."/);
+  assert.match(mailer, /missingSmtpKeys:\s*getMissingSmtpKeys\(\)/);
+  assert.match(mailer, /export const sendPasswordResetEmail[\s\S]*sendTransactionalEmail\(\{/);
+  assert.match(mailer, /reason:\s*"PASSWORD_RESET"/);
+  assert.match(mailer, /export const sendStaffInvitationEmail[\s\S]*sendTransactionalEmail\(\{/);
+  assert.match(mailer, /reason:\s*"STAFF_INVITATION"/);
+  assert.match(mailer, /demoLog:\s*\{[\s\S]*temporaryPassword:\s*input\.temporaryPassword/s);
+});
+
 test("operator call-center access is limited to assigned salon workflows", () => {
   const app = readApi("app.ts");
   const routes = readApi("modules/call-center/call-center.routes.ts");

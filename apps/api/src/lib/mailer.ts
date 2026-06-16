@@ -38,8 +38,25 @@ const escapeHtml = (value: string): string => {
     .replace(/'/g, "&#39;");
 };
 
-const getFromEmail = (): string | undefined => {
-  return env.AWS_SES_FROM_EMAIL ?? env.SMTP_FROM_EMAIL;
+const isSesProvider = (provider: string): boolean =>
+  provider === "aws" || provider === "aws_ses" || provider === "ses";
+
+const getMissingSmtpKeys = (): string[] => {
+  return [
+    env.SMTP_HOST ? null : "SMTP_HOST",
+    env.SMTP_PORT ? null : "SMTP_PORT",
+    env.SMTP_USER ? null : "SMTP_USER",
+    env.SMTP_PASSWORD ? null : "SMTP_PASSWORD",
+    env.SMTP_FROM_EMAIL ? null : "SMTP_FROM_EMAIL"
+  ].filter((value): value is string => Boolean(value));
+};
+
+export const getEmailStartupConfig = () => {
+  return {
+    provider: getEmailProvider(),
+    smtpHost: env.SMTP_HOST,
+    smtpFrom: env.SMTP_FROM_EMAIL
+  };
 };
 
 export const sendTransactionalEmail = async (input: {
@@ -48,7 +65,8 @@ export const sendTransactionalEmail = async (input: {
   text: string;
   html?: string;
   reason: string;
-}): Promise<void> => {
+  demoLog?: Record<string, unknown>;
+}): Promise<boolean> => {
   if (!input.toEmail) {
     logger.info(
       {
@@ -56,70 +74,110 @@ export const sendTransactionalEmail = async (input: {
       },
       "Email recipient missing. Message kept in demo log."
     );
-    return;
+    return false;
   }
 
   const provider = getEmailProvider();
-  const fromEmail = getFromEmail();
 
-  if ((provider === "aws" || provider === "aws_ses" || provider === "ses") && fromEmail) {
-    await sesClient().send(
-      new SendEmailCommand({
-        FromEmailAddress: `"${env.SMTP_FROM_NAME}" <${fromEmail}>`,
-        Destination: {
-          ToAddresses: [input.toEmail]
-        },
-        Content: {
-          Simple: {
-            Subject: {
-              Data: input.subject,
-              Charset: "UTF-8"
-            },
-            Body: {
-              Text: {
-                Data: input.text,
+  if (isSesProvider(provider) && env.AWS_SES_FROM_EMAIL) {
+    try {
+      await sesClient().send(
+        new SendEmailCommand({
+          FromEmailAddress: `"${env.SMTP_FROM_NAME}" <${env.AWS_SES_FROM_EMAIL}>`,
+          Destination: {
+            ToAddresses: [input.toEmail]
+          },
+          Content: {
+            Simple: {
+              Subject: {
+                Data: input.subject,
                 Charset: "UTF-8"
               },
-              Html: input.html
-                ? {
-                    Data: input.html,
-                    Charset: "UTF-8"
-                  }
-                : undefined
+              Body: {
+                Text: {
+                  Data: input.text,
+                  Charset: "UTF-8"
+                },
+                Html: input.html
+                  ? {
+                      Data: input.html,
+                      Charset: "UTF-8"
+                    }
+                  : undefined
+              }
             }
-          }
+          },
+          ConfigurationSetName: env.AWS_SES_CONFIGURATION_SET
+        })
+      );
+      logger.info(
+        {
+          toEmail: input.toEmail,
+          provider: "aws_ses",
+          reason: input.reason
         },
-        ConfigurationSetName: env.AWS_SES_CONFIGURATION_SET
-      })
-    );
-    logger.info(
-      {
-        toEmail: input.toEmail,
-        reason: input.reason
-      },
-      "AWS SES email sent."
-    );
-    return;
+        "AWS SES email sent."
+      );
+      return true;
+    } catch (error) {
+      logger.error(
+        {
+          error,
+          toEmail: input.toEmail,
+          provider: "aws_ses",
+          reason: input.reason
+        },
+        "AWS SES email send failed."
+      );
+      return false;
+    }
   }
 
   if (transport && env.SMTP_FROM_EMAIL) {
-    await transport.sendMail({
-      from: `"${env.SMTP_FROM_NAME}" <${env.SMTP_FROM_EMAIL}>`,
-      to: input.toEmail,
-      subject: input.subject,
-      text: input.text,
-      html: input.html
-    });
-    return;
+    try {
+      await transport.sendMail({
+        from: `"${env.SMTP_FROM_NAME}" <${env.SMTP_FROM_EMAIL}>`,
+        to: input.toEmail,
+        subject: input.subject,
+        text: input.text,
+        html: input.html
+      });
+      logger.info(
+        {
+          toEmail: input.toEmail,
+          provider: "smtp",
+          reason: input.reason
+        },
+        "SMTP email sent."
+      );
+      return true;
+    } catch (error) {
+      logger.error(
+        {
+          error,
+          toEmail: input.toEmail,
+          provider: "smtp",
+          smtpHost: env.SMTP_HOST,
+          smtpFrom: env.SMTP_FROM_EMAIL,
+          reason: input.reason
+        },
+        "SMTP email send failed."
+      );
+      return false;
+    }
   }
 
   logger.info(
     {
       toEmail: input.toEmail,
-      reason: input.reason
+      provider: "demo",
+      reason: input.reason,
+      missingSmtpKeys: getMissingSmtpKeys(),
+      ...input.demoLog
     },
     "Email provider is not configured. Message kept in demo log."
   );
+  return false;
 };
 
 const formatAppointmentTime = (startTime: Date): string => {
@@ -242,24 +300,15 @@ export const sendPasswordResetEmail = async (
 ): Promise<void> => {
   const resetLink = `${env.RESET_PASSWORD_URL}?token=${encodeURIComponent(resetToken)}`;
 
-  if (!transport || !env.SMTP_FROM_EMAIL) {
-    logger.warn(
-      {
-        toEmail,
-        resetToken,
-        resetLink
-      },
-      "SMTP is not configured. Password reset token generated."
-    );
-    return;
-  }
-
-  await transport.sendMail({
-    from: `"${env.SMTP_FROM_NAME}" <${env.SMTP_FROM_EMAIL}>`,
-    to: toEmail,
+  await sendTransactionalEmail({
+    toEmail,
     subject: "FastAIBooking password reset",
     text: `Hello ${recipientName}, use this link to reset your password: ${resetLink}`,
-    html: `<p>Hello ${recipientName},</p><p>Use this link to reset your password:</p><p><a href="${resetLink}">${resetLink}</a></p>`
+    html: `<p>Hello ${recipientName},</p><p>Use this link to reset your password:</p><p><a href="${resetLink}">${resetLink}</a></p>`,
+    reason: "PASSWORD_RESET",
+    demoLog: {
+      resetLink
+    }
   });
 };
 
@@ -281,25 +330,17 @@ export const sendStaffInvitationEmail = async (input: {
     "Thank you."
   ].filter((line): line is string => line !== undefined);
 
-  if (!transport || !env.SMTP_FROM_EMAIL) {
-    logger.info(
-      {
-        toEmail: input.toEmail,
-        appLink: env.STAFF_INVITE_APP_LINK,
-        temporaryPassword: input.temporaryPassword
-      },
-      "SMTP is not configured. Staff invitation kept in demo log."
-    );
-    return;
-  }
-
-  await transport.sendMail({
-    from: `"${env.SMTP_FROM_NAME}" <${env.SMTP_FROM_EMAIL}>`,
-    to: input.toEmail,
+  await sendTransactionalEmail({
+    toEmail: input.toEmail,
     subject,
     text: textLines.join("\n"),
     html: `<p>Hello ${escapeHtml(input.recipientName)},</p><p>${escapeHtml(input.salonName)} invited you to use FastAIBooking for your schedule, messages, and assigned appointments.</p><p>Demo app download link: <a href="${escapeHtml(env.STAFF_INVITE_APP_LINK)}">${escapeHtml(env.STAFF_INVITE_APP_LINK)}</a></p>${
       input.temporaryPassword ? `<p>Temporary password: ${escapeHtml(input.temporaryPassword)}</p>` : ""
-    }<p>Please sign in and change your password after setup.</p><p>Thank you.</p>`
+    }<p>Please sign in and change your password after setup.</p><p>Thank you.</p>`,
+    reason: "STAFF_INVITATION",
+    demoLog: {
+      appLink: env.STAFF_INVITE_APP_LINK,
+      temporaryPassword: input.temporaryPassword
+    }
   });
 };

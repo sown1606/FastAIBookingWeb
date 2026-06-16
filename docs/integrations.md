@@ -32,6 +32,32 @@ Fallback and notifications:
 - SMS provider only if SMS fallback is enabled
 - SMTP provider only if email notifications are enabled
 
+## Email Delivery
+
+The API sends staff invitations, password resets, and appointment email through the same transactional mailer path.
+
+Gmail SMTP production env:
+
+```dotenv
+EMAIL_PROVIDER=smtp
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=465
+SMTP_USER=<gmail>
+SMTP_PASSWORD=<google-app-password>
+SMTP_FROM_EMAIL=<gmail>
+SMTP_FROM_NAME=FastAIBooking
+```
+
+Use a Gmail App Password, not the normal Gmail password. Do not commit real credentials.
+
+Local smoke test:
+
+```bash
+npm --prefix apps/api run email:test -- --to <test-email>
+```
+
+The deploy script excludes `.env`. Keep the production `.env` on the EC2 app path in sync through SSH without committing secrets.
+
 ## Provider Defaults
 
 ```dotenv

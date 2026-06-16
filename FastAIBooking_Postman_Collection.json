@@ -190,7 +190,7 @@
           ]
         },
         {
-          "name": "Login Owner",
+          "name": "Owner Login",
           "request": {
             "method": "POST",
             "header": [
@@ -215,7 +215,7 @@
                 "login-owner"
               ]
             },
-            "description": "",
+            "description": "Mobile owner app login. Store data.accessToken and data.refreshToken, then call Notifications / Register Android or iOS FCM Token with Bearer auth.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"email\": \"{{ownerEmail}}\",\n  \"password\": \"{{ownerPassword}}\"\n}"
@@ -401,7 +401,7 @@
           ]
         },
         {
-          "name": "Login Staff",
+          "name": "Staff Login",
           "request": {
             "method": "POST",
             "header": [
@@ -426,7 +426,7 @@
                 "login-staff"
               ]
             },
-            "description": "",
+            "description": "Mobile staff app login. Store data.accessToken and data.refreshToken, then call Notifications / Register Android or iOS FCM Token with Bearer auth.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"email\": \"{{staffEmail}}\",\n  \"password\": \"{{staffPassword}}\"\n}"
@@ -694,6 +694,50 @@
               }
             }
           ]
+        },
+        {
+          "name": "Staff Change Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept-Language",
+                "value": "{{language}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/change-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "change-password"
+              ]
+            },
+            "description": "Staff mobile app password change. Requires Authorization: Bearer {{staffAccessToken}}.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{staffAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"{{staffPassword}}\",\n  \"newPassword\": \"{{staffPassword}}\"\n}"
+            }
+          },
+          "response": []
         }
       ]
     },
@@ -1066,6 +1110,43 @@
                 {
                   "key": "token",
                   "value": "{{ownerAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Staff Me Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept-Language",
+                "value": "{{language}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/staff/me/profile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "staff",
+                "me",
+                "profile"
+              ]
+            },
+            "description": "Mobile staff profile endpoint. Requires Authorization: Bearer {{staffAccessToken}} after Staff Login.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{staffAccessToken}}",
                   "type": "string"
                 }
               ]
@@ -2641,13 +2722,17 @@
       "name": "Notifications",
       "item": [
         {
-          "name": "Register FCM Token",
+          "name": "Register Android FCM Token",
           "request": {
             "method": "POST",
             "header": [
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Accept-Language",
+                "value": "{{language}}"
               }
             ],
             "url": {
@@ -2662,20 +2747,20 @@
                 "register-token"
               ]
             },
-            "description": "Mobile app: call this after login with Authorization: Bearer <accessToken>. Use the FCM token returned by Firebase Messaging. platform must be android, ios, or web.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"token\": \"{{fcmToken}}\",\n  \"platform\": \"android\"\n}"
-            },
+            "description": "Mobile app must call this after login and whenever Firebase refreshes the token. Requires Authorization: Bearer <accessToken>. Use platform android.",
             "auth": {
               "type": "bearer",
               "bearer": [
                 {
                   "key": "token",
-                  "value": "{{ownerAccessToken}}",
+                  "value": "{{staffAccessToken}}",
                   "type": "string"
                 }
               ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{fcmToken}}\",\n  \"platform\": \"android\"\n}"
             }
           },
           "response": [],
@@ -2705,6 +2790,10 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Accept-Language",
+                "value": "{{language}}"
               }
             ],
             "url": {
@@ -2719,17 +2808,17 @@
                 "unregister-token"
               ]
             },
-            "description": "Call this on app logout or when Firebase rotates/removes the FCM token. Requires the same Bearer token auth as register-token.",
+            "description": "Call this on mobile app logout or when Firebase rotates/removes the token. Requires Authorization: Bearer <accessToken>.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"token\": \"{{fcmToken}}\",\n  \"platform\": \"android\"\n}"
+              "raw": "{\n  \"token\": \"{{fcmToken}}\"\n}"
             },
             "auth": {
               "type": "bearer",
               "bearer": [
                 {
                   "key": "token",
-                  "value": "{{ownerAccessToken}}",
+                  "value": "{{staffAccessToken}}",
                   "type": "string"
                 }
               ]
@@ -2755,10 +2844,15 @@
           ]
         },
         {
-          "name": "Get Inbox",
+          "name": "Notification Inbox",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "Accept-Language",
+                "value": "{{language}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/notifications/inbox",
               "host": [
@@ -2771,13 +2865,13 @@
                 "inbox"
               ]
             },
-            "description": "Fetch the signed-in user notification inbox. Mobile apps can show this after login using the same Bearer token.",
+            "description": "Fetch the signed-in mobile user notification inbox with Authorization: Bearer <accessToken>.",
             "auth": {
               "type": "bearer",
               "bearer": [
                 {
                   "key": "token",
-                  "value": "{{ownerAccessToken}}",
+                  "value": "{{staffAccessToken}}",
                   "type": "string"
                 }
               ]
@@ -2807,10 +2901,15 @@
           ]
         },
         {
-          "name": "Get Unread Count",
+          "name": "Unread Count",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "Accept-Language",
+                "value": "{{language}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/notifications/unread-count",
               "host": [
@@ -2823,13 +2922,13 @@
                 "unread-count"
               ]
             },
-            "description": "Fetch unread notification count for the signed-in user. Use this to update a mobile badge after login and after marking reads.",
+            "description": "Fetch unread count for the signed-in mobile user. Refresh this after login, register-token, and mark-read calls.",
             "auth": {
               "type": "bearer",
               "bearer": [
                 {
                   "key": "token",
-                  "value": "{{ownerAccessToken}}",
+                  "value": "{{staffAccessToken}}",
                   "type": "string"
                 }
               ]
@@ -2856,10 +2955,15 @@
           ]
         },
         {
-          "name": "Mark Notification Read",
+          "name": "Mark Read",
           "request": {
             "method": "POST",
-            "header": [],
+            "header": [
+              {
+                "key": "Accept-Language",
+                "value": "{{language}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/notifications/{{notificationId}}/read",
               "host": [
@@ -2873,13 +2977,13 @@
                 "read"
               ]
             },
-            "description": "Mark one notification read for the signed-in user. Set notificationId from Get Inbox or paste one from the app.",
+            "description": "Mark one notification read for the signed-in mobile user. Set notificationId from Notification Inbox.",
             "auth": {
               "type": "bearer",
               "bearer": [
                 {
                   "key": "token",
-                  "value": "{{ownerAccessToken}}",
+                  "value": "{{staffAccessToken}}",
                   "type": "string"
                 }
               ]
@@ -2901,10 +3005,15 @@
           ]
         },
         {
-          "name": "Mark All Notifications Read",
+          "name": "Mark All Read",
           "request": {
             "method": "POST",
-            "header": [],
+            "header": [
+              {
+                "key": "Accept-Language",
+                "value": "{{language}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/notifications/read-all",
               "host": [
@@ -2917,13 +3026,13 @@
                 "read-all"
               ]
             },
-            "description": "Mark all notifications read for the signed-in user. Mobile apps can call this from a Mark all read action.",
+            "description": "Mark all notifications read for the signed-in mobile user.",
             "auth": {
               "type": "bearer",
               "bearer": [
                 {
                   "key": "token",
-                  "value": "{{ownerAccessToken}}",
+                  "value": "{{staffAccessToken}}",
                   "type": "string"
                 }
               ]
@@ -2947,6 +3056,50 @@
               }
             }
           ]
+        },
+        {
+          "name": "Register iOS FCM Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept-Language",
+                "value": "{{language}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/notifications/register-token",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "notifications",
+                "register-token"
+              ]
+            },
+            "description": "Mobile app must call this after login and whenever Firebase refreshes the token. Requires Authorization: Bearer <accessToken>. Use platform ios.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{staffAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{fcmToken}}\",\n  \"platform\": \"ios\"\n}"
+            }
+          },
+          "response": []
         }
       ]
     },

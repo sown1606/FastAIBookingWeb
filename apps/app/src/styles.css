@@ -2307,6 +2307,35 @@ pre {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
 }
 
+.staff-invitation-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid rgba(11, 111, 95, 0.18);
+  border-radius: 8px;
+  background: #f5fbf8;
+}
+
+.staff-invitation-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.staff-invitation-grid > div {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid rgba(11, 111, 95, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.86);
+}
+
+.staff-invitation-grid strong {
+  overflow-wrap: anywhere;
+}
+
 .staff-card {
   display: grid;
   gap: 14px;
@@ -2890,6 +2919,7 @@ pre {
   }
 
   .staff-contact-grid,
+  .staff-invitation-grid,
   .staff-meta-grid {
     grid-template-columns: 1fr;
   }

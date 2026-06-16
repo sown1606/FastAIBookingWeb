@@ -2,8 +2,10 @@ import { app } from "./app";
 import { env } from "./config/env";
 import { prisma } from "./db/prisma";
 import { logger } from "./lib/logger";
+import { getEmailStartupConfig } from "./lib/mailer";
 
 const server = app.listen(env.PORT, () => {
+  const emailConfig = getEmailStartupConfig();
   logger.info(
     {
       port: env.PORT,
@@ -11,6 +13,9 @@ const server = app.listen(env.PORT, () => {
     },
     "FastAIBooking API server is running"
   );
+  logger.info(`Email provider: ${emailConfig.provider}`);
+  logger.info(`SMTP host: ${emailConfig.smtpHost ?? "not configured"}`);
+  logger.info(`SMTP from: ${emailConfig.smtpFrom ?? "not configured"}`);
 });
 
 const shutdown = async (signal: string): Promise<void> => {
