@@ -2,6 +2,8 @@ import { ErrorRequestHandler } from "express";
 import { Prisma } from "@prisma/client";
 import { AppError } from "../lib/errors";
 import { logger } from "../lib/logger";
+import { localizeApiErrorMessage } from "../utils/api-error-messages";
+import { resolveRequestLanguage } from "../utils/language";
 
 export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   let statusCode = 500;
@@ -39,11 +41,14 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
     "Request failed"
   );
 
+  const language = resolveRequestLanguage(req);
+  const localizedMessage = localizeApiErrorMessage(message, code, language);
+
   res.status(statusCode).json({
     success: false,
     error: {
       code,
-      message,
+      message: localizedMessage,
       details
     }
   });

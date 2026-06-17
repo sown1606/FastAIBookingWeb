@@ -4259,6 +4259,3413 @@
           ]
         }
       ]
+    },
+    {
+      "name": "Mobile App API",
+      "description": "Complete mobile app handoff for Kien. Login first, store Bearer token, register FCM token after every login/token refresh or Firebase token refresh.",
+      "item": [
+        {
+          "name": "Auth",
+          "item": [
+            {
+              "name": "Owner Login",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/auth/login-owner",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "auth",
+                    "login-owner"
+                  ]
+                },
+                "description": "Owner app login. Store accessToken/refreshToken and then call Register Android/iOS FCM Token.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"{{ownerEmail}}\",\n  \"password\": \"{{ownerPassword}}\"\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+                      "const json = pm.response.json();",
+                      "pm.collectionVariables.set(\"ownerToken\", json.data.accessToken || \"\");",
+                      "pm.collectionVariables.set(\"ownerRefreshToken\", json.data.refreshToken || \"\");",
+                      "pm.collectionVariables.set(\"ownerAccessToken\", json.data.accessToken || \"\");",
+                      "if (json.data.user?.salonId) pm.collectionVariables.set(\"salonId\", json.data.user.salonId);",
+                      "if (json.data.user?.staffId) pm.collectionVariables.set(\"staffId\", json.data.user.staffId);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Staff Login",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/auth/login-staff",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "auth",
+                    "login-staff"
+                  ]
+                },
+                "description": "Staff app login. Store accessToken/refreshToken and then call Register Android/iOS FCM Token.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"{{staffEmail}}\",\n  \"password\": \"{{staffPassword}}\"\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+                      "const json = pm.response.json();",
+                      "pm.collectionVariables.set(\"staffToken\", json.data.accessToken || \"\");",
+                      "pm.collectionVariables.set(\"staffRefreshToken\", json.data.refreshToken || \"\");",
+                      "pm.collectionVariables.set(\"staffAccessToken\", json.data.accessToken || \"\");",
+                      "if (json.data.user?.salonId) pm.collectionVariables.set(\"salonId\", json.data.user.salonId);",
+                      "if (json.data.user?.staffId) pm.collectionVariables.set(\"staffId\", json.data.user.staffId);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Call Center Login",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/auth/login-call-center",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "auth",
+                    "login-call-center"
+                  ]
+                },
+                "description": "Operator app login for call center flows.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"{{agentEmail}}\",\n  \"password\": \"{{agentPassword}}\"\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+                      "const json = pm.response.json();",
+                      "pm.collectionVariables.set(\"agentToken\", json.data.accessToken || \"\");",
+                      "pm.collectionVariables.set(\"agentRefreshToken\", json.data.refreshToken || \"\");",
+                      "pm.collectionVariables.set(\"agentAccessToken\", json.data.accessToken || \"\");",
+                      "if (json.data.user?.salonId) pm.collectionVariables.set(\"salonId\", json.data.user.salonId);",
+                      "if (json.data.user?.staffId) pm.collectionVariables.set(\"staffId\", json.data.user.staffId);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Refresh Token",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/auth/refresh",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "auth",
+                    "refresh"
+                  ]
+                },
+                "description": "Refresh expired access token. After refresh, app should register FCM token again if Firebase token changed.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"refreshToken\": \"{{ownerRefreshToken}}\"\n}"
+                }
+              }
+            },
+            {
+              "name": "Logout",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/auth/logout",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "auth",
+                    "logout"
+                  ]
+                },
+                "description": "Logout by refresh token. App should unregister FCM token before or during logout.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"refreshToken\": \"{{ownerRefreshToken}}\"\n}"
+                }
+              }
+            },
+            {
+              "name": "Me",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/auth/me",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "auth",
+                    "me"
+                  ]
+                },
+                "description": "Current authenticated user. Use role/salonId/staffId for app bootstrap.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{ownerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Change Password",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/auth/change-password",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "auth",
+                    "change-password"
+                  ]
+                },
+                "description": "Protected password change for owner/staff/operator.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{staffToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"currentPassword\": \"{{staffPassword}}\",\n  \"newPassword\": \"NewStaff123!\"\n}"
+                }
+              }
+            },
+            {
+              "name": "Forgot Password",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/auth/forgot-password",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "auth",
+                    "forgot-password"
+                  ]
+                },
+                "description": "Request password reset email.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"{{staffEmail}}\"\n}"
+                }
+              }
+            },
+            {
+              "name": "Reset Password",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/auth/reset-password",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "auth",
+                    "reset-password"
+                  ]
+                },
+                "description": "Complete password reset with token from email.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"token\": \"{{resetToken}}\",\n  \"newPassword\": \"NewStaff123!\"\n}"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Owner",
+          "item": [
+            {
+              "name": "Dashboard Appointments",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/appointments?page=1&limit=20",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "appointments"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "20"
+                    }
+                  ]
+                },
+                "description": "Owner dashboard appointment bootstrap.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{ownerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Salon Profile",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/salon/profile",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "salon",
+                    "profile"
+                  ]
+                },
+                "description": "Salon profile including timezone.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{ownerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Update Salon Profile",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/salon/profile",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "salon",
+                    "profile"
+                  ]
+                },
+                "description": "Update salon name/timezone/phones/address. Include unchanged fields if preserving full profile.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{ownerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Demo Nail Salon\",\n  \"timezone\": \"America/New_York\"\n}"
+                }
+              }
+            },
+            {
+              "name": "Salon Settings",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/salon/settings",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "salon",
+                    "settings"
+                  ]
+                },
+                "description": "Booking, AI, call center and notification settings.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{ownerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Update Salon Settings",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/salon/settings",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "salon",
+                    "settings"
+                  ]
+                },
+                "description": "Update salon business settings.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{ownerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"locale\": \"vi-VN\",\n  \"aiReceptionEnabled\": true,\n  \"callCenterEnabled\": true\n}"
+                }
+              }
+            },
+            {
+              "name": "Business Hours",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/business-hours",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "business-hours"
+                  ]
+                },
+                "description": "Business hours are salon-local.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{ownerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Update Business Hours",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/business-hours",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "business-hours"
+                  ]
+                },
+                "description": "Replace weekly business hours.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{ownerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"hours\": [\n    {\n      \"dayOfWeek\": 3,\n      \"isOpen\": true,\n      \"openTime\": \"09:00\",\n      \"closeTime\": \"18:00\"\n    }\n  ]\n}"
+                }
+              }
+            },
+            {
+              "name": "List Staff Include Inactive",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/staff?includeInactive=true",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "staff"
+                  ],
+                  "query": [
+                    {
+                      "key": "includeInactive",
+                      "value": "true"
+                    }
+                  ]
+                },
+                "description": "Owner staff list. Response includes serviceIds and assignedServices summary.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{ownerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+                      "const json = pm.response.json();",
+                      "const value = json.data?.[0]?.id;",
+                      "if (value) pm.collectionVariables.set(\"staffId\", value);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Create Staff With serviceIds",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/staff",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "staff"
+                  ]
+                },
+                "description": "Create staff login and exact service mapping. If serviceIds is omitted, active/bookable staff auto-assign to active services.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{ownerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"fullName\": \"Mobile Staff {{$timestamp}}\",\n  \"email\": \"mobile.staff+{{$timestamp}}@example.com\",\n  \"phone\": \"(732) 555-0124\",\n  \"isBookable\": true,\n  \"createLogin\": true,\n  \"serviceIds\": [\n    \"{{serviceId}}\"\n  ]\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+                      "const json = pm.response.json();",
+                      "if (json.data?.staff?.id) pm.collectionVariables.set(\"staffId\", json.data.staff.id);",
+                      "if (json.data?.invitation?.temporaryPassword) pm.collectionVariables.set(\"staffPassword\", json.data.invitation.temporaryPassword);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Update Staff With serviceIds",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/staff/{{staffId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "staff",
+                    "{{staffId}}"
+                  ]
+                },
+                "description": "Update staff details and optionally replace exact assigned serviceIds.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{ownerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"serviceIds\": [\n    \"{{serviceId}}\"\n  ]\n}"
+                }
+              }
+            },
+            {
+              "name": "Get Staff Services",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/staff/{{staffId}}/services",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "staff",
+                    "{{staffId}}",
+                    "services"
+                  ]
+                },
+                "description": "Owner reads every salon service with assigned=true/false for one staff.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{ownerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Set Staff Services",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/staff/{{staffId}}/services",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "staff",
+                    "{{staffId}}",
+                    "services"
+                  ]
+                },
+                "description": "Owner replaces staff-service mapping exactly. Staff cannot call this endpoint.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{ownerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"serviceIds\": [\n    \"{{serviceId}}\"\n  ]\n}"
+                }
+              }
+            },
+            {
+              "name": "Reset Staff Access",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/staff/{{staffId}}/reset-access",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "staff",
+                    "{{staffId}}",
+                    "reset-access"
+                  ]
+                },
+                "description": "Owner resets staff login. Response includes invitation.temporaryPassword immediately.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{ownerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"newPassword\": \"Staff123!\"\n}"
+                }
+              }
+            },
+            {
+              "name": "Deactivate Staff",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/staff/{{staffId}}/deactivate",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "staff",
+                    "{{staffId}}",
+                    "deactivate"
+                  ]
+                },
+                "description": "Deactivate staff and login access.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{ownerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{}"
+                }
+              }
+            },
+            {
+              "name": "Reactivate Staff",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/staff/{{staffId}}/reactivate",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "staff",
+                    "{{staffId}}",
+                    "reactivate"
+                  ]
+                },
+                "description": "Reactivate staff and login access.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{ownerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{}"
+                }
+              }
+            },
+            {
+              "name": "List Services Include Inactive",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/services?includeInactive=true",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "services"
+                  ],
+                  "query": [
+                    {
+                      "key": "includeInactive",
+                      "value": "true"
+                    }
+                  ]
+                },
+                "description": "List services and service-centric staff mappings.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{ownerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+                      "const json = pm.response.json();",
+                      "const value = json.data?.[0]?.id;",
+                      "if (value) pm.collectionVariables.set(\"serviceId\", value);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Create Service",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/services",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "services"
+                  ]
+                },
+                "description": "Create service with optional staffIds mapping.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{ownerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Mobile Service {{$timestamp}}\",\n  \"description\": \"Created from mobile Postman flow\",\n  \"durationMinutes\": 45,\n  \"priceCents\": 4500,\n  \"staffIds\": [\n    \"{{staffId}}\"\n  ]\n}"
+                }
+              }
+            },
+            {
+              "name": "Update Service",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/services/{{serviceId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "services",
+                    "{{serviceId}}"
+                  ]
+                },
+                "description": "Edit service.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{ownerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"description\": \"Updated from mobile Postman flow\",\n  \"durationMinutes\": 45,\n  \"priceCents\": 4500\n}"
+                }
+              }
+            },
+            {
+              "name": "Set Service Staff Mapping",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/services/{{serviceId}}/staff",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "services",
+                    "{{serviceId}}",
+                    "staff"
+                  ]
+                },
+                "description": "Existing service-centric mapping endpoint. Kept consistent with staff-centric endpoints.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{ownerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"staffIds\": [\n    \"{{staffId}}\"\n  ]\n}"
+                }
+              }
+            },
+            {
+              "name": "Customers Search",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/customers?page=1&limit=20",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "customers"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "20"
+                    }
+                  ]
+                },
+                "description": "Search/list customers.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{ownerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+                      "const json = pm.response.json();",
+                      "const value = json.data?.items?.[0]?.id || json.data?.[0]?.id;",
+                      "if (value) pm.collectionVariables.set(\"customerId\", value);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Create Customer",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/customers",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "customers"
+                  ]
+                },
+                "description": "Create customer.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{ownerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"firstName\": \"Mobile\",\n  \"lastName\": \"Customer\",\n  \"phone\": \"(732) 555-0125\",\n  \"notes\": \"Created by mobile Postman flow\"\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+                      "const json = pm.response.json();",
+                      "const value = json.data?.id;",
+                      "if (value) pm.collectionVariables.set(\"customerId\", value);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Customer Detail",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/customers/{{customerId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "customers",
+                    "{{customerId}}"
+                  ]
+                },
+                "description": "Customer detail.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{ownerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Customer Appointment History",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/customers/{{customerId}}/appointments",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "customers",
+                    "{{customerId}}",
+                    "appointments"
+                  ]
+                },
+                "description": "Customer appointment history.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{ownerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Appointments List",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/appointments?page=1&limit=100",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "appointments"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "100"
+                    }
+                  ]
+                },
+                "description": "Owner appointment list.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{ownerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+                      "const json = pm.response.json();",
+                      "const value = json.data?.items?.[0]?.id;",
+                      "if (value) pm.collectionVariables.set(\"appointmentId\", value);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Create Appointment",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/appointments",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "appointments"
+                  ]
+                },
+                "description": "Send startTime as UTC ISO. Business hours are salon-local.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{ownerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"staffId\": \"{{staffId}}\",\n  \"serviceId\": \"{{serviceId}}\",\n  \"startTime\": \"{{futureAppointmentTime}}\",\n  \"source\": \"MANUAL\",\n  \"notes\": \"Mobile app booking\"\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+                      "const json = pm.response.json();",
+                      "const value = json.data?.id;",
+                      "if (value) pm.collectionVariables.set(\"appointmentId\", value);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Appointment Detail",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/appointments/{{appointmentId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "appointments",
+                    "{{appointmentId}}"
+                  ]
+                },
+                "description": "Appointment detail.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{ownerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Reschedule Appointment",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/appointments/{{appointmentId}}/reschedule",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "appointments",
+                    "{{appointmentId}}",
+                    "reschedule"
+                  ]
+                },
+                "description": "Reschedule appointment with UTC ISO startTime.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{ownerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"startTime\": \"{{rescheduleAppointmentTime}}\"\n}"
+                }
+              }
+            },
+            {
+              "name": "Cancel Appointment",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/appointments/{{appointmentId}}/cancel",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "appointments",
+                    "{{appointmentId}}",
+                    "cancel"
+                  ]
+                },
+                "description": "Cancel appointment.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{ownerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"reason\": \"Mobile app cancellation\"\n}"
+                }
+              }
+            },
+            {
+              "name": "Availability Slots",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/availability/slots?staffId={{staffId}}&serviceId={{serviceId}}&date={{availabilityDate}}&intervalMinutes=15",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "availability",
+                    "slots"
+                  ],
+                  "query": [
+                    {
+                      "key": "staffId",
+                      "value": "{{staffId}}"
+                    },
+                    {
+                      "key": "serviceId",
+                      "value": "{{serviceId}}"
+                    },
+                    {
+                      "key": "date",
+                      "value": "{{availabilityDate}}"
+                    },
+                    {
+                      "key": "intervalMinutes",
+                      "value": "15"
+                    }
+                  ]
+                },
+                "description": "List available slots. Date is salon-local YYYY-MM-DD.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{ownerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Validate Availability Slot",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/availability/validate",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "availability",
+                    "validate"
+                  ]
+                },
+                "description": "Validate a UTC ISO appointment startTime.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{ownerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"staffId\": \"{{staffId}}\",\n  \"serviceId\": \"{{serviceId}}\",\n  \"startTime\": \"{{futureAppointmentTime}}\"\n}"
+                }
+              }
+            },
+            {
+              "name": "Billing Usage",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/billing/usage?historyLimit=12",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "billing",
+                    "usage"
+                  ],
+                  "query": [
+                    {
+                      "key": "historyLimit",
+                      "value": "12"
+                    }
+                  ]
+                },
+                "description": "Owner billing usage.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{ownerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Alerts",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/alerts?page=1&limit=50",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "alerts"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "50"
+                    }
+                  ]
+                },
+                "description": "Owner alerts.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{ownerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Calls",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/calls?page=1&limit=50",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "calls"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "50"
+                    }
+                  ]
+                },
+                "description": "Owner call logs.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{ownerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "AI Logs",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/ai/interactions?page=1&limit=50",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "ai",
+                    "interactions"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "50"
+                    }
+                  ]
+                },
+                "description": "Owner AI interaction logs.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{ownerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Staff",
+          "item": [
+            {
+              "name": "Staff Me Profile",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/staff/me/profile",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "staff",
+                    "me",
+                    "profile"
+                  ]
+                },
+                "description": "Staff bootstrap profile. Includes user, staff, salon timezone/name, serviceIds, assignedServices.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{staffToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Update Staff Me Profile",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/staff/me/profile",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "staff",
+                    "me",
+                    "profile"
+                  ]
+                },
+                "description": "Staff updates own profile.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{staffToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"fullName\": \"Staff Demo\",\n  \"phone\": \"(732) 555-0120\"\n}"
+                }
+              }
+            },
+            {
+              "name": "Staff Me Services",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/staff/me/services",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "staff",
+                    "me",
+                    "services"
+                  ]
+                },
+                "description": "Staff reads active services they can perform.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{staffToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Staff Reminders",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/staff/me/reminders",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "staff",
+                    "me",
+                    "reminders"
+                  ]
+                },
+                "description": "Staff reminders.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{staffToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Staff Appointments",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/appointments?page=1&limit=100",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "appointments"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "100"
+                    }
+                  ]
+                },
+                "description": "Staff sees assigned appointments only.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{staffToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Staff Appointment Detail",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/appointments/{{appointmentId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "appointments",
+                    "{{appointmentId}}"
+                  ]
+                },
+                "description": "Staff can read assigned appointment detail only.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{staffToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Staff Update Appointment Status Notes",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/appointments/{{appointmentId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "appointments",
+                    "{{appointmentId}}"
+                  ]
+                },
+                "description": "Staff can only update status or notes on assigned appointments.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{staffToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"status\": \"CONFIRMED\",\n  \"notes\": \"Confirmed in mobile app\"\n}"
+                }
+              }
+            },
+            {
+              "name": "Staff Start Work",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/appointments/{{appointmentId}}/start",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "appointments",
+                    "{{appointmentId}}",
+                    "start"
+                  ]
+                },
+                "description": "Start appointment work.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{staffToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{}"
+                }
+              }
+            },
+            {
+              "name": "Staff Extend Work",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/appointments/{{appointmentId}}/extend",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "appointments",
+                    "{{appointmentId}}",
+                    "extend"
+                  ]
+                },
+                "description": "Extend work time.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{staffToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"minutes\": 15\n}"
+                }
+              }
+            },
+            {
+              "name": "Staff Done Work",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/appointments/{{appointmentId}}/done",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "appointments",
+                    "{{appointmentId}}",
+                    "done"
+                  ]
+                },
+                "description": "Complete work.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{staffToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"confirm\": true\n}"
+                }
+              }
+            },
+            {
+              "name": "Staff Messages",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/messages/me",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "messages",
+                    "me"
+                  ]
+                },
+                "description": "Staff message thread with owner.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{staffToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Send Staff Message",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/messages/me",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "messages",
+                    "me"
+                  ]
+                },
+                "description": "Staff sends message to owner.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{staffToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"body\": \"Xin chào\"\n}"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Operator",
+          "item": [
+            {
+              "name": "Runtime",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/call-center/runtime",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "call-center",
+                    "runtime"
+                  ]
+                },
+                "description": "Amazon Connect/operator runtime config.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{agentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Assigned Salons",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/call-center/salons",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "call-center",
+                    "salons"
+                  ]
+                },
+                "description": "Salons assigned to operator.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{agentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Salon Detail",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/call-center/salons/{{assignedSalonId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "call-center",
+                    "salons",
+                    "{{assignedSalonId}}"
+                  ]
+                },
+                "description": "Selected salon detail/context.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{agentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Salon Staff",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/call-center/salons/{{assignedSalonId}}/staff",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "call-center",
+                    "salons",
+                    "{{assignedSalonId}}",
+                    "staff"
+                  ]
+                },
+                "description": "Staff for selected salon.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{agentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Salon Services",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/call-center/salons/{{assignedSalonId}}/services",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "call-center",
+                    "salons",
+                    "{{assignedSalonId}}",
+                    "services"
+                  ]
+                },
+                "description": "Services for selected salon.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{agentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Salon Customers",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/call-center/salons/{{assignedSalonId}}/customers?page=1&limit=100",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "call-center",
+                    "salons",
+                    "{{assignedSalonId}}",
+                    "customers"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "100"
+                    }
+                  ]
+                },
+                "description": "Customers for selected salon.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{agentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Create Salon Customer",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/call-center/salons/{{assignedSalonId}}/customers",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "call-center",
+                    "salons",
+                    "{{assignedSalonId}}",
+                    "customers"
+                  ]
+                },
+                "description": "Operator creates customer in assigned salon.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{agentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"firstName\": \"Caller\",\n  \"lastName\": \"Mobile\",\n  \"phone\": \"(732) 555-0126\"\n}"
+                }
+              }
+            },
+            {
+              "name": "Salon Appointments",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/call-center/salons/{{assignedSalonId}}/appointments?page=1&limit=50",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "call-center",
+                    "salons",
+                    "{{assignedSalonId}}",
+                    "appointments"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "50"
+                    }
+                  ]
+                },
+                "description": "Appointments for selected salon.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{agentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Create Salon Appointment",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/call-center/salons/{{assignedSalonId}}/appointments",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "call-center",
+                    "salons",
+                    "{{assignedSalonId}}",
+                    "appointments"
+                  ]
+                },
+                "description": "Operator creates appointment for assigned salon.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{agentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"staffId\": \"{{staffId}}\",\n  \"serviceId\": \"{{serviceId}}\",\n  \"startTime\": \"{{futureAppointmentTime}}\",\n  \"notes\": \"Operator mobile booking\"\n}"
+                }
+              }
+            },
+            {
+              "name": "Queue List",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/call-center/queue?limit=50",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "call-center",
+                    "queue"
+                  ],
+                  "query": [
+                    {
+                      "key": "limit",
+                      "value": "50"
+                    }
+                  ]
+                },
+                "description": "Waiting calls.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{agentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Queue Detail",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/call-center/queue/{{queueId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "call-center",
+                    "queue",
+                    "{{queueId}}"
+                  ]
+                },
+                "description": "Queue item detail.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{agentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Accept Queue Item",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/call-center/queue/{{queueId}}/accept",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "call-center",
+                    "queue",
+                    "{{queueId}}",
+                    "accept"
+                  ]
+                },
+                "description": "Accept waiting call.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{agentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{}"
+                }
+              }
+            },
+            {
+              "name": "Update Queue Notes",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/call-center/queue/{{queueId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "call-center",
+                    "queue",
+                    "{{queueId}}"
+                  ]
+                },
+                "description": "Update operator notes.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{agentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"operatorNotes\": \"Customer asked for later appointment.\"\n}"
+                }
+              }
+            },
+            {
+              "name": "Callback Request",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/call-center/queue/{{queueId}}/callback-request",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "call-center",
+                    "queue",
+                    "{{queueId}}",
+                    "callback-request"
+                  ]
+                },
+                "description": "Create callback request.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{agentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"messageToCaller\": \"We will call back soon.\"\n}"
+                }
+              }
+            },
+            {
+              "name": "Voicemail Metadata",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/call-center/queue/{{queueId}}/voicemail",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "call-center",
+                    "queue",
+                    "{{queueId}}",
+                    "voicemail"
+                  ]
+                },
+                "description": "Attach voicemail metadata.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{agentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"voicemailUrl\": \"https://example.com/voicemail.mp3\"\n}"
+                }
+              }
+            },
+            {
+              "name": "SMS Fallback",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/call-center/queue/{{queueId}}/sms-fallback",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "call-center",
+                    "queue",
+                    "{{queueId}}",
+                    "sms-fallback"
+                  ]
+                },
+                "description": "Send SMS fallback.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{agentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"messageToCaller\": \"Text fallback message.\"\n}"
+                }
+              }
+            },
+            {
+              "name": "Complete Queue Item",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/call-center/queue/{{queueId}}/complete",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "call-center",
+                    "queue",
+                    "{{queueId}}",
+                    "complete"
+                  ]
+                },
+                "description": "Complete waiting call.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{agentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"finalResolution\": \"Booked appointment\"\n}"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Push Notifications",
+          "item": [
+            {
+              "name": "Register Android FCM Token",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/notifications/register-token",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "notifications",
+                    "register-token"
+                  ]
+                },
+                "description": "App must call this after login and whenever Firebase token refreshes.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{staffToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"token\": \"{{fcmToken}}\",\n  \"platform\": \"android\"\n}"
+                }
+              }
+            },
+            {
+              "name": "Register iOS FCM Token",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/notifications/register-token",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "notifications",
+                    "register-token"
+                  ]
+                },
+                "description": "Register iOS Firebase token after login/token refresh.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{staffToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"token\": \"{{fcmToken}}\",\n  \"platform\": \"ios\"\n}"
+                }
+              }
+            },
+            {
+              "name": "Unregister FCM Token",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/notifications/unregister-token",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "notifications",
+                    "unregister-token"
+                  ]
+                },
+                "description": "Call on logout or token removal.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{staffToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"token\": \"{{fcmToken}}\"\n}"
+                }
+              }
+            },
+            {
+              "name": "Notification Inbox",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/notifications/inbox?limit=10",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "notifications",
+                    "inbox"
+                  ],
+                  "query": [
+                    {
+                      "key": "limit",
+                      "value": "10"
+                    }
+                  ]
+                },
+                "description": "Signed-in user inbox.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{staffToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status code is 200\", function () { pm.response.to.have.status(200); });",
+                      "const json = pm.response.json();",
+                      "const value = json.data?.items?.[0]?.id;",
+                      "if (value) pm.collectionVariables.set(\"notificationId\", value);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Unread Count",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/notifications/unread-count",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "notifications",
+                    "unread-count"
+                  ]
+                },
+                "description": "Signed-in user unread count.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{staffToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Mark Read",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/notifications/{{notificationId}}/read",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "notifications",
+                    "{{notificationId}}",
+                    "read"
+                  ]
+                },
+                "description": "Mark one notification read.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{staffToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{}"
+                }
+              }
+            },
+            {
+              "name": "Mark All Read",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/notifications/read-all",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "notifications",
+                    "read-all"
+                  ]
+                },
+                "description": "Mark all signed-in user notifications read.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{staffToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{}"
+                }
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "variable": [

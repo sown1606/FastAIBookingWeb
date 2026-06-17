@@ -1,4 +1,4 @@
-import { Role, StaffStatus } from "@prisma/client";
+import { Prisma, Role, StaffStatus } from "@prisma/client";
 import { prisma } from "../../db/prisma";
 import { createAuditLog } from "../../lib/audit";
 import { generateSecureToken } from "../../lib/crypto";
@@ -17,6 +17,7 @@ interface CreateStaffInput {
   isBookable?: boolean;
   createLogin?: boolean;
   password?: string;
+  serviceIds?: string[];
 }
 
 interface UpdateStaffInput {
@@ -26,6 +27,7 @@ interface UpdateStaffInput {
   title?: string | null;
   avatarUrl?: string | null;
   isBookable?: boolean;
+  serviceIds?: string[];
 }
 
 interface UpdateOwnStaffProfileInput {
@@ -34,6 +36,8 @@ interface UpdateOwnStaffProfileInput {
   avatarUrl?: string | null;
 }
 
+type PrismaExecutor = typeof prisma | Prisma.TransactionClient;
+
 const staffWithUserInclude = {
   user: {
     select: {
@@ -41,6 +45,29 @@ const staffWithUserInclude = {
       email: true,
       isActive: true,
       role: true
+    }
+  }
+} as const;
+
+const staffServiceSelect = {
+  id: true,
+  name: true,
+  description: true,
+  durationMinutes: true,
+  priceCents: true,
+  isActive: true
+} as const;
+
+const staffWithUserAndServicesInclude = {
+  ...staffWithUserInclude,
+  staffServices: {
+    include: {
+      service: {
+        select: staffServiceSelect
+      }
+    },
+    orderBy: {
+      createdAt: "asc"
     }
   }
 } as const;
@@ -78,17 +105,76 @@ const normalizeAvatarUrl = (value: string | null | undefined): string | null | u
   return trimmed;
 };
 
+const normalizeServiceIds = (serviceIds: string[] | undefined): string[] | undefined => {
+  return serviceIds === undefined ? undefined : Array.from(new Set(serviceIds));
+};
+
+const addStaffServiceSummary = <T extends { staffServices?: Array<{ serviceId: string; service: unknown }> }>(
+  staff: T
+) => ({
+  ...staff,
+  serviceIds: staff.staffServices?.map((row) => row.serviceId) ?? [],
+  assignedServices: staff.staffServices?.map((row) => row.service) ?? []
+});
+
+const validateServiceIdsBelongToSalon = async (
+  salonId: string,
+  serviceIds: string[],
+  tx: PrismaExecutor = prisma
+): Promise<void> => {
+  if (!serviceIds.length) {
+    return;
+  }
+  const count = await tx.service.count({
+    where: {
+      salonId,
+      id: {
+        in: serviceIds
+      }
+    }
+  });
+  if (count !== serviceIds.length) {
+    throw new AppError("One or more service IDs are invalid for this salon.", 400, "INVALID_SERVICE");
+  }
+};
+
+const replaceStaffServiceMapping = async (
+  tx: PrismaExecutor,
+  salonId: string,
+  staffId: string,
+  serviceIds: string[]
+) => {
+  await tx.staffService.deleteMany({
+    where: {
+      salonId,
+      staffId
+    }
+  });
+
+  if (serviceIds.length) {
+    await tx.staffService.createMany({
+      data: serviceIds.map((serviceId) => ({
+        salonId,
+        staffId,
+        serviceId
+      })),
+      skipDuplicates: true
+    });
+  }
+};
+
 export const listStaff = async (salonId: string, includeInactive = false) => {
-  return prisma.staff.findMany({
+  const staff = await prisma.staff.findMany({
     where: {
       salonId,
       ...(includeInactive ? {} : { status: StaffStatus.ACTIVE })
     },
-    include: staffWithUserInclude,
+    include: staffWithUserAndServicesInclude,
     orderBy: {
       createdAt: "asc"
     }
   });
+  return staff.map(addStaffServiceSummary);
 };
 
 export const createStaff = async (
@@ -104,6 +190,8 @@ export const createStaff = async (
   const normalizedAvatarUrl = normalizeAvatarUrl(input.avatarUrl);
   const shouldCreateLogin = input.createLogin ?? true;
   const temporaryPassword = input.password ?? generateSecureToken(6);
+  const serviceIds = normalizeServiceIds(input.serviceIds);
+  await validateServiceIdsBelongToSalon(salonId, serviceIds ?? []);
 
   const result = await prisma.$transaction(async (tx) => {
     if (shouldCreateLogin && normalizedEmail) {
@@ -128,7 +216,9 @@ export const createStaff = async (
       }
     });
 
-    if (staff.isBookable && staff.status === StaffStatus.ACTIVE) {
+    if (serviceIds !== undefined) {
+      await replaceStaffServiceMapping(tx, salonId, staff.id, serviceIds);
+    } else if (staff.isBookable && staff.status === StaffStatus.ACTIVE) {
       const activeServices = await tx.service.findMany({
         where: {
           salonId,
@@ -185,11 +275,11 @@ export const createStaff = async (
 
     const staffWithUser = await tx.staff.findUniqueOrThrow({
       where: { id: staff.id },
-      include: staffWithUserInclude
+      include: staffWithUserAndServicesInclude
     });
 
     return {
-      staff: staffWithUser,
+      staff: addStaffServiceSummary(staffWithUser),
       billingUsage: usage,
       invitation: {
         email: normalizedEmail,
@@ -238,6 +328,8 @@ export const updateStaff = async (
         ? null
         : requireUsPhone(input.phone, "Staff phone");
   const normalizedAvatarUrl = normalizeAvatarUrl(input.avatarUrl);
+  const serviceIds = normalizeServiceIds(input.serviceIds);
+  await validateServiceIdsBelongToSalon(salonId, serviceIds ?? []);
 
   if (input.email !== undefined && !normalizedEmail) {
     throw new AppError("Staff email is required.", 400, "STAFF_EMAIL_REQUIRED");
@@ -283,6 +375,21 @@ export const updateStaff = async (
       });
     }
 
+    if (serviceIds !== undefined) {
+      await replaceStaffServiceMapping(tx, salonId, staff.id, serviceIds);
+      await createAuditLog(
+        {
+          salonId,
+          actorUserId,
+          action: "STAFF_SERVICE_MAPPING_UPDATED",
+          entityType: "Staff",
+          entityId: staff.id,
+          metadata: { serviceIds }
+        },
+        tx
+      );
+    }
+
     await createAuditLog(
       {
         salonId,
@@ -297,8 +404,8 @@ export const updateStaff = async (
 
     return tx.staff.findUniqueOrThrow({
       where: { id: staff.id },
-      include: staffWithUserInclude
-    });
+      include: staffWithUserAndServicesInclude
+    }).then(addStaffServiceSummary);
   });
 };
 
@@ -353,11 +460,11 @@ const updateStaffStatus = async (
 
     const staffWithUser = await tx.staff.findUniqueOrThrow({
       where: { id: staff.id },
-      include: staffWithUserInclude
+      include: staffWithUserAndServicesInclude
     });
 
     return {
-      staff: staffWithUser,
+      staff: addStaffServiceSummary(staffWithUser),
       billingUsage: usage
     };
   });
@@ -452,11 +559,11 @@ export const resetStaffAccess = async (
 
     const staffWithUser = await tx.staff.findUniqueOrThrow({
       where: { id: existing.id },
-      include: staffWithUserInclude
+      include: staffWithUserAndServicesInclude
     });
 
     return {
-      staff: staffWithUser,
+      staff: addStaffServiceSummary(staffWithUser),
       invitation: {
         email: staffWithUser.user?.email ?? normalizeEmail(staffWithUser.email),
         temporaryPassword: newPassword
@@ -474,12 +581,40 @@ export const getStaffSelfProfile = async (salonId: string, userId: string, staff
       staffId
     },
     include: {
-      staffProfile: true
+      staffProfile: {
+        include: {
+          salon: {
+            select: {
+              id: true,
+              name: true,
+              timezone: true
+            }
+          },
+          staffServices: {
+            where: {
+              service: {
+                isActive: true
+              }
+            },
+            include: {
+              service: {
+                select: staffServiceSelect
+              }
+            },
+            orderBy: {
+              createdAt: "asc"
+            }
+          }
+        }
+      }
     }
   });
   if (!user || !user.staffProfile) {
     throw new AppError("Staff profile not found.", 404, "STAFF_PROFILE_NOT_FOUND");
   }
+
+  const { salon, ...staff } = user.staffProfile;
+  const staffWithServices = addStaffServiceSummary(staff);
 
   return {
     user: {
@@ -489,7 +624,136 @@ export const getStaffSelfProfile = async (salonId: string, userId: string, staff
       phone: user.phone,
       isActive: user.isActive
     },
-    staff: user.staffProfile
+    staff: staffWithServices,
+    salon,
+    serviceIds: staffWithServices.serviceIds,
+    assignedServices: staffWithServices.assignedServices
+  };
+};
+
+export const getStaffServiceAssignments = async (salonId: string, staffId: string) => {
+  const staff = await prisma.staff.findFirst({
+    where: {
+      id: staffId,
+      salonId
+    },
+    select: {
+      id: true,
+      fullName: true,
+      isBookable: true,
+      status: true,
+      staffServices: {
+        select: {
+          serviceId: true
+        }
+      }
+    }
+  });
+  if (!staff) {
+    throw new AppError("Staff not found.", 404, "STAFF_NOT_FOUND");
+  }
+
+  const assignedIds = new Set(staff.staffServices.map((row) => row.serviceId));
+  const services = await prisma.service.findMany({
+    where: { salonId },
+    select: staffServiceSelect,
+    orderBy: { name: "asc" }
+  });
+
+  return {
+    staff: {
+      id: staff.id,
+      fullName: staff.fullName,
+      isBookable: staff.isBookable,
+      status: staff.status
+    },
+    services: services.map((service) => ({
+      ...service,
+      assigned: assignedIds.has(service.id)
+    }))
+  };
+};
+
+export const setStaffServiceAssignments = async (
+  salonId: string,
+  staffId: string,
+  actorUserId: string,
+  serviceIdsInput: string[]
+) => {
+  const serviceIds = normalizeServiceIds(serviceIdsInput) ?? [];
+  await validateServiceIdsBelongToSalon(salonId, serviceIds);
+
+  return prisma.$transaction(async (tx) => {
+    const staff = await tx.staff.findFirst({
+      where: {
+        id: staffId,
+        salonId
+      },
+      select: { id: true }
+    });
+    if (!staff) {
+      throw new AppError("Staff not found.", 404, "STAFF_NOT_FOUND");
+    }
+
+    await replaceStaffServiceMapping(tx, salonId, staff.id, serviceIds);
+
+    await createAuditLog(
+      {
+        salonId,
+        actorUserId,
+        action: "STAFF_SERVICE_MAPPING_UPDATED",
+        entityType: "Staff",
+        entityId: staff.id,
+        metadata: { serviceIds }
+      },
+      tx
+    );
+  }).then(() => getStaffServiceAssignments(salonId, staffId));
+};
+
+export const listStaffSelfServices = async (salonId: string, staffId: string) => {
+  const staff = await prisma.staff.findFirst({
+    where: {
+      id: staffId,
+      salonId
+    },
+    select: {
+      id: true,
+      fullName: true,
+      isBookable: true,
+      status: true,
+      staffServices: {
+        where: {
+          service: {
+            isActive: true
+          }
+        },
+        include: {
+          service: {
+            select: staffServiceSelect
+          }
+        },
+        orderBy: {
+          createdAt: "asc"
+        }
+      }
+    }
+  });
+  if (!staff) {
+    throw new AppError("Staff not found.", 404, "STAFF_NOT_FOUND");
+  }
+
+  return {
+    staff: {
+      id: staff.id,
+      fullName: staff.fullName,
+      isBookable: staff.isBookable,
+      status: staff.status
+    },
+    services: staff.staffServices.map((row) => ({
+      serviceId: row.service.id,
+      ...row.service
+    }))
   };
 };
 

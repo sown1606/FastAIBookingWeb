@@ -51,8 +51,37 @@ test("staff cannot access owner-only app pages or owner-only API actions", () =>
   assert.match(staffRoutes, /staffRouter\.get\(\s*"\/",\s*requireRoles\(Role\.SALON_OWNER\)/s);
   assert.match(staffRoutes, /staffRouter\.post\(\s*"\/",\s*requireRoles\(Role\.SALON_OWNER\)/s);
   assert.match(staffRoutes, /staffRouter\.patch\(\s*"\/:id",\s*requireRoles\(Role\.SALON_OWNER\)/s);
+  assert.match(staffRoutes, /staffRouter\.put\(\s*"\/:id\/services",\s*requireRoles\(Role\.SALON_OWNER\)/s);
   assert.match(callsRoutes, /callsRouter\.use\(requireRoles\(Role\.SALON_OWNER\)\)/);
   assert.match(aiRoutes, /aiRouter\.use\(requireRoles\(Role\.SALON_OWNER\)\)/);
+});
+
+test("staff service mapping APIs are owner writable and staff readable", () => {
+  const routes = readApi("modules/staff/staff.routes.ts");
+  const service = readApi("modules/staff/staff.service.ts");
+  const servicesService = readApi("modules/services/services.service.ts");
+  const availabilityService = readApi("modules/availability/availability.service.ts");
+
+  assert.match(routes, /"\/me\/services",\s*requireRoles\(Role\.STAFF\)/s);
+  assert.match(routes, /"\/:id\/services",\s*requireRoles\(Role\.SALON_OWNER\)/s);
+  assert.match(routes, /serviceIds:\s*z\.array\(z\.string\(\)\.uuid\(\)\)\.default\(\[\]\)/);
+  assert.match(routes, /serviceIds:\s*z\.array\(z\.string\(\)\.uuid\(\)\)\.optional\(\)/);
+  assert.match(service, /export const getStaffServiceAssignments/);
+  assert.match(service, /export const setStaffServiceAssignments/);
+  assert.match(service, /export const listStaffSelfServices/);
+  assert.match(service, /validateServiceIdsBelongToSalon\(salonId, serviceIds\)/);
+  assert.match(service, /replaceStaffServiceMapping\(tx, salonId, staff\.id, serviceIds\)/);
+  assert.match(service, /action: "STAFF_SERVICE_MAPPING_UPDATED"/);
+  assert.match(service, /One or more service IDs are invalid for this salon\./);
+  assert.match(service, /findFirst\(\{\s*where:\s*\{\s*id: staffId,\s*salonId/s);
+  assert.match(service, /serviceIds !== undefined[\s\S]*replaceStaffServiceMapping/);
+  assert.match(service, /serviceIds:\s*staff\.staffServices\?\.map/);
+  assert.match(service, /assignedServices:\s*staff\.staffServices\?\.map/);
+  assert.match(service, /staffProfile:\s*\{[\s\S]*salon:\s*\{[\s\S]*timezone: true/s);
+  assert.match(servicesService, /export const setServiceStaffMapping/);
+  assert.match(servicesService, /action: "SERVICE_STAFF_MAPPING_UPDATED"/);
+  assert.match(availabilityService, /ensureStaffCanPerformService/);
+  assert.match(availabilityService, /Selected staff is not assigned to this service\./);
 });
 
 test("owner workspace routes keep salon data scoped to the authenticated salon", () => {
@@ -127,6 +156,17 @@ test("notification APIs are authenticated, role-limited, and scoped to current u
   assert.match(pushBridge, /window\.dispatchEvent\(new Event\(NOTIFICATIONS_CHANGED_EVENT\)\)/);
   assert.match(pushBridge, /registerFirebaseMessagingToken\(\)/);
   assert.match(authContext, /unregisterFirebaseMessagingToken\(\)\.catch\(\(\) => undefined\)/);
+});
+
+test("API error handler localizes known user-facing errors for Vietnamese clients", () => {
+  const handler = readApi("middleware/error-handler.ts");
+  const messages = readApi("utils/api-error-messages.ts");
+
+  assert.match(handler, /resolveRequestLanguage\(req\)/);
+  assert.match(handler, /localizeApiErrorMessage\(message, code, language\)/);
+  assert.match(messages, /STAFF_NOT_MAPPED:\s*"Nhân viên đã chọn chưa được gán dịch vụ này\."/);
+  assert.match(messages, /"Requested slot is outside business hours\.":\s*"Khung giờ này nằm ngoài giờ làm việc của tiệm\."/);
+  assert.match(messages, /if \(language === "en-US"\)[\s\S]*return message/);
 });
 
 test("staff create and reset-access return immediate invitation passwords", () => {

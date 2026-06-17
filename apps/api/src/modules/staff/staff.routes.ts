@@ -9,11 +9,14 @@ import { isValidUsPhone } from "../../utils/phone";
 import {
   createStaff,
   deactivateStaff,
+  getStaffServiceAssignments,
   getStaffSelfProfile,
+  listStaffSelfServices,
   listStaffSelfReminders,
   listStaff,
   reactivateStaff,
   resetStaffAccess,
+  setStaffServiceAssignments,
   updateStaff,
   updateStaffSelfProfile
 } from "./staff.service";
@@ -50,7 +53,8 @@ const createStaffSchema = z.object({
   avatarUrl: avatarUrlSchema,
   isBookable: z.boolean().optional(),
   createLogin: z.boolean().optional(),
-  password: z.string().min(8).max(128).optional()
+  password: z.string().min(8).max(128).optional(),
+  serviceIds: z.array(z.string().uuid()).optional()
 });
 
 const updateStaffSchema = z.object({
@@ -59,7 +63,12 @@ const updateStaffSchema = z.object({
   phone: usPhoneSchema.optional(),
   title: z.string().max(120).nullable().optional(),
   avatarUrl: avatarUrlSchema,
-  isBookable: z.boolean().optional()
+  isBookable: z.boolean().optional(),
+  serviceIds: z.array(z.string().uuid()).optional()
+});
+
+const setStaffServicesSchema = z.object({
+  serviceIds: z.array(z.string().uuid()).default([])
 });
 
 const resetStaffAccessSchema = z.object({
@@ -96,6 +105,17 @@ staffRouter.get(
     const reminders = await listStaffSelfReminders(req.auth!.salonId!, req.auth!.staffId!);
     return sendSuccess(res, {
       data: reminders
+    });
+  })
+);
+
+staffRouter.get(
+  "/me/services",
+  requireRoles(Role.STAFF),
+  asyncHandler(async (req, res) => {
+    const services = await listStaffSelfServices(req.auth!.salonId!, req.auth!.staffId!);
+    return sendSuccess(res, {
+      data: services
     });
   })
 );
@@ -142,6 +162,35 @@ staffRouter.post(
     return sendSuccess(res, {
       statusCode: 201,
       message: "Staff created.",
+      data: result
+    });
+  })
+);
+
+staffRouter.get(
+  "/:id/services",
+  requireRoles(Role.SALON_OWNER),
+  validate(staffIdSchema, "params"),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params as z.infer<typeof staffIdSchema>;
+    const result = await getStaffServiceAssignments(req.auth!.salonId!, id);
+    return sendSuccess(res, {
+      data: result
+    });
+  })
+);
+
+staffRouter.put(
+  "/:id/services",
+  requireRoles(Role.SALON_OWNER),
+  validate(staffIdSchema, "params"),
+  validate(setStaffServicesSchema),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params as z.infer<typeof staffIdSchema>;
+    const { serviceIds } = req.body as z.infer<typeof setStaffServicesSchema>;
+    const result = await setStaffServiceAssignments(req.auth!.salonId!, id, req.auth!.userId, serviceIds);
+    return sendSuccess(res, {
+      message: "Staff service mapping updated.",
       data: result
     });
   })
