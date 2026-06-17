@@ -822,6 +822,15 @@ pre {
   align-items: center;
 }
 
+.demo-account-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.demo-account-row .compact-button {
+  justify-self: end;
+}
+
 .compact-button {
   min-height: 34px;
   padding: 6px 10px;
@@ -979,5 +988,13 @@ pre {
   .button-primary,
   .button-secondary {
     width: 100%;
+  }
+
+  .demo-account-row {
+    grid-template-columns: 1fr;
+  }
+
+  .demo-account-row .compact-button {
+    justify-self: stretch;
   }
 }

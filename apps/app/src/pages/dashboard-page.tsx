@@ -72,21 +72,54 @@ interface SalonSettings {
 interface SalonProfileSummary {
   id: string;
   name: string;
+  timezone: string;
 }
 
 interface SalonOperatorNote {
   salonId: string;
   salonName: string;
+  timezone: string;
   callCenterRoutingNote: string | null;
 }
 
-const isSameLocalDay = (value: string, reference: Date) => {
+const FALLBACK_SALON_TIMEZONE = "America/New_York";
+
+const getSalonDateParts = (value: string | Date, timezone: string) => {
+  const date = value instanceof Date ? value : new Date(value);
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    timeZone: timezone
+  }).formatToParts(date);
+  const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? "";
+  return {
+    day: get("day"),
+    month: get("month"),
+    year: get("year")
+  };
+};
+
+const getSalonDateKey = (value: string | Date, timezone: string) => {
+  const parts = getSalonDateParts(value, timezone);
+  return `${parts.year}-${parts.month}-${parts.day}`;
+};
+
+const formatHeroAppointmentDate = (value: string, timezone: string) => {
   const date = new Date(value);
-  return (
-    date.getFullYear() === reference.getFullYear() &&
-    date.getMonth() === reference.getMonth() &&
-    date.getDate() === reference.getDate()
-  );
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  const dateParts = getSalonDateParts(date, timezone);
+  return {
+    time: new Intl.DateTimeFormat("en-GB", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+      timeZone: timezone
+    }).format(date),
+    date: `${dateParts.day}/${dateParts.month}/${dateParts.year}`
+  };
 };
 
 export const DashboardPage = () => {
@@ -186,10 +219,11 @@ export const DashboardPage = () => {
       .slice(0, 8);
   }, [appointments]);
 
-  const now = new Date();
+  const salonTimezone = salonProfile?.timezone || operatorNote?.timezone || FALLBACK_SALON_TIMEZONE;
+  const todayDateKey = getSalonDateKey(new Date(), salonTimezone);
   const todayAppointments = useMemo(
-    () => appointments.filter((item) => isSameLocalDay(item.startTime, now)),
-    [appointments, now]
+    () => appointments.filter((item) => getSalonDateKey(item.startTime, salonTimezone) === todayDateKey),
+    [appointments, salonTimezone, todayDateKey]
   );
   const completedToday = useMemo(
     () => todayAppointments.filter((item) => item.status === "COMPLETED"),
@@ -200,6 +234,9 @@ export const DashboardPage = () => {
     [todayAppointments]
   );
   const nextAppointment = upcoming[0] ?? null;
+  const nextAppointmentParts = nextAppointment
+    ? formatHeroAppointmentDate(nextAppointment.startTime, salonTimezone)
+    : null;
 
   if (loading) {
     return <LoadingBlock />;
@@ -280,7 +317,14 @@ export const DashboardPage = () => {
                 ) : null}
                 <article className="hero-stat-card">
                   <span>{t("dashboard.nextAppointment")}</span>
-                  <strong>{nextAppointment ? formatDateTime(nextAppointment.startTime) : t("dashboard.noNextAppointment")}</strong>
+                  {nextAppointmentParts ? (
+                    <div className="hero-stat-date">
+                      <strong>{nextAppointmentParts.time}</strong>
+                      <small>{nextAppointmentParts.date}</small>
+                    </div>
+                  ) : (
+                    <strong className="hero-stat-empty">{t("dashboard.noNextAppointment")}</strong>
+                  )}
                 </article>
                 <article className="hero-stat-card">
                   <span>{t("dashboard.staff")}</span>
@@ -303,7 +347,11 @@ export const DashboardPage = () => {
               <article className="card stat-card">
                 <h3>{t("dashboard.todayAppointments")}</h3>
                 <strong>{todayAppointments.length}</strong>
-                <span className="muted">{nextAppointment ? formatDateTime(nextAppointment.startTime) : t("dashboard.noNextAppointment")}</span>
+                <span className="muted">
+                  {nextAppointmentParts
+                    ? `${nextAppointmentParts.time} · ${nextAppointmentParts.date}`
+                    : t("dashboard.noNextAppointment")}
+                </span>
               </article>
               <article className="card stat-card">
                 <h3>{t("dashboard.staff")}</h3>
@@ -375,7 +423,14 @@ export const DashboardPage = () => {
                 </article>
                 <article className="hero-stat-card">
                   <span>{t("dashboard.nextAppointment")}</span>
-                  <strong>{nextAppointment ? formatDateTime(nextAppointment.startTime) : t("dashboard.noNextAppointment")}</strong>
+                  {nextAppointmentParts ? (
+                    <div className="hero-stat-date">
+                      <strong>{nextAppointmentParts.time}</strong>
+                      <small>{nextAppointmentParts.date}</small>
+                    </div>
+                  ) : (
+                    <strong className="hero-stat-empty">{t("dashboard.noNextAppointment")}</strong>
+                  )}
                 </article>
               </div>
             </div>
@@ -412,7 +467,7 @@ export const DashboardPage = () => {
                     <div className="appointment-card-meta">
                       <div>
                         <span className="muted">{t("appointments.time")}</span>
-                        <strong>{formatDateTime(item.startTime)}</strong>
+                        <strong>{formatDateTime(item.startTime, salonTimezone)}</strong>
                       </div>
                       <div>
                         <span className="muted">{t("appointments.staff")}</span>
@@ -447,7 +502,7 @@ export const DashboardPage = () => {
                 <tbody>
                   {upcoming.map((item) => (
                     <tr key={item.id}>
-                      <td>{formatDateTime(item.startTime)}</td>
+                      <td>{formatDateTime(item.startTime, salonTimezone)}</td>
                       <td>
                         {item.customer.firstName} {item.customer.lastName}
                       </td>

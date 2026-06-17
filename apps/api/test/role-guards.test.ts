@@ -83,6 +83,8 @@ test("staff can read the owner operator note without owner edit access", () => {
   assert.match(salonRoutes, /"\/staff-note",\s*requireRoles\(Role\.SALON_OWNER, Role\.STAFF\)/s);
   assert.match(salonRoutes, /"\/operator-note",\s*requireRoles\(Role\.SALON_OWNER, Role\.STAFF\)/s);
   assert.match(salonService, /export const getSalonOperatorNote/);
+  assert.match(salonService, /timezone: true/);
+  assert.match(salonService, /timezone: salon\.timezone/);
   assert.match(salonService, /callCenterRoutingNote: salon\.settings\?\.callCenterRoutingNote \?\? null/);
   assert.match(dashboard, /apiGet<SalonOperatorNote>\("\/api\/v1\/salon\/staff-note"\)/);
   assert.match(dashboard, /dashboard\.staffOwnerNoteTitle/);
@@ -119,7 +121,9 @@ test("notification APIs are authenticated, role-limited, and scoped to current u
   assert.match(service, /listUserNotificationInbox[\s\S]*where:\s*\{\s*userId: input\.userId\s*\}/);
   assert.match(service, /markUserNotificationRead[\s\S]*id: notificationId,\s*userId/s);
   assert.match(service, /markAllUserNotificationsRead[\s\S]*userId,\s*readAt: null/s);
-  assert.match(bell, /navigate\(notification\.url\)/);
+  assert.match(bell, /resolveNotificationUrl\(notification\)/);
+  assert.match(bell, /appointmentId/);
+  assert.match(bell, /navigate\(targetUrl\)/);
   assert.match(pushBridge, /window\.dispatchEvent\(new Event\(NOTIFICATIONS_CHANGED_EVENT\)\)/);
   assert.match(pushBridge, /registerFirebaseMessagingToken\(\)/);
   assert.match(authContext, /unregisterFirebaseMessagingToken\(\)\.catch\(\(\) => undefined\)/);

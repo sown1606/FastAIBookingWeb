@@ -27,6 +27,22 @@ interface UnreadCountResponse {
 
 export const NOTIFICATIONS_CHANGED_EVENT = "fastaibooking:notifications-changed";
 
+const getNotificationDataObject = (data: unknown): Record<string, unknown> | null =>
+  data && typeof data === "object" && !Array.isArray(data) ? (data as Record<string, unknown>) : null;
+
+const resolveNotificationUrl = (notification: UserNotification): string | null => {
+  if (notification.url) {
+    return notification.url;
+  }
+  const data = getNotificationDataObject(notification.data);
+  const appointmentId = data?.appointmentId;
+  if (typeof appointmentId === "string" && appointmentId.length > 0) {
+    return `/appointments?appointmentId=${encodeURIComponent(appointmentId)}`;
+  }
+  const dataUrl = data?.url;
+  return typeof dataUrl === "string" && dataUrl.length > 0 ? dataUrl : null;
+};
+
 export const NotificationBell = () => {
   const { t } = useI18n();
   const { notify } = useToast();
@@ -36,6 +52,7 @@ export const NotificationBell = () => {
   const [unreadCount, setUnreadCount] = useState(0);
   const [items, setItems] = useState<UserNotification[]>([]);
   const [loadingInbox, setLoadingInbox] = useState(false);
+  const [inboxError, setInboxError] = useState("");
 
   const loadUnreadCount = async () => {
     try {
@@ -48,11 +65,12 @@ export const NotificationBell = () => {
 
   const loadInbox = async () => {
     setLoadingInbox(true);
+    setInboxError("");
     try {
       const result = await apiGet<InboxResponse>("/api/v1/notifications/inbox?limit=10");
       setItems(result.items);
     } catch (error) {
-      notify("error", extractErrorMessage(error));
+      setInboxError(extractErrorMessage(error));
     } finally {
       setLoadingInbox(false);
     }
@@ -129,10 +147,11 @@ export const NotificationBell = () => {
   };
 
   const openNotification = async (notification: UserNotification) => {
+    const targetUrl = resolveNotificationUrl(notification);
     await markRead(notification);
     setOpen(false);
-    if (notification.url) {
-      navigate(notification.url);
+    if (targetUrl) {
+      navigate(targetUrl);
     }
   };
 
@@ -163,7 +182,14 @@ export const NotificationBell = () => {
           </div>
 
           {loadingInbox ? (
-            <p className="muted">{t("common.loading")}</p>
+            <p className="notification-empty">{t("common.loading")}</p>
+          ) : inboxError ? (
+            <div className="notification-empty" role="status">
+              <p>{inboxError}</p>
+              <button type="button" className="button-secondary compact-button" onClick={() => void loadInbox()}>
+                {t("common.retry")}
+              </button>
+            </div>
           ) : items.length ? (
             <div className="notification-list">
               {items.map((item) => (

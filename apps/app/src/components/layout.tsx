@@ -107,7 +107,7 @@ export const AppLayout = ({
                 }
                 size="sm"
               />
-              {user.fullName}
+              <span>{user.fullName}</span>
             </span>
             <button type="button" className="button-secondary" onClick={onLogout}>
               {t("layout.logout")}

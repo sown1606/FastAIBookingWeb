@@ -149,6 +149,7 @@ export const getSalonOperatorNote = async (salonId: string) => {
     select: {
       id: true,
       name: true,
+      timezone: true,
       settings: {
         select: {
           callCenterRoutingNote: true
@@ -164,6 +165,7 @@ export const getSalonOperatorNote = async (salonId: string) => {
   return {
     salonId: salon.id,
     salonName: salon.name,
+    timezone: salon.timezone,
     callCenterRoutingNote: salon.settings?.callCenterRoutingNote ?? null
   };
 };

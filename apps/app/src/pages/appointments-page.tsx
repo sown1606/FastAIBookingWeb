@@ -107,6 +107,27 @@ const formatTimeOnly = (value: string, timezone: string) => {
   });
 };
 
+const formatCompactSalonDateTime = (value: string, timezone: string) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+  const time = new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+    timeZone: timezone
+  }).format(date);
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    timeZone: timezone
+  }).formatToParts(date);
+  const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? "";
+  return `${time} ${get("day")}/${get("month")}/${get("year")}`;
+};
+
 const formatSalonDateKey = (date: Date, timezone = FALLBACK_SALON_TIMEZONE) => {
   const parts = new Intl.DateTimeFormat("en-US", {
     year: "numeric",
@@ -377,9 +398,10 @@ export const AppointmentsPage = () => {
   };
 
   const rescheduleAppointment = async (appointment: AppointmentItem) => {
+    const appointmentTimezone = appointment.salon?.timezone || salonTimezone;
     const values = await openFormDialog({
       title: t("appointments.reschedule"),
-      description: `${appointment.customer.firstName} ${appointment.customer.lastName}`,
+      description: `${appointment.customer.firstName} ${appointment.customer.lastName} · ${formatCompactSalonDateTime(appointment.startTime, appointmentTimezone)}`,
       fields: [
         {
           name: "startTime",
@@ -390,14 +412,14 @@ export const AppointmentsPage = () => {
         }
       ],
       initialValues: {
-        startTime: utcToDateTimeLocalInTimeZone(appointment.startTime, appointment.salon?.timezone || salonTimezone)
+        startTime: utcToDateTimeLocalInTimeZone(appointment.startTime, appointmentTimezone)
       },
       confirmLabel: t("appointments.reschedule")
     });
     if (!values?.startTime) {
       return;
     }
-    const startTimeIso = dateTimeLocalToUtcIso(values.startTime, appointment.salon?.timezone || salonTimezone);
+    const startTimeIso = dateTimeLocalToUtcIso(values.startTime, appointmentTimezone);
     if (!startTimeIso) {
       notify("error", t("form.dateInvalid"));
       return;
@@ -923,7 +945,7 @@ export const AppointmentsPage = () => {
             <div className="mobile-list">
               {reminders.slice(0, 6).map((reminder) => (
                 <article key={reminder.id} className="mobile-item">
-                  <strong>{formatDateTime(reminder.remindAt)}</strong>
+                  <strong>{formatDateTime(reminder.remindAt, salonTimezone)}</strong>
                   <span>{reminder.message}</span>
                 </article>
               ))}
@@ -973,7 +995,7 @@ export const AppointmentsPage = () => {
                 <div className="appointment-card-meta">
                   <div>
                     <span className="muted">{t("appointments.time")}</span>
-                    <strong>{formatDateTime(currentOrNextStaffAppointment.startTime)}</strong>
+                    <strong>{formatDateTime(currentOrNextStaffAppointment.startTime, salonTimezone)}</strong>
                   </div>
                   <div>
                     <span className="muted">{t("appointments.staff")}</span>
@@ -1063,7 +1085,7 @@ export const AppointmentsPage = () => {
                       <div className="appointment-card-meta">
                         <div>
                           <span className="muted">{t("appointments.time")}</span>
-                          <strong>{formatDateTime(item.startTime)}</strong>
+                          <strong>{formatDateTime(item.startTime, salonTimezone)}</strong>
                         </div>
                         <div>
                           <span className="muted">{t("appointments.staff")}</span>

@@ -175,6 +175,7 @@ textarea:focus-visible {
 .topbar-actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
   flex-wrap: wrap;
   min-width: 0;
@@ -211,8 +212,8 @@ textarea:focus-visible {
 
 .notification-badge {
   position: absolute;
-  top: -4px;
-  right: -5px;
+  top: -2px;
+  right: -2px;
   min-width: 20px;
   height: 20px;
   padding: 0 5px;
@@ -236,6 +237,7 @@ textarea:focus-visible {
   width: min(360px, calc(100vw - 28px));
   max-width: calc(100vw - 28px);
   max-height: min(70vh, 520px);
+  overscroll-behavior: contain;
   overflow: auto;
   display: grid;
   gap: 10px;
@@ -270,6 +272,7 @@ textarea:focus-visible {
   width: 100%;
   display: grid;
   gap: 6px;
+  min-width: 0;
   padding: 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -309,6 +312,8 @@ textarea:focus-visible {
 }
 
 .notification-empty {
+  display: grid;
+  gap: 10px;
   padding: 16px;
   border: 1px dashed var(--border);
   border-radius: 8px;
@@ -382,8 +387,15 @@ textarea:focus-visible {
   background: var(--surface);
   color: var(--text);
   font-weight: 700;
-  max-width: 100%;
-  overflow-wrap: anywhere;
+  max-width: min(100%, 240px);
+  min-width: 0;
+}
+
+.user-pill > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .page-content {
@@ -480,6 +492,28 @@ textarea:focus-visible {
   font-size: 1.45rem;
 }
 
+.hero-stat-date {
+  display: grid;
+  gap: 2px;
+}
+
+.hero-stat-date strong {
+  font-size: 1.65rem;
+  line-height: 1;
+}
+
+.hero-stat-date small {
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 0.84rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.hero-stat-card .hero-stat-empty {
+  font-size: 1rem;
+  line-height: 1.25;
+}
+
 .stat-card {
   min-height: 118px;
   align-content: space-between;
@@ -510,6 +544,11 @@ textarea:focus-visible {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.inline-actions .button-primary,
+.inline-actions .button-secondary {
+  flex: 1 1 132px;
 }
 
 .filters {
@@ -668,12 +707,17 @@ td input:disabled {
 .checkbox-row {
   grid-template-columns: 1fr auto;
   align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgba(11, 111, 95, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
 }
 
 .checkbox-row input,
 .field input[type="checkbox"] {
-  width: 22px;
-  min-height: 22px;
+  width: 26px;
+  min-height: 26px;
   accent-color: var(--primary);
 }
 
@@ -749,6 +793,8 @@ td input:disabled {
   max-width: 100%;
   white-space: normal;
   overflow-wrap: anywhere;
+  justify-content: center;
+  text-align: center;
 }
 
 .status-pill.success {
@@ -1077,11 +1123,16 @@ pre {
 .demo-account-row span {
   display: grid;
   gap: 2px;
+  min-width: 0;
 }
 
 .demo-account-row span strong {
   color: var(--text);
   font-size: 0.84rem;
+}
+
+.demo-account-row .compact-button {
+  justify-self: end;
 }
 
 .compact-button {
@@ -1138,10 +1189,10 @@ pre {
 }
 
 .quick-actions {
-  display: flex;
+  display: grid;
   gap: 8px;
-  flex-wrap: wrap;
-  overflow-x: visible;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
+  overflow: visible;
   padding-bottom: 4px;
   min-width: 0;
 }
@@ -1157,6 +1208,10 @@ pre {
   min-height: 44px;
   box-shadow: var(--shadow-sm);
   overflow-wrap: anywhere;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
 }
 
 .quick-actions a:hover,
@@ -1204,6 +1259,9 @@ pre {
   color: var(--text);
   font-size: 0.85rem;
   font-weight: 700;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-align: center;
 }
 
 .basic-primary-section {
@@ -1919,6 +1977,7 @@ pre {
   justify-content: space-between;
   align-items: flex-start;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .entity-card-copy {
@@ -1928,6 +1987,7 @@ pre {
 }
 
 .entity-card-copy strong,
+.entity-card-copy span,
 .entity-metric strong {
   overflow-wrap: anywhere;
 }
@@ -2013,11 +2073,20 @@ pre {
   justify-content: space-between;
   gap: 12px;
   align-items: flex-start;
+  flex-wrap: wrap;
 }
 
 .appointment-card-copy {
   display: grid;
   gap: 4px;
+  min-width: 0;
+}
+
+.appointment-card-copy strong,
+.appointment-card-copy span,
+.appointment-card-meta strong,
+.appointment-card-meta span {
+  overflow-wrap: anywhere;
 }
 
 .appointment-card-meta {
@@ -2910,6 +2979,17 @@ pre {
 }
 
 @media (max-width: 430px) {
+  .info-hint-bubble {
+    position: fixed;
+    top: 76px;
+    right: 14px;
+    bottom: auto;
+    left: 14px;
+    width: auto;
+    max-width: none;
+    transform: none;
+  }
+
   .staff-card-header {
     flex-direction: column;
   }
@@ -2946,6 +3026,14 @@ pre {
 
   .language-switcher.compact {
     width: 100%;
+  }
+
+  .demo-account-row {
+    grid-template-columns: 1fr;
+  }
+
+  .demo-account-row .compact-button {
+    justify-self: stretch;
   }
 
   .button-primary,
