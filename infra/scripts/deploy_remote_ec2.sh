@@ -20,6 +20,7 @@ rsync -az --delete -e "${RSYNC_RSH}" \
   --exclude ".git" \
   --exclude ".idea" \
   --exclude ".env" \
+  --exclude "secrets" \
   --exclude "*.pem" \
   --exclude "*.zip" \
   --exclude "allmyne-tree-*.txt" \
