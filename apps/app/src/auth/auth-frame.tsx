@@ -22,8 +22,9 @@ export const AuthFrame = ({
             <h1>{t("app.subtitle")}</h1>
           </div>
           <div className="auth-proof-card">
-            <strong>5+</strong>
-            <span>{t("billing.rule")}</span>
+            <strong>{t("pricing.aiOnly")}</strong>
+            <span>{t("pricing.operatorAddon")}</span>
+            <span>{t("pricing.trial")}</span>
           </div>
         </section>
         <section className={wide ? "auth-card large" : "auth-card"}>

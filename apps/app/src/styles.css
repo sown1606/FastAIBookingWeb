@@ -581,6 +581,34 @@ textarea:focus-visible {
   grid-column: 1 / -1;
 }
 
+.owner-note-card {
+  border-color: rgba(240, 111, 97, 0.42);
+  background: linear-gradient(180deg, #fff9f7, #ffffff);
+  box-shadow: 0 12px 30px rgba(181, 71, 8, 0.1);
+}
+
+.pricing-list {
+  display: grid;
+  gap: 10px;
+}
+
+.pricing-list strong {
+  padding: 14px;
+  border: 1px solid rgba(11, 111, 95, 0.12);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.generated-field-row {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.generated-field-row .button-secondary {
+  min-width: 132px;
+}
+
 .form-section-title {
   grid-column: 1 / -1;
   padding-top: 4px;
@@ -2522,8 +2550,8 @@ pre {
 
 .service-matrix {
   display: grid;
-  grid-template-columns: minmax(220px, 0.9fr) repeat(var(--staff-count), minmax(150px, 1fr));
-  min-width: max(100%, 840px);
+  grid-template-columns: minmax(190px, 1.25fr) repeat(var(--staff-count), minmax(110px, 0.75fr));
+  min-width: max(100%, 620px);
 }
 
 .service-matrix-row {
@@ -2548,6 +2576,7 @@ pre {
   font-size: 0.78rem;
   font-weight: 900;
   text-transform: uppercase;
+  text-align: center;
 }
 
 .service-matrix-sticky {
@@ -2567,6 +2596,10 @@ pre {
 .service-matrix-service strong,
 .service-matrix-staff strong {
   overflow-wrap: anywhere;
+}
+
+.service-matrix-staff strong {
+  white-space: nowrap;
 }
 
 .service-matrix-cell {
@@ -3001,6 +3034,10 @@ pre {
   .staff-contact-grid,
   .staff-invitation-grid,
   .staff-meta-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .generated-field-row {
     grid-template-columns: 1fr;
   }
 

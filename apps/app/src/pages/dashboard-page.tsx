@@ -4,7 +4,7 @@ import { apiGet, apiPut, extractErrorMessage } from "../lib/api";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
 import { useAuth } from "../auth/auth-context";
 import { useToast } from "../components/toast";
-import { formatCurrencyCents, formatDateTime } from "../lib/format";
+import { formatDateTime } from "../lib/format";
 import { statusLabelKey, useI18n } from "../lib/i18n";
 import { useUiMode } from "../lib/ui-mode";
 import { InfoHint } from "../components/info-hint";
@@ -27,15 +27,6 @@ interface AppointmentItem {
 
 interface AppointmentsResponse {
   items: AppointmentItem[];
-}
-
-interface BillingUsageResponse {
-  currentUsage: {
-    freeStaffLimit: number;
-    activeStaffCount: number;
-    billableExtraStaffCount: number;
-    estimatedExtraCostCents: number;
-  };
 }
 
 interface StaffItem {
@@ -131,7 +122,6 @@ export const DashboardPage = () => {
   const [error, setError] = useState("");
 
   const [appointments, setAppointments] = useState<AppointmentItem[]>([]);
-  const [billing, setBilling] = useState<BillingUsageResponse | null>(null);
   const [staffCount, setStaffCount] = useState(0);
   const [serviceCount, setServiceCount] = useState(0);
   const [customerCount, setCustomerCount] = useState(0);
@@ -145,7 +135,6 @@ export const DashboardPage = () => {
     try {
       if (session?.user.role === "CALL_CENTER_AGENT") {
         setAppointments([]);
-        setBilling(null);
         setStaffCount(0);
         setServiceCount(0);
         setCustomerCount(0);
@@ -159,15 +148,13 @@ export const DashboardPage = () => {
       setAppointments(appointmentResult.items);
 
       if (session?.user.role === "SALON_OWNER") {
-        const [billingUsage, staff, services, customers, salonSettings, profile] = await Promise.all([
-          apiGet<BillingUsageResponse>("/api/v1/billing/usage?historyLimit=3"),
+        const [staff, services, customers, salonSettings, profile] = await Promise.all([
           apiGet<StaffItem[]>("/api/v1/staff?includeInactive=false"),
           apiGet<ServiceItem[]>("/api/v1/services"),
           apiGet<CustomerResponse>("/api/v1/customers?page=1&limit=1"),
           apiGet<SalonSettings>("/api/v1/salon/settings"),
           apiGet<SalonProfileSummary>("/api/v1/salon/profile")
         ]);
-        setBilling(billingUsage);
         setStaffCount(staff.length);
         setServiceCount(services.length);
         setCustomerCount(customers.pagination.total);
@@ -176,7 +163,6 @@ export const DashboardPage = () => {
         setOperatorNote(null);
       } else {
         const note = await apiGet<SalonOperatorNote>("/api/v1/salon/staff-note");
-        setBilling(null);
         setStaffCount(0);
         setServiceCount(0);
         setCustomerCount(0);
@@ -356,7 +342,7 @@ export const DashboardPage = () => {
               <article className="card stat-card">
                 <h3>{t("dashboard.staff")}</h3>
                 <strong>{staffCount}</strong>
-                <span className="muted">{t("billing.activeStaff")}</span>
+                <span className="muted">{t("staff.activeCount")}</span>
               </article>
               <article className="card stat-card">
                 <h3>{t("dashboard.services")}</h3>
@@ -367,11 +353,6 @@ export const DashboardPage = () => {
                 <h3>{t("dashboard.customers")}</h3>
                 <strong>{customerCount}</strong>
                 <span className="muted">{t("nav.customers")}</span>
-              </article>
-              <article className="card stat-card">
-                <h3>{t("dashboard.extraCost")}</h3>
-                <strong>{formatCurrencyCents(billing?.currentUsage.estimatedExtraCostCents)}</strong>
-                <span className="muted">{t("billing.billableStaff")}: {billing?.currentUsage.billableExtraStaffCount ?? 0}</span>
               </article>
               <article className="card stat-card">
                 <h3>{t("dashboard.aiReceptionStatus")}</h3>

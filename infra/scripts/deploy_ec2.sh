@@ -27,6 +27,7 @@ fi
 "${COMPOSE[@]}" build
 "${COMPOSE[@]}" up -d postgres
 "${COMPOSE[@]}" run --rm --no-deps api npm run prisma:migrate:deploy
+"${COMPOSE[@]}" run --rm --no-deps api npm run prisma:cleanup-demo-owner-data
 
 if [[ "${RUN_SEED:-false}" == "true" ]]; then
   "${COMPOSE[@]}" run --rm --no-deps api npm run prisma:seed

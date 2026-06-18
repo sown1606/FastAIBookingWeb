@@ -344,3 +344,29 @@ export const sendStaffInvitationEmail = async (input: {
     }
   });
 };
+
+export const sendStaffPasswordChangedEmail = async (input: {
+  toEmail: string;
+  recipientName: string;
+  salonName: string;
+  newPassword: string;
+}): Promise<boolean> => {
+  const subject = `${input.salonName} FastAIBooking password changed`;
+  const text = [
+    `Hello ${input.recipientName},`,
+    "",
+    `The owner of ${input.salonName} changed your FastAIBooking password.`,
+    `New password: ${input.newPassword}`,
+    "",
+    "Please sign in and keep this password secure.",
+    "Thank you."
+  ].join("\n");
+
+  return sendTransactionalEmail({
+    toEmail: input.toEmail,
+    subject,
+    text,
+    html: `<p>Hello ${escapeHtml(input.recipientName)},</p><p>The owner of ${escapeHtml(input.salonName)} changed your FastAIBooking password.</p><p>New password: ${escapeHtml(input.newPassword)}</p><p>Please sign in and keep this password secure.</p><p>Thank you.</p>`,
+    reason: "STAFF_PASSWORD_CHANGED"
+  });
+};

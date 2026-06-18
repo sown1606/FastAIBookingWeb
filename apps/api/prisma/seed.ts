@@ -24,6 +24,7 @@ const STAFF_EMAIL = "staff.demo@fastaibooking.local";
 const STAFF_PASSWORD = "Staff123!";
 const CALL_CENTER_EMAIL = "agent.demo@fastaibooking.local";
 const CALL_CENTER_PASSWORD = "Agent123!";
+const LEGACY_FULL_SET_NAME = ["Acrylic", "Full Set"].join(" ");
 
 const normalizePhoneDigits = (value: string): string => value.replace(/\D/g, "");
 
@@ -251,7 +252,7 @@ const run = async (): Promise<void> => {
     update: {
       planCode: "starter",
       status: SubscriptionStatus.ACTIVE,
-      basePriceCents: 9900,
+      basePriceCents: 9000,
       currentPeriodStart: periodStart,
       currentPeriodEnd: periodEnd
     },
@@ -259,7 +260,7 @@ const run = async (): Promise<void> => {
       salonId: salon.id,
       planCode: "starter",
       status: SubscriptionStatus.ACTIVE,
-      basePriceCents: 9900,
+      basePriceCents: 9000,
       currentPeriodStart: periodStart,
       currentPeriodEnd: periodEnd
     }
@@ -541,7 +542,7 @@ const run = async (): Promise<void> => {
       priceCents: 5000
     },
     {
-      name: "Acrylic Full Set",
+      name: "Full Set",
       description: "Full acrylic set with shaping and gel finish.",
       durationMinutes: 100,
       priceCents: 8500
@@ -551,6 +552,12 @@ const run = async (): Promise<void> => {
       description: "Prep, dip color layers, shaping, and glossy top coat.",
       durationMinutes: 70,
       priceCents: 5800
+    },
+    {
+      name: "Other Services",
+      description: "Custom service or add-on not listed. Staff will confirm details before the appointment.",
+      durationMinutes: 60,
+      priceCents: 0
     }
   ];
 
@@ -559,10 +566,30 @@ const run = async (): Promise<void> => {
     const existingService = await prisma.service.findFirst({
       where: {
         salonId: salon.id,
-        name: {
-          equals: serviceInput.name,
-          mode: "insensitive"
-        }
+        OR:
+          serviceInput.name === "Full Set"
+            ? [
+                {
+                  name: {
+                    equals: "Full Set",
+                    mode: "insensitive"
+                  }
+                },
+                {
+                  name: {
+                    equals: LEGACY_FULL_SET_NAME,
+                    mode: "insensitive"
+                  }
+                }
+              ]
+            : [
+                {
+                  name: {
+                    equals: serviceInput.name,
+                    mode: "insensitive"
+                  }
+                }
+              ]
       },
       orderBy: {
         createdAt: "asc"
@@ -577,7 +604,8 @@ const run = async (): Promise<void> => {
             description: serviceInput.description,
             durationMinutes: serviceInput.durationMinutes,
             priceCents: serviceInput.priceCents,
-            isActive: true
+            isActive: true,
+            ...(serviceInput.name === "Other Services" ? { createdAt: new Date() } : {})
           }
         })
       : await prisma.service.create({

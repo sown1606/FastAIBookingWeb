@@ -25,10 +25,13 @@ interface FormDialogField {
   required?: boolean;
   min?: number;
   max?: number;
+  step?: number;
   placeholder?: string;
   helpText?: string;
   options?: FormDialogOption[];
   rows?: number;
+  generateLabel?: string;
+  generateValue?: () => string;
 }
 
 interface FormDialogConfig<T extends Record<string, string>> {
@@ -203,18 +206,35 @@ export const useFormDialog = () => {
                   {field.label}
                   {field.required ? <em>{t("common.required")}</em> : null}
                 </span>
-                <input
-                  type={field.type ?? "text"}
-                  inputMode={field.type === "tel" ? "tel" : undefined}
-                  value={value}
-                  min={field.min}
-                  max={field.max}
-                  placeholder={field.placeholder}
-                  required={field.required}
-                  onChange={(event) =>
-                    setValues((prev) => ({ ...prev, [field.name]: event.target.value }))
-                  }
-                />
+                <div className={field.generateValue ? "generated-field-row" : undefined}>
+                  <input
+                    type={field.type ?? "text"}
+                    inputMode={field.type === "tel" ? "tel" : undefined}
+                    value={value}
+                    min={field.min}
+                    max={field.max}
+                    step={field.step}
+                    placeholder={field.placeholder}
+                    required={field.required}
+                    onChange={(event) =>
+                      setValues((prev) => ({ ...prev, [field.name]: event.target.value }))
+                    }
+                  />
+                  {field.generateValue ? (
+                    <button
+                      type="button"
+                      className="button-secondary"
+                      onClick={() =>
+                        setValues((prev) => ({
+                          ...prev,
+                          [field.name]: field.generateValue?.() ?? ""
+                        }))
+                      }
+                    >
+                      {field.generateLabel ?? t("common.generate")}
+                    </button>
+                  ) : null}
+                </div>
                 {field.helpText ? <small>{field.helpText}</small> : null}
               </label>
             );

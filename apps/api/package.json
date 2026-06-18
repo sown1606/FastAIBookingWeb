@@ -15,6 +15,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
+    "prisma:cleanup-demo-owner-data": "tsx prisma/cleanup-demo-owner-data.ts",
     "prisma:seed": "prisma db seed"
   },
   "prisma": {

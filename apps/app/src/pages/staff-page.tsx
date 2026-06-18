@@ -2,9 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { apiGet, apiPatch, apiPost, extractErrorMessage } from "../lib/api";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
 import { useToast } from "../components/toast";
-import { formatCurrencyCents } from "../lib/format";
 import { useFormDialog } from "../components/form-dialog";
-import { DemoAvatar } from "../components/avatar";
 import { getStaffTitleLabel, getStaffTitleOptions } from "../lib/form-options";
 import { formatUsPhoneInput, requiredLabel, validateOptionalUsPhone } from "../lib/phone";
 import { statusLabelKey, useI18n } from "../lib/i18n";
@@ -16,47 +14,44 @@ interface StaffItem {
   email: string | null;
   phone: string | null;
   title: string | null;
-  avatarUrl: string | null;
   status: "ACTIVE" | "INACTIVE";
   isBookable: boolean;
-  user?: {
-    id: string;
-    email: string;
-    isActive: boolean;
-  } | null;
-}
-
-interface BillingUsage {
-  currentUsage: {
-    freeStaffLimit: number;
-    activeStaffCount: number;
-    billableExtraStaffCount: number;
-    extraStaffUnitPriceCents: number;
-    estimatedExtraCostCents: number;
-  };
-}
-
-interface StaffInvitation {
-  email: string;
-  temporaryPassword: string;
-}
-
-interface StaffCreateResponse {
-  staff: StaffItem;
-  billingUsage: BillingUsage;
-  invitation?: {
-    email?: string | null;
-    temporaryPassword?: string | null;
-  };
 }
 
 interface StaffResetAccessResponse {
   staff: StaffItem;
   invitation?: {
     email?: string | null;
-    temporaryPassword?: string | null;
   };
+  emailSent?: boolean;
 }
+
+const generatePassword = (): string => {
+  const groups = [
+    "ABCDEFGHJKLMNPQRSTUVWXYZ",
+    "abcdefghijkmnopqrstuvwxyz",
+    "23456789",
+    "!@#$%&*"
+  ];
+  const allCharacters = groups.join("");
+  const randomIndex = (length: number) => {
+    const value = new Uint32Array(1);
+    window.crypto.getRandomValues(value);
+    return value[0] % length;
+  };
+  const characters = groups.map((group) => group[randomIndex(group.length)]);
+
+  while (characters.length < 12) {
+    characters.push(allCharacters[randomIndex(allCharacters.length)]);
+  }
+
+  for (let index = characters.length - 1; index > 0; index -= 1) {
+    const swapIndex = randomIndex(index + 1);
+    [characters[index], characters[swapIndex]] = [characters[swapIndex], characters[index]];
+  }
+
+  return characters.join("");
+};
 
 export const StaffPage = () => {
   const { notify } = useToast();
@@ -66,15 +61,11 @@ export const StaffPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [staff, setStaff] = useState<StaffItem[]>([]);
-  const [billing, setBilling] = useState<BillingUsage | null>(null);
-  const [lastStaffInvitation, setLastStaffInvitation] = useState<StaffInvitation | null>(null);
-
   const [form, setForm] = useState({
     fullName: "",
     email: "",
     phone: "",
     title: "",
-    avatarUrl: "",
     isBookable: true
   });
 
@@ -82,12 +73,7 @@ export const StaffPage = () => {
     setError("");
     setLoading(true);
     try {
-      const [staffResult, billingResult] = await Promise.all([
-        apiGet<StaffItem[]>("/api/v1/staff?includeInactive=true"),
-        apiGet<BillingUsage>("/api/v1/billing/usage?historyLimit=3")
-      ]);
-      setStaff(staffResult);
-      setBilling(billingResult);
+      setStaff(await apiGet<StaffItem[]>("/api/v1/staff?includeInactive=true"));
     } catch (loadError) {
       setError(extractErrorMessage(loadError));
     } finally {
@@ -99,22 +85,12 @@ export const StaffPage = () => {
     void load();
   }, []);
 
-  const copyInvitationValue = async (value: string) => {
-    try {
-      await navigator.clipboard.writeText(value);
-      notify("success", t("staff.copied"));
-    } catch {
-      notify("error", t("staff.copyFailed"));
-    }
-  };
-
   const createStaffMember = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const fullName = form.fullName.trim();
     const email = form.email.trim().toLowerCase();
     const phone = form.phone.trim();
     const title = form.title.trim();
-    const avatarUrl = form.avatarUrl.trim();
     if (fullName.length < 2 || !email || !phone) {
       notify("error", t("form.requiredAll"));
       return;
@@ -124,33 +100,22 @@ export const StaffPage = () => {
       return;
     }
     try {
-      const result = await apiPost<StaffCreateResponse, unknown>("/api/v1/staff", {
+      await apiPost("/api/v1/staff", {
         fullName,
         email,
         phone,
         title: title || undefined,
-        avatarUrl: avatarUrl || undefined,
         isBookable: form.isBookable,
         createLogin: true
       });
-      if (result.invitation?.temporaryPassword) {
-        setLastStaffInvitation({
-          email: result.invitation.email ?? email,
-          temporaryPassword: result.invitation.temporaryPassword
-        });
-      }
       setForm({
         fullName: "",
         email: "",
         phone: "",
         title: "",
-        avatarUrl: "",
         isBookable: true
       });
-      notify(
-        "success",
-        result.invitation?.temporaryPassword ? t("staff.createdWithPassword") : t("staff.created")
-      );
+      notify("success", t("staff.created"));
       await load();
     } catch (createError) {
       notify("error", extractErrorMessage(createError));
@@ -165,12 +130,6 @@ export const StaffPage = () => {
         { name: "email", label: t("common.email"), type: "email", required: true },
         { name: "phone", label: t("common.phone"), type: "tel", required: true },
         { name: "title", label: t("staff.title"), type: "select", options: staffTitleOptions },
-        {
-          name: "avatarUrl",
-          label: t("staff.avatarUrl"),
-          type: "url",
-          placeholder: t("staff.avatarUrlPlaceholder")
-        },
         {
           name: "isBookable",
           label: t("staff.isBookableField"),
@@ -187,7 +146,6 @@ export const StaffPage = () => {
         email: item.email ?? "",
         phone: formatUsPhoneInput(item.phone ?? ""),
         title: item.title ?? "",
-        avatarUrl: item.avatarUrl ?? "",
         isBookable: item.isBookable ? "true" : "false"
       },
       confirmLabel: t("staff.save")
@@ -199,7 +157,6 @@ export const StaffPage = () => {
     const email = values.email.trim().toLowerCase();
     const phone = values.phone.trim();
     const title = values.title.trim();
-    const avatarUrl = values.avatarUrl.trim();
     if (fullName.length < 2 || !email || !phone) {
       notify("error", t("form.requiredAll"));
       return;
@@ -209,12 +166,11 @@ export const StaffPage = () => {
       return;
     }
     try {
-      await apiPatch<unknown, unknown>(`/api/v1/staff/${item.id}`, {
+      await apiPatch(`/api/v1/staff/${item.id}`, {
         fullName,
         email,
         phone,
         title: title || null,
-        avatarUrl: avatarUrl || null,
         isBookable: values.isBookable === "true"
       });
       notify("success", t("staff.updated"));
@@ -227,7 +183,7 @@ export const StaffPage = () => {
   const toggleStatus = async (item: StaffItem) => {
     const action = item.status === "ACTIVE" ? "deactivate" : "reactivate";
     try {
-      await apiPost<unknown, Record<string, never>>(`/api/v1/staff/${item.id}/${action}`, {});
+      await apiPost(`/api/v1/staff/${item.id}/${action}`, {});
       notify("success", item.status === "ACTIVE" ? t("staff.deactivated") : t("staff.reactivated"));
       await load();
     } catch (toggleError) {
@@ -245,7 +201,9 @@ export const StaffPage = () => {
           label: t("staff.newPassword"),
           type: "password",
           required: true,
-          min: 8
+          min: 8,
+          generateLabel: t("staff.generatePassword"),
+          generateValue: generatePassword
         }
       ],
       initialValues: {
@@ -263,32 +221,17 @@ export const StaffPage = () => {
     try {
       const result = await apiPost<StaffResetAccessResponse, { newPassword: string }>(
         `/api/v1/staff/${item.id}/reset-access`,
-        {
-          newPassword: values.newPassword
-        }
+        { newPassword: values.newPassword }
       );
-      setLastStaffInvitation({
-        email: result.invitation?.email ?? item.user?.email ?? item.email ?? t("staff.emailMissing"),
-        temporaryPassword: result.invitation?.temporaryPassword ?? values.newPassword
-      });
-      notify("success", t("staff.accessResetWithPassword"));
+      notify(
+        result.emailSent ? "success" : "error",
+        result.emailSent ? t("staff.passwordChangedEmailSent") : t("staff.passwordChangedEmailFailed")
+      );
       await load();
     } catch (resetError) {
       notify("error", extractErrorMessage(resetError));
     }
   };
-
-  const activeStaffCount = staff.filter((item) => item.status === "ACTIVE").length;
-  const inactiveStaffCount = staff.length - activeStaffCount;
-  const loginReadyCount = staff.filter((item) => Boolean(item.user)).length;
-  const bookableStaffCount = staff.filter((item) => item.isBookable && item.status === "ACTIVE").length;
-  const freeStaffLimit = billing?.currentUsage.freeStaffLimit ?? 0;
-  const billableExtraStaffCount = billing?.currentUsage.billableExtraStaffCount ?? 0;
-  const estimatedExtraCostCents = billing?.currentUsage.estimatedExtraCostCents ?? 0;
-  const freeQuotaUsed = Math.min(activeStaffCount, freeStaffLimit);
-  const quotaTotal = Math.max(activeStaffCount, freeStaffLimit, 1);
-  const freeQuotaWidth = `${(freeQuotaUsed / quotaTotal) * 100}%`;
-  const extraQuotaWidth = `${(billableExtraStaffCount / quotaTotal) * 100}%`;
 
   if (loading) {
     return <LoadingBlock />;
@@ -301,68 +244,6 @@ export const StaffPage = () => {
   return (
     <div className="stack">
       <FormDialog />
-      <section className="card">
-        <div className="section-header">
-          <div>
-            <h2>{t("staff.overviewTitle")}</h2>
-            <p className="muted">{t("staff.overviewHint")}</p>
-          </div>
-          <span className="status-pill info">{t("staff.directoryCount", { count: staff.length })}</span>
-        </div>
-        <div className="metrics-grid">
-          <div>
-            <span className="muted">{t("staff.activeCount")}</span>
-            <strong>{activeStaffCount}</strong>
-          </div>
-          <div>
-            <span className="muted">{t("staff.inactiveCount")}</span>
-            <strong>{inactiveStaffCount}</strong>
-          </div>
-          <div>
-            <span className="muted">{t("staff.freeLimit")}</span>
-            <strong>{freeStaffLimit}</strong>
-          </div>
-          <div>
-            <span className="muted">{t("staff.extraBillable")}</span>
-            <strong>{billableExtraStaffCount}</strong>
-          </div>
-          <div>
-            <span className="muted">{t("staff.estimatedCost")}</span>
-            <strong>{formatCurrencyCents(estimatedExtraCostCents)}</strong>
-          </div>
-        </div>
-        <div className="staff-quota-card">
-          <div className="section-header">
-            <div>
-              <h3>{t("staff.freeQuota")}</h3>
-              <p className="muted">{t("billing.rule")}</p>
-            </div>
-            <span className="summary-badge">{t("staff.freeQuotaUsed", { used: freeQuotaUsed, limit: freeStaffLimit })}</span>
-          </div>
-          <div className="staff-quota-track" aria-hidden="true">
-            <span className="staff-quota-fill staff-quota-fill-free" style={{ width: freeQuotaWidth }} />
-            {billableExtraStaffCount > 0 ? (
-              <span className="staff-quota-fill staff-quota-fill-extra" style={{ width: extraQuotaWidth }} />
-            ) : null}
-          </div>
-          <div className="staff-quota-legend">
-            <div>
-              <span className="staff-quota-dot staff-quota-dot-free" />
-              <span>{t("staff.freeQuotaUsed", { used: freeQuotaUsed, limit: freeStaffLimit })}</span>
-            </div>
-            <div>
-              <span className="staff-quota-dot staff-quota-dot-extra" />
-              <span>{t("staff.extraUsage", { count: billableExtraStaffCount })}</span>
-            </div>
-          </div>
-        </div>
-        <div className="summary-badges">
-          <span className="summary-badge">{t("staff.summaryLoginReady")}: {loginReadyCount}</span>
-          <span className="summary-badge">{t("staff.summaryBookable")}: {bookableStaffCount}</span>
-        </div>
-        <p className="muted">{t("staff.availabilityNote")}</p>
-      </section>
-
       <section className="card">
         <div>
           <h2>{t("staff.addTitle")}</h2>
@@ -393,7 +274,9 @@ export const StaffPage = () => {
               inputMode="tel"
               placeholder="(212) 555-0100"
               value={form.phone}
-              onChange={(event) => setForm((prev) => ({ ...prev, phone: formatUsPhoneInput(event.target.value) }))}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, phone: formatUsPhoneInput(event.target.value) }))
+              }
               required
             />
             <small>{t("form.phoneHint")}</small>
@@ -411,16 +294,6 @@ export const StaffPage = () => {
                 </option>
               ))}
             </select>
-          </label>
-          <label className="field">
-            <span>{t("staff.avatarUrl")}</span>
-            <input
-              type="url"
-              placeholder={t("staff.avatarUrlPlaceholder")}
-              value={form.avatarUrl}
-              onChange={(event) => setForm((prev) => ({ ...prev, avatarUrl: event.target.value }))}
-            />
-            <small>{t("staff.avatarUrlHint")}</small>
           </label>
           <label className="field checkbox-row">
             <span>
@@ -441,39 +314,6 @@ export const StaffPage = () => {
         </form>
       </section>
 
-      {lastStaffInvitation ? (
-        <section className="staff-invitation-card" aria-live="polite">
-          <div>
-            <h2>{t("staff.invitationTitle")}</h2>
-            <p className="muted">{t("staff.invitationNote")}</p>
-          </div>
-          <div className="staff-invitation-grid">
-            <div>
-              <span className="muted">{t("staff.invitationEmail")}</span>
-              <strong>{lastStaffInvitation.email}</strong>
-              <button
-                type="button"
-                className="button-secondary"
-                onClick={() => void copyInvitationValue(lastStaffInvitation.email)}
-              >
-                {t("staff.copyEmail")}
-              </button>
-            </div>
-            <div>
-              <span className="muted">{t("staff.invitationPassword")}</span>
-              <strong>{lastStaffInvitation.temporaryPassword}</strong>
-              <button
-                type="button"
-                className="button-secondary"
-                onClick={() => void copyInvitationValue(lastStaffInvitation.temporaryPassword)}
-              >
-                {t("staff.copyPassword")}
-              </button>
-            </div>
-          </div>
-        </section>
-      ) : null}
-
       <section className="card">
         <div className="section-header">
           <div>
@@ -485,11 +325,6 @@ export const StaffPage = () => {
         {staff.length ? (
           <div className="staff-grid">
             {staff.map((item) => {
-              const loginLabel = item.user
-                ? item.user.isActive
-                  ? t("staff.loginActive")
-                  : t("staff.loginInactive")
-                : t("staff.noLogin");
               const phoneLabel = item.phone ? formatUsPhoneInput(item.phone) : t("staff.phoneMissing");
               const emailLabel = item.email ?? t("staff.emailMissing");
               const titleLabel = getStaffTitleLabel(item.title, t);
@@ -497,26 +332,20 @@ export const StaffPage = () => {
               return (
                 <article
                   key={item.id}
-                  className={item.status === "ACTIVE" ? "staff-card staff-card-visual" : "staff-card staff-card-inactive staff-card-visual"}
+                  className={item.status === "ACTIVE" ? "staff-card" : "staff-card staff-card-inactive"}
                 >
                   <div className="staff-card-header">
-                    <div className="staff-identity">
-                      <DemoAvatar name={item.fullName} variant="staff" size="lg" src={item.avatarUrl} />
-                      <div className="staff-identity-copy">
-                        <strong>{item.fullName}</strong>
-                        <span>{titleLabel}</span>
-                      </div>
+                    <div className="staff-identity-copy">
+                      <strong>{item.fullName}</strong>
+                      <span>{titleLabel}</span>
                     </div>
                     <div className="staff-chip-row">
                       <span className={item.status === "ACTIVE" ? "status-pill success" : "status-pill warning"}>
                         {statusLabelKey(item.status) ? t(statusLabelKey(item.status)!) : item.status}
                       </span>
                       <span className={item.isBookable ? "status-pill info" : "status-pill"}>
-                        {t("staff.bookable")}: {item.isBookable ? t("common.statusOn") : t("common.statusOff")}
+                        {t("staff.isBookableField")}: {item.isBookable ? t("common.statusOn") : t("common.statusOff")}
                       </span>
-                      {item.status === "ACTIVE" && item.isBookable ? (
-                        <span className="status-pill success">{t("staff.canTakeBookings")}</span>
-                      ) : null}
                     </div>
                   </div>
 
@@ -528,14 +357,6 @@ export const StaffPage = () => {
                     <div>
                       <span className="muted">{t("common.phone")}</span>
                       <strong>{phoneLabel}</strong>
-                    </div>
-                    <div>
-                      <span className="muted">{t("staff.accountStatus")}</span>
-                      <strong>{item.user ? t("staff.hasLogin") : t("staff.noLogin")}</strong>
-                    </div>
-                    <div>
-                      <span className="muted">{t("staff.login")}</span>
-                      <strong>{loginLabel}</strong>
                     </div>
                   </div>
 

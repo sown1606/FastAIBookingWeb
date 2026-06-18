@@ -3,7 +3,7 @@ import { prisma } from "../../db/prisma";
 import { createAuditLog } from "../../lib/audit";
 import { generateSecureToken } from "../../lib/crypto";
 import { AppError } from "../../lib/errors";
-import { sendStaffInvitationEmail } from "../../lib/mailer";
+import { sendStaffInvitationEmail, sendStaffPasswordChangedEmail } from "../../lib/mailer";
 import { hashPassword } from "../../lib/password";
 import { requireUsPhone } from "../../utils/phone";
 import { refreshBillingUsageForSalon } from "../billing/billing.service";
@@ -164,10 +164,33 @@ const replaceStaffServiceMapping = async (
 };
 
 export const listStaff = async (salonId: string, includeInactive = false) => {
+  const isDemoSalon = Boolean(
+    await prisma.salon.findFirst({
+      where: {
+        id: salonId,
+        owner: {
+          email: "owner.demo@fastaibooking.local"
+        }
+      },
+      select: {
+        id: true
+      }
+    })
+  );
   const staff = await prisma.staff.findMany({
     where: {
       salonId,
-      ...(includeInactive ? {} : { status: StaffStatus.ACTIVE })
+      ...(includeInactive ? {} : { status: StaffStatus.ACTIVE }),
+      ...(isDemoSalon
+        ? {
+            OR: ["Trang", "Amy", "Kelly"].map((fullName) => ({
+              fullName: {
+                equals: fullName,
+                mode: Prisma.QueryMode.insensitive
+              }
+            }))
+          }
+        : {})
     },
     include: staffWithUserAndServicesInclude,
     orderBy: {
@@ -492,7 +515,7 @@ export const resetStaffAccess = async (
   actorUserId: string,
   newPassword: string
 ) => {
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const existing = await tx.staff.findFirst({
       where: {
         id: staffId,
@@ -570,6 +593,26 @@ export const resetStaffAccess = async (
       }
     };
   });
+
+  if (!result.invitation.email) {
+    throw new AppError("Staff email is required to send the new password.", 400, "STAFF_EMAIL_REQUIRED");
+  }
+
+  const salon = await prisma.salon.findUnique({
+    where: { id: salonId },
+    select: { name: true }
+  });
+  const emailSent = await sendStaffPasswordChangedEmail({
+    toEmail: result.invitation.email,
+    recipientName: result.staff.fullName,
+    salonName: salon?.name ?? "Your salon",
+    newPassword
+  });
+
+  return {
+    ...result,
+    emailSent
+  };
 };
 
 export const getStaffSelfProfile = async (salonId: string, userId: string, staffId: string) => {

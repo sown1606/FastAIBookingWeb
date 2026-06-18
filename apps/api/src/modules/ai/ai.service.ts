@@ -367,7 +367,7 @@ const DEMO_SERVICE_NAMES = [
   "Manicure",
   "Pedicure",
   "Gel Manicure",
-  "Acrylic Full Set",
+  "Full Set",
   "Dip Powder",
   "Other Services"
 ];
@@ -381,7 +381,7 @@ const SERVICE_DTMF_OPTIONS: Record<string, string> = {
   "1": "Pedicure",
   "2": "Manicure",
   "3": "Gel Manicure",
-  "4": "Acrylic Full Set",
+  "4": "Full Set",
   "5": "Dip Powder"
 };
 const STAFF_DTMF_OPTIONS: Record<string, string> = {
@@ -391,7 +391,7 @@ const STAFF_DTMF_OPTIONS: Record<string, string> = {
   "4": "Any staff"
 };
 const SERVICE_DTMF_PROMPT =
-  "What service would you like today? You can say Pedicure, Manicure, Gel Manicure, Acrylic Full Set, Dip Powder, or Other Services. You can also press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Acrylic Full Set, or 5 for Dip Powder. Press 0 to speak with an operator.";
+  "What service would you like today? You can say Pedicure, Manicure, Gel Manicure, Full Set, Dip Powder, or Other Services. You can also press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Full Set, or 5 for Dip Powder. Press 0 to speak with an operator.";
 const STAFF_DTMF_PROMPT =
   "Who would you like to book with? You can say a staff name or any staff. Press 0 to speak with an operator.";
 

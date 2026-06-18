@@ -124,7 +124,7 @@ const createInitialState = () => {
       {
         id: "20000000-0000-4000-8000-000000000004",
         salonId: ids.salonA,
-        name: "Acrylic Full Set",
+        name: "Full Set",
         durationMinutes: 100,
         priceCents: 8500,
         isActive: true,
@@ -941,7 +941,7 @@ test("unclear service asks the canonical service list without escalation", async
   assert.equal(result.body.data.lexResponse.sessionAttributes.forceHumanEscalation, undefined);
   assert.match(
     result.body.data.lexResponse.message,
-    /press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Acrylic Full Set, or 5 for Dip Powder/i
+    /press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Full Set, or 5 for Dip Powder/i
   );
   assert.equal(state.escalations.length, 0);
   assert.equal(state.appointments.length, 0);

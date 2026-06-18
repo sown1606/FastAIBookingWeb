@@ -17,7 +17,6 @@ interface StaffItem {
 interface ServiceItem {
   id: string;
   name: string;
-  description: string | null;
   durationMinutes: number;
   priceCents: number;
   isActive: boolean;
@@ -30,6 +29,8 @@ interface ServiceItem {
   }>;
 }
 
+const staffDisplayOrder = ["Amy", "Kelly", "Trang"];
+
 export const ServicesPage = () => {
   const { notify } = useToast();
   const { openFormDialog, FormDialog } = useFormDialog();
@@ -38,12 +39,10 @@ export const ServicesPage = () => {
   const [error, setError] = useState("");
   const [services, setServices] = useState<ServiceItem[]>([]);
   const [staff, setStaff] = useState<StaffItem[]>([]);
-
   const [form, setForm] = useState({
     name: "",
-    description: "",
     durationMinutes: "45",
-    priceCents: "4500"
+    priceDollars: ""
   });
 
   const load = async () => {
@@ -55,7 +54,16 @@ export const ServicesPage = () => {
         apiGet<StaffItem[]>("/api/v1/staff?includeInactive=false")
       ]);
       setServices(serviceResult);
-      setStaff(staffResult.filter((item) => item.status === "ACTIVE"));
+      setStaff(
+        staffResult
+          .filter((item) => item.status === "ACTIVE")
+          .sort((left, right) => {
+            const leftIndex = staffDisplayOrder.indexOf(left.fullName);
+            const rightIndex = staffDisplayOrder.indexOf(right.fullName);
+            return (leftIndex === -1 ? staffDisplayOrder.length : leftIndex) -
+              (rightIndex === -1 ? staffDisplayOrder.length : rightIndex);
+          })
+      );
     } catch (loadError) {
       setError(extractErrorMessage(loadError));
     } finally {
@@ -69,14 +77,12 @@ export const ServicesPage = () => {
 
   const parseServiceForm = (values: {
     name: string;
-    description: string;
     durationMinutes: string;
-    priceCents: string;
+    priceDollars: string;
   }) => {
     const name = values.name.trim();
-    const description = values.description.trim();
     const durationMinutes = Number(values.durationMinutes);
-    const priceCents = Number(values.priceCents);
+    const priceDollars = values.priceDollars.trim() === "" ? 0 : Number(values.priceDollars);
 
     if (name.length < 2) {
       notify("error", t("form.requiredAll"));
@@ -86,16 +92,15 @@ export const ServicesPage = () => {
       notify("error", t("form.numberInvalid"));
       return null;
     }
-    if (!Number.isInteger(priceCents) || priceCents < 0) {
+    if (!Number.isFinite(priceDollars) || priceDollars < 0) {
       notify("error", t("form.numberInvalid"));
       return null;
     }
 
     return {
       name,
-      description: description || undefined,
       durationMinutes,
-      priceCents
+      priceCents: Math.round(priceDollars * 100)
     };
   };
 
@@ -106,12 +111,11 @@ export const ServicesPage = () => {
       return;
     }
     try {
-      await apiPost<unknown, unknown>("/api/v1/services", payload);
+      await apiPost("/api/v1/services", payload);
       setForm({
         name: "",
-        description: "",
         durationMinutes: "45",
-        priceCents: "4500"
+        priceDollars: ""
       });
       notify("success", t("services.created"));
       await load();
@@ -125,15 +129,26 @@ export const ServicesPage = () => {
       title: t("services.edit"),
       fields: [
         { name: "name", label: t("services.name"), required: true },
-        { name: "description", label: t("services.description"), type: "textarea" },
-        { name: "durationMinutes", label: t("services.duration"), type: "number", required: true, min: 1, max: 600 },
-        { name: "priceCents", label: t("services.priceCents"), type: "number", required: true, min: 0 }
+        {
+          name: "durationMinutes",
+          label: t("services.duration"),
+          type: "number",
+          required: true,
+          min: 1,
+          max: 600
+        },
+        {
+          name: "priceDollars",
+          label: t("services.price"),
+          type: "number",
+          min: 0,
+          step: 0.01
+        }
       ],
       initialValues: {
         name: item.name,
-        description: item.description ?? "",
         durationMinutes: String(item.durationMinutes),
-        priceCents: String(item.priceCents)
+        priceDollars: item.priceCents > 0 ? (item.priceCents / 100).toFixed(2) : ""
       },
       confirmLabel: t("services.save")
     });
@@ -145,10 +160,7 @@ export const ServicesPage = () => {
       return;
     }
     try {
-      await apiPatch<unknown, unknown>(`/api/v1/services/${item.id}`, {
-        ...payload,
-        description: payload.description ?? null
-      });
+      await apiPatch(`/api/v1/services/${item.id}`, payload);
       notify("success", t("services.updated"));
       await load();
     } catch (updateError) {
@@ -159,7 +171,7 @@ export const ServicesPage = () => {
   const toggleServiceState = async (item: ServiceItem) => {
     const action = item.isActive ? "deactivate" : "activate";
     try {
-      await apiPost<unknown, Record<string, never>>(`/api/v1/services/${item.id}/${action}`, {});
+      await apiPost(`/api/v1/services/${item.id}/${action}`, {});
       notify("success", item.isActive ? t("services.disabled") : t("services.enabled"));
       await load();
     } catch (toggleError) {
@@ -197,9 +209,7 @@ export const ServicesPage = () => {
       .filter((value) => value.length > 0);
 
     try {
-      await apiPut<unknown, { staffIds: string[] }>(`/api/v1/services/${item.id}/staff`, {
-        staffIds
-      });
+      await apiPut(`/api/v1/services/${item.id}/staff`, { staffIds });
       notify("success", t("services.staffAssigned"));
       await load();
     } catch (mapError) {
@@ -231,12 +241,10 @@ export const ServicesPage = () => {
             <span className="summary-badge">
               {t("services.inactiveCount")}: {services.filter((item) => !item.isActive).length}
             </span>
-            <span className="summary-badge">
-              {t("services.assignedStaffCount")}: {services.reduce((sum, item) => sum + item.staffServices.length, 0)}
-            </span>
           </div>
         </div>
       </section>
+
       <section className="card">
         <h2>{t("services.createTitle")}</h2>
         <form className="form-grid two-columns" onSubmit={createService}>
@@ -247,13 +255,6 @@ export const ServicesPage = () => {
               onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
               required
               minLength={2}
-            />
-          </label>
-          <label className="field">
-            <span>{t("services.description")}</span>
-            <input
-              value={form.description}
-              onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value }))}
             />
           </label>
           <label className="field">
@@ -269,12 +270,15 @@ export const ServicesPage = () => {
             />
           </label>
           <label className="field">
-            <span>{requiredLabel(t("services.priceCents"))}</span>
+            <span>{t("services.price")}</span>
             <input
               type="number"
               min={0}
-              value={form.priceCents}
-              onChange={(event) => setForm((prev) => ({ ...prev, priceCents: event.target.value }))}
+              step="0.01"
+              value={form.priceDollars}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, priceDollars: event.target.value }))
+              }
             />
           </label>
           <div className="form-actions">
@@ -314,7 +318,8 @@ export const ServicesPage = () => {
                     <div className="service-matrix-service service-matrix-sticky">
                       <strong>{service.name}</strong>
                       <span className="muted">
-                        {service.durationMinutes} min · {formatCurrencyCents(service.priceCents)}
+                        {service.durationMinutes} min
+                        {service.priceCents > 0 ? ` · ${formatCurrencyCents(service.priceCents)}` : ""}
                       </span>
                       <span className={service.isActive ? "status-pill success" : "status-pill warning"}>
                         {statusLabelKey(service.isActive ? "ACTIVE" : "INACTIVE")
@@ -333,7 +338,9 @@ export const ServicesPage = () => {
                             : "service-matrix-cell"
                         }
                       >
-                        {assigned.has(member.id) ? t("services.canPerform") : t("common.none")}
+                        {assigned.has(member.id)
+                          ? t("services.canPerform")
+                          : t("services.cannotPerform")}
                       </div>
                     ))}
                   </div>
@@ -355,7 +362,6 @@ export const ServicesPage = () => {
                 <div className="entity-card-header">
                   <div className="entity-card-copy">
                     <strong>{item.name}</strong>
-                    <span className="muted">{item.description || t("services.description")}</span>
                   </div>
                   <span className={item.isActive ? "status-pill success" : "status-pill warning"}>
                     {statusLabelKey(item.isActive ? "ACTIVE" : "INACTIVE")
@@ -370,10 +376,12 @@ export const ServicesPage = () => {
                     <span className="muted">{t("services.duration")}</span>
                     <strong>{item.durationMinutes} min</strong>
                   </div>
-                  <div className="entity-metric">
-                    <span className="muted">{t("services.priceCents")}</span>
-                    <strong>{formatCurrencyCents(item.priceCents)}</strong>
-                  </div>
+                  {item.priceCents > 0 ? (
+                    <div className="entity-metric">
+                      <span className="muted">{t("services.price")}</span>
+                      <strong>{formatCurrencyCents(item.priceCents)}</strong>
+                    </div>
+                  ) : null}
                   <div className="entity-metric">
                     <span className="muted">{t("services.assignedStaffCount")}</span>
                     <strong>{item.staffServices.length}</strong>
@@ -392,10 +400,10 @@ export const ServicesPage = () => {
                 </div>
                 <div className="inline-actions">
                   <button type="button" className="button-secondary" onClick={() => void editService(item)}>
-                    {t("staff.editAction")}
+                    {t("services.editAction")}
                   </button>
-                  <button type="button" className="button-secondary" onClick={() => toggleServiceState(item)}>
-                    {item.isActive ? t("staff.disable") : t("staff.enable")}
+                  <button type="button" className="button-secondary" onClick={() => void toggleServiceState(item)}>
+                    {item.isActive ? t("services.disableAction") : t("services.enableAction")}
                   </button>
                   <button type="button" className="button-secondary" onClick={() => void mapServiceToStaff(item)}>
                     {t("services.assignStaff")}
