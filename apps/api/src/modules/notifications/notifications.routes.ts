@@ -12,6 +12,7 @@ import {
   registerPushToken,
   unregisterPushToken
 } from "./notifications.service";
+import { pushTokenSchema, type PushTokenPayload } from "./notifications.schemas";
 
 const supportedPushRoles = new Set([
   "SALON_OWNER",
@@ -19,11 +20,6 @@ const supportedPushRoles = new Set([
   "CALL_CENTER_AGENT",
   "OPERATOR"
 ]);
-
-const pushTokenSchema = z.object({
-  token: z.string().trim().min(20).max(4096),
-  platform: z.enum(["android", "ios", "web"]).optional().default("web")
-});
 
 const inboxQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(50).default(10)
@@ -79,7 +75,7 @@ notificationsRouter.post(
   validate(pushTokenSchema),
   asyncHandler(async (req, res) => {
     assertPushRoleSupported(req.auth!.role);
-    const payload = req.body as z.infer<typeof pushTokenSchema>;
+    const payload = req.body as PushTokenPayload;
     const pushToken = await registerPushToken({
       token: payload.token,
       platform: payload.platform,
@@ -137,7 +133,7 @@ notificationsRouter.post(
   validate(pushTokenSchema),
   asyncHandler(async (req, res) => {
     assertPushRoleSupported(req.auth!.role);
-    const payload = req.body as z.infer<typeof pushTokenSchema>;
+    const payload = req.body as PushTokenPayload;
     await unregisterPushToken(req.auth!.userId, payload.token);
 
     return sendSuccess(res, {

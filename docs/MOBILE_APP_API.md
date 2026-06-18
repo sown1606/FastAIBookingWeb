@@ -361,8 +361,19 @@ POST /api/v1/notifications/unregister-token
 Authorization: Bearer <accessToken>
 Content-Type: application/json
 
-{ "token": "<FCM_TOKEN>" }
+{ "token": "<FCM_TOKEN>", "platform": "android" }
 ```
+
+The canonical field is `token`. The API temporarily accepts `fcmToken` when `token` is absent, but new mobile code must use `token`. Platform values are case-insensitive and normalized to `android`, `ios`, or `web`. `deviceId` is optional input and is ignored because it is not stored.
+
+Mobile integration sequence:
+
+1. Initialize Firebase with `google-services.json` on Android or `GoogleService-Info.plist` on iOS.
+2. After login or registration succeeds, get the FCM token from the Firebase SDK.
+3. Call `POST /api/v1/notifications/register-token`.
+4. Call the same endpoint whenever Firebase refreshes the token.
+5. Call `POST /api/v1/notifications/unregister-token` on logout.
+6. Route notification clicks using `data.url` or related IDs such as `appointmentId`, `escalationId`, and `salonId`.
 
 Inbox:
 
@@ -386,11 +397,26 @@ Expected notification deep link data:
 Sample FCM registration curl:
 
 ```bash
-curl -X POST "https://api-new-nail.kendemo.com/api/v1/notifications/register-token" \
-  -H "Authorization: Bearer <accessToken>" \
-  -H "Accept-Language: vi-VN" \
+curl -X POST "$BASE_URL/api/v1/notifications/register-token" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{ "token": "<FCM_TOKEN>", "platform": "android" }'
+  -d '{
+    "token": "firebase_token_here",
+    "platform": "android"
+  }'
+```
+
+Optional compatibility test:
+
+```bash
+curl -X POST "$BASE_URL/api/v1/notifications/register-token" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "fcmToken": "firebase_token_here",
+    "platform": "ANDROID",
+    "deviceId": "android_device_id"
+  }'
 ```
 
 ## Email Delivery Note

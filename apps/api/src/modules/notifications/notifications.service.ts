@@ -223,10 +223,12 @@ const sendPushToTokens = async (
     return emptySendResult(false);
   }
 
+  const salonId = resolvePayloadSalonId(payload);
   const data = toFirebaseData({
     ...payload.data,
     type: resolvePayloadType(payload),
-    ...(payload.url ? { url: payload.url } : {})
+    ...(payload.url ? { url: payload.url } : {}),
+    ...(salonId ? { salonId } : {})
   });
   const result: PushSendResult = {
     attempted: uniqueTokens.length,

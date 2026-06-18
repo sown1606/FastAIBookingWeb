@@ -263,7 +263,16 @@
       "roles": ["SALON_OWNER", "STAFF", "CALL_CENTER_AGENT", "OPERATOR"],
       "bodySample": { "token": "<FCM_TOKEN>", "platform": "android" },
       "responseSample": { "registered": true, "id": "..." },
-      "note": "Call after login and Firebase token refresh. Platform can be android, ios, or web."
+      "note": "Call after login and Firebase token refresh. Canonical field is token. Platform is case-insensitive and normalized to android, ios, or web. Legacy fcmToken is accepted only when token is absent; deviceId is ignored."
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/notifications/unregister-token",
+      "authRequired": true,
+      "roles": ["SALON_OWNER", "STAFF", "CALL_CENTER_AGENT", "OPERATOR"],
+      "bodySample": { "token": "<FCM_TOKEN>", "platform": "android" },
+      "responseSample": { "unregistered": true },
+      "note": "Call on logout. Uses the same token/platform input normalization as register-token."
     },
     {
       "method": "GET",

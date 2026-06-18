@@ -124,6 +124,7 @@ test("staff can read the owner operator note without owner edit access", () => {
 test("notification APIs are authenticated, role-limited, and scoped to current user", () => {
   const app = readApi("app.ts");
   const routes = readApi("modules/notifications/notifications.routes.ts");
+  const schemas = readApi("modules/notifications/notifications.schemas.ts");
   const service = readApi("modules/notifications/notifications.service.ts");
   const bell = readRepo("apps/app/src/components/notification-bell.tsx");
   const pushBridge = readRepo("apps/app/src/App.tsx");
@@ -144,12 +145,18 @@ test("notification APIs are authenticated, role-limited, and scoped to current u
   ]) {
     assert.match(routes, new RegExp(endpoint.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
-  assert.match(routes, /platform:\s*z\.enum\(\["android",\s*"ios",\s*"web"\]\)\.optional\(\)\.default\("web"\)/);
+  assert.match(schemas, /z\.enum\(\["web",\s*"ios",\s*"android"\]/);
+  assert.match(schemas, /value\.trim\(\)\.toLowerCase\(\)/);
+  assert.match(schemas, /token:\s*input\.fcmToken/);
+  assert.match(schemas, /\.strip\(\)/);
   assert.match(routes, /registerPushToken\(\{\s*token: payload\.token,\s*platform: payload\.platform/s);
   assert.match(routes, /unregisterPushToken\(req\.auth!\.userId,\s*payload\.token\)/);
   assert.match(service, /listUserNotificationInbox[\s\S]*where:\s*\{\s*userId: input\.userId\s*\}/);
   assert.match(service, /markUserNotificationRead[\s\S]*id: notificationId,\s*userId/s);
   assert.match(service, /markAllUserNotificationsRead[\s\S]*userId,\s*readAt: null/s);
+  assert.match(service, /type:\s*resolvePayloadType\(payload\)/);
+  assert.match(service, /payload\.url \? \{ url: payload\.url \}/);
+  assert.match(service, /salonId \? \{ salonId \}/);
   assert.match(bell, /resolveNotificationUrl\(notification\)/);
   assert.match(bell, /appointmentId/);
   assert.match(bell, /navigate\(targetUrl\)/);
