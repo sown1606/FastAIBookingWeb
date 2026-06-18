@@ -1,3 +1,4 @@
+import { StaffStatus } from "@prisma/client";
 import { prisma } from "../../db/prisma";
 import { createAuditLog } from "../../lib/audit";
 import { AppError } from "../../lib/errors";
@@ -17,40 +18,56 @@ interface UpdateServiceInput {
   priceCents?: number;
 }
 
+const activeStaffServicesInclude = (salonId: string) => ({
+  staffServices: {
+    where: {
+      salonId,
+      staff: {
+        salonId,
+        status: StaffStatus.ACTIVE
+      }
+    },
+    include: {
+      staff: true
+    }
+  }
+});
+
 export const listServices = async (salonId: string, includeInactive = false) => {
   return prisma.service.findMany({
     where: {
       salonId,
       ...(includeInactive ? {} : { isActive: true })
     },
-    include: {
-      staffServices: {
-        include: {
-          staff: true
-        }
-      }
-    },
+    include: activeStaffServicesInclude(salonId),
     orderBy: {
       createdAt: "asc"
     }
   });
 };
 
-const validateStaffIdsBelongToSalon = async (salonId: string, staffIds: string[]): Promise<void> => {
-  if (!staffIds.length) {
-    return;
+const validateActiveStaffIds = async (salonId: string, staffIds: string[]): Promise<string[]> => {
+  const uniqueStaffIds = Array.from(new Set(staffIds));
+  if (!uniqueStaffIds.length) {
+    return uniqueStaffIds;
   }
   const count = await prisma.staff.count({
     where: {
       salonId,
+      status: StaffStatus.ACTIVE,
       id: {
-        in: staffIds
+        in: uniqueStaffIds
       }
     }
   });
-  if (count !== staffIds.length) {
-    throw new AppError("One or more staff IDs are invalid for this salon.", 400, "INVALID_STAFF");
+  if (count !== uniqueStaffIds.length) {
+    throw new AppError(
+      "One or more staff IDs do not belong to this salon or are not active.",
+      400,
+      "INVALID_STAFF"
+    );
   }
+  return uniqueStaffIds;
 };
 
 export const createService = async (
@@ -58,7 +75,7 @@ export const createService = async (
   actorUserId: string,
   input: CreateServiceInput
 ) => {
-  await validateStaffIdsBelongToSalon(salonId, input.staffIds ?? []);
+  const staffIds = await validateActiveStaffIds(salonId, input.staffIds ?? []);
 
   return prisma.$transaction(async (tx) => {
     const service = await tx.service.create({
@@ -71,9 +88,9 @@ export const createService = async (
       }
     });
 
-    if (input.staffIds?.length) {
+    if (staffIds.length) {
       await tx.staffService.createMany({
-        data: input.staffIds.map((staffId) => ({
+        data: staffIds.map((staffId) => ({
           salonId,
           serviceId: service.id,
           staffId
@@ -95,11 +112,7 @@ export const createService = async (
 
     return tx.service.findUniqueOrThrow({
       where: { id: service.id },
-      include: {
-        staffServices: {
-          include: { staff: true }
-        }
-      }
+      include: activeStaffServicesInclude(salonId)
     });
   });
 };
@@ -128,13 +141,7 @@ export const updateService = async (
       durationMinutes: input.durationMinutes ?? existing.durationMinutes,
       priceCents: input.priceCents ?? existing.priceCents
     },
-    include: {
-      staffServices: {
-        include: {
-          staff: true
-        }
-      }
-    }
+    include: activeStaffServicesInclude(salonId)
   });
 
   await createAuditLog({
@@ -168,13 +175,7 @@ export const setServiceActiveState = async (
   const updated = await prisma.service.update({
     where: { id: service.id },
     data: { isActive },
-    include: {
-      staffServices: {
-        include: {
-          staff: true
-        }
-      }
-    }
+    include: activeStaffServicesInclude(salonId)
   });
 
   await createAuditLog({
@@ -194,7 +195,7 @@ export const setServiceStaffMapping = async (
   actorUserId: string,
   staffIds: string[]
 ) => {
-  await validateStaffIdsBelongToSalon(salonId, staffIds);
+  const activeStaffIds = await validateActiveStaffIds(salonId, staffIds);
   const existing = await prisma.service.findFirst({
     where: {
       id: serviceId,
@@ -213,9 +214,9 @@ export const setServiceStaffMapping = async (
       }
     });
 
-    if (staffIds.length) {
+    if (activeStaffIds.length) {
       await tx.staffService.createMany({
-        data: staffIds.map((staffId) => ({
+        data: activeStaffIds.map((staffId) => ({
           salonId,
           serviceId: existing.id,
           staffId
@@ -230,20 +231,14 @@ export const setServiceStaffMapping = async (
         action: "SERVICE_STAFF_MAPPING_UPDATED",
         entityType: "Service",
         entityId: existing.id,
-        metadata: { staffIds }
+        metadata: { staffIds: activeStaffIds }
       },
       tx
     );
 
     return tx.service.findUniqueOrThrow({
       where: { id: existing.id },
-      include: {
-        staffServices: {
-          include: {
-            staff: true
-          }
-        }
-      }
+      include: activeStaffServicesInclude(salonId)
     });
   });
 

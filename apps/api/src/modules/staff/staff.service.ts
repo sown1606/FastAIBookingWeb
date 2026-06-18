@@ -164,33 +164,10 @@ const replaceStaffServiceMapping = async (
 };
 
 export const listStaff = async (salonId: string, includeInactive = false) => {
-  const isDemoSalon = Boolean(
-    await prisma.salon.findFirst({
-      where: {
-        id: salonId,
-        owner: {
-          email: "owner.demo@fastaibooking.local"
-        }
-      },
-      select: {
-        id: true
-      }
-    })
-  );
   const staff = await prisma.staff.findMany({
     where: {
       salonId,
-      ...(includeInactive ? {} : { status: StaffStatus.ACTIVE }),
-      ...(isDemoSalon
-        ? {
-            OR: ["Trang", "Amy", "Kelly"].map((fullName) => ({
-              fullName: {
-                equals: fullName,
-                mode: Prisma.QueryMode.insensitive
-              }
-            }))
-          }
-        : {})
+      ...(includeInactive ? {} : { status: StaffStatus.ACTIVE })
     },
     include: staffWithUserAndServicesInclude,
     orderBy: {

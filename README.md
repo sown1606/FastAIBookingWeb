@@ -127,7 +127,7 @@ npm --prefix apps/api run prisma:migrate:deploy
 6. Seed the single demo salon:
 
 ```bash
-npm --prefix apps/api run prisma:seed
+NODE_ENV=development ALLOW_DEMO_SEED=true npm --prefix apps/api run prisma:seed
 ```
 
 7. Start the apps you need:
@@ -206,7 +206,7 @@ From the local machine:
 ```bash
 npm --prefix apps/api run prisma:generate
 npm --prefix apps/api run prisma:migrate:deploy
-npm --prefix apps/api run prisma:seed
+NODE_ENV=development ALLOW_DEMO_SEED=true npm --prefix apps/api run prisma:seed
 ```
 
 ## Safe Local Demo DB Reset
@@ -218,7 +218,7 @@ docker compose down -v
 docker compose up -d postgres
 npm --prefix apps/api run prisma:generate
 npm --prefix apps/api run prisma:migrate:deploy
-npm --prefix apps/api run prisma:seed
+NODE_ENV=development ALLOW_DEMO_SEED=true npm --prefix apps/api run prisma:seed
 ```
 
 ## Verify the Seeded Demo Salon

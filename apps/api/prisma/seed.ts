@@ -11,6 +11,12 @@ import {
 } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
+if (process.env.NODE_ENV !== "development" || process.env.ALLOW_DEMO_SEED !== "true") {
+  throw new Error(
+    "Demo seed is disabled. Run only in local development with NODE_ENV=development and ALLOW_DEMO_SEED=true."
+  );
+}
+
 const prisma = new PrismaClient();
 const SALT_ROUNDS = 12;
 

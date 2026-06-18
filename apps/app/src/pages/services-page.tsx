@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { apiGet, apiPatch, apiPost, apiPut, extractErrorMessage } from "../lib/api";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
@@ -44,6 +44,9 @@ export const ServicesPage = () => {
     durationMinutes: "45",
     priceDollars: ""
   });
+  const activeStaffIds = useMemo(() => new Set(staff.map((member) => member.id)), [staff]);
+  const activeStaffServices = (item: ServiceItem) =>
+    item.staffServices.filter((row) => activeStaffIds.has(row.staffId));
 
   const load = async () => {
     setError("");
@@ -180,7 +183,7 @@ export const ServicesPage = () => {
   };
 
   const mapServiceToStaff = async (item: ServiceItem) => {
-    const defaultValue = item.staffServices.map((row) => row.staffId).join(",");
+    const defaultValue = activeStaffServices(item).map((row) => row.staffId).join(",");
     const values = await openFormDialog({
       title: t("services.assignStaff"),
       description: item.name,
@@ -312,7 +315,7 @@ export const ServicesPage = () => {
                 </div>
               ))}
               {services.map((service) => {
-                const assigned = new Set(service.staffServices.map((row) => row.staffId));
+                const assigned = new Set(activeStaffServices(service).map((row) => row.staffId));
                 return (
                   <div key={service.id} className="service-matrix-row">
                     <div className="service-matrix-service service-matrix-sticky">
@@ -384,18 +387,18 @@ export const ServicesPage = () => {
                   ) : null}
                   <div className="entity-metric">
                     <span className="muted">{t("services.assignedStaffCount")}</span>
-                    <strong>{item.staffServices.length}</strong>
+                    <strong>{activeStaffServices(item).length}</strong>
                   </div>
                 </div>
                 <div className="summary-badges">
-                  {item.staffServices.length ? (
-                    item.staffServices.map((row) => (
+                  {activeStaffServices(item).length ? (
+                    activeStaffServices(item).map((row) => (
                       <span key={row.staffId} className="summary-badge">
                         {row.staff.fullName}
                       </span>
                     ))
                   ) : (
-                    <span className="summary-badge">{t("common.none")}</span>
+                    <span className="summary-badge">{t("services.noAssignedStaff")}</span>
                   )}
                 </div>
                 <div className="inline-actions">

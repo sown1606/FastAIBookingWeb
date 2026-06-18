@@ -2,7 +2,20 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
-BASE_URL="${BASE_URL:-https://api-new-nail.kendemo.com}"
+BASE_URL="${BASE_URL:-http://localhost:3000}"
+
+if [[ "${NODE_ENV:-}" != "development" || "${ALLOW_SMOKE_TEST_DATA:-false}" != "true" ]]; then
+  echo "Data-creating integration smoke tests are local-only. Set NODE_ENV=development and ALLOW_SMOKE_TEST_DATA=true."
+  exit 1
+fi
+
+case "${BASE_URL}" in
+  http://localhost:*|http://127.0.0.1:*) ;;
+  *)
+    echo "Refusing data-creating smoke test against non-local URL: ${BASE_URL}"
+    exit 1
+    ;;
+esac
 
 ADMIN_EMAIL="${ADMIN_EMAIL:-admin@fastaibooking.local}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-Admin123!}"

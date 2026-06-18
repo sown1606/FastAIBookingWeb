@@ -18,4 +18,12 @@ if [[ ! -f ".env" ]]; then
   exit 1
 fi
 
-"${COMPOSE[@]}" exec -T api npm run prisma:seed
+if [[ "${NODE_ENV:-}" != "development" || "${ALLOW_DEMO_SEED:-false}" != "true" ]]; then
+  echo "Demo seed is local-only. Set NODE_ENV=development and ALLOW_DEMO_SEED=true explicitly."
+  exit 1
+fi
+
+"${COMPOSE[@]}" exec -T \
+  -e NODE_ENV=development \
+  -e ALLOW_DEMO_SEED=true \
+  api npm run prisma:seed

@@ -24,14 +24,14 @@ if [[ -f "${ROOT_DIR}/infra/nginx/default-ssl.conf" ]]; then
   fi
 fi
 
+if [[ "${RUN_SEED:-false}" == "true" ]]; then
+  echo "Production deployment refuses RUN_SEED=true. Demo/fake seed data must never be created in production."
+  exit 1
+fi
+
 "${COMPOSE[@]}" build
 "${COMPOSE[@]}" up -d postgres
 "${COMPOSE[@]}" run --rm --no-deps api npm run prisma:migrate:deploy
-"${COMPOSE[@]}" run --rm --no-deps api npm run prisma:cleanup-demo-owner-data
-
-if [[ "${RUN_SEED:-false}" == "true" ]]; then
-  "${COMPOSE[@]}" run --rm --no-deps api npm run prisma:seed
-fi
 
 "${COMPOSE[@]}" up -d --remove-orphans
 "${COMPOSE[@]}" exec -T nginx nginx -s reload

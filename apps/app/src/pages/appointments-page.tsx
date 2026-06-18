@@ -546,6 +546,13 @@ export const AppointmentsPage = () => {
     [appointments, salonTimezone, selectedDate]
   );
 
+  const activeStaffIds = useMemo(() => new Set(staff.map((member) => member.id)), [staff]);
+
+  const selectedDayScheduleAppointments = useMemo(
+    () => selectedDayAppointments.filter((appointment) => activeStaffIds.has(appointment.staff.id)),
+    [activeStaffIds, selectedDayAppointments]
+  );
+
   const todayAppointments = useMemo(
     () =>
       appointments
@@ -589,7 +596,7 @@ export const AppointmentsPage = () => {
 
   const groupedByDay = useMemo(() => {
     const byDay = new Map<string, AppointmentItem[]>();
-    const sourceAppointments = isOwner ? selectedDayAppointments : upcomingAppointments;
+    const sourceAppointments = isOwner ? selectedDayScheduleAppointments : upcomingAppointments;
     sourceAppointments.forEach((appointment) => {
       const dateKey = localDateKey(appointment.startTime, salonTimezone);
       const list = byDay.get(dateKey) ?? [];
@@ -597,18 +604,12 @@ export const AppointmentsPage = () => {
       byDay.set(dateKey, list);
     });
     return [...byDay.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  }, [isOwner, salonTimezone, selectedDayAppointments, upcomingAppointments]);
+  }, [isOwner, salonTimezone, selectedDayScheduleAppointments, upcomingAppointments]);
 
-  const scheduleStaff = useMemo(() => {
-    const byId = new Map<string, StaffItem>();
-    staff.forEach((member) => byId.set(member.id, member));
-    selectedDayAppointments.forEach((appointment) => {
-      if (!byId.has(appointment.staff.id)) {
-        byId.set(appointment.staff.id, appointment.staff);
-      }
-    });
-    return [...byId.values()].sort((a, b) => a.fullName.localeCompare(b.fullName));
-  }, [selectedDayAppointments, staff]);
+  const scheduleStaff = useMemo(
+    () => [...staff].sort((a, b) => a.fullName.localeCompare(b.fullName)),
+    [staff]
+  );
 
   const getAppointmentToneClass = (appointment: AppointmentItem) => {
     if (appointment.status === "CANCELED" || appointment.status === "NO_SHOW") {
