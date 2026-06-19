@@ -6,6 +6,7 @@ import { requireRoles } from "../../middleware/auth";
 import { validate } from "../../middleware/validate";
 import { sendSuccess } from "../../utils/response";
 import { isValidUsPhone } from "../../utils/phone";
+import { parseAppointmentStartTime } from "../appointments/appointments.service";
 import {
   cancelAssignedSalonAppointment,
   captureVoicemailForEscalation,
@@ -59,22 +60,31 @@ const listCustomerQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(100).default(50)
 });
 
-const createAppointmentSchema = z.object({
-  customerId: z.string().uuid(),
-  staffId: z.string().uuid(),
-  serviceId: z.string().uuid(),
-  serviceIds: z.array(z.string().uuid()).optional(),
-  startTime: z.string().datetime({ offset: true }),
-  notes: z.string().max(1000).optional(),
-  status: z.nativeEnum(AppointmentStatus).optional()
-});
+const appointmentStartTimeSchema = {
+  startTime: z.string().datetime({ offset: true }).optional(),
+  startTimeLocal: z.string().min(1).max(16).optional()
+};
+
+const createAppointmentSchema = z
+  .object({
+    customerId: z.string().uuid(),
+    staffId: z.string().uuid(),
+    serviceId: z.string().uuid(),
+    serviceIds: z.array(z.string().uuid()).optional(),
+    ...appointmentStartTimeSchema,
+    notes: z.string().max(1000).optional(),
+    status: z.nativeEnum(AppointmentStatus).optional()
+  })
+  .refine((payload) => payload.startTime !== undefined || payload.startTimeLocal !== undefined, {
+    message: "Appointment start time is required."
+  });
 
 const updateAppointmentSchema = z.object({
   customerId: z.string().uuid().optional(),
   staffId: z.string().uuid().optional(),
   serviceId: z.string().uuid().optional(),
   serviceIds: z.array(z.string().uuid()).optional(),
-  startTime: z.string().datetime({ offset: true }).optional(),
+  ...appointmentStartTimeSchema,
   notes: z.string().max(1000).nullable().optional(),
   status: z.nativeEnum(AppointmentStatus).optional()
 });
@@ -89,10 +99,14 @@ const listAppointmentsQuerySchema = z.object({
   dateTo: z.string().datetime({ offset: true }).optional()
 });
 
-const rescheduleSchema = z.object({
-  staffId: z.string().uuid().optional(),
-  startTime: z.string().datetime({ offset: true })
-});
+const rescheduleSchema = z
+  .object({
+    staffId: z.string().uuid().optional(),
+    ...appointmentStartTimeSchema
+  })
+  .refine((payload) => payload.startTime !== undefined || payload.startTimeLocal !== undefined, {
+    message: "Appointment start time is required."
+  });
 
 const cancelSchema = z.object({
   reason: z.string().max(500).optional()
@@ -466,6 +480,7 @@ callCenterRouter.post(
   asyncHandler(async (req, res) => {
     const { salonId } = req.params as z.infer<typeof salonIdSchema>;
     const payload = req.body as z.infer<typeof createAppointmentSchema>;
+    const startTime = await parseAppointmentStartTime(salonId, payload);
     const appointment = await createAssignedSalonAppointment(
       {
         userId: req.auth!.userId,
@@ -478,7 +493,7 @@ callCenterRouter.post(
         staffId: payload.staffId,
         serviceId: payload.serviceId,
         serviceIds: payload.serviceIds,
-        startTime: new Date(payload.startTime),
+        startTime,
         notes: payload.notes,
         status: payload.status
       }
@@ -498,6 +513,10 @@ callCenterRouter.patch(
   asyncHandler(async (req, res) => {
     const { salonId, id } = req.params as z.infer<typeof salonAppointmentSchema>;
     const payload = req.body as z.infer<typeof updateAppointmentSchema>;
+    const startTime =
+      payload.startTime !== undefined || payload.startTimeLocal !== undefined
+        ? await parseAppointmentStartTime(salonId, payload)
+        : undefined;
     const appointment = await updateAssignedSalonAppointment(
       {
         userId: req.auth!.userId,
@@ -511,7 +530,7 @@ callCenterRouter.patch(
         staffId: payload.staffId,
         serviceId: payload.serviceId,
         serviceIds: payload.serviceIds,
-        startTime: payload.startTime ? new Date(payload.startTime) : undefined,
+        startTime,
         notes: payload.notes,
         status: payload.status
       }
@@ -530,6 +549,7 @@ callCenterRouter.patch(
   asyncHandler(async (req, res) => {
     const { salonId, id } = req.params as z.infer<typeof salonAppointmentSchema>;
     const payload = req.body as z.infer<typeof rescheduleSchema>;
+    const startTime = await parseAppointmentStartTime(salonId, payload);
     const appointment = await rescheduleAssignedSalonAppointment(
       {
         userId: req.auth!.userId,
@@ -540,7 +560,7 @@ callCenterRouter.patch(
       id,
       {
         staffId: payload.staffId,
-        startTime: new Date(payload.startTime)
+        startTime
       }
     );
     return sendSuccess(res, {

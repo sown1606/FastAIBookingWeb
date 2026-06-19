@@ -5,6 +5,7 @@ import {
   Prisma,
   StaffWorkStatus
 } from "@prisma/client";
+import { DateTime } from "luxon";
 import { env } from "../../config/env";
 import { prisma } from "../../db/prisma";
 import { createAuditLog } from "../../lib/audit";
@@ -57,6 +58,11 @@ interface RescheduleAppointmentInput {
   startTime: Date;
 }
 
+interface AppointmentStartTimeInput {
+  startTime?: string;
+  startTimeLocal?: string;
+}
+
 interface AppointmentServiceForWrite {
   id: string;
   durationMinutes: number;
@@ -80,6 +86,52 @@ const manualUpdateAllowedStatuses = new Set<AppointmentStatus>([
   AppointmentStatus.CANCELED,
   AppointmentStatus.NO_SHOW
 ]);
+
+const invalidAppointmentStartTime = () =>
+  new AppError("Invalid appointment start time.", 400, "INVALID_START_TIME");
+
+export const parseAppointmentStartTime = async (
+  salonId: string,
+  input: AppointmentStartTimeInput
+): Promise<Date> => {
+  const salon = await prisma.salon.findUnique({
+    where: {
+      id: salonId
+    },
+    select: {
+      timezone: true
+    }
+  });
+
+  if (!salon) {
+    throw new AppError("Salon not found.", 404, "SALON_NOT_FOUND");
+  }
+
+  if (input.startTimeLocal !== undefined) {
+    const parsed = DateTime.fromFormat(input.startTimeLocal, "yyyy-MM-dd'T'HH:mm", {
+      zone: salon.timezone,
+      setZone: true
+    });
+
+    if (
+      !parsed.isValid ||
+      parsed.toFormat("yyyy-MM-dd'T'HH:mm") !== input.startTimeLocal
+    ) {
+      throw invalidAppointmentStartTime();
+    }
+
+    return parsed.toUTC().toJSDate();
+  }
+
+  if (input.startTime !== undefined) {
+    const parsed = new Date(input.startTime);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed;
+    }
+  }
+
+  throw invalidAppointmentStartTime();
+};
 
 const assertCreateStatusAllowed = (status: AppointmentStatus): void => {
   if (!createAllowedStatuses.has(status)) {
@@ -392,21 +444,40 @@ const sendAppointmentPushNotifications = async (
             ? "Appointment canceled"
             : "Appointment updated";
     const body = `${customerName || "Customer"} - ${serviceName} with ${appointment.staff.fullName} at ${appointmentTime}.`;
+    const type = `appointment_${eventType}`;
+    const url = `/appointments?appointmentId=${encodeURIComponent(appointment.id)}`;
     const payload = {
       title,
       body,
-      type: `appointment_${eventType}`,
+      type,
       salonId: appointment.salonId,
-      url: `/appointments?appointmentId=${encodeURIComponent(appointment.id)}`,
+      url,
       data: {
-        type: `appointment_${eventType}`,
+        type,
         appointmentId: appointment.id,
         salonId: appointment.salonId,
-        staffId: appointment.staffId
+        staffId: appointment.staffId,
+        url
       }
     };
 
-    await sendPushToSalonOwnerAndAssignedStaff(appointment.salonId, affectedStaffIds, payload);
+    const result = await sendPushToSalonOwnerAndAssignedStaff(
+      appointment.salonId,
+      affectedStaffIds,
+      payload
+    );
+    logger.info(
+      {
+        appointmentId: appointment.id,
+        eventType: type,
+        attempted: result.attempted,
+        successCount: result.successCount,
+        failureCount: result.failureCount,
+        invalidTokenCount: result.invalidTokenCount,
+        disabled: result.disabled
+      },
+      "Appointment push notification send result."
+    );
   } catch (error) {
     logger.warn(
       {

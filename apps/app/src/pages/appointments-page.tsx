@@ -12,7 +12,7 @@ import { statusLabelKey, useI18n } from "../lib/i18n";
 import { DemoAvatar } from "../components/avatar";
 import { requiredLabel } from "../lib/phone";
 import { useUiMode } from "../lib/ui-mode";
-import { dateTimeLocalToUtcIso, utcToDateTimeLocalInTimeZone } from "../lib/timezone";
+import { utcToDateTimeLocalInTimeZone } from "../lib/timezone";
 
 interface AppointmentItem {
   id: string;
@@ -347,17 +347,12 @@ export const AppointmentsPage = () => {
       notify("error", t("form.requiredAll"));
       return;
     }
-    const startTimeIso = dateTimeLocalToUtcIso(form.startTime, salonTimezone);
-    if (!startTimeIso) {
-      notify("error", t("form.dateInvalid"));
-      return;
-    }
     try {
       await apiPost<unknown, unknown>("/api/v1/appointments", {
         customerId: form.customerId,
         staffId: form.staffId,
         serviceId: form.serviceId,
-        startTime: startTimeIso,
+        startTimeLocal: form.startTime,
         source: "DASHBOARD"
       });
       setForm({
@@ -408,7 +403,7 @@ export const AppointmentsPage = () => {
           label: t("appointments.start"),
           type: "datetime-local",
           required: true,
-          helpText: t("appointments.startTimezoneHint")
+          helpText: `${t("appointments.startTimezoneHint")} ${t("common.timezone")}: ${appointmentTimezone}`
         }
       ],
       initialValues: {
@@ -419,14 +414,9 @@ export const AppointmentsPage = () => {
     if (!values?.startTime) {
       return;
     }
-    const startTimeIso = dateTimeLocalToUtcIso(values.startTime, appointmentTimezone);
-    if (!startTimeIso) {
-      notify("error", t("form.dateInvalid"));
-      return;
-    }
     try {
-      await apiPatch<unknown, { startTime: string }>(`/api/v1/appointments/${appointment.id}/reschedule`, {
-        startTime: startTimeIso
+      await apiPatch<unknown, { startTimeLocal: string }>(`/api/v1/appointments/${appointment.id}/reschedule`, {
+        startTimeLocal: values.startTime
       });
       notify("success", t("appointments.reschedule"));
       await load();
@@ -794,7 +784,9 @@ export const AppointmentsPage = () => {
                 onChange={(event) => setForm((prev) => ({ ...prev, startTime: event.target.value }))}
                 required
               />
-              <small>{t("appointments.startTimezoneHint")}</small>
+              <small>
+                {t("appointments.startTimezoneHint")} {t("common.timezone")}: {salonTimezone}
+              </small>
             </label>
             <div className="form-actions">
               <button type="submit" className="button-primary">

@@ -12,7 +12,7 @@ interface RegisterPushTokenInput {
   platform?: string;
 }
 
-interface PushPayload {
+export interface PushPayload {
   title: string;
   body: string;
   type?: string;
@@ -22,7 +22,7 @@ interface PushPayload {
   url?: string | null;
 }
 
-interface PushSendResult {
+export interface PushSendResult {
   attempted: number;
   successCount: number;
   failureCount: number;
@@ -57,13 +57,9 @@ const chunk = <T>(items: T[], size: number): T[][] => {
 
 const toFirebaseData = (
   data?: PushPayload["data"]
-): Record<string, string> | undefined => {
-  if (!data) {
-    return undefined;
-  }
-
+): Record<string, string> => {
   return Object.fromEntries(
-    Object.entries(data)
+    Object.entries(data ?? {})
       .filter(([, value]) => value !== null && value !== undefined)
       .map(([key, value]) => [key, String(value)])
   );
@@ -84,24 +80,32 @@ const resolvePayloadSalonId = (payload: PushPayload): string | null => {
 const createUserNotifications = async (
   userIds: string[],
   payload: PushPayload
-): Promise<void> => {
+): Promise<Array<{ id: string; userId: string }>> => {
   const targetUserIds = unique(userIds);
   if (!targetUserIds.length) {
-    return;
+    return [];
   }
 
-  await prisma.userNotification.createMany({
-    data: targetUserIds.map((userId) => ({
-      userId,
-      salonId: resolvePayloadSalonId(payload),
-      title: payload.title,
-      body: payload.body,
-      type: resolvePayloadType(payload),
-      priority: payload.priority ?? "NORMAL",
-      url: payload.url ?? null,
-      ...(payload.data === undefined ? {} : { data: toJson(payload.data) })
-    }))
-  });
+  return prisma.$transaction(
+    targetUserIds.map((userId) =>
+      prisma.userNotification.create({
+        data: {
+          userId,
+          salonId: resolvePayloadSalonId(payload),
+          title: payload.title,
+          body: payload.body,
+          type: resolvePayloadType(payload),
+          priority: payload.priority ?? "NORMAL",
+          url: payload.url ?? null,
+          ...(payload.data === undefined ? {} : { data: toJson(payload.data) })
+        },
+        select: {
+          id: true,
+          userId: true
+        }
+      })
+    )
+  );
 };
 
 const getAssignedStaffUserIds = async (staffIds: string[]): Promise<string[]> => {
@@ -248,6 +252,9 @@ const sendPushToTokens = async (
           body: payload.body
         },
         data,
+        android: {
+          priority: "high"
+        },
         webpush: {
           notification: {
             title: payload.title,
@@ -290,7 +297,7 @@ export const sendPushToUserIds = async (
     return emptySendResult(false);
   }
 
-  await createUserNotifications(targetUserIds, payload);
+  const notifications = await createUserNotifications(targetUserIds, payload);
 
   const tokens = await prisma.pushToken.findMany({
     where: {
@@ -299,14 +306,55 @@ export const sendPushToUserIds = async (
       }
     },
     select: {
+      userId: true,
       token: true
     }
   });
 
-  return sendPushToTokens(
-    tokens.map((item) => item.token),
-    payload
+  const tokensByUserId = new Map<string, string[]>();
+  for (const item of tokens) {
+    const userTokens = tokensByUserId.get(item.userId) ?? [];
+    userTokens.push(item.token);
+    tokensByUserId.set(item.userId, userTokens);
+  }
+
+  const sendResults = await Promise.all(
+    notifications.map((notification) =>
+      sendPushToTokens(tokensByUserId.get(notification.userId) ?? [], {
+        ...payload,
+        data: {
+          ...payload.data,
+          notificationId: notification.id
+        }
+      })
+    )
   );
+
+  return sendResults.reduce<PushSendResult>(
+    (total, result) => ({
+      attempted: total.attempted + result.attempted,
+      successCount: total.successCount + result.successCount,
+      failureCount: total.failureCount + result.failureCount,
+      invalidTokenCount: total.invalidTokenCount + result.invalidTokenCount,
+      disabled: total.disabled || result.disabled
+    }),
+    emptySendResult(false)
+  );
+};
+
+export const sendTestPushToToken = async (
+  token: string,
+  payload: PushPayload
+): Promise<PushSendResult> => {
+  return sendPushToTokens([token], payload);
+};
+
+export const countUserPushTokens = async (userId: string): Promise<number> => {
+  return prisma.pushToken.count({
+    where: {
+      userId
+    }
+  });
 };
 
 export const sendPushToAssignedStaff = async (

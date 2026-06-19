@@ -4,11 +4,12 @@ import { apiGet, apiPatch, apiPost, extractErrorMessage } from "../lib/api";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
 import { useToast } from "../components/toast";
 import { formatCurrencyCents, formatDateTime } from "../lib/format";
-import { toDateTimeLocalValue, useFormDialog } from "../components/form-dialog";
+import { useFormDialog } from "../components/form-dialog";
 import { formatUsPhoneInput, validateOptionalUsPhone } from "../lib/phone";
 import { useAuth } from "../auth/auth-context";
 import { statusLabelKey, useI18n } from "../lib/i18n";
 import { useUiMode } from "../lib/ui-mode";
+import { utcToDateTimeLocalInTimeZone } from "../lib/timezone";
 
 interface RuntimeResponse {
   assignedSalonCount: number;
@@ -1159,16 +1160,11 @@ export const CallCenterPage = () => {
       notify("error", t("form.requiredAll"));
       return;
     }
-    const startTime = new Date(bookingForm.startTime);
-    if (Number.isNaN(startTime.getTime())) {
-      notify("error", t("form.dateInvalid"));
-      return;
-    }
-
     try {
+      const { startTime, ...bookingDetails } = bookingForm;
       await apiPost(`/api/v1/call-center/salons/${selectedSalonId}/appointments`, {
-        ...bookingForm,
-        startTime: startTime.toISOString(),
+        ...bookingDetails,
+        startTimeLocal: startTime,
         status: "CONFIRMED"
       });
       setBookingForm({ customerId: "", staffId: "", serviceId: "", startTime: "", notes: "" });
@@ -1183,12 +1179,21 @@ export const CallCenterPage = () => {
   };
 
   const reschedule = async (appointment: AppointmentItem) => {
+    const appointmentTimezone = selectedSalonDetail?.timezone || FALLBACK_SALON_TIMEZONE;
     const values = await openFormDialog({
       title: t("callCenter.rescheduleTitle"),
       description: `${appointment.customer.firstName} ${appointment.customer.lastName}`,
-      fields: [{ name: "startTime", label: t("callCenter.newTime"), type: "datetime-local", required: true }],
+      fields: [
+        {
+          name: "startTime",
+          label: t("callCenter.newTime"),
+          type: "datetime-local",
+          required: true,
+          helpText: `${t("appointments.startTimezoneHint")} ${t("common.timezone")}: ${appointmentTimezone}`
+        }
+      ],
       initialValues: {
-        startTime: toDateTimeLocalValue(appointment.startTime)
+        startTime: utcToDateTimeLocalInTimeZone(appointment.startTime, appointmentTimezone)
       },
       confirmLabel: t("appointments.reschedule")
     });
@@ -1199,7 +1204,7 @@ export const CallCenterPage = () => {
 
     try {
       await apiPatch(`/api/v1/call-center/salons/${selectedSalonId}/appointments/${appointment.id}/reschedule`, {
-        startTime: new Date(values.startTime).toISOString()
+        startTimeLocal: values.startTime
       });
       await loadSalonData(selectedSalonId, scheduleDateKey);
       notify("success", t("callCenter.rescheduled"));
@@ -2448,6 +2453,9 @@ export const CallCenterPage = () => {
                   onChange={(event) => setBookingForm((prev) => ({ ...prev, startTime: event.target.value }))}
                   required
                 />
+                <small>
+                  {t("appointments.startTimezoneHint")} {t("common.timezone")}: {salonTimezone}
+                </small>
               </label>
               <label className="field span-two">
                 <span>{t("appointments.notes")}</span>

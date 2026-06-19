@@ -1,15 +1,20 @@
 import { Router } from "express";
+import { Role } from "@prisma/client";
 import { z } from "zod";
+import { prisma } from "../../db/prisma";
 import { asyncHandler } from "../../middleware/async-handler";
 import { validate } from "../../middleware/validate";
 import { AppError } from "../../lib/errors";
 import { sendSuccess } from "../../utils/response";
 import {
+  countUserPushTokens,
   getUnreadUserNotificationCount,
   listUserNotificationInbox,
   markAllUserNotificationsRead,
   markUserNotificationRead,
   registerPushToken,
+  sendPushToUserIds,
+  sendTestPushToToken,
   unregisterPushToken
 } from "./notifications.service";
 import { pushTokenSchema, type PushTokenPayload } from "./notifications.schemas";
@@ -27,6 +32,24 @@ const inboxQuerySchema = z.object({
 
 const notificationIdSchema = z.object({
   id: z.string().uuid()
+});
+
+const testPushDataSchema = z.record(
+  z.union([z.string(), z.number(), z.boolean(), z.null()])
+);
+
+const testTokenSchema = z.object({
+  token: z.string().trim().min(1).max(4096),
+  title: z.string().trim().min(1).max(200).optional(),
+  body: z.string().trim().min(1).max(1000).optional(),
+  data: testPushDataSchema.optional()
+});
+
+const testUserSchema = z.object({
+  userId: z.string().uuid().optional(),
+  title: z.string().trim().min(1).max(200).optional(),
+  body: z.string().trim().min(1).max(1000).optional(),
+  data: testPushDataSchema.optional()
 });
 
 const assertPushRoleSupported = (role: string): void => {
@@ -90,6 +113,76 @@ notificationsRouter.post(
       data: {
         id: pushToken.id,
         registered: true
+      }
+    });
+  })
+);
+
+notificationsRouter.post(
+  "/test-token",
+  validate(testTokenSchema),
+  asyncHandler(async (req, res) => {
+    assertPushRoleSupported(req.auth!.role);
+    const payload = req.body as z.infer<typeof testTokenSchema>;
+    const result = await sendTestPushToToken(payload.token, {
+      title: payload.title ?? "FastAIBooking test",
+      body: payload.body ?? "This is a test push notification.",
+      type: "test_notification",
+      salonId: req.auth!.salonId,
+      data: payload.data
+    });
+
+    return sendSuccess(res, {
+      message: "Test push processed.",
+      data: result
+    });
+  })
+);
+
+notificationsRouter.post(
+  "/test-user",
+  validate(testUserSchema),
+  asyncHandler(async (req, res) => {
+    assertPushRoleSupported(req.auth!.role);
+    const payload = req.body as z.infer<typeof testUserSchema>;
+    const targetUserId = payload.userId ?? req.auth!.userId;
+
+    if (targetUserId !== req.auth!.userId) {
+      if (req.auth!.role !== Role.SALON_OWNER || !req.auth!.salonId) {
+        throw new AppError("You can only send a test push to yourself.", 403, "FORBIDDEN");
+      }
+
+      const targetUser = await prisma.user.findFirst({
+        where: {
+          id: targetUserId,
+          salonId: req.auth!.salonId,
+          isActive: true
+        },
+        select: {
+          id: true
+        }
+      });
+      if (!targetUser) {
+        throw new AppError("User is not available for push testing.", 403, "FORBIDDEN");
+      }
+    }
+
+    const [result, tokenCount] = await Promise.all([
+      sendPushToUserIds([targetUserId], {
+        title: payload.title ?? "FastAIBooking test",
+        body: payload.body ?? "This is a test push notification.",
+        type: "test_notification",
+        salonId: req.auth!.salonId,
+        data: payload.data
+      }),
+      countUserPushTokens(targetUserId)
+    ]);
+
+    return sendSuccess(res, {
+      message: "User test push processed.",
+      data: {
+        ...result,
+        tokenCount
       }
     });
   })
