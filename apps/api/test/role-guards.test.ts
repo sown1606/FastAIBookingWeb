@@ -131,6 +131,7 @@ test("notification APIs are authenticated, role-limited, and scoped to current u
   const authContext = readRepo("apps/app/src/auth/auth-context.tsx");
 
   assert.match(app, /app\.use\(`\$\{PUBLIC_API_PREFIX\}\/notifications`, authenticate, notificationsRouter\)/);
+  assert.match(app, /app\.use\(`\$\{PUBLIC_API_PREFIX\}\/devices`, authenticate, devicesRouter\)/);
   for (const role of ["SALON_OWNER", "STAFF", "CALL_CENTER_AGENT", "OPERATOR"]) {
     assert.match(routes, new RegExp(`"${role}"`));
   }
@@ -139,9 +140,17 @@ test("notification APIs are authenticated, role-limited, and scoped to current u
     '"/inbox"',
     '"/unread-count"',
     '"/register-token"',
+    '"/register"',
+    '"/debug-me"',
+    '"/debug-salon"',
+    '"/test-user"',
+    '"/test-appointment"',
     '"/:id/read"',
     '"/read-all"',
-    '"/unregister-token"'
+    '"/unregister-token"',
+    '"/unregister"',
+    '"/fcm-token"',
+    '"/fcm-token/unregister"'
   ]) {
     assert.match(routes, new RegExp(endpoint.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
@@ -157,12 +166,36 @@ test("notification APIs are authenticated, role-limited, and scoped to current u
   assert.match(service, /type:\s*resolvePayloadType\(payload\)/);
   assert.match(service, /payload\.url \? \{ url: payload\.url \}/);
   assert.match(service, /salonId \? \{ salonId \}/);
+  assert.match(service, /notificationId/);
+  assert.doesNotMatch(routes, /pushToken\.token/);
   assert.match(bell, /resolveNotificationUrl\(notification\)/);
   assert.match(bell, /appointmentId/);
   assert.match(bell, /navigate\(targetUrl\)/);
   assert.match(pushBridge, /window\.dispatchEvent\(new Event\(NOTIFICATIONS_CHANGED_EVENT\)\)/);
   assert.match(pushBridge, /registerFirebaseMessagingToken\(\)/);
   assert.match(authContext, /unregisterFirebaseMessagingToken\(\)\.catch\(\(\) => undefined\)/);
+});
+
+test("appointment APIs accept salon-local time and prefer it over UTC input", () => {
+  const routes = readApi("modules/appointments/appointments.routes.ts");
+  const callCenterRoutes = readApi("modules/call-center/call-center.routes.ts");
+  const service = readApi("modules/appointments/appointments.service.ts");
+  const appointmentsPage = readRepo("apps/app/src/pages/appointments-page.tsx");
+  const callCenterPage = readRepo("apps/app/src/pages/call-center-page.tsx");
+
+  for (const source of [routes, callCenterRoutes]) {
+    assert.match(source, /startTime:\s*z\.string\(\)\.datetime\(\{ offset: true \}\)\.optional\(\)/);
+    assert.match(source, /startTimeLocal:\s*z\.string\(\)\.min\(1\)\.max\(16\)\.optional\(\)/);
+    assert.match(source, /payload\.startTime !== undefined \|\| payload\.startTimeLocal !== undefined/);
+  }
+  assert.ok(
+    service.indexOf("if (input.startTimeLocal !== undefined)") <
+      service.indexOf("if (input.startTime !== undefined)")
+  );
+  assert.match(service, /zone:\s*salon\.timezone/);
+  assert.match(service, /parsed\.toUTC\(\)\.toJSDate\(\)/);
+  assert.match(appointmentsPage, /startTimeLocal:\s*form\.startTime/);
+  assert.match(callCenterPage, /startTimeLocal:\s*startTime/);
 });
 
 test("API error handler localizes known user-facing errors for Vietnamese clients", () => {

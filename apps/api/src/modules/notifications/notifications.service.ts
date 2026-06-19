@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { Prisma, Role, StaffStatus } from "@prisma/client";
 import { prisma } from "../../db/prisma";
 import { getFirebaseMessaging } from "../../lib/firebase-admin";
@@ -28,6 +29,12 @@ export interface PushSendResult {
   failureCount: number;
   invalidTokenCount: number;
   disabled: boolean;
+}
+
+export interface PushTargetSendResult extends PushSendResult {
+  targetUserIds: string[];
+  tokenCount: number;
+  missingStaffIds: string[];
 }
 
 const invalidFcmTokenCodes = new Set([
@@ -87,9 +94,11 @@ const createUserNotifications = async (
   }
 
   return prisma.$transaction(
-    targetUserIds.map((userId) =>
-      prisma.userNotification.create({
+    targetUserIds.map((userId) => {
+      const notificationId = randomUUID();
+      return prisma.userNotification.create({
         data: {
+          id: notificationId,
           userId,
           salonId: resolvePayloadSalonId(payload),
           title: payload.title,
@@ -97,36 +106,41 @@ const createUserNotifications = async (
           type: resolvePayloadType(payload),
           priority: payload.priority ?? "NORMAL",
           url: payload.url ?? null,
-          ...(payload.data === undefined ? {} : { data: toJson(payload.data) })
+          data: toJson({
+            ...payload.data,
+            notificationId
+          })
         },
         select: {
           id: true,
           userId: true
         }
-      })
-    )
+      });
+    })
   );
 };
 
-const getAssignedStaffUserIds = async (staffIds: string[]): Promise<string[]> => {
+const getAssignedStaffUsers = async (
+  staffIds: string[]
+): Promise<Array<{ id: string; staffId: string | null }>> => {
   const targetStaffIds = unique(staffIds);
   if (!targetStaffIds.length) {
     return [];
   }
 
-  const staffUsers = await prisma.user.findMany({
+  return prisma.user.findMany({
     where: {
+      role: Role.STAFF,
       staffId: {
         in: targetStaffIds
       },
       isActive: true
     },
     select: {
-      id: true
+      id: true,
+      staffId: true
     }
   });
-
-  return staffUsers.map((user) => user.id);
 };
 
 const getSalonOwnerUserIds = async (salonId: string): Promise<string[]> => {
@@ -135,11 +149,16 @@ const getSalonOwnerUserIds = async (salonId: string): Promise<string[]> => {
       id: salonId
     },
     select: {
-      ownerId: true
+      owner: {
+        select: {
+          id: true,
+          isActive: true
+        }
+      }
     }
   });
 
-  return salon ? [salon.ownerId] : [];
+  return salon?.owner.isActive ? [salon.owner.id] : [];
 };
 
 const getActiveSalonStaffUserIds = async (salonId: string): Promise<string[]> => {
@@ -357,6 +376,113 @@ export const countUserPushTokens = async (userId: string): Promise<number> => {
   });
 };
 
+export const getUserNotificationDebug = async (userId: string) => {
+  const [tokens, recentNotifications] = await Promise.all([
+    prisma.pushToken.findMany({
+      where: {
+        userId
+      },
+      orderBy: {
+        lastSeenAt: "desc"
+      },
+      select: {
+        id: true,
+        platform: true,
+        lastSeenAt: true,
+        createdAt: true,
+        updatedAt: true
+      }
+    }),
+    prisma.userNotification.findMany({
+      where: {
+        userId
+      },
+      orderBy: {
+        createdAt: "desc"
+      },
+      take: 10,
+      select: {
+        id: true,
+        type: true,
+        title: true,
+        url: true,
+        createdAt: true
+      }
+    })
+  ]);
+
+  return {
+    pushTokenCount: tokens.length,
+    tokens: tokens.map((token) => ({
+      ...token,
+      platform: token.platform.toLowerCase()
+    })),
+    recentNotifications
+  };
+};
+
+export const getSalonNotificationDebug = async (salonId: string) => {
+  const [tokens, staffUsers] = await Promise.all([
+    prisma.pushToken.findMany({
+      where: {
+        salonId
+      },
+      select: {
+        role: true,
+        platform: true
+      }
+    }),
+    prisma.user.findMany({
+      where: {
+        salonId,
+        role: Role.STAFF,
+        isActive: true,
+        staffId: {
+          not: null
+        }
+      },
+      orderBy: {
+        fullName: "asc"
+      },
+      select: {
+        id: true,
+        fullName: true,
+        staffId: true,
+        staffProfile: {
+          select: {
+            fullName: true
+          }
+        },
+        pushTokens: {
+          select: {
+            id: true
+          }
+        }
+      }
+    })
+  ]);
+
+  const byRole: Record<string, number> = {};
+  const byPlatform: Record<string, number> = {};
+  for (const token of tokens) {
+    byRole[token.role] = (byRole[token.role] ?? 0) + 1;
+    const platform = token.platform.toLowerCase();
+    byPlatform[platform] = (byPlatform[platform] ?? 0) + 1;
+  }
+
+  return {
+    totalTokens: tokens.length,
+    byRole,
+    byPlatform,
+    staffUsers: staffUsers.map((user) => ({
+      userId: user.id,
+      staffId: user.staffId!,
+      staffName: user.staffProfile?.fullName ?? user.fullName,
+      tokenCount: user.pushTokens.length
+    }))
+  };
+};
+
 export const sendPushToAssignedStaff = async (
   staffIds: string | string[],
   payload: PushPayload
@@ -366,7 +492,11 @@ export const sendPushToAssignedStaff = async (
     return emptySendResult(false);
   }
 
-  return sendPushToUserIds(await getAssignedStaffUserIds(targetStaffIds), payload);
+  const staffUsers = await getAssignedStaffUsers(targetStaffIds);
+  return sendPushToUserIds(
+    staffUsers.map((user) => user.id),
+    payload
+  );
 };
 
 export const sendPushToSalonOwner = async (
@@ -387,14 +517,39 @@ export const sendPushToSalonOwnerAndAssignedStaff = async (
   salonId: string,
   staffIds: string | string[],
   payload: PushPayload
-): Promise<PushSendResult> => {
-  const targetStaffIds = Array.isArray(staffIds) ? staffIds : [staffIds];
-  const [ownerUserIds, staffUserIds] = await Promise.all([
+): Promise<PushTargetSendResult> => {
+  const targetStaffIds = unique(Array.isArray(staffIds) ? staffIds : [staffIds]);
+  const [ownerUserIds, staffUsers] = await Promise.all([
     getSalonOwnerUserIds(salonId),
-    getAssignedStaffUserIds(targetStaffIds)
+    getAssignedStaffUsers(targetStaffIds)
   ]);
+  const linkedStaffIds = new Set(
+    staffUsers
+      .map((user) => user.staffId)
+      .filter((staffId): staffId is string => Boolean(staffId))
+  );
+  const targetUserIds = unique([
+    ...ownerUserIds,
+    ...staffUsers.map((user) => user.id)
+  ]);
+  const missingStaffIds = targetStaffIds.filter((staffId) => !linkedStaffIds.has(staffId));
+  const tokenCount = targetUserIds.length
+    ? await prisma.pushToken.count({
+        where: {
+          userId: {
+            in: targetUserIds
+          }
+        }
+      })
+    : 0;
+  const result = await sendPushToUserIds(targetUserIds, payload);
 
-  return sendPushToUserIds([...ownerUserIds, ...staffUserIds], payload);
+  return {
+    ...result,
+    targetUserIds,
+    tokenCount,
+    missingStaffIds
+  };
 };
 
 export const sendPushToAssignedCallCenterAgentsOrOperators = async (

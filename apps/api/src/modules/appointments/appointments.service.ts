@@ -19,7 +19,10 @@ import {
 import { sendSms } from "../../lib/sms";
 import { validateAppointmentSlot } from "../availability/availability.service";
 import { createSalonAlert } from "../alerts/alerts.service";
-import { sendPushToSalonOwnerAndAssignedStaff } from "../notifications/notifications.service";
+import {
+  sendPushToSalonOwnerAndAssignedStaff,
+  type PushPayload
+} from "../notifications/notifications.service";
 
 interface CreateAppointmentInput {
   customerId: string;
@@ -385,6 +388,47 @@ const getNotificationServiceLabel = (appointment: Awaited<ReturnType<typeof getA
   return serviceNames.length ? serviceNames.join(", ") : appointment.service.name;
 };
 
+const getNotificationStaffLabel = (fullName: string): string => {
+  return fullName.trim().split(/\s+/)[0] || "Staff";
+};
+
+const buildAppointmentPushPayload = (
+  appointment: Awaited<ReturnType<typeof getAppointmentDetail>>,
+  eventType: "created" | "updated" | "rescheduled" | "canceled"
+): PushPayload => {
+  const serviceName = getNotificationServiceLabel(appointment);
+  const appointmentTime = formatNotificationTime(
+    appointment.startTime,
+    appointment.salon.timezone
+  );
+  const customerName = `${appointment.customer.firstName} ${appointment.customer.lastName}`.trim();
+  const title =
+    eventType === "created"
+      ? "New appointment"
+      : eventType === "rescheduled"
+        ? "Appointment rescheduled"
+        : eventType === "canceled"
+          ? "Appointment canceled"
+          : "Appointment updated";
+  const type = `appointment_${eventType}`;
+  const url = `/appointments?appointmentId=${encodeURIComponent(appointment.id)}`;
+
+  return {
+    title,
+    body: `${customerName || "Customer"} - ${serviceName} with ${getNotificationStaffLabel(appointment.staff.fullName)} at ${appointmentTime}.`,
+    type,
+    salonId: appointment.salonId,
+    url,
+    data: {
+      type,
+      appointmentId: appointment.id,
+      salonId: appointment.salonId,
+      staffId: appointment.staffId,
+      url
+    }
+  };
+};
+
 const sendAppointmentCustomerNotifications = async (
   appointment: Awaited<ReturnType<typeof getAppointmentDetail>>,
   eventType: "created" | "updated" | "canceled"
@@ -432,44 +476,31 @@ const sendAppointmentPushNotifications = async (
   affectedStaffIds: string[] = [appointment.staffId]
 ): Promise<void> => {
   try {
-    const serviceName = getNotificationServiceLabel(appointment);
-    const appointmentTime = formatNotificationTime(appointment.startTime, appointment.salon.timezone);
-    const customerName = `${appointment.customer.firstName} ${appointment.customer.lastName}`.trim();
-    const title =
-      eventType === "created"
-        ? "New appointment"
-        : eventType === "rescheduled"
-          ? "Appointment rescheduled"
-          : eventType === "canceled"
-            ? "Appointment canceled"
-            : "Appointment updated";
-    const body = `${customerName || "Customer"} - ${serviceName} with ${appointment.staff.fullName} at ${appointmentTime}.`;
-    const type = `appointment_${eventType}`;
-    const url = `/appointments?appointmentId=${encodeURIComponent(appointment.id)}`;
-    const payload = {
-      title,
-      body,
-      type,
-      salonId: appointment.salonId,
-      url,
-      data: {
-        type,
-        appointmentId: appointment.id,
-        salonId: appointment.salonId,
-        staffId: appointment.staffId,
-        url
-      }
-    };
+    const payload = buildAppointmentPushPayload(appointment, eventType);
 
     const result = await sendPushToSalonOwnerAndAssignedStaff(
       appointment.salonId,
       affectedStaffIds,
       payload
     );
+    for (const missingStaffId of result.missingStaffIds) {
+      logger.warn(
+        {
+          appointmentId: appointment.id,
+          staffId: missingStaffId,
+          salonId: appointment.salonId
+        },
+        "appointment push skipped assigned staff because no active user is linked to staffId"
+      );
+    }
     logger.info(
       {
         appointmentId: appointment.id,
-        eventType: type,
+        staffId: appointment.staffId,
+        salonId: appointment.salonId,
+        eventType: payload.type,
+        targetUserIds: result.targetUserIds,
+        tokenCount: result.tokenCount,
         attempted: result.attempted,
         successCount: result.successCount,
         failureCount: result.failureCount,
@@ -608,6 +639,17 @@ export const getAppointmentDetail = async (salonId: string, appointmentId: strin
     throw new AppError("Appointment not found.", 404, "APPOINTMENT_NOT_FOUND");
   }
   return appointment;
+};
+
+export const getAppointmentCreatedPushTestPayload = async (
+  salonId: string,
+  appointmentId: string
+) => {
+  const appointment = await getAppointmentDetail(salonId, appointmentId);
+  return {
+    appointment,
+    payload: buildAppointmentPushPayload(appointment, "created")
+  };
 };
 
 export const listAppointments = async (salonId: string, input: ListAppointmentsInput) => {

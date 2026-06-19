@@ -108,3 +108,7 @@ export const getFirebaseMessaging = (): Messaging | null => {
     return messaging;
   }
 };
+
+export const isFirebaseMessagingConfigured = (): boolean => {
+  return getFirebaseMessaging() !== null;
+};

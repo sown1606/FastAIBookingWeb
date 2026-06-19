@@ -5,10 +5,14 @@ import { prisma } from "../../db/prisma";
 import { asyncHandler } from "../../middleware/async-handler";
 import { validate } from "../../middleware/validate";
 import { AppError } from "../../lib/errors";
+import { isFirebaseMessagingConfigured } from "../../lib/firebase-admin";
 import { sendSuccess } from "../../utils/response";
+import { getAppointmentCreatedPushTestPayload } from "../appointments/appointments.service";
 import {
   countUserPushTokens,
+  getSalonNotificationDebug,
   getUnreadUserNotificationCount,
+  getUserNotificationDebug,
   listUserNotificationInbox,
   markAllUserNotificationsRead,
   markUserNotificationRead,
@@ -52,6 +56,11 @@ const testUserSchema = z.object({
   data: testPushDataSchema.optional()
 });
 
+const testAppointmentSchema = z.object({
+  appointmentId: z.string().uuid(),
+  userId: z.string().uuid().optional()
+});
+
 const assertPushRoleSupported = (role: string): void => {
   if (!supportedPushRoles.has(role)) {
     throw new AppError("Push notifications are not supported for this role.", 403, "FORBIDDEN");
@@ -59,6 +68,46 @@ const assertPushRoleSupported = (role: string): void => {
 };
 
 export const notificationsRouter = Router();
+export const devicesRouter = Router();
+
+const registerTokenHandler = asyncHandler(async (req, res) => {
+  assertPushRoleSupported(req.auth!.role);
+  const payload = req.body as PushTokenPayload;
+  const pushToken = await registerPushToken({
+    token: payload.token,
+    platform: payload.platform,
+    userId: req.auth!.userId,
+    role: req.auth!.role,
+    salonId: req.auth!.salonId,
+    staffId: req.auth!.staffId
+  });
+
+  return sendSuccess(res, {
+    message: "Push token registered.",
+    data: {
+      registered: true,
+      id: pushToken.id,
+      userId: pushToken.userId,
+      role: pushToken.role,
+      salonId: pushToken.salonId,
+      staffId: pushToken.staffId,
+      platform: pushToken.platform.toLowerCase()
+    }
+  });
+});
+
+const unregisterTokenHandler = asyncHandler(async (req, res) => {
+  assertPushRoleSupported(req.auth!.role);
+  const payload = req.body as PushTokenPayload;
+  await unregisterPushToken(req.auth!.userId, payload.token);
+
+  return sendSuccess(res, {
+    message: "Push token unregistered.",
+    data: {
+      unregistered: true
+    }
+  });
+});
 
 notificationsRouter.get(
   "/inbox",
@@ -94,25 +143,45 @@ notificationsRouter.get(
 );
 
 notificationsRouter.post(
-  "/register-token",
+  ["/register-token", "/register"],
   validate(pushTokenSchema),
+  registerTokenHandler
+);
+
+devicesRouter.post("/fcm-token", validate(pushTokenSchema), registerTokenHandler);
+
+notificationsRouter.get(
+  "/debug-me",
   asyncHandler(async (req, res) => {
     assertPushRoleSupported(req.auth!.role);
-    const payload = req.body as PushTokenPayload;
-    const pushToken = await registerPushToken({
-      token: payload.token,
-      platform: payload.platform,
-      userId: req.auth!.userId,
-      role: req.auth!.role,
-      salonId: req.auth!.salonId,
-      staffId: req.auth!.staffId
-    });
+    const debug = await getUserNotificationDebug(req.auth!.userId);
 
     return sendSuccess(res, {
-      message: "Push token registered.",
       data: {
-        id: pushToken.id,
-        registered: true
+        userId: req.auth!.userId,
+        role: req.auth!.role,
+        salonId: req.auth!.salonId,
+        staffId: req.auth!.staffId,
+        firebaseConfigured: isFirebaseMessagingConfigured(),
+        ...debug
+      }
+    });
+  })
+);
+
+notificationsRouter.get(
+  "/debug-salon",
+  asyncHandler(async (req, res) => {
+    if (req.auth!.role !== Role.SALON_OWNER || !req.auth!.salonId) {
+      throw new AppError("Salon owner access is required.", 403, "FORBIDDEN");
+    }
+    const debug = await getSalonNotificationDebug(req.auth!.salonId);
+
+    return sendSuccess(res, {
+      data: {
+        salonId: req.auth!.salonId,
+        firebaseConfigured: isFirebaseMessagingConfigured(),
+        ...debug
       }
     });
   })
@@ -179,10 +248,71 @@ notificationsRouter.post(
     ]);
 
     return sendSuccess(res, {
-      message: "User test push processed.",
+      message:
+        tokenCount === 0
+          ? "No push tokens registered for this user."
+          : "User test push processed.",
       data: {
-        ...result,
-        tokenCount
+        tokenCount,
+        ...result
+      }
+    });
+  })
+);
+
+notificationsRouter.post(
+  "/test-appointment",
+  validate(testAppointmentSchema),
+  asyncHandler(async (req, res) => {
+    if (
+      (req.auth!.role !== Role.SALON_OWNER && req.auth!.role !== Role.STAFF) ||
+      !req.auth!.salonId
+    ) {
+      throw new AppError(
+        "Appointment push testing is only available to salon owners and staff.",
+        403,
+        "FORBIDDEN"
+      );
+    }
+
+    const input = req.body as z.infer<typeof testAppointmentSchema>;
+    const targetUserId = input.userId ?? req.auth!.userId;
+
+    if (req.auth!.role === Role.STAFF && targetUserId !== req.auth!.userId) {
+      throw new AppError("Staff can only send an appointment test push to themselves.", 403, "FORBIDDEN");
+    }
+
+    if (req.auth!.role === Role.SALON_OWNER && targetUserId !== req.auth!.userId) {
+      const targetUser = await prisma.user.findFirst({
+        where: {
+          id: targetUserId,
+          salonId: req.auth!.salonId,
+          isActive: true
+        },
+        select: {
+          id: true
+        }
+      });
+      if (!targetUser) {
+        throw new AppError("User is not available for appointment push testing.", 403, "FORBIDDEN");
+      }
+    }
+
+    const { payload } = await getAppointmentCreatedPushTestPayload(
+      req.auth!.salonId,
+      input.appointmentId
+    );
+    const tokenCount = await countUserPushTokens(targetUserId);
+    const result = await sendPushToUserIds([targetUserId], payload);
+
+    return sendSuccess(res, {
+      message:
+        tokenCount === 0
+          ? "No push tokens registered for this user."
+          : "Appointment test push processed.",
+      data: {
+        tokenCount,
+        ...result
       }
     });
   })
@@ -222,18 +352,13 @@ notificationsRouter.post(
 );
 
 notificationsRouter.post(
-  "/unregister-token",
+  ["/unregister-token", "/unregister"],
   validate(pushTokenSchema),
-  asyncHandler(async (req, res) => {
-    assertPushRoleSupported(req.auth!.role);
-    const payload = req.body as PushTokenPayload;
-    await unregisterPushToken(req.auth!.userId, payload.token);
+  unregisterTokenHandler
+);
 
-    return sendSuccess(res, {
-      message: "Push token unregistered.",
-      data: {
-        unregistered: true
-      }
-    });
-  })
+devicesRouter.post(
+  "/fcm-token/unregister",
+  validate(pushTokenSchema),
+  unregisterTokenHandler
 );

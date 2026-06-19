@@ -130,10 +130,14 @@ export const registerFirebaseMessagingToken = async (): Promise<string | null> =
         return null;
       }
 
-      await apiPost<{ registered: boolean; id: string }, { token: string; platform: string }>(
+      await apiPost<
+        { registered: boolean; id: string },
+        { token: string; fcmToken: string; platform: string }
+      >(
         "/api/v1/notifications/register-token",
         {
           token,
+          fcmToken: token,
           platform: "web"
         }
       );
