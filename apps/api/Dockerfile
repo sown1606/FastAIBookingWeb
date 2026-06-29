@@ -9,6 +9,7 @@ RUN npm install
 
 COPY apps/api/tsconfig.json ./tsconfig.json
 COPY apps/api/prisma ./prisma
+COPY apps/api/scripts ./scripts
 COPY apps/api/src ./src
 
 RUN npm run prisma:generate
@@ -25,6 +26,7 @@ RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/prisma ./prisma
+COPY --from=build /app/scripts ./scripts
 COPY --from=build /app/dist ./dist
 
 EXPOSE 3000

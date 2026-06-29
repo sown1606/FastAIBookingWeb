@@ -12,12 +12,40 @@ const http = axios.create({
 let refreshPromise: Promise<AuthSession> | null = null;
 let sessionInvalidationHandler: (() => void) | null = null;
 
+const authRefreshBypassPaths = new Set([
+  "/api/v1/admin/auth/login",
+  "/api/v1/auth/login",
+  "/api/v1/auth/login-owner",
+  "/api/v1/auth/login-staff",
+  "/api/v1/auth/login-call-center",
+  "/api/v1/auth/register-owner",
+  "/api/v1/auth/forgot-password",
+  "/api/v1/auth/reset-password",
+  "/api/v1/auth/refresh"
+]);
+
 const isApiErrorEnvelope = (value: unknown): value is ApiErrorEnvelope => {
   if (!value || typeof value !== "object") {
     return false;
   }
   const envelope = value as ApiErrorEnvelope;
   return envelope.success === false && typeof envelope.error?.message === "string";
+};
+
+const getRequestPathname = (url: string | undefined): string => {
+  if (!url) {
+    return "";
+  }
+
+  try {
+    return new URL(url, apiBaseUrl).pathname.replace(/\/$/, "");
+  } catch {
+    return url.split("?")[0]?.replace(/\/$/, "") ?? "";
+  }
+};
+
+const isAuthRefreshBypassRequest = (request: AxiosRequestConfig): boolean => {
+  return authRefreshBypassPaths.has(getRequestPathname(request.url));
 };
 
 const refreshTokens = async (): Promise<AuthSession> => {
@@ -57,10 +85,11 @@ http.interceptors.response.use(
       return Promise.reject(error);
     }
 
+    const session = getSession();
     const shouldTryRefresh =
       error.response?.status === 401 &&
-      !originalRequest.url?.includes("/auth/refresh") &&
-      !originalRequest.url?.includes("/admin/auth/login") &&
+      Boolean(session?.refreshToken) &&
+      !isAuthRefreshBypassRequest(originalRequest) &&
       !originalRequest.headers["x-retry-refresh"];
 
     if (!shouldTryRefresh) {
