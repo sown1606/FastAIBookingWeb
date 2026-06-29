@@ -173,7 +173,8 @@ test("notification APIs are authenticated, role-limited, and scoped to current u
   assert.match(bell, /navigate\(targetUrl\)/);
   assert.match(pushBridge, /window\.dispatchEvent\(new Event\(NOTIFICATIONS_CHANGED_EVENT\)\)/);
   assert.match(pushBridge, /registerFirebaseMessagingToken\(\)/);
-  assert.match(authContext, /unregisterFirebaseMessagingToken\(\)\.catch\(\(\) => undefined\)/);
+  assert.match(authContext, /cleanupPushToken/);
+  assert.match(authContext, /unregisterFirebaseMessagingToken\(\{ allowAuthRefresh \}\)/);
 });
 
 test("appointment APIs accept salon-local time and prefer it over UTC input", () => {

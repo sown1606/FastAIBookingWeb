@@ -23,6 +23,7 @@ const firebaseConfig = {
 
 const firebaseVapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY;
 const serviceWorkerPath = "/firebase-messaging-sw.js";
+const deviceIdStorageKey = "fastaibooking_push_device_id";
 
 let firebaseApp: FirebaseApp | null = null;
 let messagingPromise: Promise<Messaging | null> | null = null;
@@ -31,6 +32,44 @@ let registerTokenPromise: Promise<string | null> | null = null;
 let activeToken: string | null = null;
 let foregroundUnsubscribe: (() => void) | null = null;
 let foregroundHandler: ForegroundMessageHandler | null = null;
+
+interface PushTokenPayload {
+  token: string;
+  fcmToken: string;
+  platform: "web";
+  deviceId: string;
+}
+
+interface UnregisterOptions {
+  allowAuthRefresh?: boolean;
+}
+
+const warnPushCleanupFailure = (message: string, error: unknown): void => {
+  if (import.meta.env.DEV) {
+    console.warn(message, error);
+  }
+};
+
+const createDeviceId = (): string => {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `web-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+};
+
+const getDeviceId = (): string => {
+  try {
+    const existing = localStorage.getItem(deviceIdStorageKey);
+    if (existing) {
+      return existing;
+    }
+    const next = createDeviceId();
+    localStorage.setItem(deviceIdStorageKey, next);
+    return next;
+  } catch {
+    return createDeviceId();
+  }
+};
 
 const isFirebaseConfigured = (): boolean => {
   return Boolean(
@@ -132,13 +171,14 @@ export const registerFirebaseMessagingToken = async (): Promise<string | null> =
 
       await apiPost<
         { registered: boolean; id: string },
-        { token: string; fcmToken: string; platform: string }
+        PushTokenPayload
       >(
         "/api/v1/notifications/register-token",
         {
           token,
           fcmToken: token,
-          platform: "web"
+          platform: "web",
+          deviceId: getDeviceId()
         }
       );
       activeToken = token;
@@ -177,7 +217,9 @@ export const stopForegroundMessages = (): void => {
   foregroundUnsubscribe = null;
 };
 
-export const unregisterFirebaseMessagingToken = async (): Promise<void> => {
+export const unregisterFirebaseMessagingToken = async (
+  options: UnregisterOptions = {}
+): Promise<void> => {
   try {
     const messaging = await getMessagingInstance();
     if (!messaging || Notification.permission !== "granted") {
@@ -196,18 +238,34 @@ export const unregisterFirebaseMessagingToken = async (): Promise<void> => {
         : null);
 
     if (token) {
-      await apiPost<{ unregistered: boolean }, { token: string; platform: string }>(
-        "/api/v1/notifications/unregister-token",
-        {
-          token,
-          platform: "web"
-        }
-      ).catch(() => undefined);
+      try {
+        await apiPost<{ unregistered: boolean }, PushTokenPayload>(
+          "/api/v1/notifications/unregister-token",
+          {
+            token,
+            fcmToken: token,
+            platform: "web",
+            deviceId: getDeviceId()
+          },
+          options.allowAuthRefresh === false
+            ? {
+                headers: {
+                  "x-skip-refresh": "1"
+                }
+              }
+            : undefined
+        );
+      } catch (error) {
+        warnPushCleanupFailure("Push token unregister failed during logout.", error);
+      }
     }
 
-    await deleteToken(messaging).catch(() => undefined);
+    await deleteToken(messaging).catch((error) => {
+      warnPushCleanupFailure("Firebase token delete failed during logout.", error);
+    });
     activeToken = null;
-  } catch {
+  } catch (error) {
+    warnPushCleanupFailure("Push token cleanup failed during logout.", error);
     activeToken = null;
   }
 };

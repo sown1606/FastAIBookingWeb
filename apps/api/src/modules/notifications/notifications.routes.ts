@@ -99,12 +99,13 @@ const registerTokenHandler = asyncHandler(async (req, res) => {
 const unregisterTokenHandler = asyncHandler(async (req, res) => {
   assertPushRoleSupported(req.auth!.role);
   const payload = req.body as PushTokenPayload;
-  await unregisterPushToken(req.auth!.userId, payload.token);
+  const result = await unregisterPushToken(req.auth!.userId, payload.token);
 
   return sendSuccess(res, {
     message: "Push token unregistered.",
     data: {
-      unregistered: true
+      unregistered: true,
+      removedCount: result.count
     }
   });
 });

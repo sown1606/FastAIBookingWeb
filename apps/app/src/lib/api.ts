@@ -90,6 +90,7 @@ http.interceptors.response.use(
       error.response?.status === 401 &&
       Boolean(session?.refreshToken) &&
       !isAuthRefreshBypassRequest(originalRequest) &&
+      !originalRequest.headers["x-skip-refresh"] &&
       !originalRequest.headers["x-retry-refresh"];
 
     if (!shouldTryRefresh) {
@@ -107,8 +108,11 @@ http.interceptors.response.use(
       return http.request(originalRequest);
     } catch (refreshError) {
       refreshPromise = null;
-      clearSession();
-      sessionInvalidationHandler?.();
+      if (sessionInvalidationHandler) {
+        sessionInvalidationHandler();
+      } else {
+        clearSession();
+      }
       return Promise.reject(refreshError);
     }
   }

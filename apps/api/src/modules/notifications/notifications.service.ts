@@ -211,8 +211,15 @@ export const registerPushToken = async (input: RegisterPushTokenInput) => {
 export const unregisterPushToken = async (userId: string, token: string) => {
   return prisma.pushToken.deleteMany({
     where: {
-      userId,
-      token
+      OR: [
+        {
+          userId,
+          token
+        },
+        {
+          token
+        }
+      ]
     }
   });
 };
@@ -322,6 +329,11 @@ export const sendPushToUserIds = async (
     where: {
       userId: {
         in: targetUserIds
+      },
+      user: {
+        is: {
+          isActive: true
+        }
       }
     },
     select: {

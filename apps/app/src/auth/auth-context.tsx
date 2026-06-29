@@ -68,14 +68,32 @@ const assertRoleSupported = (role: AuthUser["role"]) => {
   throw new Error("This account cannot access the salon app.");
 };
 
+const warnLogoutCleanupFailure = (error: unknown): void => {
+  if (import.meta.env.DEV) {
+    console.warn("Push token cleanup failed during logout.", error);
+  }
+};
+
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [session, setSessionState] = useState<AuthSession | null>(getSession());
   const [isInitializing, setIsInitializing] = useState(true);
 
+  const clearLocalSession = () => {
+    clearSession();
+    setSessionState(null);
+  };
+
+  const cleanupPushToken = async (allowAuthRefresh = true): Promise<void> => {
+    try {
+      await unregisterFirebaseMessagingToken({ allowAuthRefresh });
+    } catch (error) {
+      warnLogoutCleanupFailure(error);
+    }
+  };
+
   useEffect(() => {
     registerSessionInvalidationHandler(() => {
-      clearSession();
-      setSessionState(null);
+      void cleanupPushToken(false).finally(clearLocalSession);
     });
     return () => {
       registerSessionInvalidationHandler(null);
@@ -100,8 +118,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setSession(nextSession);
         setSessionState(nextSession);
       } catch {
-        clearSession();
-        setSessionState(null);
+        await cleanupPushToken(false);
+        clearLocalSession();
       } finally {
         setIsInitializing(false);
       }
@@ -155,7 +173,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       },
       logout: async () => {
         try {
-          await unregisterFirebaseMessagingToken().catch(() => undefined);
+          await cleanupPushToken();
           const current = getSession();
           if (current?.refreshToken) {
             await apiPost<null, { refreshToken: string }>("/api/v1/auth/logout", {
@@ -163,8 +181,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             });
           }
         } finally {
-          clearSession();
-          setSessionState(null);
+          clearLocalSession();
         }
       }
     }),
