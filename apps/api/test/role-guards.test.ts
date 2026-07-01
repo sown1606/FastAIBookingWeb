@@ -210,20 +210,79 @@ test("API error handler localizes known user-facing errors for Vietnamese client
   assert.match(messages, /if \(language === "en-US"\)[\s\S]*return message/);
 });
 
-test("staff create and reset-access return immediate invitation passwords", () => {
+test("staff create and reset-access support manual and generated password email flows", () => {
   const routes = readApi("modules/staff/staff.routes.ts");
   const service = readApi("modules/staff/staff.service.ts");
+  const mailer = readApi("lib/mailer.ts");
 
+  assert.match(routes, /fullName:\s*z\.string\(\)\.min\(2\)\.max\(120\)\.optional\(\)/);
+  assert.match(routes, /firstName:\s*z\.string\(\)\.min\(1\)\.max\(80\)\.optional\(\)/);
+  assert.match(routes, /lastName:\s*z\.string\(\)\.min\(1\)\.max\(80\)\.optional\(\)/);
+  assert.match(routes, /isActive:\s*z\.boolean\(\)\.optional\(\)/);
   assert.match(routes, /createLogin:\s*z\.boolean\(\)\.optional\(\)/);
   assert.match(routes, /password:\s*z\.string\(\)\.min\(8\)\.max\(128\)\.optional\(\)/);
-  assert.match(routes, /resetStaffAccess\(req\.auth!\.salonId!,\s*id,\s*req\.auth!\.userId,\s*newPassword\)/);
+  assert.match(routes, /newPassword:\s*z\.string\(\)\.min\(8\)\.max\(128\)\.optional\(\)/);
+  assert.match(routes, /sendEmail:\s*z\.boolean\(\)\.optional\(\)/);
+  assert.match(routes, /staffRouter\.patch\(\s*"\/:id\/password"[\s\S]*resetStaffAccess\(req\.auth!\.salonId!,\s*id,\s*req\.auth!\.userId,\s*payload\)/s);
+  assert.match(routes, /staffRouter\.post\(\s*"\/:id\/reset-access"[\s\S]*resetStaffAccess\(req\.auth!\.salonId!,\s*id,\s*req\.auth!\.userId,\s*payload\)/s);
   assert.match(service, /const shouldCreateLogin = input\.createLogin \?\? true/);
+  assert.match(service, /const staffIsActive = input\.isActive \?\? true/);
   assert.match(service, /const temporaryPassword = input\.password \?\? generateSecureToken\(6\)/);
+  assert.match(service, /const passwordMode: StaffPasswordMode = input\.password \? "MANUAL" : "GENERATED"/);
   assert.match(service, /role:\s*Role\.STAFF/);
-  assert.match(service, /invitation:\s*\{\s*email:\s*normalizedEmail,\s*temporaryPassword:\s*shouldCreateLogin \? temporaryPassword : undefined\s*\}/s);
+  assert.match(service, /const emailSent = await sendStaffInvitationEmail/);
+  assert.match(service, /passwordMode:\s*shouldCreateLogin \? passwordMode : undefined/);
   assert.match(service, /if \(existing\.user\)[\s\S]*await tx\.user\.update/);
   assert.match(service, /else[\s\S]*await tx\.user\.create\(\{[\s\S]*role:\s*Role\.STAFF/s);
-  assert.match(service, /invitation:\s*\{\s*email:\s*staffWithUser\.user\?\.email \?\? normalizeEmail\(staffWithUser\.email\),\s*temporaryPassword:\s*newPassword\s*\}/s);
+  assert.match(service, /const \{ password, passwordMode, sendEmail \} = resolveStaffPasswordInput\(input\)/);
+  assert.match(service, /passwordMode:\s*requestedPassword \? "MANUAL" : "GENERATED"/);
+  assert.match(service, /sendEmail:\s*typeof input === "string" \? true : input\?\.sendEmail !== false/);
+  assert.match(service, /const passwordHash = await hashPassword\(password\)/);
+  assert.match(service, /sendEmail\s*\?\s*await \([\s\S]*sendStaffPasswordChangedEmail/s);
+  assert.match(mailer, /export const sendStaffInvitationEmail[\s\S]*Login email: \$\{input\.toEmail\}/);
+  assert.match(mailer, /export const sendStaffPasswordChangedEmail[\s\S]*Login email: \$\{input\.toEmail\}/);
+});
+
+test("staff and service delete APIs are owner-only and soft-delete history safely", () => {
+  const staffRoutes = readApi("modules/staff/staff.routes.ts");
+  const staffService = readApi("modules/staff/staff.service.ts");
+  const servicesRoutes = readApi("modules/services/services.routes.ts");
+  const servicesService = readApi("modules/services/services.service.ts");
+
+  assert.match(staffRoutes, /staffRouter\.delete\(\s*"\/:id",\s*requireRoles\(Role\.SALON_OWNER\)/s);
+  assert.match(staffService, /export const deleteStaff/);
+  assert.match(staffService, /findFirst\(\{\s*where:\s*\{\s*id: staffId,\s*salonId/s);
+  assert.match(staffService, /tx\.staffService\.deleteMany\(\{\s*where:\s*\{\s*salonId,\s*staffId: existing\.id/s);
+  assert.match(staffService, /status:\s*StaffStatus\.INACTIVE/);
+  assert.match(staffService, /isBookable:\s*false/);
+  assert.match(staffService, /isActive:\s*false/);
+  assert.match(staffService, /refreshBillingUsageForSalon\(salonId, tx\)/);
+  assert.match(staffService, /action:\s*"STAFF_DELETED"/);
+  assert.match(staffService, /deleteMode:\s*"SOFT"/);
+
+  assert.match(servicesRoutes, /servicesRouter\.delete\(\s*"\/:id",\s*requireRoles\(Role\.SALON_OWNER\)/s);
+  assert.match(servicesService, /export const deleteService/);
+  assert.match(servicesService, /findFirst\(\{\s*where:\s*\{\s*id: serviceId,\s*salonId/s);
+  assert.match(servicesService, /tx\.staffService\.deleteMany\(\{\s*where:\s*\{\s*salonId,\s*serviceId: existing\.id/s);
+  assert.match(servicesService, /isActive:\s*false/);
+  assert.match(servicesService, /action:\s*"SERVICE_DELETED"/);
+  assert.match(servicesService, /deleteMode:\s*"SOFT"/);
+});
+
+test("Postman collection includes mobile staff password and delete requests", () => {
+  const collection = readRepo("FastAIBooking_Postman_Collection.json");
+
+  for (const requestName of [
+    "Create Staff - Manual Password",
+    "Create Staff - Auto Generated Password",
+    "Reset Staff Password - Manual",
+    "Reset Staff Password - Auto Generated",
+    "Set Staff Password",
+    "Delete Staff",
+    "Delete Service"
+  ]) {
+    assert.match(collection, new RegExp(`"name": "${requestName}"`));
+  }
 });
 
 test("staff invitation and password reset use the unified transactional mailer", () => {

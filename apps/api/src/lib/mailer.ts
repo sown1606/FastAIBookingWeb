@@ -317,12 +317,13 @@ export const sendStaffInvitationEmail = async (input: {
   recipientName: string;
   salonName: string;
   temporaryPassword?: string;
-}): Promise<void> => {
+}): Promise<boolean> => {
   const subject = `Invitation to ${input.salonName} on FastAIBooking`;
   const textLines = [
     `Hello ${input.recipientName},`,
     "",
     `${input.salonName} invited you to use FastAIBooking for your schedule, messages, and assigned appointments.`,
+    `Login email: ${input.toEmail}`,
     `Demo app download link: ${env.STAFF_INVITE_APP_LINK}`,
     input.temporaryPassword ? `Temporary password: ${input.temporaryPassword}` : undefined,
     "",
@@ -330,11 +331,11 @@ export const sendStaffInvitationEmail = async (input: {
     "Thank you."
   ].filter((line): line is string => line !== undefined);
 
-  await sendTransactionalEmail({
+  return sendTransactionalEmail({
     toEmail: input.toEmail,
     subject,
     text: textLines.join("\n"),
-    html: `<p>Hello ${escapeHtml(input.recipientName)},</p><p>${escapeHtml(input.salonName)} invited you to use FastAIBooking for your schedule, messages, and assigned appointments.</p><p>Demo app download link: <a href="${escapeHtml(env.STAFF_INVITE_APP_LINK)}">${escapeHtml(env.STAFF_INVITE_APP_LINK)}</a></p>${
+    html: `<p>Hello ${escapeHtml(input.recipientName)},</p><p>${escapeHtml(input.salonName)} invited you to use FastAIBooking for your schedule, messages, and assigned appointments.</p><p>Login email: ${escapeHtml(input.toEmail)}</p><p>Demo app download link: <a href="${escapeHtml(env.STAFF_INVITE_APP_LINK)}">${escapeHtml(env.STAFF_INVITE_APP_LINK)}</a></p>${
       input.temporaryPassword ? `<p>Temporary password: ${escapeHtml(input.temporaryPassword)}</p>` : ""
     }<p>Please sign in and change your password after setup.</p><p>Thank you.</p>`,
     reason: "STAFF_INVITATION",
@@ -356,6 +357,7 @@ export const sendStaffPasswordChangedEmail = async (input: {
     `Hello ${input.recipientName},`,
     "",
     `The owner of ${input.salonName} changed your FastAIBooking password.`,
+    `Login email: ${input.toEmail}`,
     `New password: ${input.newPassword}`,
     "",
     "Please sign in and keep this password secure.",
@@ -366,7 +368,7 @@ export const sendStaffPasswordChangedEmail = async (input: {
     toEmail: input.toEmail,
     subject,
     text,
-    html: `<p>Hello ${escapeHtml(input.recipientName)},</p><p>The owner of ${escapeHtml(input.salonName)} changed your FastAIBooking password.</p><p>New password: ${escapeHtml(input.newPassword)}</p><p>Please sign in and keep this password secure.</p><p>Thank you.</p>`,
+    html: `<p>Hello ${escapeHtml(input.recipientName)},</p><p>The owner of ${escapeHtml(input.salonName)} changed your FastAIBooking password.</p><p>Login email: ${escapeHtml(input.toEmail)}</p><p>New password: ${escapeHtml(input.newPassword)}</p><p>Please sign in and keep this password secure.</p><p>Thank you.</p>`,
     reason: "STAFF_PASSWORD_CHANGED"
   });
 };

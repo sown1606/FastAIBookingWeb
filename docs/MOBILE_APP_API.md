@@ -94,15 +94,17 @@ Salon profile and settings:
 Staff:
 
 - `GET /api/v1/staff?includeInactive=true`
-- `POST /api/v1/staff`
+- `POST /api/v1/staff` with either `fullName` or `firstName`/`lastName`
 - `PATCH /api/v1/staff/:id`
 - `POST /api/v1/staff/:id/deactivate`
 - `POST /api/v1/staff/:id/reactivate`
 - `POST /api/v1/staff/:id/reset-access`
+- `PATCH /api/v1/staff/:id/password`
+- `DELETE /api/v1/staff/:id`
 - `GET /api/v1/staff/:id/services`
 - `PUT /api/v1/staff/:id/services`
 
-Create staff with exact services:
+Create staff with manual password:
 
 ```http
 POST /api/v1/staff
@@ -110,14 +112,32 @@ Authorization: Bearer <ownerToken>
 Content-Type: application/json
 
 {
-  "fullName": "Staff Name",
-  "email": "staff@example.com",
-  "phone": "(732) 555-0124",
-  "isBookable": true,
-  "createLogin": true,
-  "serviceIds": ["service-id-1", "service-id-2"]
+  "firstName": "Amy",
+  "lastName": "Nguyen",
+  "email": "amy.staff.demo@example.com",
+  "phone": "+15555550101",
+  "password": "StaffDemo123!",
+  "isActive": true
 }
 ```
+
+Create staff with generated password:
+
+```http
+POST /api/v1/staff
+Authorization: Bearer <ownerToken>
+Content-Type: application/json
+
+{
+  "firstName": "Kelly",
+  "lastName": "Tran",
+  "email": "kelly.staff.demo@example.com",
+  "phone": "+15555550102",
+  "isActive": true
+}
+```
+
+Staff create can include `password` for owner-provided setup or omit `password`; the backend generates a temporary password. Both modes hash the password, create/link a staff login, and send the login email plus password to the staff member. The response includes `passwordMode: "MANUAL"` or `"GENERATED"` and `emailSent`.
 
 If `serviceIds` is omitted on create, active/bookable staff are auto-assigned to all active services. If `serviceIds` is present, it is the exact mapping. `serviceIds: []` creates no explicit service mapping for that staff.
 
@@ -148,6 +168,37 @@ Content-Type: application/json
 { "serviceIds": ["service-id-1", "service-id-2"] }
 ```
 
+Reset staff password manually:
+
+```http
+POST /api/v1/staff/:id/reset-access
+Authorization: Bearer <ownerToken>
+Content-Type: application/json
+
+{ "password": "NewStaffPass123!", "sendEmail": true }
+```
+
+Reset staff password with generated temporary password:
+
+```http
+POST /api/v1/staff/:id/reset-access
+Authorization: Bearer <ownerToken>
+Content-Type: application/json
+
+{ "sendEmail": true }
+```
+
+`sendEmail` defaults to `true`. The alias `PATCH /api/v1/staff/:id/password` accepts the same body and uses the same backend logic. If the staff has no linked user yet, reset-access creates or safely links the staff login before emailing the new password.
+
+Delete staff:
+
+```http
+DELETE /api/v1/staff/:id
+Authorization: Bearer <ownerToken>
+```
+
+Delete staff is appointment-history safe: it disables staff login, marks the staff inactive and non-bookable, removes staff-service mappings, and refreshes billing usage. Active staff lists exclude the deleted staff.
+
 Response:
 
 ```json
@@ -174,7 +225,10 @@ Services:
 - `PATCH /api/v1/services/:id`
 - `POST /api/v1/services/:id/deactivate`
 - `POST /api/v1/services/:id/activate`
+- `DELETE /api/v1/services/:id`
 - `PUT /api/v1/services/:id/staff` body `{ "staffIds": ["staff-id-1"] }`
+
+`DELETE /api/v1/services/:id` is appointment-history safe: it marks the service inactive and removes service staff mappings. Default service lists exclude inactive/deleted services.
 
 Customers:
 

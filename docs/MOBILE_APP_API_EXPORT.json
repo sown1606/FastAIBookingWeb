@@ -23,52 +23,112 @@
       "method": "POST",
       "path": "/api/v1/auth/login-owner",
       "authRequired": false,
-      "roles": ["SALON_OWNER"],
-      "bodySample": { "email": "owner.demo@fastaibooking.local", "password": "Owner123!" },
-      "responseSample": { "accessToken": "...", "refreshToken": "...", "user": { "role": "SALON_OWNER" } },
+      "roles": [
+        "SALON_OWNER"
+      ],
+      "bodySample": {
+        "email": "owner.demo@fastaibooking.local",
+        "password": "Owner123!"
+      },
+      "responseSample": {
+        "accessToken": "...",
+        "refreshToken": "...",
+        "user": {
+          "role": "SALON_OWNER"
+        }
+      },
       "note": "Owner mobile login. Store both tokens."
     },
     {
       "method": "POST",
       "path": "/api/v1/auth/login-staff",
       "authRequired": false,
-      "roles": ["STAFF"],
-      "bodySample": { "email": "staff.demo@fastaibooking.local", "password": "Staff123!" },
-      "responseSample": { "accessToken": "...", "refreshToken": "...", "user": { "role": "STAFF" } },
+      "roles": [
+        "STAFF"
+      ],
+      "bodySample": {
+        "email": "staff.demo@fastaibooking.local",
+        "password": "Staff123!"
+      },
+      "responseSample": {
+        "accessToken": "...",
+        "refreshToken": "...",
+        "user": {
+          "role": "STAFF"
+        }
+      },
       "note": "Staff mobile login. Store both tokens."
     },
     {
       "method": "POST",
       "path": "/api/v1/auth/login-call-center",
       "authRequired": false,
-      "roles": ["CALL_CENTER_AGENT"],
-      "bodySample": { "email": "agent.demo@fastaibooking.local", "password": "Agent123!" },
-      "responseSample": { "accessToken": "...", "refreshToken": "...", "user": { "role": "CALL_CENTER_AGENT" } },
+      "roles": [
+        "CALL_CENTER_AGENT"
+      ],
+      "bodySample": {
+        "email": "agent.demo@fastaibooking.local",
+        "password": "Agent123!"
+      },
+      "responseSample": {
+        "accessToken": "...",
+        "refreshToken": "...",
+        "user": {
+          "role": "CALL_CENTER_AGENT"
+        }
+      },
       "note": "Operator/call-center login."
     },
     {
       "method": "POST",
       "path": "/api/v1/auth/refresh",
       "authRequired": false,
-      "roles": ["SALON_OWNER", "STAFF", "CALL_CENTER_AGENT"],
-      "bodySample": { "refreshToken": "<refreshToken>" },
-      "responseSample": { "accessToken": "...", "refreshToken": "..." },
+      "roles": [
+        "SALON_OWNER",
+        "STAFF",
+        "CALL_CENTER_AGENT"
+      ],
+      "bodySample": {
+        "refreshToken": "<refreshToken>"
+      },
+      "responseSample": {
+        "accessToken": "...",
+        "refreshToken": "..."
+      },
       "note": "Refresh when protected request returns 401."
     },
     {
       "method": "GET",
       "path": "/api/v1/auth/me",
       "authRequired": true,
-      "roles": ["SALON_OWNER", "STAFF", "CALL_CENTER_AGENT"],
-      "responseSample": { "user": { "id": "...", "role": "STAFF", "salonId": "...", "staffId": "..." } },
+      "roles": [
+        "SALON_OWNER",
+        "STAFF",
+        "CALL_CENTER_AGENT"
+      ],
+      "responseSample": {
+        "user": {
+          "id": "...",
+          "role": "STAFF",
+          "salonId": "...",
+          "staffId": "..."
+        }
+      },
       "note": "Use for bootstrap and role detection."
     },
     {
       "method": "POST",
       "path": "/api/v1/auth/change-password",
       "authRequired": true,
-      "roles": ["SALON_OWNER", "STAFF", "CALL_CENTER_AGENT"],
-      "bodySample": { "currentPassword": "Old123!", "newPassword": "New123!" },
+      "roles": [
+        "SALON_OWNER",
+        "STAFF",
+        "CALL_CENTER_AGENT"
+      ],
+      "bodySample": {
+        "currentPassword": "Old123!",
+        "newPassword": "New123!"
+      },
       "responseSample": null,
       "note": "Use from account settings."
     },
@@ -76,225 +136,587 @@
       "method": "GET",
       "path": "/api/v1/salon/profile",
       "authRequired": true,
-      "roles": ["SALON_OWNER"],
-      "responseSample": { "id": "...", "name": "Salon", "timezone": "America/New_York" },
+      "roles": [
+        "SALON_OWNER"
+      ],
+      "responseSample": {
+        "id": "...",
+        "name": "Salon",
+        "timezone": "America/New_York"
+      },
       "note": "Owner salon profile and timezone."
     },
     {
       "method": "PUT",
       "path": "/api/v1/salon/profile",
       "authRequired": true,
-      "roles": ["SALON_OWNER"],
-      "bodySample": { "name": "Salon", "timezone": "America/New_York" },
-      "responseSample": { "id": "...", "name": "Salon" },
+      "roles": [
+        "SALON_OWNER"
+      ],
+      "bodySample": {
+        "name": "Salon",
+        "timezone": "America/New_York"
+      },
+      "responseSample": {
+        "id": "...",
+        "name": "Salon"
+      },
       "note": "Update salon identity, phones, address, and timezone."
     },
     {
       "method": "GET",
       "path": "/api/v1/salon/settings",
       "authRequired": true,
-      "roles": ["SALON_OWNER"],
-      "responseSample": { "locale": "vi-VN", "aiReceptionEnabled": true, "callCenterEnabled": true },
+      "roles": [
+        "SALON_OWNER"
+      ],
+      "responseSample": {
+        "locale": "vi-VN",
+        "aiReceptionEnabled": true,
+        "callCenterEnabled": true
+      },
       "note": "Owner booking, AI, call-center, and notification settings."
     },
     {
       "method": "PUT",
       "path": "/api/v1/salon/settings",
       "authRequired": true,
-      "roles": ["SALON_OWNER"],
-      "bodySample": { "locale": "vi-VN", "aiReceptionEnabled": true, "callCenterEnabled": true },
-      "responseSample": { "locale": "vi-VN" },
+      "roles": [
+        "SALON_OWNER"
+      ],
+      "bodySample": {
+        "locale": "vi-VN",
+        "aiReceptionEnabled": true,
+        "callCenterEnabled": true
+      },
+      "responseSample": {
+        "locale": "vi-VN"
+      },
       "note": "Update salon settings."
     },
     {
       "method": "GET",
       "path": "/api/v1/business-hours",
       "authRequired": true,
-      "roles": ["SALON_OWNER"],
-      "responseSample": [{ "dayOfWeek": 3, "isOpen": true, "openTime": "09:00", "closeTime": "18:00" }],
+      "roles": [
+        "SALON_OWNER"
+      ],
+      "responseSample": [
+        {
+          "dayOfWeek": 3,
+          "isOpen": true,
+          "openTime": "09:00",
+          "closeTime": "18:00"
+        }
+      ],
       "note": "Business hours are salon-local."
     },
     {
       "method": "PUT",
       "path": "/api/v1/business-hours",
       "authRequired": true,
-      "roles": ["SALON_OWNER"],
-      "bodySample": { "hours": [{ "dayOfWeek": 3, "isOpen": true, "openTime": "09:00", "closeTime": "18:00" }] },
-      "responseSample": [{ "dayOfWeek": 3, "isOpen": true }],
+      "roles": [
+        "SALON_OWNER"
+      ],
+      "bodySample": {
+        "hours": [
+          {
+            "dayOfWeek": 3,
+            "isOpen": true,
+            "openTime": "09:00",
+            "closeTime": "18:00"
+          }
+        ]
+      },
+      "responseSample": [
+        {
+          "dayOfWeek": 3,
+          "isOpen": true
+        }
+      ],
       "note": "Replace weekly business hours."
     },
     {
       "method": "GET",
       "path": "/api/v1/staff?includeInactive=true",
       "authRequired": true,
-      "roles": ["SALON_OWNER"],
-      "responseSample": [{ "id": "...", "fullName": "Amy", "serviceIds": ["..."], "assignedServices": [] }],
+      "roles": [
+        "SALON_OWNER"
+      ],
+      "responseSample": [
+        {
+          "id": "...",
+          "fullName": "Amy",
+          "serviceIds": [
+            "..."
+          ],
+          "assignedServices": []
+        }
+      ],
       "note": "Owner staff list now includes assigned service summary."
     },
     {
       "method": "POST",
       "path": "/api/v1/staff",
       "authRequired": true,
-      "roles": ["SALON_OWNER"],
+      "roles": [
+        "SALON_OWNER"
+      ],
       "bodySample": {
-        "fullName": "Staff Name",
-        "email": "staff@example.com",
-        "phone": "(732) 555-0124",
-        "createLogin": true,
-        "serviceIds": ["service-id-1"]
+        "firstName": "Amy",
+        "lastName": "Nguyen",
+        "email": "amy.staff.demo@example.com",
+        "phone": "+15555550101",
+        "password": "StaffDemo123!",
+        "isActive": true,
+        "serviceIds": [
+          "service-id-1"
+        ]
       },
-      "responseSample": { "staff": { "id": "...", "serviceIds": ["service-id-1"] }, "invitation": { "email": "staff@example.com", "temporaryPassword": "..." } },
-      "note": "If serviceIds is present, it is exact. If omitted, active/bookable staff auto-assign to active services."
+      "responseSample": {
+        "staff": {
+          "id": "...",
+          "email": "amy.staff.demo@example.com",
+          "serviceIds": [
+            "service-id-1"
+          ]
+        },
+        "passwordMode": "MANUAL",
+        "emailSent": true
+      },
+      "note": "Staff create supports manual password when password is present, or generated password when password is omitted. Both modes email login info to staff. serviceIds is optional exact mapping."
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/staff",
+      "authRequired": true,
+      "roles": [
+        "SALON_OWNER"
+      ],
+      "bodySample": {
+        "firstName": "Kelly",
+        "lastName": "Tran",
+        "email": "kelly.staff.demo@example.com",
+        "phone": "+15555550102",
+        "isActive": true
+      },
+      "responseSample": {
+        "staff": {
+          "id": "...",
+          "email": "kelly.staff.demo@example.com"
+        },
+        "passwordMode": "GENERATED",
+        "emailSent": true
+      },
+      "note": "Create staff without password. Backend generates a temporary password and emails it to staff."
     },
     {
       "method": "PATCH",
       "path": "/api/v1/staff/:id",
       "authRequired": true,
-      "roles": ["SALON_OWNER"],
-      "bodySample": { "fullName": "Staff Name", "serviceIds": ["service-id-1"] },
-      "responseSample": { "id": "...", "serviceIds": ["service-id-1"] },
+      "roles": [
+        "SALON_OWNER"
+      ],
+      "bodySample": {
+        "fullName": "Staff Name",
+        "serviceIds": [
+          "service-id-1"
+        ]
+      },
+      "responseSample": {
+        "id": "...",
+        "serviceIds": [
+          "service-id-1"
+        ]
+      },
       "note": "Owner updates staff details. serviceIds is optional exact mapping."
     },
     {
       "method": "GET",
       "path": "/api/v1/staff/:id/services",
       "authRequired": true,
-      "roles": ["SALON_OWNER"],
-      "responseSample": { "staff": { "id": "...", "fullName": "Amy", "isBookable": true, "status": "ACTIVE" }, "services": [{ "id": "...", "name": "Gel", "assigned": true }] },
+      "roles": [
+        "SALON_OWNER"
+      ],
+      "responseSample": {
+        "staff": {
+          "id": "...",
+          "fullName": "Amy",
+          "isBookable": true,
+          "status": "ACTIVE"
+        },
+        "services": [
+          {
+            "id": "...",
+            "name": "Gel",
+            "assigned": true
+          }
+        ]
+      },
       "note": "Owner reads all salon services with assigned flag for one staff."
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/staff/:id/reset-access",
+      "authRequired": true,
+      "roles": [
+        "SALON_OWNER"
+      ],
+      "bodySample": {
+        "password": "NewStaffPass123!",
+        "sendEmail": true
+      },
+      "responseSample": {
+        "staffId": "...",
+        "email": "staff@example.com",
+        "passwordMode": "MANUAL",
+        "emailSent": true
+      },
+      "note": "Owner sets a staff password manually. Backend hashes it and emails the login email plus new password when sendEmail is not false."
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/staff/:id/password",
+      "authRequired": true,
+      "roles": [
+        "SALON_OWNER"
+      ],
+      "bodySample": {
+        "password": "NewStaffPass123!",
+        "sendEmail": true
+      },
+      "responseSample": {
+        "staffId": "...",
+        "email": "staff@example.com",
+        "passwordMode": "MANUAL",
+        "emailSent": true
+      },
+      "note": "Mobile-friendly alias for reset-access. Same request and response behavior."
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/staff/:id",
+      "authRequired": true,
+      "roles": [
+        "SALON_OWNER"
+      ],
+      "responseSample": {
+        "staff": {
+          "id": "...",
+          "status": "INACTIVE",
+          "isBookable": false
+        },
+        "deleteMode": "SOFT",
+        "billingUsage": {}
+      },
+      "note": "Appointment-history safe staff delete. Marks staff inactive and non-bookable, disables linked login, removes service mappings, and refreshes billing usage."
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/staff/:id/reset-access",
+      "authRequired": true,
+      "roles": [
+        "SALON_OWNER"
+      ],
+      "bodySample": {
+        "sendEmail": true
+      },
+      "responseSample": {
+        "staffId": "...",
+        "email": "staff@example.com",
+        "passwordMode": "GENERATED",
+        "emailSent": true
+      },
+      "note": "Owner resets staff password without providing a password. Backend generates a temporary password and emails it when sendEmail is not false."
     },
     {
       "method": "PUT",
       "path": "/api/v1/staff/:id/services",
       "authRequired": true,
-      "roles": ["SALON_OWNER"],
-      "bodySample": { "serviceIds": ["service-id-1", "service-id-2"] },
-      "responseSample": { "staff": { "id": "..." }, "services": [{ "id": "service-id-1", "assigned": true }] },
+      "roles": [
+        "SALON_OWNER"
+      ],
+      "bodySample": {
+        "serviceIds": [
+          "service-id-1",
+          "service-id-2"
+        ]
+      },
+      "responseSample": {
+        "staff": {
+          "id": "..."
+        },
+        "services": [
+          {
+            "id": "service-id-1",
+            "assigned": true
+          }
+        ]
+      },
       "note": "Owner replaces staff-service mapping exactly."
     },
     {
       "method": "GET",
       "path": "/api/v1/staff/me/profile",
       "authRequired": true,
-      "roles": ["STAFF"],
-      "responseSample": { "user": {}, "staff": {}, "salon": { "name": "Salon", "timezone": "America/New_York" }, "assignedServices": [] },
+      "roles": [
+        "STAFF"
+      ],
+      "responseSample": {
+        "user": {},
+        "staff": {},
+        "salon": {
+          "name": "Salon",
+          "timezone": "America/New_York"
+        },
+        "assignedServices": []
+      },
       "note": "Staff app bootstrap profile."
     },
     {
       "method": "GET",
       "path": "/api/v1/staff/me/services",
       "authRequired": true,
-      "roles": ["STAFF"],
-      "responseSample": { "staff": { "id": "..." }, "services": [{ "serviceId": "...", "name": "Gel", "isActive": true }] },
+      "roles": [
+        "STAFF"
+      ],
+      "responseSample": {
+        "staff": {
+          "id": "..."
+        },
+        "services": [
+          {
+            "serviceId": "...",
+            "name": "Gel",
+            "isActive": true
+          }
+        ]
+      },
       "note": "Staff can read active services they can perform."
     },
     {
       "method": "GET",
       "path": "/api/v1/services?includeInactive=true",
       "authRequired": true,
-      "roles": ["SALON_OWNER", "STAFF"],
-      "responseSample": [{ "id": "...", "name": "Gel", "staffServices": [] }],
+      "roles": [
+        "SALON_OWNER",
+        "STAFF"
+      ],
+      "responseSample": [
+        {
+          "id": "...",
+          "name": "Gel",
+          "staffServices": []
+        }
+      ],
       "note": "Owner uses includeInactive. Staff can list active services."
     },
     {
       "method": "PUT",
       "path": "/api/v1/services/:id/staff",
       "authRequired": true,
-      "roles": ["SALON_OWNER"],
-      "bodySample": { "staffIds": ["staff-id-1"] },
-      "responseSample": { "id": "...", "staffServices": [] },
+      "roles": [
+        "SALON_OWNER"
+      ],
+      "bodySample": {
+        "staffIds": [
+          "staff-id-1"
+        ]
+      },
+      "responseSample": {
+        "id": "...",
+        "staffServices": []
+      },
       "note": "Existing service-centric mapping endpoint remains supported."
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/services/:id",
+      "authRequired": true,
+      "roles": [
+        "SALON_OWNER"
+      ],
+      "responseSample": {
+        "service": {
+          "id": "...",
+          "isActive": false
+        },
+        "deleteMode": "SOFT"
+      },
+      "note": "Appointment-history safe service delete. Marks service inactive and removes staff mappings."
     },
     {
       "method": "GET",
       "path": "/api/v1/customers?page=1&limit=20",
       "authRequired": true,
-      "roles": ["SALON_OWNER"],
-      "responseSample": { "items": [], "total": 0 },
+      "roles": [
+        "SALON_OWNER"
+      ],
+      "responseSample": {
+        "items": [],
+        "total": 0
+      },
       "note": "Customer search/list."
     },
     {
       "method": "POST",
       "path": "/api/v1/customers",
       "authRequired": true,
-      "roles": ["SALON_OWNER"],
-      "bodySample": { "firstName": "Kiet", "lastName": "Nguyen", "phone": "(732) 555-0125" },
-      "responseSample": { "id": "..." },
+      "roles": [
+        "SALON_OWNER"
+      ],
+      "bodySample": {
+        "firstName": "Kiet",
+        "lastName": "Nguyen",
+        "phone": "(732) 555-0125"
+      },
+      "responseSample": {
+        "id": "..."
+      },
       "note": "Create customer."
     },
     {
       "method": "GET",
       "path": "/api/v1/appointments?page=1&limit=100",
       "authRequired": true,
-      "roles": ["SALON_OWNER", "STAFF"],
-      "responseSample": { "items": [], "total": 0 },
+      "roles": [
+        "SALON_OWNER",
+        "STAFF"
+      ],
+      "responseSample": {
+        "items": [],
+        "total": 0
+      },
       "note": "Staff only sees assigned appointments."
     },
     {
       "method": "POST",
       "path": "/api/v1/appointments",
       "authRequired": true,
-      "roles": ["SALON_OWNER"],
-      "bodySample": { "customerId": "...", "staffId": "...", "serviceId": "...", "startTime": "2026-06-24T13:00:00.000Z" },
-      "responseSample": { "id": "...", "startTime": "2026-06-24T13:00:00.000Z" },
+      "roles": [
+        "SALON_OWNER"
+      ],
+      "bodySample": {
+        "customerId": "...",
+        "staffId": "...",
+        "serviceId": "...",
+        "startTime": "2026-06-24T13:00:00.000Z"
+      },
+      "responseSample": {
+        "id": "...",
+        "startTime": "2026-06-24T13:00:00.000Z"
+      },
       "note": "startTime is UTC ISO. Staff must be assigned if service has mappings."
     },
     {
       "method": "PATCH",
       "path": "/api/v1/appointments/:id/reschedule",
       "authRequired": true,
-      "roles": ["SALON_OWNER"],
-      "bodySample": { "startTime": "2026-06-24T14:00:00.000Z" },
-      "responseSample": { "id": "...", "startTime": "2026-06-24T14:00:00.000Z" },
+      "roles": [
+        "SALON_OWNER"
+      ],
+      "bodySample": {
+        "startTime": "2026-06-24T14:00:00.000Z"
+      },
+      "responseSample": {
+        "id": "...",
+        "startTime": "2026-06-24T14:00:00.000Z"
+      },
       "note": "Reschedule appointment."
     },
     {
       "method": "GET",
       "path": "/api/v1/availability/slots?staffId=<staffId>&serviceId=<serviceId>&date=YYYY-MM-DD&intervalMinutes=15",
       "authRequired": true,
-      "roles": ["SALON_OWNER", "STAFF"],
-      "responseSample": { "date": "2026-06-24", "slots": [{ "startTime": "2026-06-24T13:00:00.000Z" }] },
+      "roles": [
+        "SALON_OWNER",
+        "STAFF"
+      ],
+      "responseSample": {
+        "date": "2026-06-24",
+        "slots": [
+          {
+            "startTime": "2026-06-24T13:00:00.000Z"
+          }
+        ]
+      },
       "note": "For staff token, staffId must be the signed-in staff id."
     },
     {
       "method": "POST",
       "path": "/api/v1/notifications/register-token",
       "authRequired": true,
-      "roles": ["SALON_OWNER", "STAFF", "CALL_CENTER_AGENT", "OPERATOR"],
-      "bodySample": { "token": "<FCM_TOKEN>", "platform": "android" },
-      "responseSample": { "registered": true, "id": "..." },
+      "roles": [
+        "SALON_OWNER",
+        "STAFF",
+        "CALL_CENTER_AGENT"
+      ],
+      "bodySample": {
+        "token": "<FCM_TOKEN>",
+        "platform": "android"
+      },
+      "responseSample": {
+        "registered": true,
+        "id": "..."
+      },
       "note": "Call after login and Firebase token refresh. Canonical field is token. Platform is case-insensitive and normalized to android, ios, or web. Legacy fcmToken is accepted only when token is absent; deviceId is ignored."
     },
     {
       "method": "POST",
       "path": "/api/v1/notifications/unregister-token",
       "authRequired": true,
-      "roles": ["SALON_OWNER", "STAFF", "CALL_CENTER_AGENT", "OPERATOR"],
-      "bodySample": { "token": "<FCM_TOKEN>", "platform": "android" },
-      "responseSample": { "unregistered": true },
+      "roles": [
+        "SALON_OWNER",
+        "STAFF",
+        "CALL_CENTER_AGENT"
+      ],
+      "bodySample": {
+        "token": "<FCM_TOKEN>",
+        "platform": "android"
+      },
+      "responseSample": {
+        "unregistered": true
+      },
       "note": "Call on logout. Uses the same token/platform input normalization as register-token."
     },
     {
       "method": "GET",
       "path": "/api/v1/notifications/inbox?limit=10",
       "authRequired": true,
-      "roles": ["SALON_OWNER", "STAFF", "CALL_CENTER_AGENT", "OPERATOR"],
-      "responseSample": { "items": [] },
+      "roles": [
+        "SALON_OWNER",
+        "STAFF",
+        "CALL_CENTER_AGENT"
+      ],
+      "responseSample": {
+        "items": []
+      },
       "note": "Notification deep link data can include type, appointmentId, salonId, staffId, and url."
     },
     {
       "method": "GET",
       "path": "/api/v1/call-center/salons",
       "authRequired": true,
-      "roles": ["CALL_CENTER_AGENT", "SALON_OWNER"],
-      "responseSample": [{ "id": "...", "name": "Salon" }],
+      "roles": [
+        "CALL_CENTER_AGENT",
+        "SALON_OWNER"
+      ],
+      "responseSample": [
+        {
+          "id": "...",
+          "name": "Salon"
+        }
+      ],
       "note": "Operator assigned salons."
     },
     {
       "method": "GET",
       "path": "/api/v1/call-center/queue?limit=50",
       "authRequired": true,
-      "roles": ["CALL_CENTER_AGENT", "SALON_OWNER"],
+      "roles": [
+        "CALL_CENTER_AGENT",
+        "SALON_OWNER"
+      ],
       "responseSample": [],
       "note": "Operator waiting calls."
     }

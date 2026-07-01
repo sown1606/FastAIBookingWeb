@@ -225,7 +225,9 @@ const updateStaffSchema = z.object({
 });
 
 const resetStaffAccessSchema = z.object({
-  newPassword: z.string().min(8).max(128)
+  password: z.string().min(8).max(128).optional(),
+  newPassword: z.string().min(8).max(128).optional(),
+  sendEmail: z.boolean().optional()
 });
 
 const servicesQuerySchema = z.object({
@@ -676,10 +678,12 @@ adminRouter.post(
   validate(resetStaffAccessSchema),
   asyncHandler(async (req, res) => {
     const { salonId, id } = req.params as z.infer<typeof salonAndIdSchema>;
-    const { newPassword } = req.body as z.infer<typeof resetStaffAccessSchema>;
-    const result = await resetStaffAccess(salonId, id, req.auth!.userId, newPassword);
+    const payload = req.body as z.infer<typeof resetStaffAccessSchema>;
+    const result = await resetStaffAccess(salonId, id, req.auth!.userId, payload);
     return sendSuccess(res, {
-      message: "Staff access reset.",
+      message: result.emailSent
+        ? "Staff password updated and email sent."
+        : "Staff password updated, but email was not sent.",
       data: result
     });
   })

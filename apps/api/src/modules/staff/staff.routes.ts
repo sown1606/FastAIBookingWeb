@@ -8,6 +8,7 @@ import { sendSuccess } from "../../utils/response";
 import { isValidUsPhone } from "../../utils/phone";
 import {
   createStaff,
+  deleteStaff,
   deactivateStaff,
   getStaffServiceAssignments,
   getStaffSelfProfile,
@@ -45,17 +46,32 @@ const avatarUrlSchema = z
   )
   .optional();
 
-const createStaffSchema = z.object({
-  fullName: z.string().min(2).max(120),
-  email: z.string().email(),
-  phone: usPhoneSchema,
-  title: z.string().max(120).optional(),
-  avatarUrl: avatarUrlSchema,
-  isBookable: z.boolean().optional(),
-  createLogin: z.boolean().optional(),
-  password: z.string().min(8).max(128).optional(),
-  serviceIds: z.array(z.string().uuid()).optional()
-});
+const createStaffSchema = z
+  .object({
+    fullName: z.string().min(2).max(120).optional(),
+    firstName: z.string().min(1).max(80).optional(),
+    lastName: z.string().min(1).max(80).optional(),
+    email: z.string().email(),
+    phone: usPhoneSchema,
+    title: z.string().max(120).optional(),
+    avatarUrl: avatarUrlSchema,
+    isActive: z.boolean().optional(),
+    isBookable: z.boolean().optional(),
+    createLogin: z.boolean().optional(),
+    password: z.string().min(8).max(128).optional(),
+    serviceIds: z.array(z.string().uuid()).optional()
+  })
+  .superRefine((value, context) => {
+    const fullName = value.fullName?.trim();
+    const derivedName = [value.firstName, value.lastName].filter(Boolean).join(" ").trim();
+    if (!fullName && derivedName.length < 2) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["fullName"],
+        message: "fullName or firstName/lastName is required."
+      });
+    }
+  });
 
 const updateStaffSchema = z.object({
   fullName: z.string().min(2).max(120).optional(),
@@ -72,12 +88,14 @@ const setStaffServicesSchema = z.object({
 });
 
 const resetStaffAccessSchema = z.object({
-  newPassword: z.string().min(8).max(128)
+  password: z.string().min(8).max(128).optional(),
+  newPassword: z.string().min(8).max(128).optional(),
+  sendEmail: z.boolean().optional()
 });
 
 const updateStaffSelfSchema = z.object({
   fullName: z.string().min(2).max(120).optional(),
-  phone: usPhoneSchema.optional(),
+  phone: usPhoneSchema.nullable().optional(),
   avatarUrl: avatarUrlSchema
 });
 
@@ -158,10 +176,18 @@ staffRouter.post(
   validate(createStaffSchema),
   asyncHandler(async (req, res) => {
     const payload = req.body as z.infer<typeof createStaffSchema>;
-    const result = await createStaff(req.auth!.salonId!, req.auth!.userId, payload);
+    const fullName =
+      payload.fullName?.trim() ??
+      [payload.firstName, payload.lastName].filter(Boolean).join(" ").trim();
+    const result = await createStaff(req.auth!.salonId!, req.auth!.userId, {
+      ...payload,
+      fullName
+    });
     return sendSuccess(res, {
       statusCode: 201,
-      message: "Staff created.",
+      message: result.emailSent
+        ? "Staff created and invitation email sent."
+        : "Staff created, but invitation email was not sent.",
       data: result
     });
   })
@@ -197,6 +223,24 @@ staffRouter.put(
 );
 
 staffRouter.patch(
+  "/:id/password",
+  requireRoles(Role.SALON_OWNER),
+  validate(staffIdSchema, "params"),
+  validate(resetStaffAccessSchema),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params as z.infer<typeof staffIdSchema>;
+    const payload = req.body as z.infer<typeof resetStaffAccessSchema>;
+    const result = await resetStaffAccess(req.auth!.salonId!, id, req.auth!.userId, payload);
+    return sendSuccess(res, {
+      message: result.emailSent
+        ? "Staff password updated and email sent."
+        : "Staff password updated, but email was not sent.",
+      data: result
+    });
+  })
+);
+
+staffRouter.patch(
   "/:id",
   requireRoles(Role.SALON_OWNER),
   validate(staffIdSchema, "params"),
@@ -208,6 +252,20 @@ staffRouter.patch(
     return sendSuccess(res, {
       message: "Staff updated.",
       data: staff
+    });
+  })
+);
+
+staffRouter.delete(
+  "/:id",
+  requireRoles(Role.SALON_OWNER),
+  validate(staffIdSchema, "params"),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params as z.infer<typeof staffIdSchema>;
+    const result = await deleteStaff(req.auth!.salonId!, id, req.auth!.userId);
+    return sendSuccess(res, {
+      message: "Staff deleted.",
+      data: result
     });
   })
 );
@@ -247,11 +305,13 @@ staffRouter.post(
   validate(resetStaffAccessSchema),
   asyncHandler(async (req, res) => {
     const { id } = req.params as z.infer<typeof staffIdSchema>;
-    const { newPassword } = req.body as z.infer<typeof resetStaffAccessSchema>;
-    const staff = await resetStaffAccess(req.auth!.salonId!, id, req.auth!.userId, newPassword);
+    const payload = req.body as z.infer<typeof resetStaffAccessSchema>;
+    const result = await resetStaffAccess(req.auth!.salonId!, id, req.auth!.userId, payload);
     return sendSuccess(res, {
-      message: "Staff access reset.",
-      data: staff
+      message: result.emailSent
+        ? "Staff password updated and email sent."
+        : "Staff password updated, but email was not sent.",
+      data: result
     });
   })
 );

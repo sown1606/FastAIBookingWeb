@@ -7,6 +7,7 @@ import { validate } from "../../middleware/validate";
 import { sendSuccess } from "../../utils/response";
 import {
   createService,
+  deleteService,
   listServices,
   setServiceActiveState,
   setServiceStaffMapping,
@@ -84,6 +85,20 @@ servicesRouter.patch(
     return sendSuccess(res, {
       message: "Service updated.",
       data: service
+    });
+  })
+);
+
+servicesRouter.delete(
+  "/:id",
+  requireRoles(Role.SALON_OWNER),
+  validate(serviceIdSchema, "params"),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params as z.infer<typeof serviceIdSchema>;
+    const result = await deleteService(req.auth!.salonId!, id, req.auth!.userId);
+    return sendSuccess(res, {
+      message: "Service deleted.",
+      data: result
     });
   })
 );

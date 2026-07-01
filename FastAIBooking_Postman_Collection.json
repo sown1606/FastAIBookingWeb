@@ -958,6 +958,110 @@
           "response": []
         },
         {
+          "name": "Create Staff - Manual Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ownerAccessToken}}"
+              },
+              {
+                "key": "Accept-Language",
+                "value": "{{language}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/staff",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "staff"
+              ]
+            },
+            "description": "Creates staff with owner-provided password and sends login email.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Amy\",\n  \"lastName\": \"Nguyen\",\n  \"email\": \"amy.staff.demo@example.com\",\n  \"phone\": \"+15555550101\",\n  \"password\": \"StaffDemo123!\",\n  \"isActive\": true\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+                  "const json = pm.response.json();",
+                  "if (json.data?.staff?.id) pm.collectionVariables.set(\"staffId\", json.data.staff.id);",
+                  "if (json.data?.staff?.email) pm.collectionVariables.set(\"staffEmail\", json.data.staff.email);",
+                  "pm.test(\"Manual password mode\", function () { pm.expect(json.data?.passwordMode).to.eql(\"MANUAL\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Staff - Auto Generated Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ownerAccessToken}}"
+              },
+              {
+                "key": "Accept-Language",
+                "value": "{{language}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/staff",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "staff"
+              ]
+            },
+            "description": "Creates staff without password. Backend generates temporary password and sends login email.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Kelly\",\n  \"lastName\": \"Tran\",\n  \"email\": \"kelly.staff.demo@example.com\",\n  \"phone\": \"+15555550102\",\n  \"isActive\": true\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+                  "const json = pm.response.json();",
+                  "if (json.data?.staff?.id) pm.collectionVariables.set(\"staffId\", json.data.staff.id);",
+                  "if (json.data?.staff?.email) pm.collectionVariables.set(\"staffEmail\", json.data.staff.email);",
+                  "pm.test(\"Generated password mode\", function () { pm.expect(json.data?.passwordMode).to.eql(\"GENERATED\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Create Staff",
           "request": {
             "method": "POST",
@@ -1114,6 +1218,157 @@
                 }
               ]
             }
+          },
+          "response": []
+        },
+        {
+          "name": "Reset Staff Password - Manual",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ownerAccessToken}}"
+              },
+              {
+                "key": "Accept-Language",
+                "value": "{{language}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/staff/{{staffId}}/reset-access",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "staff",
+                "{{staffId}}",
+                "reset-access"
+              ]
+            },
+            "description": "Owner sets a new staff password and backend emails the new password to the staff.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"password\": \"NewStaffPass123!\",\n  \"sendEmail\": true\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Reset Staff Password - Auto Generated",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ownerAccessToken}}"
+              },
+              {
+                "key": "Accept-Language",
+                "value": "{{language}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/staff/{{staffId}}/reset-access",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "staff",
+                "{{staffId}}",
+                "reset-access"
+              ]
+            },
+            "description": "Backend generates a new temporary password and emails it to the staff.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sendEmail\": true\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Set Staff Password",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ownerAccessToken}}"
+              },
+              {
+                "key": "Accept-Language",
+                "value": "{{language}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/staff/{{staffId}}/password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "staff",
+                "{{staffId}}",
+                "password"
+              ]
+            },
+            "description": "Alias for reset-access. Owner sets a staff password and backend emails it when sendEmail is true.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"password\": \"NewStaffPass123!\",\n  \"sendEmail\": true\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Staff",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ownerAccessToken}}"
+              },
+              {
+                "key": "Accept-Language",
+                "value": "{{language}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/staff/{{staffId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "staff",
+                "{{staffId}}"
+              ]
+            },
+            "description": "Deletes/removes a staff member from active usage. Safe for appointment history."
           },
           "response": []
         },
@@ -1455,6 +1710,40 @@
                 }
               ]
             }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Service",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ownerAccessToken}}"
+              },
+              {
+                "key": "Accept-Language",
+                "value": "{{language}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/services/{{serviceId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "services",
+                "{{serviceId}}"
+              ]
+            },
+            "description": "Deletes/removes a service from active usage. Safe for appointment history."
           },
           "response": []
         },
@@ -4963,6 +5252,110 @@
               ]
             },
             {
+              "name": "Create Staff - Manual Password",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{ownerAccessToken}}"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/staff",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "staff"
+                  ]
+                },
+                "description": "Creates staff with owner-provided password and sends login email.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"firstName\": \"Amy\",\n  \"lastName\": \"Nguyen\",\n  \"email\": \"amy.staff.demo@example.com\",\n  \"phone\": \"+15555550101\",\n  \"password\": \"StaffDemo123!\",\n  \"isActive\": true\n}"
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+                      "const json = pm.response.json();",
+                      "if (json.data?.staff?.id) pm.collectionVariables.set(\"staffId\", json.data.staff.id);",
+                      "if (json.data?.staff?.email) pm.collectionVariables.set(\"staffEmail\", json.data.staff.email);",
+                      "pm.test(\"Manual password mode\", function () { pm.expect(json.data?.passwordMode).to.eql(\"MANUAL\"); });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Create Staff - Auto Generated Password",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{ownerAccessToken}}"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/staff",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "staff"
+                  ]
+                },
+                "description": "Creates staff without password. Backend generates temporary password and sends login email.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"firstName\": \"Kelly\",\n  \"lastName\": \"Tran\",\n  \"email\": \"kelly.staff.demo@example.com\",\n  \"phone\": \"+15555550102\",\n  \"isActive\": true\n}"
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
+                      "const json = pm.response.json();",
+                      "if (json.data?.staff?.id) pm.collectionVariables.set(\"staffId\", json.data.staff.id);",
+                      "if (json.data?.staff?.email) pm.collectionVariables.set(\"staffEmail\", json.data.staff.email);",
+                      "pm.test(\"Generated password mode\", function () { pm.expect(json.data?.passwordMode).to.eql(\"GENERATED\"); });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
               "name": "Create Staff With serviceIds",
               "request": {
                 "method": "POST",
@@ -4987,7 +5380,7 @@
                     "staff"
                   ]
                 },
-                "description": "Create staff login and exact service mapping. If serviceIds is omitted, active/bookable staff auto-assign to active services.",
+                "description": "Create staff login and exact service mapping. Staff create may include password for manual setup or omit it for a generated temporary password sent by email.",
                 "auth": {
                   "type": "bearer",
                   "bearer": [
@@ -5011,8 +5404,7 @@
                     "exec": [
                       "pm.test(\"Status code is 201\", function () { pm.response.to.have.status(201); });",
                       "const json = pm.response.json();",
-                      "if (json.data?.staff?.id) pm.collectionVariables.set(\"staffId\", json.data.staff.id);",
-                      "if (json.data?.invitation?.temporaryPassword) pm.collectionVariables.set(\"staffPassword\", json.data.invitation.temporaryPassword);"
+                      "if (json.data?.staff?.id) pm.collectionVariables.set(\"staffId\", json.data.staff.id);"
                     ]
                   }
                 }
@@ -5168,7 +5560,7 @@
                     "reset-access"
                   ]
                 },
-                "description": "Owner resets staff login. Response includes invitation.temporaryPassword immediately.",
+                "description": "Owner resets staff login. Use password for manual mode or omit password for generated temporary password. Backend emails the new password when sendEmail is true.",
                 "auth": {
                   "type": "bearer",
                   "bearer": [
@@ -5181,7 +5573,7 @@
                 },
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"newPassword\": \"Staff123!\"\n}"
+                  "raw": "{\n  \"password\": \"Staff123!\",\n  \"sendEmail\": true\n}"
                 }
               }
             },
@@ -5272,6 +5664,157 @@
                   "raw": "{}"
                 }
               }
+            },
+            {
+              "name": "Reset Staff Password - Manual",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{ownerAccessToken}}"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/staff/{{staffId}}/reset-access",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "staff",
+                    "{{staffId}}",
+                    "reset-access"
+                  ]
+                },
+                "description": "Owner sets a new staff password and backend emails the new password to the staff.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"password\": \"NewStaffPass123!\",\n  \"sendEmail\": true\n}"
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Reset Staff Password - Auto Generated",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{ownerAccessToken}}"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/staff/{{staffId}}/reset-access",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "staff",
+                    "{{staffId}}",
+                    "reset-access"
+                  ]
+                },
+                "description": "Backend generates a new temporary password and emails it to the staff.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"sendEmail\": true\n}"
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Set Staff Password",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{ownerAccessToken}}"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/staff/{{staffId}}/password",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "staff",
+                    "{{staffId}}",
+                    "password"
+                  ]
+                },
+                "description": "Alias for reset-access. Owner sets a staff password and backend emails it when sendEmail is true.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"password\": \"NewStaffPass123!\",\n  \"sendEmail\": true\n}"
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Delete Staff",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{ownerAccessToken}}"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/staff/{{staffId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "staff",
+                    "{{staffId}}"
+                  ]
+                },
+                "description": "Deletes/removes a staff member from active usage. Safe for appointment history."
+              },
+              "response": []
             },
             {
               "name": "List Services Include Inactive",
@@ -5455,6 +5998,40 @@
                   "raw": "{\n  \"staffIds\": [\n    \"{{staffId}}\"\n  ]\n}"
                 }
               }
+            },
+            {
+              "name": "Delete Service",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{ownerAccessToken}}"
+                  },
+                  {
+                    "key": "Accept-Language",
+                    "value": "{{language}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/services/{{serviceId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "services",
+                    "{{serviceId}}"
+                  ]
+                },
+                "description": "Deletes/removes a service from active usage. Safe for appointment history."
+              },
+              "response": []
             },
             {
               "name": "Customers Search",

@@ -189,6 +189,58 @@ export const setServiceActiveState = async (
   return updated;
 };
 
+export const deleteService = async (
+  salonId: string,
+  serviceId: string,
+  actorUserId: string
+) => {
+  return prisma.$transaction(async (tx) => {
+    const existing = await tx.service.findFirst({
+      where: {
+        id: serviceId,
+        salonId
+      }
+    });
+    if (!existing) {
+      throw new AppError("Service not found.", 404, "SERVICE_NOT_FOUND");
+    }
+
+    await tx.staffService.deleteMany({
+      where: {
+        salonId,
+        serviceId: existing.id
+      }
+    });
+
+    const service = await tx.service.update({
+      where: { id: existing.id },
+      data: {
+        isActive: false
+      },
+      include: activeStaffServicesInclude(salonId)
+    });
+
+    await createAuditLog(
+      {
+        salonId,
+        actorUserId,
+        action: "SERVICE_DELETED",
+        entityType: "Service",
+        entityId: service.id,
+        metadata: {
+          deleteMode: "SOFT"
+        }
+      },
+      tx
+    );
+
+    return {
+      service,
+      deleteMode: "SOFT" as const
+    };
+  });
+};
+
 export const setServiceStaffMapping = async (
   salonId: string,
   serviceId: string,

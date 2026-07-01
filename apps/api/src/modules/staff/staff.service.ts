@@ -14,6 +14,7 @@ interface CreateStaffInput {
   phone?: string;
   title?: string;
   avatarUrl?: string | null;
+  isActive?: boolean;
   isBookable?: boolean;
   createLogin?: boolean;
   password?: string;
@@ -34,6 +35,14 @@ interface UpdateOwnStaffProfileInput {
   fullName?: string;
   phone?: string | null;
   avatarUrl?: string | null;
+}
+
+type StaffPasswordMode = "MANUAL" | "GENERATED";
+
+interface ResetStaffAccessInput {
+  password?: string;
+  newPassword?: string;
+  sendEmail?: boolean;
 }
 
 type PrismaExecutor = typeof prisma | Prisma.TransactionClient;
@@ -163,6 +172,17 @@ const replaceStaffServiceMapping = async (
   }
 };
 
+const resolveStaffPasswordInput = (
+  input?: string | ResetStaffAccessInput
+): { password: string; passwordMode: StaffPasswordMode; sendEmail: boolean } => {
+  const requestedPassword = typeof input === "string" ? input : input?.password ?? input?.newPassword;
+  return {
+    password: requestedPassword ?? generateSecureToken(6),
+    passwordMode: requestedPassword ? "MANUAL" : "GENERATED",
+    sendEmail: typeof input === "string" ? true : input?.sendEmail !== false
+  };
+};
+
 export const listStaff = async (salonId: string, includeInactive = false) => {
   const staff = await prisma.staff.findMany({
     where: {
@@ -189,7 +209,9 @@ export const createStaff = async (
   const normalizedPhone = requireUsPhone(input.phone, "Staff phone");
   const normalizedAvatarUrl = normalizeAvatarUrl(input.avatarUrl);
   const shouldCreateLogin = input.createLogin ?? true;
+  const staffIsActive = input.isActive ?? true;
   const temporaryPassword = input.password ?? generateSecureToken(6);
+  const passwordMode: StaffPasswordMode = input.password ? "MANUAL" : "GENERATED";
   const serviceIds = normalizeServiceIds(input.serviceIds);
   await validateServiceIdsBelongToSalon(salonId, serviceIds ?? []);
 
@@ -212,7 +234,8 @@ export const createStaff = async (
         phone: normalizedPhone,
         title: input.title,
         avatarUrl: normalizedAvatarUrl ?? null,
-        isBookable: input.isBookable ?? true
+        status: staffIsActive ? StaffStatus.ACTIVE : StaffStatus.INACTIVE,
+        isBookable: input.isBookable ?? staffIsActive
       }
     });
 
@@ -282,9 +305,9 @@ export const createStaff = async (
       staff: addStaffServiceSummary(staffWithUser),
       billingUsage: usage,
       invitation: {
-        email: normalizedEmail,
-        temporaryPassword: shouldCreateLogin ? temporaryPassword : undefined
-      }
+        email: normalizedEmail
+      },
+      passwordMode: shouldCreateLogin ? passwordMode : undefined
     };
   });
 
@@ -293,14 +316,17 @@ export const createStaff = async (
     select: { name: true }
   });
 
-  await sendStaffInvitationEmail({
+  const emailSent = await sendStaffInvitationEmail({
     toEmail: normalizedEmail,
     recipientName: input.fullName,
     salonName: salon?.name ?? "Your salon",
     temporaryPassword: shouldCreateLogin ? temporaryPassword : undefined
   });
 
-  return result;
+  return {
+    ...result,
+    emailSent
+  };
 };
 
 export const updateStaff = async (
@@ -486,12 +512,86 @@ export const reactivateStaff = async (
   return updateStaffStatus(salonId, staffId, actorUserId, StaffStatus.ACTIVE);
 };
 
+export const deleteStaff = async (
+  salonId: string,
+  staffId: string,
+  actorUserId: string
+) => {
+  return prisma.$transaction(async (tx) => {
+    const existing = await tx.staff.findFirst({
+      where: {
+        id: staffId,
+        salonId
+      },
+      include: staffWithUserInclude
+    });
+    if (!existing) {
+      throw new AppError("Staff not found.", 404, "STAFF_NOT_FOUND");
+    }
+
+    await tx.staffService.deleteMany({
+      where: {
+        salonId,
+        staffId: existing.id
+      }
+    });
+
+    const staff = await tx.staff.update({
+      where: {
+        id: existing.id
+      },
+      data: {
+        status: StaffStatus.INACTIVE,
+        isBookable: false
+      }
+    });
+
+    if (existing.user) {
+      await tx.user.update({
+        where: { id: existing.user.id },
+        data: {
+          isActive: false
+        }
+      });
+    }
+
+    const usage = await refreshBillingUsageForSalon(salonId, tx);
+
+    await createAuditLog(
+      {
+        salonId,
+        actorUserId,
+        action: "STAFF_DELETED",
+        entityType: "Staff",
+        entityId: staff.id,
+        metadata: {
+          deleteMode: "SOFT"
+        }
+      },
+      tx
+    );
+
+    const staffWithUser = await tx.staff.findUniqueOrThrow({
+      where: { id: staff.id },
+      include: staffWithUserAndServicesInclude
+    });
+
+    return {
+      staff: addStaffServiceSummary(staffWithUser),
+      billingUsage: usage,
+      deleteMode: "SOFT" as const
+    };
+  });
+};
+
 export const resetStaffAccess = async (
   salonId: string,
   staffId: string,
   actorUserId: string,
-  newPassword: string
+  input?: string | ResetStaffAccessInput
 ) => {
+  const { password, passwordMode, sendEmail } = resolveStaffPasswordInput(input);
+
   const result = await prisma.$transaction(async (tx) => {
     const existing = await tx.staff.findFirst({
       where: {
@@ -504,7 +604,7 @@ export const resetStaffAccess = async (
       throw new AppError("Staff not found.", 404, "STAFF_NOT_FOUND");
     }
 
-    const passwordHash = await hashPassword(newPassword);
+    const passwordHash = await hashPassword(password);
 
     if (existing.user) {
       await tx.user.update({
@@ -526,24 +626,46 @@ export const resetStaffAccess = async (
 
       const duplicated = await tx.user.findUnique({
         where: { email: normalizedEmail },
-        select: { id: true }
-      });
-      if (duplicated) {
-        throw new AppError("Email is already registered.", 409, "EMAIL_ALREADY_EXISTS");
-      }
-
-      await tx.user.create({
-        data: {
-          email: normalizedEmail,
-          passwordHash,
-          fullName: existing.fullName,
-          phone: existing.phone,
-          role: Role.STAFF,
-          salonId,
-          staffId: existing.id,
-          isActive: existing.status === StaffStatus.ACTIVE
+        select: {
+          id: true,
+          role: true,
+          salonId: true,
+          staffId: true
         }
       });
+      if (duplicated) {
+        const canLinkExistingUser =
+          duplicated.role === Role.STAFF &&
+          duplicated.salonId === salonId &&
+          (duplicated.staffId === null || duplicated.staffId === existing.id);
+        if (!canLinkExistingUser) {
+          throw new AppError("Email is already registered.", 409, "EMAIL_ALREADY_EXISTS");
+        }
+
+        await tx.user.update({
+          where: { id: duplicated.id },
+          data: {
+            passwordHash,
+            fullName: existing.fullName,
+            phone: existing.phone,
+            staffId: existing.id,
+            isActive: existing.status === StaffStatus.ACTIVE
+          }
+        });
+      } else {
+        await tx.user.create({
+          data: {
+            email: normalizedEmail,
+            passwordHash,
+            fullName: existing.fullName,
+            phone: existing.phone,
+            role: Role.STAFF,
+            salonId,
+            staffId: existing.id,
+            isActive: existing.status === StaffStatus.ACTIVE
+          }
+        });
+      }
     }
 
     await createAuditLog(
@@ -565,26 +687,33 @@ export const resetStaffAccess = async (
     return {
       staff: addStaffServiceSummary(staffWithUser),
       invitation: {
-        email: staffWithUser.user?.email ?? normalizeEmail(staffWithUser.email),
-        temporaryPassword: newPassword
-      }
+        email: staffWithUser.user?.email ?? normalizeEmail(staffWithUser.email)
+      },
+      staffId: existing.id,
+      email: staffWithUser.user?.email ?? normalizeEmail(staffWithUser.email),
+      passwordMode
     };
   });
 
   if (!result.invitation.email) {
     throw new AppError("Staff email is required to send the new password.", 400, "STAFF_EMAIL_REQUIRED");
   }
+  const loginEmail = result.invitation.email;
 
-  const salon = await prisma.salon.findUnique({
-    where: { id: salonId },
-    select: { name: true }
-  });
-  const emailSent = await sendStaffPasswordChangedEmail({
-    toEmail: result.invitation.email,
-    recipientName: result.staff.fullName,
-    salonName: salon?.name ?? "Your salon",
-    newPassword
-  });
+  const emailSent = sendEmail
+    ? await (async () => {
+        const salon = await prisma.salon.findUnique({
+          where: { id: salonId },
+          select: { name: true }
+        });
+        return sendStaffPasswordChangedEmail({
+          toEmail: loginEmail,
+          recipientName: result.staff.fullName,
+          salonName: salon?.name ?? "Your salon",
+          newPassword: password
+        });
+      })()
+    : false;
 
   return {
     ...result,
