@@ -28,6 +28,8 @@ export const MyProfilePage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [profile, setProfile] = useState<StaffProfileResponse | null>(null);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
 
   const [form, setForm] = useState({
     fullName: "",
@@ -62,6 +64,7 @@ export const MyProfilePage = () => {
 
   const saveProfile = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setSavingProfile(true);
     try {
       const response = await apiPut<StaffProfileResponse, unknown>("/api/v1/staff/me/profile", {
         fullName: form.fullName,
@@ -71,11 +74,14 @@ export const MyProfilePage = () => {
       notify("success", t("myProfile.saved"));
     } catch (saveError) {
       notify("error", extractErrorMessage(saveError));
+    } finally {
+      setSavingProfile(false);
     }
   };
 
   const changePassword = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setChangingPassword(true);
     try {
       await apiPost<null, { currentPassword: string; newPassword: string }>(
         "/api/v1/auth/change-password",
@@ -91,6 +97,8 @@ export const MyProfilePage = () => {
       notify("success", t("myProfile.passwordChanged"));
     } catch (changeError) {
       notify("error", extractErrorMessage(changeError));
+    } finally {
+      setChangingPassword(false);
     }
   };
 
@@ -148,6 +156,7 @@ export const MyProfilePage = () => {
               value={form.fullName}
               onChange={(event) => setForm((prev) => ({ ...prev, fullName: event.target.value }))}
               required
+              disabled={savingProfile}
             />
           </label>
           <label className="field">
@@ -155,6 +164,7 @@ export const MyProfilePage = () => {
             <input
               value={form.phone}
               onChange={(event) => setForm((prev) => ({ ...prev, phone: event.target.value }))}
+              disabled={savingProfile}
             />
           </label>
           <label className="field">
@@ -165,8 +175,8 @@ export const MyProfilePage = () => {
             />
           </label>
           <div className="form-actions">
-            <button type="submit" className="button-primary">
-              {t("myProfile.save")}
+            <button type="submit" className="button-primary" disabled={savingProfile}>
+              {savingProfile ? t("common.loading") : t("myProfile.save")}
             </button>
           </div>
         </form>
@@ -184,6 +194,7 @@ export const MyProfilePage = () => {
                 setPasswordForm((prev) => ({ ...prev, currentPassword: event.target.value }))
               }
               required
+              disabled={changingPassword}
             />
           </label>
           <label className="field">
@@ -196,12 +207,13 @@ export const MyProfilePage = () => {
                 setPasswordForm((prev) => ({ ...prev, newPassword: event.target.value }))
               }
               required
+              disabled={changingPassword}
             />
             <small>{t("myProfile.passwordHint")}</small>
           </label>
           <div className="form-actions">
-            <button type="submit" className="button-primary">
-              {t("myProfile.passwordTitle")}
+            <button type="submit" className="button-primary" disabled={changingPassword}>
+              {changingPassword ? t("common.loading") : t("myProfile.passwordTitle")}
             </button>
           </div>
         </form>

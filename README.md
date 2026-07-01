@@ -2,7 +2,7 @@
 
 Monorepo for the FastAIBooking SaaS booking platform for U.S. nail salons.
 
-Current demo focus: one clean demo salon across Platform Admin, Owner, Staff, and Operator flows.
+Current demo focus: one clean demo salon across Platform Admin, Owner, Staff, and Call Center Agent/Operator workspace flows.
 
 ## Apps
 
@@ -54,6 +54,7 @@ Important:
 - Preserved extra owner login: `owner.callcenter.demo@fastaibooking.local` / `Owner123!`
 
 Only `owner.demo@fastaibooking.local` is seeded as the primary owner of the single demo salon.
+The auth role for the operator workspace is `CALL_CENTER_AGENT`; "Operator" remains UI/business wording for the human call-center workflow.
 
 ## Demo Seed Snapshot
 

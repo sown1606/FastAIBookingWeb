@@ -19,8 +19,7 @@ export const RequireAuth = ({ children }: { children: React.ReactNode }) => {
   if (
     session.user.role !== "SALON_OWNER" &&
     session.user.role !== "STAFF" &&
-    session.user.role !== "CALL_CENTER_AGENT" &&
-    session.user.role !== "OPERATOR"
+    session.user.role !== "CALL_CENTER_AGENT"
   ) {
     return <Navigate to="/login" replace />;
   }

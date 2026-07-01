@@ -14,7 +14,7 @@ One clean demo salon only:
 
 ## What Is Now Coherent
 
-- Owner, Staff, Operator, and Platform Admin all compile against real API-backed screens.
+- Owner, Staff, Call Center Agent, and Platform Admin all compile against real API-backed screens.
 - Default product locale is Vietnamese in both `apps/app` and `apps/admin`, with English still available.
 - The owner app now exposes a real call-center monitoring page in addition to the operator workspace.
 - Admin call and AI log pages now use consistent i18n and show real backend data instead of mixed hardcoded text.
@@ -38,16 +38,16 @@ One clean demo salon only:
   - callback fallback
   - voicemail fallback
   - SMS fallback
-- 1 assigned call-center operator
+- 1 assigned call-center agent
 
 ## UI Changes In This Pass
 
 - `apps/app`
-  - added a persisted Basic / Advanced view mode switch for demo-friendly navigation
-  - Basic mode keeps owner navigation focused on dashboard, appointments, staff, services, salon profile, and call center status
-  - Basic mode keeps staff work to today/dashboard and appointments, hiding extra reminders/source details
-  - Basic mode keeps the operator workspace focused on opening Amazon Connect CCP, selecting a salon, queue handling, customer/booking forms, appointment actions, notes, and completion
-  - Advanced mode keeps the existing full owner navigation plus operator runtime/AWS/AI/debug details
+  - owner sidebar exposes the release navigation: dashboard, appointments, customers, staff, services, business hours, availability, salon profile/settings, call center, calls, AI logs, billing, messages, and alerts
+  - owner dashboard quick actions remain simplified for the demo flow
+  - staff sidebar exposes dashboard, appointments, and My Profile only
+  - My Profile is routed at `/my-profile` for Staff and uses real profile and password endpoints
+  - the operator workspace stays focused on opening Amazon Connect CCP, selecting a salon, queue handling, customer/booking forms, appointment actions, notes, and completion
   - appointments now default to today's selected date, show previous/next day buttons plus a date input, and filter owner/staff visible schedules to that selected day while preserving the status filter
   - business hours now highlights the current weekday with a Today/Hôm nay label
   - added owner access to `/call-center`
@@ -59,6 +59,7 @@ One clean demo salon only:
     - Alerts
     - Messages
     - My Profile
+    - Billing
   - owner call-center monitor now shows:
     - assigned operators
     - queue metrics
@@ -74,11 +75,11 @@ One clean demo salon only:
 
 ## Backend Changes In This Pass
 
-- Owner access is allowed for read-only call-center monitoring routes while queue mutations remain operator-only.
+- Owner access is allowed for read-only call-center monitoring routes while queue mutations remain call-center-agent-only.
 - Call-center workspace access now resolves by:
   - owner salon context
-  - operator salon assignments
-- Call-center runtime payload now reports owner/operator access mode and Amazon Connect readiness context.
+  - call-center agent salon assignments
+- Call-center runtime payload now reports owner/call-center-agent access mode and Amazon Connect readiness context.
 - Amazon Connect is now the documented phone, contact flow, queue, and human escalation layer.
 - Legacy call ingestion remains present in code for optional/future attribution work, but it is not part of the main demo architecture.
 
@@ -107,16 +108,22 @@ One clean demo salon only:
 - Booking Lambda still requires an internal backend endpoint and `FASTAIBOOKING_API_INTERNAL_TOKEN`.
 - SMTP and Twilio still require real provider credentials for live delivery.
 
+## Release Hygiene Notes
+
+- Do not include unrelated local artifacts in web deploy packaging:
+  - `GoogleService-Info.plist`
+  - `google-services.json`
+  - `localhost-kan-tekcom-20260521-152245-rkdxec.wpress`
+  - `wordpress-7.0.zip`
+  - `fastaibooking-current-state.zip`
+- These files were present in the working tree during the June 29, 2026 release audit and were not removed automatically.
+
 ## Next Implementation Checklist
 
 Backend:
 
-- Add or verify Amazon Connect contact session model if needed.
-- Add endpoint for Booking Lambda to create appointment.
-- Add internal auth token validation for Lambda.
-- Add endpoint to record contact flow result.
-- Add appointment creation from AI payload.
-- Ensure Owner and assigned Staff can see created appointment.
+- Internal AI appointment endpoint, token validation, appointment creation, booking attempts, call sessions, transcripts, and AI logs are covered by automated API/Lambda tests.
+- Continue live verification with a seeded database and Amazon Connect/Lex/Lambda environment before demo.
 
 Amazon Connect:
 
@@ -130,14 +137,23 @@ Amazon Connect:
 Frontend:
 
 - Owner dashboard shows new appointments.
-- Staff dashboard shows assigned appointments.
+- Staff dashboard shows assigned appointments and Staff My Profile.
 - Operator dashboard shows call center queue/request context.
 - Admin dashboard shows integration health.
 
 ## Verification Status
 
-- TypeScript checks passed for:
-  - `apps/api`
-  - `apps/app`
-  - `apps/admin`
-- Browser/manual smoke still needs to be run against a live local database after Prisma migrate + seed complete.
+- June 29, 2026 baseline install passed: `npm ci`.
+- June 29, 2026 final source verification passed:
+  - `npm --prefix apps/api run prisma:generate`
+  - `npm run typecheck:app`
+  - `npm run typecheck:admin`
+  - `npm run typecheck:api`
+  - `npm run build:app`
+  - `npm run build:admin`
+  - `npm run build:api`
+  - `npm run test:lambda`
+  - `npm run test:api`
+  - `git diff --check`
+- `npm run build:app` produced no missing `/assets/demo/nail-service.webp` or `/assets/demo/salon-wall.webp` warnings; Vite still reports the existing large chunk warning.
+- Browser/manual smoke still needs to be run against a live seeded database and live Amazon Connect/Lex/Lambda setup.

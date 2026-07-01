@@ -38,20 +38,31 @@ test("staff cannot access owner-only app pages or owner-only API actions", () =>
     "services",
     "business-hours",
     "customers",
+    "availability",
     "billing",
     "calls",
-    "ai-logs"
+    "ai-logs",
+    "messages",
+    "alerts"
   ]) {
     assert.match(ownerApp, new RegExp(`path="${route}"[\\s\\S]*?RequireRole roles=\\{\\["SALON_OWNER"\\]\\}`));
   }
+  assert.match(ownerApp, /path="appointments"[\s\S]*?RequireRole roles=\{\["SALON_OWNER", "STAFF"\]\}/);
+  assert.match(ownerApp, /path="my-profile"[\s\S]*?RequireRole roles=\{\["STAFF"\]\}/);
 
   assert.match(salonRoutes, /salonRouter\.use\(requireRoles\(Role\.SALON_OWNER\)\)/);
   assert.match(servicesRoutes, /servicesRouter\.post\(\s*"\/",\s*requireRoles\(Role\.SALON_OWNER\)/s);
   assert.match(servicesRoutes, /servicesRouter\.patch\(\s*"\/:id",\s*requireRoles\(Role\.SALON_OWNER\)/s);
+  assert.match(servicesRoutes, /servicesRouter\.delete\(\s*"\/:id",\s*requireRoles\(Role\.SALON_OWNER\)/s);
   assert.match(staffRoutes, /staffRouter\.get\(\s*"\/",\s*requireRoles\(Role\.SALON_OWNER\)/s);
   assert.match(staffRoutes, /staffRouter\.post\(\s*"\/",\s*requireRoles\(Role\.SALON_OWNER\)/s);
   assert.match(staffRoutes, /staffRouter\.patch\(\s*"\/:id",\s*requireRoles\(Role\.SALON_OWNER\)/s);
+  assert.match(staffRoutes, /staffRouter\.patch\(\s*"\/:id\/password",\s*requireRoles\(Role\.SALON_OWNER\)/s);
+  assert.match(staffRoutes, /staffRouter\.delete\(\s*"\/:id",\s*requireRoles\(Role\.SALON_OWNER\)/s);
   assert.match(staffRoutes, /staffRouter\.put\(\s*"\/:id\/services",\s*requireRoles\(Role\.SALON_OWNER\)/s);
+  assert.match(staffRoutes, /staffRouter\.get\(\s*"\/me\/profile",\s*requireRoles\(Role\.STAFF\)/s);
+  assert.match(staffRoutes, /staffRouter\.put\(\s*"\/me\/profile",\s*requireRoles\(Role\.STAFF\)/s);
+  assert.match(staffRoutes, /phone:\s*usPhoneSchema\.nullable\(\)\.optional\(\)/);
   assert.match(callsRoutes, /callsRouter\.use\(requireRoles\(Role\.SALON_OWNER\)\)/);
   assert.match(aiRoutes, /aiRouter\.use\(requireRoles\(Role\.SALON_OWNER\)\)/);
 });
@@ -132,9 +143,10 @@ test("notification APIs are authenticated, role-limited, and scoped to current u
 
   assert.match(app, /app\.use\(`\$\{PUBLIC_API_PREFIX\}\/notifications`, authenticate, notificationsRouter\)/);
   assert.match(app, /app\.use\(`\$\{PUBLIC_API_PREFIX\}\/devices`, authenticate, devicesRouter\)/);
-  for (const role of ["SALON_OWNER", "STAFF", "CALL_CENTER_AGENT", "OPERATOR"]) {
+  for (const role of ["SALON_OWNER", "STAFF", "CALL_CENTER_AGENT"]) {
     assert.match(routes, new RegExp(`"${role}"`));
   }
+  assert.doesNotMatch(routes, new RegExp(`"${"OPER"}${"ATOR"}"`));
   assert.doesNotMatch(routes, /"PLATFORM_ADMIN"/);
   for (const endpoint of [
     '"/inbox"',
@@ -308,18 +320,44 @@ test("staff invitation and password reset use the unified transactional mailer",
   assert.match(mailer, /demoLog:\s*\{[\s\S]*temporaryPassword:\s*input\.temporaryPassword/s);
 });
 
-test("operator call-center access is limited to assigned salon workflows", () => {
+test("call-center agent access is limited to assigned salon workflows", () => {
   const app = readApi("app.ts");
   const routes = readApi("modules/call-center/call-center.routes.ts");
   const service = readApi("modules/call-center/call-center.service.ts");
   const ownerApp = readRepo("apps/app/src/App.tsx");
 
   assert.match(app, /requireRoles\(Role\.CALL_CENTER_AGENT, Role\.SALON_OWNER\)/);
-  assert.match(ownerApp, /path="call-center"[\s\S]*?RequireRole roles=\{\["SALON_OWNER", "CALL_CENTER_AGENT", "OPERATOR"\]\}/);
+  assert.match(ownerApp, /path="call-center"[\s\S]*?RequireRole roles=\{\["SALON_OWNER", "CALL_CENTER_AGENT"\]\}/);
   assert.match(routes, /listEscalationQueue\(\s*\{\s*userId: req\.auth!\.userId,\s*role: req\.auth!\.role,\s*salonId: req\.auth!\.salonId\s*\}/s);
   assert.match(service, /export const assertCallCenterSalonAccess/);
   assert.match(service, /salonId_agentUserId/);
   assert.match(service, /Salon is not assigned to this call center agent\./);
+});
+
+test("owner navigation exposes release pages and staff navigation exposes profile only", () => {
+  const layout = readRepo("apps/app/src/components/layout.tsx");
+
+  for (const route of [
+    "/dashboard",
+    "/appointments",
+    "/customers",
+    "/staff",
+    "/services",
+    "/business-hours",
+    "/availability",
+    "/salon-profile",
+    "/call-center",
+    "/calls",
+    "/ai-logs",
+    "/billing",
+    "/messages",
+    "/alerts"
+  ]) {
+    assert.match(layout, new RegExp(`to: "${route}"`));
+  }
+
+  assert.match(layout, /const staffNav = \[[\s\S]*?to: "\/my-profile"/);
+  assert.doesNotMatch(layout, new RegExp(`role === "${"OPER"}${"ATOR"}"`));
 });
 
 test("platform admin routes require PLATFORM_ADMIN and admin dashboard guard enforces it", () => {

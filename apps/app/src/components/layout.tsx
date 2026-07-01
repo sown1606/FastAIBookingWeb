@@ -8,15 +8,24 @@ import type { AuthUser } from "../types";
 const ownerNav = [
   { to: "/dashboard", labelKey: "nav.dashboard" },
   { to: "/appointments", labelKey: "nav.appointments" },
+  { to: "/customers", labelKey: "nav.customers" },
   { to: "/staff", labelKey: "nav.staff" },
   { to: "/services", labelKey: "nav.services" },
+  { to: "/business-hours", labelKey: "nav.businessHours" },
+  { to: "/availability", labelKey: "nav.availability" },
   { to: "/salon-profile", labelKey: "nav.salonProfile" },
-  { to: "/call-center", labelKey: "nav.callCenter" }
+  { to: "/call-center", labelKey: "nav.callCenter" },
+  { to: "/calls", labelKey: "nav.calls" },
+  { to: "/ai-logs", labelKey: "nav.aiLogs" },
+  { to: "/billing", labelKey: "nav.billing" },
+  { to: "/messages", labelKey: "nav.messages" },
+  { to: "/alerts", labelKey: "nav.alerts" }
 ];
 
 const staffNav = [
   { to: "/dashboard", labelKey: "nav.today" },
-  { to: "/appointments", labelKey: "nav.appointments" }
+  { to: "/appointments", labelKey: "nav.appointments" },
+  { to: "/my-profile", labelKey: "nav.profile" }
 ];
 
 const callCenterNav = [
@@ -24,7 +33,7 @@ const callCenterNav = [
 ];
 
 const isCallCenterRole = (role: AuthUser["role"]) =>
-  role === "CALL_CENTER_AGENT" || role === "OPERATOR";
+  role === "CALL_CENTER_AGENT";
 
 const resolveTitleKey = (pathname: string): TranslationKey => {
   if (pathname === "/dashboard") return "nav.dashboard";

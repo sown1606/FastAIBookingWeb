@@ -206,8 +206,6 @@ Expected:
 2. Confirm the sidebar includes only:
    - dashboard
    - appointments
-   - availability
-   - messages
    - my profile
 3. Confirm owner-only pages are not shown in navigation.
 4. Open Appointments and confirm only appointments assigned to this staff member are listed.
@@ -216,11 +214,10 @@ Expected:
 7. Change the password and confirm the request succeeds.
 8. Manually open an owner-only route such as `/staff` or `/billing` and confirm redirect does not loop.
 
-## Operator Smoke Test
+## Call Center Agent Smoke Test
 
 1. Log in at `/login` with `agent.demo@fastaibooking.local`.
 2. Confirm the sidebar includes only:
-   - dashboard
    - call center
 3. Open Call Center and confirm the queue is not empty after seed.
 4. Open the newest escalation detail and verify:
@@ -239,7 +236,7 @@ Expected:
 12. Capture voicemail metadata.
 13. Trigger SMS fallback and confirm the app shows request state, not fake delivery.
 
-## Kịch bản demo Operator
+## Kịch bản demo Call Center Agent
 
 1. Đăng nhập Operator tại `https://app-new-nail.kendemo.com/login`.
 2. Mở Call Center và để Amazon Connect CCP/browser softphone ở trạng thái Available.
@@ -247,7 +244,7 @@ Expected:
 4. Nhận cuộc gọi, mở escalation detail, kiểm tra transcript, AI summary, booking attempts và customer context.
 5. Ghi chú cuộc gọi, cập nhật trạng thái xử lý và hoàn tất escalation.
 
-## Operator Appointment Workflow Test
+## Call Center Agent Appointment Workflow Test
 
 1. Stay logged in as `agent.demo@fastaibooking.local`.
 2. In Call Center, select the seeded salon.
@@ -267,7 +264,7 @@ Expected:
 5. Confirm a booking attempt exists with success status.
 6. Confirm the linked appointment exists and is associated with the seeded customer and staff member.
 
-## AI Escalates To Operator Test
+## AI Escalates To Call Center Test
 
 1. Log in as operator.
 2. Open Call Center queue.
@@ -299,7 +296,7 @@ Ready:
 
 - Main phone flow is Amazon Connect -> Lex `prod` alias -> Booking Lambda -> internal AI appointment endpoint -> backend booking/escalation flow.
 - Automated Lambda and API tests cover booking, missing input, invalid staff, any staff, alternatives, cancel/reschedule handoff, human escalation, and backend failure safety.
-- Role guard tests cover owner, staff, operator, platform admin, and cross-salon route contracts.
+- Role guard tests cover owner, staff, call center agent, platform admin, and cross-salon route contracts.
 
 Needs manual AWS Console setup:
 

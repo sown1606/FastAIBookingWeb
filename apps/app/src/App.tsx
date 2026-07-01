@@ -22,6 +22,7 @@ import { MessagesPage } from "./pages/messages-page";
 import { AlertsPage } from "./pages/alerts-page";
 import { FeedbackPage } from "./pages/feedback-page";
 import { CallCenterPage } from "./pages/call-center-page";
+import { MyProfilePage } from "./pages/my-profile-page";
 import { UiModeProvider } from "./lib/ui-mode";
 import { useToast } from "./components/toast";
 import { NOTIFICATIONS_CHANGED_EVENT } from "./components/notification-bell";
@@ -32,7 +33,7 @@ import {
 } from "./lib/firebase-messaging";
 
 const isCallCenterRole = (role?: string | null) =>
-  role === "CALL_CENTER_AGENT" || role === "OPERATOR";
+  role === "CALL_CENTER_AGENT";
 
 const PushNotificationBridge = () => {
   const { session } = useAuth();
@@ -187,8 +188,16 @@ export const App = () => {
           <Route
             path="call-center"
             element={
-              <RequireRole roles={["SALON_OWNER", "CALL_CENTER_AGENT", "OPERATOR"]}>
+              <RequireRole roles={["SALON_OWNER", "CALL_CENTER_AGENT"]}>
                 <CallCenterPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="my-profile"
+            element={
+              <RequireRole roles={["STAFF"]}>
+                <MyProfilePage />
               </RequireRole>
             }
           />

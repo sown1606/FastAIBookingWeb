@@ -49,7 +49,7 @@ Date: 2026-06-14
 
 ## Notification Smoke Coverage
 
-- Notification API routes are authenticated and role-limited for `SALON_OWNER`, `STAFF`, `CALL_CENTER_AGENT`, and `OPERATOR`.
+- Notification API routes are authenticated and role-limited for `SALON_OWNER`, `STAFF`, and `CALL_CENTER_AGENT`.
 - Notification bell loads inbox/unread count, marks one notification read, marks all read, and navigates to `notification.url`.
 - Foreground Firebase messages dispatch the notification refresh event.
 - Logout unregisters the browser token on a best-effort basis.

@@ -40,7 +40,7 @@ interface MeResponse {
   id: string;
   email: string;
   fullName: string;
-  role: "PLATFORM_ADMIN" | "SALON_OWNER" | "STAFF" | "CALL_CENTER_AGENT" | "OPERATOR";
+  role: "PLATFORM_ADMIN" | "SALON_OWNER" | "STAFF" | "CALL_CENTER_AGENT";
   salonId: string | null;
   staffId: string | null;
 }
@@ -60,8 +60,7 @@ const assertRoleSupported = (role: AuthUser["role"]) => {
   if (
     role === "SALON_OWNER" ||
     role === "STAFF" ||
-    role === "CALL_CENTER_AGENT" ||
-    role === "OPERATOR"
+    role === "CALL_CENTER_AGENT"
   ) {
     return;
   }

@@ -26,8 +26,7 @@ import { pushTokenSchema, type PushTokenPayload } from "./notifications.schemas"
 const supportedPushRoles = new Set([
   "SALON_OWNER",
   "STAFF",
-  "CALL_CENTER_AGENT",
-  "OPERATOR"
+  "CALL_CENTER_AGENT"
 ]);
 
 const inboxQuerySchema = z.object({

@@ -22,7 +22,6 @@ frontend build variables, local setup, and production verification.
 - `SALON_OWNER`
 - `STAFF`
 - `CALL_CENTER_AGENT`
-- `OPERATOR`
 
 ## Relevant Routes
 
