@@ -957,6 +957,8 @@ test("invalid staff preferences are cleared and ask for staff without booking", 
     assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitSlot");
     assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "staffPreference");
     assert.match(result.body.data.lexResponse.message, /press 1 for Trang/i);
+    assert.match(result.body.data.lexResponse.message, /press 0 for any available staff/i);
+    assert.equal(JSON.parse(result.body.data.lexResponse.sessionAttributes.staffDtmfStaffIds)["1"], ids.trang);
     const attempt = state.bookingAttempts.at(-1);
     assert.equal(attempt.requestedStaff, undefined);
     assert.equal(attempt.normalizedRequest.staffPreference, undefined);
@@ -1014,6 +1016,8 @@ test("staff DTMF applies only to staffPreference and reaches confirmation", asyn
   assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
   assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Pedicure");
   assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffId, ids.trang);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.selectedStaffId, ids.trang);
   assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedServiceName, "Pedicure");
   assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedStaffName, "Trang");
   assert.match(result.body.data.lexResponse.message, /pedicure/i);
@@ -1042,17 +1046,18 @@ test("staff DTMF 3 maps to Kelly and does not ask staff again", async () => {
   assert.equal(result.body.data.outcome, "MISSING_INFO");
   assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
   assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Kelly");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffId, ids.kelly);
   assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedStaffName, "Kelly");
   assert.match(result.body.data.lexResponse.message, /pedicure with Kelly/i);
   assert.equal(state.appointments.length, 0);
 });
 
-test("staff DTMF 4 maps to any staff and resolves before confirmation", async () => {
+test("staff DTMF 0 maps to any staff and resolves before confirmation", async () => {
   const result = await postInternalAppointment(
     bookingPayload({
       staffPreference: undefined,
       confirmationState: undefined,
-      transcript: "4",
+      transcript: "0",
       attributes: {
         lastAskedSlot: "staffPreference",
         serviceName: "Pedicure",
@@ -1068,8 +1073,88 @@ test("staff DTMF 4 maps to any staff and resolves before confirmation", async ()
   assert.equal(result.body.data.outcome, "MISSING_INFO");
   assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
   assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffId, ids.trang);
   assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedStaffName, "Trang");
   assert.match(result.body.data.lexResponse.message, /I found Trang available/i);
+  assert.equal(state.appointments.length, 0);
+});
+
+test("staff DTMF uses session staffId mapping instead of name-only matching", async () => {
+  const result = await postInternalAppointment(
+    bookingPayload({
+      staffPreference: undefined,
+      confirmationState: undefined,
+      transcript: "2",
+      attributes: {
+        lastAskedSlot: "staffPreference",
+        staffDtmfOptions: JSON.stringify({
+          "0": "Any staff",
+          "1": "Trang",
+          "2": "Amy",
+          "3": "Kelly"
+        }),
+        staffDtmfStaffIds: JSON.stringify({
+          "1": ids.trang,
+          "2": ids.amy,
+          "3": ids.kelly
+        }),
+        serviceName: "Pedicure",
+        requestedDate: "2026-05-28",
+        requestedTime: "2 PM",
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Amy");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffId, ids.amy);
+  assert.deepEqual(new Set(state.validationStaffIds), new Set([ids.amy]));
+  assert.equal(state.appointments.length, 0);
+});
+
+test("invalid staff DTMF repeats staff options without booking", async () => {
+  const result = await postInternalAppointment(
+    bookingPayload({
+      staffPreference: undefined,
+      confirmationState: undefined,
+      transcript: "9",
+      attributes: {
+        lastAskedSlot: "staffPreference",
+        serviceName: "Pedicure",
+        requestedDate: "2026-05-28",
+        requestedTime: "2 PM",
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitSlot");
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "staffPreference");
+  assert.match(result.body.data.lexResponse.message, /I didn't find that option/i);
+  assert.match(result.body.data.lexResponse.message, /press 1 for Trang/i);
+  assert.equal(state.appointments.length, 0);
+});
+
+test("no active staff does not crash the AI booking flow", async () => {
+  state.staff = state.staff.filter((member) => member.salonId !== ids.salonA);
+
+  const result = await postInternalAppointment(
+    bookingPayload({
+      staffPreference: undefined,
+      confirmationState: undefined
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "NO_AVAILABILITY");
+  assert.equal(result.body.data.alternatives.length, 0);
   assert.equal(state.appointments.length, 0);
 });
 

@@ -66,6 +66,8 @@ interface CreateAmazonConnectAIAppointmentInput {
   requestedDate?: string;
   requestedTime?: string;
   staffPreference?: string;
+  staffId?: string;
+  selectedStaffId?: string;
   confirmationState?: string;
   source?: string;
   contactId?: string;
@@ -371,12 +373,6 @@ const DEMO_SERVICE_NAMES = [
   "Dip Powder",
   "Other Services"
 ];
-const DEMO_STAFF_NAMES = ["Trang", "Amy", "Kelly"];
-const STAFF_ALIAS_GROUPS: Record<string, string[]> = {
-  Trang: ["trang", "chang", "train", "trangg"],
-  Amy: ["amy", "amie", "a me"],
-  Kelly: ["kelly", "keli", "kelley", "ke li"]
-};
 const SERVICE_DTMF_OPTIONS: Record<string, string> = {
   "1": "Pedicure",
   "2": "Manicure",
@@ -385,15 +381,12 @@ const SERVICE_DTMF_OPTIONS: Record<string, string> = {
   "5": "Dip Powder"
 };
 const STAFF_DTMF_OPTIONS: Record<string, string> = {
-  "1": "Trang",
-  "2": "Amy",
-  "3": "Kelly",
-  "4": "Any staff"
+  "0": "Any staff"
 };
 const SERVICE_DTMF_PROMPT =
   "What service would you like today? You can say Pedicure, Manicure, Gel Manicure, Full Set, Dip Powder, or Other Services. You can also press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Full Set, or 5 for Dip Powder. Press 0 to speak with an operator.";
 const STAFF_DTMF_PROMPT =
-  "Who would you like to book with? You can say a staff name or any staff. Press 0 to speak with an operator.";
+  "Who would you like to book with? Please listen to the available staff options, press 0 for any available staff, or say operator to speak with a person.";
 
 const normalizeForMatch = (value?: string | null): string => {
   return (value ?? "")
@@ -505,7 +498,11 @@ const isNegative = (value?: string | null): boolean => {
 };
 
 const readDtmfDigit = (value?: string | null): string | undefined => {
-  const match = (value ?? "").trim().match(/^(?:dtmf\s*)?([0-9])#?$/i);
+  const trimmed = (value ?? "").trim();
+  if (/^(?:zero|press zero|pressed zero)$/i.test(trimmed)) {
+    return "0";
+  }
+  const match = trimmed.match(/^(?:dtmf\s*)?([0-9]{1,2})#?$/i);
   return match?.[1];
 };
 
@@ -543,7 +540,7 @@ const parseJsonStringRecord = (value?: string): Record<string, string> => {
     }
     return Object.fromEntries(
       Object.entries(parsed)
-        .filter(([key, entry]) => /^[1-9]$/.test(key) && typeof entry === "string" && entry.trim())
+        .filter(([key, entry]) => /^(?:0|[1-9][0-9]?)$/.test(key) && typeof entry === "string" && entry.trim())
         .map(([key, entry]) => [key, String(entry).trim()])
     );
   } catch {
@@ -555,7 +552,15 @@ const readStaffDtmfOptions = (
   attributes: Record<string, unknown> | undefined
 ): Record<string, string> => {
   const dynamicOptions = parseJsonStringRecord(readStringAttribute(attributes, ["staffDtmfOptions"]));
-  return Object.keys(dynamicOptions).length ? dynamicOptions : STAFF_DTMF_OPTIONS;
+  return Object.keys(dynamicOptions).length ? dynamicOptions : {};
+};
+
+const readStaffDtmfStaffIds = (
+  attributes: Record<string, unknown> | undefined
+): Record<string, string> => {
+  return parseJsonStringRecord(
+    readStringAttribute(attributes, ["staffDtmfStaffIds", "staffDtmfOptionStaffIds"])
+  );
 };
 
 const isOperatorZeroRequest = (value?: string | null): boolean => {
@@ -568,7 +573,7 @@ const isOperatorZeroRequest = (value?: string | null): boolean => {
 };
 
 const getStaffAliasPhrases = (staffName: string): string[] => {
-  return STAFF_ALIAS_GROUPS[staffName] ?? [staffName];
+  return [staffName, staffName.split(/\s+/)[0] ?? ""].filter(Boolean);
 };
 
 const isClearlyInvalidStaffPreference = (value?: string | null): boolean => {
@@ -644,6 +649,7 @@ const BOOKING_ATTRIBUTE_NAMES = {
   requestedDate: ["requestedDate", "RequestedDate", "preferredDate", "preferredDateTime"],
   requestedTime: ["requestedTime", "RequestedTime", "preferredTime"],
   staffPreference: ["staffPreference", "StaffPreference"],
+  staffId: ["staffId", "StaffId", "selectedStaffId", "SelectedStaffId", "confirmedStaffId"],
   contactId: ["contactId", "amazonConnectContactId", "AmazonConnectContactId", "callSessionId"],
   amazonConnectPhoneNumber: [
     "amazonConnectPhoneNumber",
@@ -1723,7 +1729,7 @@ const dedupeStaffById = (staff: StaffCandidate[]): StaffCandidate[] => {
 };
 
 const getActiveBookableStaff = async (salonId: string): Promise<StaffCandidate[]> => {
-  return orderStaffForDemo(await prisma.staff.findMany({
+  return orderStaffForPrompt(await prisma.staff.findMany({
     where: {
       salonId,
       status: StaffStatus.ACTIVE,
@@ -1739,11 +1745,32 @@ const getActiveBookableStaff = async (salonId: string): Promise<StaffCandidate[]
   }));
 };
 
+const getActiveBookableStaffById = async (
+  salonId: string,
+  staffId?: string
+): Promise<StaffCandidate | null> => {
+  if (!staffId?.trim()) {
+    return null;
+  }
+  return prisma.staff.findFirst({
+    where: {
+      id: staffId.trim(),
+      salonId,
+      status: StaffStatus.ACTIVE,
+      isBookable: true
+    },
+    select: {
+      id: true,
+      fullName: true
+    }
+  });
+};
+
 const resolveStaffPreferenceFromCandidates = (
   staff: StaffCandidate[],
   requestedStaffName?: string
 ): StaffPreferenceResolution => {
-  const allStaff = orderStaffForDemo(dedupeStaffById(staff));
+  const allStaff = orderStaffForPrompt(dedupeStaffById(staff));
   const rawStaffPreference = requestedStaffName?.trim();
   const requested = normalizeForMatch(rawStaffPreference);
 
@@ -1882,16 +1909,26 @@ const resolveStaffPreferenceFromCandidates = (
 const resolveStaffCandidates = async (input: {
   salonId: string;
   requestedStaffName?: string;
+  staffId?: string;
 }): Promise<StaffPreferenceResolution> => {
-  return resolveStaffPreferenceFromCandidates(
-    await getActiveBookableStaff(input.salonId),
-    input.requestedStaffName
-  );
+  const allStaff = await getActiveBookableStaff(input.salonId);
+  const matchedById = await getActiveBookableStaffById(input.salonId, input.staffId);
+  if (matchedById) {
+    return {
+      status: "matched",
+      candidates: [matchedById],
+      allStaff,
+      rawStaffPreference: input.requestedStaffName || matchedById.fullName,
+      matchedStaff: matchedById
+    };
+  }
+  return resolveStaffPreferenceFromCandidates(allStaff, input.requestedStaffName);
 };
 
 const getStaffCandidates = async (input: {
   salonId: string;
   requestedStaffName?: string;
+  staffId?: string;
 }) => {
   const resolution = await resolveStaffCandidates(input);
   return resolution.status === "ambiguous" ? [] : resolution.candidates;
@@ -2597,6 +2634,20 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
           readStaffDtmfOptions(attributes)
         )
       : undefined;
+  const staffDtmfDigit =
+    lastAskedSlot === "staffPreference"
+      ? [
+          transcriptText,
+          asTrimmedString(input.staffPreference),
+          readBookingFieldAttribute(attributes, "staffPreference")
+        ]
+          .map((value) => readDtmfDigit(value))
+          .find((value): value is string => Boolean(value))
+      : undefined;
+  const staffDtmfStaffId =
+    staffDtmfDigit && staffDtmfSelection
+      ? readStaffDtmfStaffIds(attributes)[staffDtmfDigit]
+      : undefined;
   const customerName =
     asTrimmedString(input.customerName) ??
     asTrimmedString(input.customer?.name) ??
@@ -2646,6 +2697,14 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
       staffDtmfSelection ??
       asTrimmedString(input.staffPreference) ??
       readBookingFieldAttribute(attributes, "staffPreference"),
+    staffId:
+      staffDtmfStaffId ??
+      asTrimmedString(input.staffId) ??
+      asTrimmedString(input.selectedStaffId) ??
+      readBookingFieldAttribute(attributes, "staffId"),
+    staffDtmfDigit,
+    invalidStaffDtmfSelection:
+      Boolean(staffDtmfDigit) && !staffDtmfSelection && Boolean(Object.keys(readStaffDtmfOptions(attributes)).length),
     confirmationState: asTrimmedString(input.confirmationState),
     source,
     contactId,
@@ -2681,9 +2740,13 @@ const getHumanEscalationReason = (input: {
   attributes?: Record<string, unknown>;
 }): "customer_pressed_zero" | "caller_requested_human" | undefined => {
   const intent = input.intentName?.toLowerCase();
+  const staffPromptAnyStaffZero =
+    readStringAttribute(input.attributes, ["lastAskedSlot"]) === "staffPreference" &&
+    readDtmfDigit(input.transcriptText) === "0" &&
+    isAnyStaffPreference(input.staffPreference);
   if (
     readStringAttribute(input.attributes, ["escalationReason"]) === "customer_pressed_zero" ||
-    isOperatorZeroRequest(input.transcriptText) ||
+    (!staffPromptAnyStaffZero && isOperatorZeroRequest(input.transcriptText)) ||
     isOperatorZeroRequest(input.serviceName) ||
     isOperatorZeroRequest(input.staffPreference)
   ) {
@@ -2752,64 +2815,50 @@ const formatNameList = (values: string[]): string => {
   return `${values.slice(0, -1).join(", ")}, and ${values[values.length - 1]}`;
 };
 
-const orderStaffForDemo = <T extends { fullName: string }>(staff: T[]): T[] => {
-  return [...staff].sort((left, right) => {
-    const leftPriority = DEMO_STAFF_NAMES.findIndex(
-      (name) => normalizeForMatch(name) === normalizeForMatch(left.fullName)
-    );
-    const rightPriority = DEMO_STAFF_NAMES.findIndex(
-      (name) => normalizeForMatch(name) === normalizeForMatch(right.fullName)
-    );
-    const normalizedLeftPriority = leftPriority === -1 ? Number.MAX_SAFE_INTEGER : leftPriority;
-    const normalizedRightPriority = rightPriority === -1 ? Number.MAX_SAFE_INTEGER : rightPriority;
-    return normalizedLeftPriority - normalizedRightPriority;
+const orderStaffForPrompt = <T extends { fullName: string }>(staff: T[]): T[] => [...staff];
+
+const buildStaffDtmfOptionMaps = (
+  staff: StaffCandidate[]
+): { options: Record<string, string>; staffIds: Record<string, string> } => {
+  const orderedStaff = orderStaffForPrompt(dedupeStaffById(staff));
+  const options: Record<string, string> = {
+    "0": "Any staff"
+  };
+  const staffIds: Record<string, string> = {};
+  orderedStaff.forEach((member, index) => {
+    const digit = String(index + 1);
+    options[digit] = member.fullName;
+    staffIds[digit] = member.id;
   });
+  return { options, staffIds };
 };
 
-const getStaffPromptNames = (staffNames: string[]): string[] => {
-  return staffNames.slice(0, 5);
-};
-
-const buildStaffDtmfOptions = (staffNames: string[]): Record<string, string> => {
-  const names = getStaffPromptNames(staffNames);
-  const maxNamedOptions = Math.min(names.length, 8);
-  const options = Object.fromEntries(
-    names.slice(0, maxNamedOptions).map((name, index) => [String(index + 1), name])
-  );
-  if (names.length) {
-    options[String(maxNamedOptions + 1)] = "Any staff";
-  }
-  return options;
-};
-
-const buildStaffDtmfPromptText = (staffNames: string[]): string => {
-  const promptNames = getStaffPromptNames(staffNames);
-  if (!promptNames.length) {
-    return "Who would you like to book with? Please say a staff name, say any staff, or press 0 to speak with an operator.";
+const buildStaffDtmfPromptText = (staff: StaffCandidate[]): string => {
+  const orderedStaff = orderStaffForPrompt(dedupeStaffById(staff));
+  if (!orderedStaff.length) {
+    return "I don't see any active bookable staff right now. I can check any available staff, or you can say operator to speak with a person.";
   }
 
-  const options = buildStaffDtmfOptions(staffNames);
+  const { options } = buildStaffDtmfOptionMaps(orderedStaff);
   const namedOptions = Object.entries(options)
-    .filter(([, name]) => name !== "Any staff")
+    .filter(([digit]) => digit !== "0")
     .map(([digit, name]) => `press ${digit} for ${escapeSsml(name)}`);
-  const anyStaffOption = Object.entries(options).find(([, name]) => name === "Any staff");
   const dtmfText = formatNameList([
-    ...namedOptions,
-    ...(anyStaffOption ? [`press ${anyStaffOption[0]} for any staff`] : [])
+    "press 0 for any available staff",
+    ...namedOptions
   ]);
 
   return `Who would you like to book with? Available staff are ${escapeSsml(
-    formatNameList(promptNames)
-  )}. You can also say any staff. ${dtmfText ? `You can ${dtmfText}. ` : ""}Press 0 to speak with an operator.`;
+    formatNameList(orderedStaff.map((member) => member.fullName))
+  )}. You can ${dtmfText}. You can also say a staff name or say operator to speak with a person.`;
 };
 
-const buildStaffPromptSessionAttributes = (staffNames: string[]): Record<string, string> => {
-  const options = buildStaffDtmfOptions(staffNames);
-  if (!Object.keys(options).length) {
-    return {};
-  }
+const buildStaffPromptSessionAttributes = (staff: StaffCandidate[]): Record<string, string> => {
+  const { options, staffIds } = buildStaffDtmfOptionMaps(staff);
   return {
-    staffDtmfOptions: JSON.stringify(options)
+    staffDtmfOptions: JSON.stringify(options),
+    staffDtmfStaffIds: JSON.stringify(staffIds),
+    staffDtmfPromptText: buildStaffDtmfPromptText(staff)
   };
 };
 
@@ -2962,7 +3011,7 @@ const buildLexMessage = (input: {
   salonTimezone?: string;
   serviceName?: string;
   staffName?: string;
-  staffNames?: string[];
+  staffOptions?: StaffCandidate[];
   requestedStaffName?: string;
   alternatives?: SuggestedSlot[];
   failureReason?: string;
@@ -2975,6 +3024,7 @@ const buildLexMessage = (input: {
     staffPreference?: string;
   };
   attemptCount?: number;
+  invalidStaffDtmfSelection?: boolean;
 }): string => {
   if (input.outcome === "BOOKED") {
     const appointmentTime = input.appointmentStartTime
@@ -2998,9 +3048,14 @@ const buildLexMessage = (input: {
 
   if (input.outcome === "MISSING_INFO") {
     const isRetry = (input.attemptCount ?? 1) > 1;
-    const intro = isRetry ? "Sorry, I did not catch that." : "Got it.";
+    const intro = input.invalidStaffDtmfSelection
+      ? "I didn't find that option. Please choose from the list."
+      : isRetry
+        ? "Sorry, I did not catch that."
+        : "Got it.";
     if (input.missingFields?.includes("staffPreference")) {
-      return speak(buildStaffDtmfPromptText(input.staffNames ?? []));
+      const prompt = buildStaffDtmfPromptText(input.staffOptions ?? []);
+      return speak(input.invalidStaffDtmfSelection ? `${intro} <break time="300ms"/> ${prompt}` : prompt);
     }
     if (input.missingFields?.includes("customerName")) {
       return speak(
@@ -3140,9 +3195,9 @@ const buildServiceClarificationMessage = (input: {
 };
 
 const buildStaffClarificationMessage = (input: {
-  availableStaffNames: string[];
+  availableStaff: StaffCandidate[];
 }): string => {
-  return speak(buildStaffDtmfPromptText(input.availableStaffNames));
+  return speak(buildStaffDtmfPromptText(input.availableStaff));
 };
 
 const parseAlternativeSlotsAttribute = (
@@ -3331,6 +3386,24 @@ export const createAmazonConnectAIAppointment = async (
       "startTimeIso"
     ]) ?? asTrimmedString(activeBookingAttempt?.requestedDateTimeText ?? undefined);
   normalized.requestedTime ??= readStringAttribute(activeNormalizedRequest, ["requestedTime"]);
+  normalized.staffId ??= readStringAttribute(activeNormalizedRequest, ["staffId", "selectedStaffId"]);
+
+  if (normalized.staffDtmfDigit && (!normalized.staffPreference || !normalized.staffId)) {
+    const currentStaff = await getActiveBookableStaff(salon.id);
+    const currentStaffOptions = buildStaffDtmfOptionMaps(currentStaff);
+    const selectedStaffName = currentStaffOptions.options[normalized.staffDtmfDigit];
+    if (selectedStaffName) {
+      normalized.staffPreference = selectedStaffName;
+      normalized.staffId = currentStaffOptions.staffIds[normalized.staffDtmfDigit];
+      normalized.invalidStaffDtmfSelection = false;
+      if (normalized.staffDtmfDigit === "0") {
+        normalized.staffId = undefined;
+      }
+    } else if (!normalized.staffPreference) {
+      normalized.invalidStaffDtmfSelection = true;
+      normalized.staffId = undefined;
+    }
+  }
 
   if (isClearlyInvalidServiceName(normalized.serviceName, salon.timezone)) {
     normalized.serviceName = undefined;
@@ -3437,6 +3510,7 @@ export const createAmazonConnectAIAppointment = async (
     normalized.requestedDate = selectedLocalStart.toFormat("yyyy-MM-dd");
     normalized.requestedTime = selectedLocalStart.toFormat("HH:mm");
     normalized.staffPreference = selectedAlternative.staffName;
+    normalized.staffId = selectedAlternative.staffId;
     if (!awaitingFinalBookingConfirmation) {
       normalized.confirmationState = undefined;
     }
@@ -3444,14 +3518,18 @@ export const createAmazonConnectAIAppointment = async (
 
   let staffResolution = await resolveStaffCandidates({
     salonId: salon.id,
-    requestedStaffName: normalized.staffPreference
+    requestedStaffName: normalized.staffPreference,
+    staffId: normalized.staffId
   });
   if (staffResolution.status === "matched") {
     normalized.staffPreference = staffResolution.matchedStaff.fullName;
+    normalized.staffId = staffResolution.matchedStaff.id;
   } else if (staffResolution.status === "all" && staffResolution.invalidReason === "explicit_any") {
     normalized.staffPreference = "Any staff";
+    normalized.staffId = undefined;
   } else if (staffResolution.status !== "ambiguous") {
     normalized.staffPreference = undefined;
+    normalized.staffId = undefined;
   }
 
   let serviceMatch = normalized.serviceName
@@ -3498,6 +3576,8 @@ export const createAmazonConnectAIAppointment = async (
         requestedDate: normalized.requestedDate,
         requestedTime: normalized.requestedTime,
         staffPreference: normalized.staffPreference,
+        staffId: normalized.staffId,
+        selectedStaffId: normalized.staffId,
         ...((inputForAttempt.normalizedRequest as Record<string, unknown> | undefined) ?? {})
       }),
       alternativeSlots:
@@ -3614,6 +3694,9 @@ export const createAmazonConnectAIAppointment = async (
         requestedDate: normalized.requestedDate,
         requestedTime: normalized.requestedTime,
         staffPreference: normalized.staffPreference,
+        staffId: normalized.staffId,
+        selectedStaffId: normalized.staffId,
+        confirmedStaffId: normalized.staffId,
         confirmedServiceName: normalized.serviceName,
         confirmedStaffName: normalized.staffPreference,
         callSessionId: callSession?.id,
@@ -3964,9 +4047,16 @@ export const createAmazonConnectAIAppointment = async (
   }
   const explicitAnyStaffSelected =
     staffResolution.status === "all" && staffResolution.invalidReason === "explicit_any";
-  if (staffResolution.status !== "matched" && !explicitAnyStaffSelected) {
+  const noActiveBookableStaff =
+    staffResolution.status === "all" && staffResolution.allStaff.length === 0;
+  if (staffResolution.status !== "matched" && !explicitAnyStaffSelected && !noActiveBookableStaff) {
     missingFields.add("staffPreference");
     normalized.staffPreference = undefined;
+    normalized.staffId = undefined;
+  }
+  if (noActiveBookableStaff) {
+    normalized.staffPreference = "Any staff";
+    normalized.staffId = undefined;
   }
   let requestedStartTime: Date | null = null;
   if (!missingFields.has("preferredDateTime") && normalized.requestedDate) {
@@ -3997,8 +4087,8 @@ export const createAmazonConnectAIAppointment = async (
 
   if (missingFields.size > 0 || !requestedStartTime) {
     const elicitDecision = getElicitSlotForMissingFields(missingFields, normalized);
-    const staffNames = elicitDecision.promptMissingFields.includes("staffPreference")
-      ? (await getStaffCandidates({ salonId: salon.id })).map((member) => member.fullName)
+    const staffPromptOptions = elicitDecision.promptMissingFields.includes("staffPreference")
+      ? await getStaffCandidates({ salonId: salon.id })
       : [];
     if (elicitDecision.shouldEscalate) {
       const reason = `Missing ${elicitDecision.slotToElicit} after repeated attempts.`;
@@ -4095,12 +4185,13 @@ export const createAmazonConnectAIAppointment = async (
     const message = buildLexMessage({
       outcome: "MISSING_INFO",
       missingFields: elicitDecision.promptMissingFields,
-      staffNames,
+      staffOptions: staffPromptOptions,
       knownFields: normalized,
-      attemptCount: elicitDecision.attemptCount
+      attemptCount: elicitDecision.attemptCount,
+      invalidStaffDtmfSelection: normalized.invalidStaffDtmfSelection
     });
     const staffPromptAttributes = elicitDecision.promptMissingFields.includes("staffPreference")
-      ? buildStaffPromptSessionAttributes(staffNames)
+      ? buildStaffPromptSessionAttributes(staffPromptOptions)
       : {};
     const parsed = buildInternalParsedIntent({
       intentType: "BOOK_APPOINTMENT",
@@ -4368,12 +4459,13 @@ export const createAmazonConnectAIAppointment = async (
       ? staffResolution
       : await resolveStaffCandidates({
           salonId: salon.id,
-          requestedStaffName: normalized.staffPreference
+          requestedStaffName: normalized.staffPreference,
+          staffId: normalized.staffId
         });
 
   if (staffResolution.status === "ambiguous") {
     const message = buildStaffClarificationMessage({
-      availableStaffNames: staffResolution.allStaff.map((member) => member.fullName)
+      availableStaff: staffResolution.allStaff
     });
     const parsed = buildInternalParsedIntent({
       intentType: "BOOK_APPOINTMENT",
@@ -4435,7 +4527,7 @@ export const createAmazonConnectAIAppointment = async (
           askedSlotsCount: "1",
           fallbackCount: "1",
           errorCount: "1",
-          ...buildStaffPromptSessionAttributes(staffResolution.allStaff.map((member) => member.fullName))
+          ...buildStaffPromptSessionAttributes(staffResolution.allStaff)
         })
       },
       appointment: null,
@@ -4452,6 +4544,7 @@ export const createAmazonConnectAIAppointment = async (
 
   if (staffResolution.status === "matched") {
     normalized.staffPreference = staffResolution.matchedStaff.fullName;
+    normalized.staffId = staffResolution.matchedStaff.id;
   }
 
   const preferredStaffCandidates = staffResolution.candidates;
@@ -4483,6 +4576,9 @@ export const createAmazonConnectAIAppointment = async (
   }
   if (chosenStaff && requestedAnyStaff) {
     normalized.staffPreference = chosenStaff.fullName;
+  }
+  if (chosenStaff) {
+    normalized.staffId = chosenStaff.id;
   }
 
   if (!chosenStaff) {

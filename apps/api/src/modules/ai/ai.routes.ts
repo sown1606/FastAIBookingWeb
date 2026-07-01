@@ -61,6 +61,8 @@ const createAIAppointmentSchema = z
     requestedDate: z.string().trim().min(1).max(120).optional(),
     requestedTime: z.string().trim().min(1).max(40).optional(),
     staffPreference: z.string().trim().min(1).max(160).optional(),
+    staffId: z.string().trim().min(1).max(160).optional(),
+    selectedStaffId: z.string().trim().min(1).max(160).optional(),
     confirmationState: z.string().trim().min(1).max(40).optional(),
     source: z.string().trim().min(1).max(80).optional(),
     provider: z.string().trim().min(1).max(80).optional(),

@@ -134,7 +134,6 @@ const DEMO_SERVICE_NAMES = [
   "Dip Powder",
   "Other Services"
 ];
-const DEMO_STAFF_NAMES = ["Trang", "Amy", "Kelly"];
 const SERVICE_DTMF_OPTIONS = {
   "1": "Pedicure",
   "2": "Manicure",
@@ -143,15 +142,7 @@ const SERVICE_DTMF_OPTIONS = {
   "5": "Dip Powder"
 };
 const STAFF_DTMF_OPTIONS = {
-  "1": "Trang",
-  "2": "Amy",
-  "3": "Kelly",
-  "4": "Any staff"
-};
-const STAFF_ALIAS_GROUPS = {
-  Trang: ["trang", "chang", "train", "trangg"],
-  Amy: ["amy", "amie", "a me"],
-  Kelly: ["kelly", "keli", "kelley", "ke li"]
+  "0": "Any staff"
 };
 const ANY_STAFF_ALIASES = [
   "anyone",
@@ -167,9 +158,9 @@ const SERVICE_DTMF_PROMPT =
 const SERVICE_DTMF_SHORT_PROMPT =
   "You can say Pedicure, Manicure, Gel Manicure, Acrylic Full Set, Dip Powder, or Other Services, press 1 through 5, or press 0 for an operator.";
 const STAFF_DTMF_PROMPT =
-  "Who would you like to book with? You can say a specific technician or any staff. Press 0 to speak with an operator.";
+  "Who would you like to book with? Please listen to the available staff options, press 0 for any available staff, or say operator to speak with a person.";
 const STAFF_DTMF_SHORT_PROMPT =
-  "You can say a specific technician, say any staff, or press 0 for an operator.";
+  "Please choose from the staff list, press 0 for any available staff, or say operator.";
 const NO_INPUT_HUMAN_CONFIRM_PROMPT =
   "Are you still there? Would you like me to connect you to a real person? You can press 0 for an operator.";
 const KNOWN_KIET_CUSTOMER_NAME = "Kiet";
@@ -400,7 +391,7 @@ function extractServiceFromTranscript(text) {
   return DEMO_SERVICE_NAMES.includes(serviceName) ? serviceName : "";
 }
 
-function extractStaffFromTranscript(text) {
+function extractStaffFromTranscript(text, sessionAttributes = {}) {
   const normalizedText = normalizeForMatch(text);
   if (!normalizedText) {
     return "";
@@ -408,26 +399,25 @@ function extractStaffFromTranscript(text) {
   if (ANY_STAFF_ALIASES.some((alias) => normalizedText.includes(normalizeForMatch(alias)))) {
     return "Any staff";
   }
-  for (const [staffName, aliases] of Object.entries(STAFF_ALIAS_GROUPS)) {
-    if (aliases.some((alias) => normalizedText.includes(normalizeForMatch(alias)))) {
-      return staffName;
-    }
-  }
-  return (
-    DEMO_STAFF_NAMES.find((staffName) => {
-      const fullName = normalizeForMatch(staffName);
-      const firstName = normalizeForMatch(staffName.split(/\s+/)[0]);
-      return normalizedText.includes(fullName) || normalizedText.includes(firstName);
-    }) || ""
-  );
+  const dynamicStaffNames = Object.values(getStaffDtmfOptions(sessionAttributes))
+    .filter((name) => normalizeForMatch(name) !== "any staff");
+  return dynamicStaffNames.find((staffName) => {
+    const fullName = normalizeForMatch(staffName);
+    const firstName = normalizeForMatch(staffName.split(/\s+/)[0]);
+    return normalizedText.includes(fullName) || normalizedText.includes(firstName);
+  }) || "";
 }
 
 function readDtmfDigit(value) {
-  const match = String(value || "").trim().match(/^(?:dtmf\s*)?([0-9])#?$/i);
+  const trimmed = String(value || "").trim();
+  if (/^(?:zero|press zero|pressed zero)$/i.test(trimmed)) {
+    return "0";
+  }
+  const match = trimmed.match(/^(?:dtmf\s*)?([0-9]{1,2})#?$/i);
   return match?.[1] || "";
 }
 
-function parseDtmfOptions(value) {
+function parseDtmfRecord(value) {
   if (!value) {
     return {};
   }
@@ -438,7 +428,7 @@ function parseDtmfOptions(value) {
     }
     return Object.fromEntries(
       Object.entries(parsed)
-        .filter(([key, entry]) => /^[1-9]$/.test(key) && typeof entry === "string" && entry.trim())
+        .filter(([key, entry]) => /^(?:0|[1-9][0-9]?)$/.test(key) && typeof entry === "string" && entry.trim())
         .map(([key, entry]) => [key, String(entry).trim()])
     );
   } catch {
@@ -447,8 +437,14 @@ function parseDtmfOptions(value) {
 }
 
 function getStaffDtmfOptions(sessionAttributes) {
-  const dynamicOptions = parseDtmfOptions(sessionAttributes?.staffDtmfOptions);
+  const dynamicOptions = parseDtmfRecord(sessionAttributes?.staffDtmfOptions);
   return Object.keys(dynamicOptions).length ? dynamicOptions : STAFF_DTMF_OPTIONS;
+}
+
+function getStaffDtmfStaffIds(sessionAttributes) {
+  return parseDtmfRecord(
+    sessionAttributes?.staffDtmfStaffIds || sessionAttributes?.staffDtmfOptionStaffIds
+  );
 }
 
 function isOperatorZeroValue(value) {
@@ -459,7 +455,7 @@ function isOperatorZeroValue(value) {
   return normalized === "zero" || /\b(?:press|pressed|hit|dial)\s+zero\b/.test(normalized);
 }
 
-function readScopedDtmfSelection(event, expectedSlot, options) {
+function getScopedDtmfDigit(event, expectedSlot) {
   const previous = event.sessionState?.sessionAttributes || {};
   const lastAskedSlot = previous.lastAskedSlot;
   if (lastAskedSlot !== expectedSlot) {
@@ -480,11 +476,58 @@ function readScopedDtmfSelection(event, expectedSlot, options) {
         ];
   for (const value of candidateValues) {
     const digit = readDtmfDigit(value);
-    if (digit && options[digit]) {
-      return options[digit];
+    if (digit) {
+      return digit;
     }
   }
   return "";
+}
+
+function readScopedDtmfSelection(event, expectedSlot, options) {
+  const digit = getScopedDtmfDigit(event, expectedSlot);
+  return digit && options[digit] ? options[digit] : "";
+}
+
+function readScopedStaffDtmfSelection(event) {
+  const previous = event.sessionState?.sessionAttributes || {};
+  const digit = getScopedDtmfDigit(event, "staffPreference");
+  if (!digit) {
+    return null;
+  }
+  const options = getStaffDtmfOptions(previous);
+  const staffName = options[digit];
+  if (!staffName) {
+    return {
+      digit,
+      staffName: "",
+      staffId: "",
+      invalid: true
+    };
+  }
+  return {
+    digit,
+    staffName,
+    staffId: getStaffDtmfStaffIds(previous)[digit] || "",
+    invalid: false
+  };
+}
+
+function isStaffAnyDtmfZeroRequest(event) {
+  const selection = readScopedStaffDtmfSelection(event);
+  return selection?.digit === "0" && normalizeForMatch(selection.staffName) === "any staff";
+}
+
+function buildInvalidStaffDtmfResponse(event) {
+  const previous = event.sessionState?.sessionAttributes || {};
+  const prompt = previous.staffDtmfPromptText || STAFF_DTMF_PROMPT;
+  return buildElicitSlotResponse(
+    event,
+    "staffPreference",
+    {
+      invalidStaffDtmfSelection: getScopedDtmfDigit(event, "staffPreference") || "true"
+    },
+    `I didn't find that option. Please choose from the list. ${prompt}`
+  );
 }
 
 function extractCustomerNameFromText(text) {
@@ -1037,11 +1080,7 @@ function buildKnownBookingSessionAttributes(event) {
   const knownTime = getKnownField(event, "requestedTime", { preferOriginal: true });
   const rawKnownService = getKnownField(event, "serviceName");
   const serviceDtmfSelection = readScopedDtmfSelection(event, "serviceName", SERVICE_DTMF_OPTIONS);
-  const staffDtmfSelection = readScopedDtmfSelection(
-    event,
-    "staffPreference",
-    getStaffDtmfOptions(previous)
-  );
+  const staffDtmfSelection = readScopedStaffDtmfSelection(event);
   const normalizedKnownService = normalizeServiceName(rawKnownService);
   const knownService =
     normalizedKnownService && !isClearlyInvalidServiceName(normalizedKnownService)
@@ -1078,24 +1117,45 @@ function buildKnownBookingSessionAttributes(event) {
       normalizeTimePhrase(knownTime) ||
       knownTime,
     staffPreference:
-      staffDtmfSelection ||
+      (staffDtmfSelection && !staffDtmfSelection.invalid ? staffDtmfSelection.staffName : "") ||
       getKnownField(event, "staffPreference") ||
-      extractStaffFromTranscript(transcript),
+      extractStaffFromTranscript(transcript, previous),
+    staffId:
+      (staffDtmfSelection && !staffDtmfSelection.invalid ? staffDtmfSelection.staffId : "") ||
+      previous.staffId ||
+      previous.selectedStaffId,
+    selectedStaffId:
+      (staffDtmfSelection && !staffDtmfSelection.invalid ? staffDtmfSelection.staffId : "") ||
+      previous.selectedStaffId ||
+      previous.staffId,
     confirmedServiceName:
       serviceDtmfSelection ||
       previous.confirmedServiceName,
     confirmedStaffName:
-      staffDtmfSelection ||
+      (staffDtmfSelection && !staffDtmfSelection.invalid ? staffDtmfSelection.staffName : "") ||
       previous.confirmedStaffName,
+    confirmedStaffId:
+      (staffDtmfSelection && !staffDtmfSelection.invalid ? staffDtmfSelection.staffId : "") ||
+      previous.confirmedStaffId,
     initialBookingUtterance: initial
   };
 
-  return {
+  const merged = {
     ...previous,
     ...Object.fromEntries(
       Object.entries(known).filter(([, value]) => value !== undefined && value !== "")
     )
   };
+  if (
+    staffDtmfSelection &&
+    !staffDtmfSelection.invalid &&
+    normalizeForMatch(staffDtmfSelection.staffName) === "any staff"
+  ) {
+    delete merged.staffId;
+    delete merged.selectedStaffId;
+    delete merged.confirmedStaffId;
+  }
+  return merged;
 }
 
 function buildLexSlot(value) {
@@ -1251,6 +1311,44 @@ function buildNoInputResponse(event, slotName) {
   const previous = event.sessionState?.sessionAttributes || {};
   const noInputCount = parseAttemptCount(previous.noInputCount) + 1;
 
+  if (slotName === "staffPreference" && noInputCount >= 2) {
+    const intent = event.sessionState?.intent || {};
+    const slots = mergeKnownSlots(event);
+    const slotNameToSet =
+      slotNames.staffPreference.find((name) => Object.prototype.hasOwnProperty.call(slots, name)) ||
+      slotNames.staffPreference[0];
+    slots[slotNameToSet] = buildLexSlot("Any staff");
+    const sessionAttributes = {
+      ...buildKnownBookingSessionAttributes(event),
+      staffPreference: "Any staff",
+      confirmedStaffName: "Any staff",
+      noInputCount: String(noInputCount),
+      noInputPrompted: "true",
+      staffNoInputFallback: "any_staff"
+    };
+    delete sessionAttributes.staffId;
+    delete sessionAttributes.selectedStaffId;
+    delete sessionAttributes.confirmedStaffId;
+    return {
+      sessionState: {
+        sessionAttributes,
+        dialogAction: {
+          type: "Delegate"
+        },
+        intent: {
+          ...intent,
+          slots
+        }
+      },
+      messages: [
+        {
+          contentType: "PlainText",
+          content: "I'll check any available staff."
+        }
+      ]
+    };
+  }
+
   if (noInputCount >= 3) {
     return buildLexResponse(
       event,
@@ -1309,7 +1407,7 @@ async function buildDynamicStaffElicitResponse(event, intentName) {
   }
 
   const lexResponse = data.lexResponse || {};
-  if (lexResponse.dialogAction?.type === "ElicitSlot") {
+  if (lexResponse.dialogAction?.type) {
     return buildLexResponse(
       event,
       lexResponse.message || data.message || STAFF_DTMF_PROMPT,
@@ -1521,6 +1619,7 @@ function buildInternalPayload(event, intentName, extraAttributes = {}) {
     requestedDate: knownField("requestedDate"),
     requestedTime: knownField("requestedTime", { preferOriginal: true }),
     staffPreference: knownField("staffPreference"),
+    staffId: sessionAttributes.staffId || sessionAttributes.selectedStaffId,
     confirmationState: event.sessionState?.intent?.confirmationState,
     transcript,
     source: "amazon_connect_ai",
@@ -1590,7 +1689,7 @@ function removeTransferSessionAttributes(lexResponse) {
 export const handler = async (event) => {
   try {
     const intentName = event.sessionState?.intent?.name || "";
-    const pressedZeroForOperator = isOperatorZeroRequest(event);
+    const pressedZeroForOperator = !isStaffAnyDtmfZeroRequest(event) && isOperatorZeroRequest(event);
     const shouldEscalate =
       pressedZeroForOperator || isHumanEscalationRequest(intentName, event.inputTranscript);
     const sessionAttributes = event.sessionState?.sessionAttributes || {};
@@ -1690,6 +1789,10 @@ export const handler = async (event) => {
     }
 
     if (!shouldEscalate && intentName === "BookAppointmentIntent") {
+      const staffDtmfSelection = readScopedStaffDtmfSelection(event);
+      if (staffDtmfSelection?.invalid) {
+        return buildInvalidStaffDtmfResponse(event);
+      }
       const slotToElicit = getBookingSlotToElicit(event);
       if (slotToElicit) {
         if (slotToElicit === "staffPreference") {

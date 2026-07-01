@@ -280,7 +280,7 @@
           "AmazonConnectContactId": "$.ContactId",
           "InitialContactId": "$.InitialContactId"
         },
-        "Text": "Thank you for calling Kiet Nails & Beauty. How can I help you today? You can press 0 for an operator at any time."
+        "Text": "Thank you for calling Kiet Nails & Beauty. How can I help you today? You can say operator at any time, or press 0 for an operator from the main menu."
       },
       "Identifier": "3b2877ca-bc16-4019-a8e6-04200c0ded06",
       "Type": "ConnectParticipantWithLexBot",
@@ -489,7 +489,7 @@
       "Type": "MessageParticipant",
       "Parameters": {
         "SkipWhenDTMFBufferEnabled": "false",
-        "Text": "Thank you for calling Kiet Nails & Beauty. How can I help you today? You can press 0 for an operator at any time."
+        "Text": "Thank you for calling Kiet Nails & Beauty. How can I help you today? You can say operator at any time, or press 0 for an operator from the main menu."
       },
       "Transitions": {
         "NextAction": "3b2877ca-bc16-4019-a8e6-04200c0ded06",
@@ -630,7 +630,7 @@
           "AmazonConnectContactId": "$.ContactId",
           "InitialContactId": "$.InitialContactId"
         },
-        "Text": "Hi Kiet, thank you for calling Kiet Nails & Beauty. How can I help you today? You can press 0 for an operator at any time."
+        "Text": "Hi Kiet, thank you for calling Kiet Nails & Beauty. How can I help you today? You can say operator at any time, or press 0 for an operator from the main menu."
       },
       "Transitions": {
         "NextAction": "05553b55-f227-4c66-b391-a3e068b01966",
