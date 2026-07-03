@@ -81,6 +81,8 @@ const staffWithUserAndServicesInclude = {
   }
 } as const;
 
+const DEFAULT_STAFF_TITLE = "Nail Technician";
+
 const normalizeEmail = (email?: string | null): string | null => {
   if (email === undefined || email === null) {
     return null;
@@ -210,6 +212,8 @@ export const createStaff = async (
   const normalizedAvatarUrl = normalizeAvatarUrl(input.avatarUrl);
   const shouldCreateLogin = input.createLogin ?? true;
   const staffIsActive = input.isActive ?? true;
+  const staffIsBookable = input.isBookable ?? true;
+  const staffTitle = input.title?.trim() || DEFAULT_STAFF_TITLE;
   const temporaryPassword = input.password ?? generateSecureToken(6);
   const passwordMode: StaffPasswordMode = input.password ? "MANUAL" : "GENERATED";
   const serviceIds = normalizeServiceIds(input.serviceIds);
@@ -232,10 +236,10 @@ export const createStaff = async (
         fullName: input.fullName,
         email: normalizedEmail,
         phone: normalizedPhone,
-        title: input.title,
+        title: staffTitle,
         avatarUrl: normalizedAvatarUrl ?? null,
         status: staffIsActive ? StaffStatus.ACTIVE : StaffStatus.INACTIVE,
-        isBookable: input.isBookable ?? staffIsActive
+        isBookable: staffIsBookable
       }
     });
 

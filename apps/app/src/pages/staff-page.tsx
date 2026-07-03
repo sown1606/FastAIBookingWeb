@@ -8,6 +8,8 @@ import { formatUsPhoneInput, requiredLabel, validateOptionalUsPhone } from "../l
 import { statusLabelKey, useI18n } from "../lib/i18n";
 import { InfoHint } from "../components/info-hint";
 
+const DEFAULT_STAFF_TITLE = "Nail Technician";
+
 interface StaffItem {
   id: string;
   fullName: string;
@@ -65,7 +67,7 @@ export const StaffPage = () => {
     fullName: "",
     email: "",
     phone: "",
-    title: "",
+    title: DEFAULT_STAFF_TITLE,
     isBookable: true
   });
 
@@ -112,7 +114,7 @@ export const StaffPage = () => {
         fullName: "",
         email: "",
         phone: "",
-        title: "",
+        title: DEFAULT_STAFF_TITLE,
         isBookable: true
       });
       notify("success", t("staff.created"));
@@ -287,7 +289,6 @@ export const StaffPage = () => {
               value={form.title}
               onChange={(event) => setForm((prev) => ({ ...prev, title: event.target.value }))}
             >
-              <option value="">{t("common.optional")}</option>
               {staffTitleOptions.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
@@ -305,6 +306,7 @@ export const StaffPage = () => {
               checked={form.isBookable}
               onChange={(event) => setForm((prev) => ({ ...prev, isBookable: event.target.checked }))}
             />
+            <small>{t("staff.bookingCallReady")}</small>
           </label>
           <div className="form-actions">
             <button type="submit" className="button-primary">
@@ -346,6 +348,9 @@ export const StaffPage = () => {
                       <span className={item.isBookable ? "status-pill info" : "status-pill"}>
                         {t("staff.isBookableField")}: {item.isBookable ? t("common.statusOn") : t("common.statusOff")}
                       </span>
+                      {item.status === "ACTIVE" && item.isBookable ? (
+                        <span className="status-pill staff-call-ready">{t("staff.aiCallReady")}</span>
+                      ) : null}
                     </div>
                   </div>
 

@@ -208,6 +208,7 @@ const SERVICE_ALIASES: Record<string, string[]> = {
     "berry cure",
     "better cure",
     "bettercure",
+    "eddie here",
     "pedic care",
     "pedi care",
     "pedicure appointment",

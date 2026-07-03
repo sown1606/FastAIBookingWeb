@@ -8,7 +8,7 @@ const configuredApiTimeoutMs = Number(process.env.BOOKING_HANDLER_API_TIMEOUT_MS
 const API_TIMEOUT_MS =
   Number.isFinite(configuredApiTimeoutMs) && configuredApiTimeoutMs > 0
     ? configuredApiTimeoutMs
-    : 3500;
+    : 2800;
 
 const NUMBER_WORDS = {
   one: 1,
@@ -117,6 +117,7 @@ const PEDICURE_ALIASES = [
   "berry cure",
   "better cure",
   "bettercure",
+  "eddie here",
   "pedic care",
   "pedi care",
   "pedicure appointment",

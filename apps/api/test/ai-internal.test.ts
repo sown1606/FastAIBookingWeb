@@ -846,6 +846,59 @@ test("transcript recovery normalizes pedicure aliases and confirms without re-as
   }
 });
 
+test("logged eddie here utterance matches Pedicure for known caller without overwriting Kiet", async () => {
+  const result = await postInternalAppointment(
+    bookingPayload({
+      customerName: undefined,
+      customerPhone: undefined,
+      callerPhone: "+17325956266",
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: "Trang",
+      confirmationState: undefined,
+      transcript: "I want to have eddie here tomorrow at seven p.m.",
+      attributes: {
+        CustomerEndpointAddress: "+17325956266",
+        customerName: "Kit"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.customerName, "Kiet");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.recognizedCustomerName, "Kiet");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Pedicure");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "19:00");
+  assert.match(result.body.data.lexResponse.message, /pedicure with Trang/i);
+  assert.equal(state.appointments.length, 0);
+});
+
+test("unrelated service noise does not map to Pedicure", async () => {
+  const result = await postInternalAppointment(
+    bookingPayload({
+      customerName: undefined,
+      customerPhone: undefined,
+      callerPhone: "+17325956266",
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: "Trang",
+      confirmationState: undefined,
+      transcript: "I want to have a haircut tomorrow at seven p.m."
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitSlot");
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, undefined);
+  assert.equal(state.appointments.length, 0);
+});
+
 test("Kiet demo phrase confirms Pedicure with Trang tomorrow at 3 PM", async () => {
   const result = await postInternalAppointment(
     bookingPayload({
@@ -1114,6 +1167,45 @@ test("staff DTMF uses session staffId mapping instead of name-only matching", as
   assert.equal(result.body.data.lexResponse.sessionAttributes.staffId, ids.amy);
   assert.deepEqual(new Set(state.validationStaffIds), new Set([ids.amy]));
   assert.equal(state.appointments.length, 0);
+});
+
+test("new active bookable staff appears in staff DTMF prompt and books by digit", async () => {
+  const linaId = "10000000-0000-4000-8000-000000000008";
+  state.staff.push({
+    id: linaId,
+    salonId: ids.salonA,
+    fullName: "Lina",
+    title: "Nail Technician",
+    status: StaffStatus.ACTIVE,
+    isBookable: true,
+    createdAt: new Date("2026-01-04T00:00:00.000Z")
+  });
+
+  const first = await postInternalAppointment(
+    bookingPayload({
+      staffPreference: undefined,
+      confirmationState: undefined
+    })
+  );
+
+  assert.equal(first.response.status, 200);
+  assert.equal(first.body.data.outcome, "MISSING_INFO");
+  assert.equal(first.body.data.lexResponse.dialogAction.slotToElicit, "staffPreference");
+  assert.match(first.body.data.lexResponse.message, /press 4 for Lina/i);
+  assert.equal(JSON.parse(first.body.data.lexResponse.sessionAttributes.staffDtmfStaffIds)["4"], linaId);
+
+  const second = await postInternalAppointment(
+    bookingPayload({
+      staffPreference: undefined,
+      transcript: "4",
+      confirmationState: "Confirmed",
+      attributes: first.body.data.lexResponse.sessionAttributes
+    })
+  );
+
+  assert.equal(second.response.status, 201);
+  assert.equal(second.body.data.outcome, "BOOKED");
+  assert.equal(state.appointments[0].staffId, linaId);
 });
 
 test("invalid staff DTMF repeats staff options without booking", async () => {
