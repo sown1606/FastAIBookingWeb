@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
+import { readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const lambdaPath = path.join(repoRoot, "infra/lambda/booking-handler/index.mjs");
+const lexV10Root = path.join(repoRoot, "infra/aws/lex/FastAIBookingBot-v10");
 let importCounter = 0;
 
 const slot = (value) => ({
@@ -140,6 +142,26 @@ const installFetchMock = (implementation) => {
   return calls;
 };
 
+const delayedJsonResponse = (payload, delayMs) =>
+  new Promise((resolve) => {
+    setTimeout(() => resolve(jsonResponse(payload)), delayMs);
+  });
+
+const abortableDelayedJsonResponse = (payload, delayMs, signal) =>
+  new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => resolve(jsonResponse(payload)), delayMs);
+    signal?.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timeout);
+        const error = new Error("aborted");
+        error.name = "AbortError";
+        reject(error);
+      },
+      { once: true }
+    );
+  });
+
 afterEach(() => {
   delete globalThis.fetch;
 });
@@ -198,6 +220,108 @@ test("BookAppointmentIntent with complete slots posts the backend contract and m
       queueId: undefined
     }
   );
+});
+
+test("Lex v10 fulfillment progress updates cover slow booking and handoff waits", () => {
+  const readIntent = (intentName) =>
+    JSON.parse(
+      readFileSync(
+        path.join(lexV10Root, "BotLocales/en_US/Intents", intentName, "Intent.json"),
+        "utf8"
+      )
+    );
+
+  const book = readIntent("BookAppointmentIntent").fulfillmentCodeHook.fulfillmentUpdatesSpecification;
+  assert.equal(book.active, true);
+  assert.equal(book.startResponse.delayInSeconds <= 1, true);
+  assert.equal(book.updateResponse.frequencyInSeconds <= 3, true);
+  assert.equal(
+    book.startResponse.messageGroups[0].message.plainTextMessage.value,
+    "Please wait a moment while I check the schedule."
+  );
+  assert.equal(
+    book.updateResponse.messageGroups[0].message.plainTextMessage.value,
+    "Please wait while I create your appointment."
+  );
+
+  const human = readIntent("HumanEscalationIntent").fulfillmentCodeHook.fulfillmentUpdatesSpecification;
+  assert.equal(human.active, true);
+  assert.equal(human.startResponse.delayInSeconds <= 1, true);
+  assert.equal(human.updateResponse.frequencyInSeconds <= 3, true);
+  assert.equal(
+    human.startResponse.messageGroups[0].message.plainTextMessage.value,
+    "Please wait while I connect you."
+  );
+});
+
+test("slow staff DTMF generation is timeout guarded and carries the staff wait prompt", async () => {
+  const handler = await loadHandler({ BOOKING_HANDLER_API_TIMEOUT_MS: "2800" });
+  const startedAt = Date.now();
+  const fetchCalls = installFetchMock((_url, options) =>
+    abortableDelayedJsonResponse(
+      successfulBackendPayload({
+        outcome: "MISSING_INFO",
+        appointment: null
+      }),
+      3500,
+      options?.signal
+    )
+  );
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "I want pedicure tomorrow at 3 PM.",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: "connect-slow-staff"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          slots: {}
+        }
+      }
+    })
+  );
+
+  assert.equal(fetchCalls.length, 1);
+  assert.equal(
+    fetchCalls[0].options.headers["X-FastAIBooking-Wait-Operation"],
+    "staff_dtmf_options_generation"
+  );
+  assert.equal(
+    fetchCalls[0].options.headers["X-FastAIBooking-Wait-Prompt"],
+    "Please wait a moment while I find the available staff."
+  );
+  assert.equal(Date.now() - startedAt < 3200, true);
+  assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "staffPreference");
+  assert.match(response.messages[0].content, /Who would you like to book with/i);
+});
+
+test("slow booking fulfillment relies on Lex progress updates and preserves one backend call", async () => {
+  const handler = await loadHandler({ BOOKING_HANDLER_API_TIMEOUT_MS: "5000" });
+  const fetchCalls = installFetchMock(() => delayedJsonResponse(successfulBackendPayload(), 3200));
+
+  const startedAt = Date.now();
+  const response = await handler(baseEvent());
+
+  assert.equal(Date.now() - startedAt >= 3000, true);
+  assert.equal(fetchCalls.length, 1);
+  assert.equal(
+    fetchCalls[0].options.headers["X-FastAIBooking-Wait-Operation"],
+    "booking_fulfillment_availability_and_creation"
+  );
+  assert.match(
+    fetchCalls[0].options.headers["X-FastAIBooking-Wait-Prompt"],
+    /check the schedule.*create your appointment/i
+  );
+  assert.equal(response.sessionState.intent.state, "Fulfilled");
+  assert.equal(response.sessionState.sessionAttributes.appointmentId, "appointment-1");
 });
 
 test("DialogCodeHook delegates when the utterance is not an escalation", async () => {

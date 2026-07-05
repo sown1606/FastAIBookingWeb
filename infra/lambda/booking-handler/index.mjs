@@ -166,6 +166,17 @@ const NO_INPUT_HUMAN_CONFIRM_PROMPT =
   "Are you still there? Would you like me to connect you to a real person? You can press 0 for an operator.";
 const KNOWN_KIET_CUSTOMER_NAME = "Kiet";
 const KNOWN_KIET_PHONE_DIGITS = new Set(["7325956266", "17325956266"]);
+const WAIT_PROMPTS = {
+  customer_lookup: "Please wait a moment while I pull up your information.",
+  service_lookup: "Please wait a moment while I check our services.",
+  staff_lookup: "Please wait a moment while I find the available staff.",
+  staff_dtmf_options: "Please wait a moment while I find the available staff.",
+  availability_lookup: "Please wait a moment while I check the schedule.",
+  appointment_creation: "Please wait while I create your appointment.",
+  appointment_update: "Please wait while I look up your appointment.",
+  notification_send: "Please wait while I create your appointment.",
+  operator_escalation: "Please wait while I connect you."
+};
 
 const SERVICE_ALIAS_GROUPS = {
   Pedicure: PEDICURE_ALIASES,
@@ -1390,7 +1401,11 @@ function buildBookServiceElicitResponse(event) {
 }
 
 async function buildDynamicStaffElicitResponse(event, intentName) {
-  const result = await postInternalAppointment(buildInternalPayload(event, intentName));
+  const result = await postInternalAppointment(buildInternalPayload(event, intentName), {
+    operationName: "staff_dtmf_options_generation",
+    waitPrompt: WAIT_PROMPTS.staff_dtmf_options,
+    mechanism: "Lambda response / timeout guard"
+  });
   if (!result.ok) {
     console.error("Appointment API rejected dynamic staff prompt request", result.code);
     return buildElicitSlotResponse(event, "staffPreference");
@@ -1446,8 +1461,8 @@ function buildBackendFailureEscalationResponse(event, result) {
   return buildLexResponse(
     event,
     reason === "backend_timeout"
-      ? '<speak>The booking system is taking too long to respond. <break time="300ms"/> Please hold while I connect you with our team.</speak>'
-      : '<speak>I cannot reach the booking system right now. <break time="300ms"/> Please hold while I connect you with our team.</speak>',
+      ? '<speak>The booking system is taking too long to respond. <break time="300ms"/> Please wait while I connect you.</speak>'
+      : '<speak>I cannot reach the booking system right now. <break time="300ms"/> Please wait while I connect you.</speak>',
     "Failed",
     buildForceHumanEscalationAttributes(reason)
   );
@@ -1536,13 +1551,51 @@ function buildDelegateResponse(event) {
   };
 }
 
-async function postInternalAppointment(payload) {
+function getCallOrSessionIdFromPayload(payload = {}) {
+  return (
+    payload.amazonConnectContactId ||
+    payload.callSessionId ||
+    payload.attributes?.AmazonConnectContactId ||
+    payload.attributes?.ContactId ||
+    "unknown"
+  );
+}
+
+function logApiWaitCoverage(payload, coverage, startedAt, result) {
+  const durationMs = Date.now() - startedAt;
+  const success = Boolean(result?.ok);
+  const logPayload = {
+    operationName: coverage.operationName,
+    waitPrompt: coverage.waitPrompt,
+    mechanism: coverage.mechanism || "Lex fulfillment update / Lambda timeout guard",
+    apiDurationMs: durationMs,
+    success,
+    failureCode: success ? undefined : result?.code,
+    callOrSessionId: getCallOrSessionIdFromPayload(payload)
+  };
+  const message = "API wait prompt coverage";
+  if (success) {
+    console.info(message, logPayload);
+  } else {
+    console.warn(message, logPayload);
+  }
+}
+
+async function postInternalAppointment(payload, coverage = {}) {
+  const waitCoverage = {
+    operationName: coverage.operationName || "backend_api_call",
+    waitPrompt: coverage.waitPrompt || WAIT_PROMPTS.availability_lookup,
+    mechanism: coverage.mechanism || "Lex fulfillment update / Lambda timeout guard"
+  };
+  const startedAt = Date.now();
   if (!API_BASE_URL || !INTERNAL_TOKEN) {
-    return {
+    const result = {
       ok: false,
       message: "The booking system is not fully configured yet.",
       code: "backend_not_configured"
     };
+    logApiWaitCoverage(payload, waitCoverage, startedAt, result);
+    return result;
   }
 
   const controller = new AbortController();
@@ -1555,13 +1608,15 @@ async function postInternalAppointment(payload) {
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${INTERNAL_TOKEN}`,
+        "X-FastAIBooking-Wait-Operation": waitCoverage.operationName,
+        "X-FastAIBooking-Wait-Prompt": waitCoverage.waitPrompt,
         Connection: "keep-alive"
       },
       body: JSON.stringify(payload),
       signal: controller.signal
     });
   } catch (error) {
-    return {
+    const result = {
       ok: false,
       message:
         error?.name === "AbortError"
@@ -1569,23 +1624,29 @@ async function postInternalAppointment(payload) {
           : "The booking system could not be reached.",
       code: error?.name === "AbortError" ? "backend_timeout" : "backend_unreachable"
     };
+    logApiWaitCoverage(payload, waitCoverage, startedAt, result);
+    return result;
   } finally {
     clearTimeout(timeoutId);
   }
 
   if (!response.ok) {
     const text = await response.text();
-    return {
+    const result = {
       ok: false,
       message: text || "I could not create the appointment right now.",
       code: "backend_error"
     };
+    logApiWaitCoverage(payload, waitCoverage, startedAt, result);
+    return result;
   }
 
-  return {
+  const result = {
     ok: true,
     data: await response.json()
   };
+  logApiWaitCoverage(payload, waitCoverage, startedAt, result);
+  return result;
 }
 
 function buildInternalPayload(event, intentName, extraAttributes = {}) {
@@ -1812,7 +1873,12 @@ export const handler = async (event) => {
         return buildNoAgentsAvailableResponse(event);
       }
       const result = await postInternalAppointment(
-        buildInternalPayload(event, intentName, escalationAttributes)
+        buildInternalPayload(event, intentName, escalationAttributes),
+        {
+          operationName: "operator_escalation",
+          waitPrompt: WAIT_PROMPTS.operator_escalation,
+          mechanism: "Lex fulfillment update / Connect transfer prompt"
+        }
       );
       if (!result.ok) {
         console.error("Appointment API rejected escalation request", result.code);
@@ -1829,7 +1895,11 @@ export const handler = async (event) => {
     }
 
     if (intentName === "CancelAppointmentIntent") {
-      const result = await postInternalAppointment(buildInternalPayload(event, intentName));
+      const result = await postInternalAppointment(buildInternalPayload(event, intentName), {
+        operationName: "appointment_cancel_lookup",
+        waitPrompt: WAIT_PROMPTS.appointment_update,
+        mechanism: "Lex fulfillment update"
+      });
       if (!result.ok) {
         console.error("Appointment API rejected cancel request", result.code);
         return buildBackendFailureEscalationResponse(event, result);
@@ -1846,7 +1916,11 @@ export const handler = async (event) => {
     }
 
     if (intentName === "RescheduleAppointmentIntent") {
-      const result = await postInternalAppointment(buildInternalPayload(event, intentName));
+      const result = await postInternalAppointment(buildInternalPayload(event, intentName), {
+        operationName: "appointment_reschedule_lookup",
+        waitPrompt: WAIT_PROMPTS.appointment_update,
+        mechanism: "Lex fulfillment update"
+      });
       if (!result.ok) {
         console.error("Appointment API rejected reschedule request", result.code);
         return buildBackendFailureEscalationResponse(event, result);
@@ -1869,7 +1943,11 @@ export const handler = async (event) => {
       );
     }
 
-    const result = await postInternalAppointment(buildInternalPayload(event, intentName));
+    const result = await postInternalAppointment(buildInternalPayload(event, intentName), {
+      operationName: "booking_fulfillment_availability_and_creation",
+      waitPrompt: `${WAIT_PROMPTS.availability_lookup} ${WAIT_PROMPTS.appointment_creation}`,
+      mechanism: "Lex fulfillment update"
+    });
 
     if (!result.ok) {
       console.error("Appointment API rejected request", result.code);
@@ -1903,7 +1981,7 @@ export const handler = async (event) => {
       lexResponse?.message ||
       (data.outcome === "BOOKED"
         ? "<speak>You're all set. <break time=\"300ms\"/> Your appointment is booked. Thank you for calling.</speak>"
-        : '<speak>I could not confirm the booking yet. <break time="300ms"/> Please hold while I connect you with our team.</speak>');
+        : '<speak>I could not confirm the booking yet. <break time="300ms"/> Please wait while I connect you.</speak>');
 
     return buildLexResponse(
       event,
@@ -1928,7 +2006,7 @@ export const handler = async (event) => {
     }
     return buildLexResponse(
       event,
-      '<speak>Something went wrong while creating the appointment. <break time="300ms"/> Please hold while I connect you with our team.</speak>',
+      '<speak>Something went wrong while creating the appointment. <break time="300ms"/> Please wait while I connect you.</speak>',
       "Failed",
       buildForceHumanEscalationAttributes("backend_error")
     );

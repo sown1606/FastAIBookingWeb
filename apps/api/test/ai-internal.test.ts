@@ -1368,6 +1368,28 @@ test("successful booking creates appointment, booking attempt, call session, tra
   assert.equal(result.body.data.aiInteractionId, state.aiInteractionLogs[0].id);
 });
 
+test("confirmed booking retry for the same Amazon Connect contact does not create a duplicate appointment", async () => {
+  const payload = bookingPayload({
+    staffPreference: "Trang",
+    amazonConnectContactId: "connect-contact-idempotent",
+    amazonConnectPhoneNumber: "+18483487681",
+    calledNumber: "+18483487681",
+    transcript: "Kiet Nguyen wants a pedicure with Trang tomorrow at five PM."
+  });
+
+  const first = await postInternalAppointment(payload);
+  const second = await postInternalAppointment(payload);
+
+  assert.equal(first.response.status, 201);
+  assert.equal(second.response.status, 201);
+  assert.equal(first.body.data.outcome, "BOOKED");
+  assert.equal(second.body.data.outcome, "BOOKED");
+  assert.equal(state.appointments.length, 1);
+  assert.equal(state.bookingAttempts.length, 1);
+  assert.equal(second.body.data.appointment.id, first.body.data.appointment.id);
+  assert.equal(second.body.data.bookingAttemptId, first.body.data.bookingAttemptId);
+});
+
 test("explicit human intent creates queued escalation with queue id", async () => {
   const result = await postInternalAppointment(
     bookingPayload({

@@ -164,11 +164,51 @@ aiInternalRouter.post(
   validate(createAIAppointmentSchema),
   asyncHandler(async (req, res) => {
     const payload = req.body as z.infer<typeof createAIAppointmentSchema>;
+    const startedAt = Date.now();
+    const waitOperationHeader = req.headers["x-fastaibooking-wait-operation"];
+    const waitPromptHeader = req.headers["x-fastaibooking-wait-prompt"];
+    const waitOperation = Array.isArray(waitOperationHeader)
+      ? waitOperationHeader[0]
+      : waitOperationHeader;
+    const waitPrompt = Array.isArray(waitPromptHeader) ? waitPromptHeader[0] : waitPromptHeader;
+    const amazonConnectContactIdAttribute =
+      typeof payload.attributes?.["AmazonConnectContactId"] === "string"
+        ? payload.attributes["AmazonConnectContactId"]
+        : undefined;
+    const logWaitCoverage = (input: {
+      success: boolean;
+      outcome?: string;
+      reason?: string;
+    }) => {
+      logger.info(
+        {
+          requestId: req.requestId,
+          operationName: waitOperation ?? payload.intentName ?? "internal_ai_appointment",
+          waitPrompt: waitPrompt ?? null,
+          apiDurationMs: Date.now() - startedAt,
+          success: input.success,
+          outcome: input.outcome,
+          failureReason: input.reason,
+          callOrSessionId:
+            payload.amazonConnectContactId ??
+            payload.callSessionId ??
+            payload.contactId ??
+            amazonConnectContactIdAttribute ??
+            null
+        },
+        "Internal AI wait prompt coverage."
+      );
+    };
     let result: Awaited<ReturnType<typeof createAmazonConnectAIAppointment>>;
     try {
       result = await createAmazonConnectAIAppointment(payload);
     } catch (error) {
       const reason = classifyInternalAIError(error);
+      logWaitCoverage({
+        success: false,
+        outcome: "HUMAN_ESCALATION",
+        reason
+      });
       logger.error(
         {
           requestId: req.requestId,
@@ -182,6 +222,10 @@ aiInternalRouter.post(
         ...safeEscalationResponse(reason)
       });
     }
+    logWaitCoverage({
+      success: true,
+      outcome: result.outcome
+    });
     return sendSuccess(res, {
       statusCode: result.outcome === "BOOKED" ? 201 : 200,
       message: result.message,

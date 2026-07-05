@@ -13,7 +13,7 @@ import { prisma } from "../../db/prisma";
 import { createAuditLog } from "../../lib/audit";
 import { AppError } from "../../lib/errors";
 import { logger } from "../../lib/logger";
-import { createAppointmentFromAI } from "../appointments/appointments.service";
+import { createAppointmentFromAI, getAppointmentDetail } from "../appointments/appointments.service";
 import { getAvailableSlots, validateAppointmentSlot } from "../availability/availability.service";
 import { createOrUpdateCallEscalation } from "../call-center/call-center.service";
 import {
@@ -3043,7 +3043,7 @@ const buildLexMessage = (input: {
 
   if (input.outcome === "HUMAN_ESCALATION") {
     return speak(
-      `I'm having trouble getting that clearly. <break time="300ms"/> Please hold while I connect you with our team.`
+      `I'm having trouble getting that clearly. <break time="300ms"/> Please wait while I connect you.`
     );
   }
 
@@ -3127,7 +3127,7 @@ const buildLexMessage = (input: {
     `${escapeSsml(
       input.failureReason ??
         "I could not confirm the appointment right now."
-    )} <break time="300ms"/> Please hold while I connect you with our team.`
+    )} <break time="300ms"/> Please wait while I connect you.`
   );
 };
 
@@ -4119,7 +4119,7 @@ export const createAmazonConnectAIAppointment = async (
             requestedBy: "AMAZON_CONNECT_LEX",
             escalationReason: reason,
             customerPhone: normalized.customerPhone ?? null,
-            messageToCaller: "Please hold while I connect you with our team.",
+            messageToCaller: "Please wait while I connect you.",
             metadata: {
               bookingAttemptId: bookingAttempt.id,
               transcriptId: transcript?.id,
@@ -4926,6 +4926,90 @@ export const createAmazonConnectAIAppointment = async (
       missingFields: ["customerName", "customerPhone"],
       salonResolutionSource: resolutionSource
     };
+  }
+
+  if (callSession) {
+    const successfulAttempt = await prisma.bookingAttempt.findFirst({
+      where: {
+        callSessionId: callSession.id,
+        status: BookingAttemptStatus.SUCCESS,
+        appointmentId: {
+          not: null
+        }
+      },
+      orderBy: {
+        createdAt: "desc"
+      }
+    });
+    const previousRequest =
+      successfulAttempt?.normalizedRequest &&
+      typeof successfulAttempt.normalizedRequest === "object" &&
+      !Array.isArray(successfulAttempt.normalizedRequest)
+        ? (successfulAttempt.normalizedRequest as Record<string, unknown>)
+        : {};
+    const isSameConfirmedBooking =
+      successfulAttempt?.appointmentId &&
+      previousRequest.customerId === customer.id &&
+      previousRequest.serviceId === service.id &&
+      previousRequest.staffId === chosenStaff.id &&
+      previousRequest.startTimeIso === requestedStartTime.toISOString();
+
+    if (isSameConfirmedBooking) {
+      const appointment = await getAppointmentDetail(salon.id, successfulAttempt.appointmentId!);
+      const message = buildLexMessage({
+        outcome: "BOOKED",
+        appointmentStartTime: requestedStartTime,
+        salonTimezone: salon.timezone,
+        serviceName: service.name,
+        staffName: chosenStaff.fullName
+      });
+      const parsed = buildInternalParsedIntent({
+        intentType: "BOOK_APPOINTMENT",
+        customerName: normalized.customerName,
+        customerPhone: normalized.customerPhone,
+        serviceName: service.name,
+        staffPreference: chosenStaff.fullName,
+        requestedDateTime: requestedStartTime.toISOString(),
+        missingFields: [],
+        isReadyToBook: true
+      });
+
+      logger.info(
+        {
+          callSessionId: callSession.id,
+          bookingAttemptId: successfulAttempt.id,
+          appointmentId: successfulAttempt.appointmentId,
+          contactId: normalized.contactId
+        },
+        "Amazon Connect AI booking retry returned existing appointment."
+      );
+
+      return {
+        outcome: "BOOKED" as const,
+        message,
+        lexResponse: {
+          fulfillmentState: "Fulfilled",
+          message,
+          messageContentType: "SSML",
+          sessionAttributes: buildKnownSessionAttributes({
+            bookingOutcome: "BOOKED",
+            aiAlternativeSlots: "[]",
+            awaitingAlternativeSelection: "false",
+            awaitingFinalBookingConfirmation: "false",
+            bookingConfirmationAsked: "false"
+          })
+        },
+        appointment,
+        bookingAttempt: successfulAttempt,
+        callSession,
+        transcript,
+        aiInteraction: null,
+        escalation: null,
+        alternatives: [],
+        missingFields: [],
+        salonResolutionSource: resolutionSource
+      };
+    }
   }
 
   const appointment = await createAppointmentFromAI(salon.id, actorUserId, {
