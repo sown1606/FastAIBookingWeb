@@ -7,6 +7,7 @@ import { getStaffTitleLabel, getStaffTitleOptions } from "../lib/form-options";
 import { formatUsPhoneInput, requiredLabel, validateOptionalUsPhone } from "../lib/phone";
 import { statusLabelKey, useI18n } from "../lib/i18n";
 import { InfoHint } from "../components/info-hint";
+import { DemoAvatar } from "../components/avatar";
 
 const DEFAULT_STAFF_TITLE = "Nail Technician";
 
@@ -337,9 +338,12 @@ export const StaffPage = () => {
                   className={item.status === "ACTIVE" ? "staff-card" : "staff-card staff-card-inactive"}
                 >
                   <div className="staff-card-header">
-                    <div className="staff-identity-copy">
-                      <strong>{item.fullName}</strong>
-                      <span>{titleLabel}</span>
+                    <div className="staff-identity">
+                      <DemoAvatar name={item.fullName} variant="staff" size="md" />
+                      <div className="staff-identity-copy">
+                        <strong>{item.fullName}</strong>
+                        <span>{titleLabel}</span>
+                      </div>
                     </div>
                     <div className="staff-chip-row">
                       <span className={item.status === "ACTIVE" ? "status-pill success" : "status-pill warning"}>

@@ -124,8 +124,8 @@ export const LoginPage = () => {
             {submitting ? t("auth.login.submitting") : t("auth.login.submit")}
           </button>
       </form>
-      <div className="demo-account-card">
-        <strong>{t("auth.login.demoTitle")}</strong>
+      <details className="demo-account-card">
+        <summary>{t("auth.login.demoTitle")}</summary>
         {demoAccounts.map((account) => (
           <div key={account.mode} className="demo-account-row">
             <span>
@@ -137,7 +137,7 @@ export const LoginPage = () => {
             </button>
           </div>
         ))}
-      </div>
+      </details>
       <div className="auth-links">
         <Link to="/register">{t("auth.login.createOwner")}</Link>
         <Link to="/forgot-password">{t("auth.login.forgot")}</Link>

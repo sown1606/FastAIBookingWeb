@@ -8,6 +8,7 @@ import { formatDateTime } from "../lib/format";
 import { statusLabelKey, useI18n } from "../lib/i18n";
 import { useUiMode } from "../lib/ui-mode";
 import { InfoHint } from "../components/info-hint";
+import { dateTimeLocalToUtcIso } from "../lib/timezone";
 
 interface AppointmentItem {
   id: string;
@@ -113,6 +114,41 @@ const formatHeroAppointmentDate = (value: string, timezone: string) => {
   };
 };
 
+const shiftDateKey = (dateKey: string, days: number) => {
+  const [year = 1970, month = 1, day = 1] = dateKey.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day + days));
+  return date.toISOString().slice(0, 10);
+};
+
+const getSalonRangeParams = (fromDateKey: string, toDateKey: string, timezone: string) => {
+  const dateFrom = dateTimeLocalToUtcIso(`${fromDateKey}T00:00`, timezone);
+  const dateTo = dateTimeLocalToUtcIso(`${toDateKey}T23:59`, timezone);
+  const params = new URLSearchParams({
+    page: "1",
+    limit: "100"
+  });
+  if (dateFrom) {
+    params.set("dateFrom", dateFrom);
+  }
+  if (dateTo) {
+    params.set("dateTo", dateTo);
+  }
+  return params;
+};
+
+const getStatusToneClass = (status: string) => {
+  if (status === "COMPLETED") {
+    return "status-pill success";
+  }
+  if (status === "CANCELED" || status === "NO_SHOW") {
+    return "status-pill warning";
+  }
+  if (status === "IN_PROGRESS" || status === "CONFIRMED") {
+    return "status-pill info";
+  }
+  return "status-pill";
+};
+
 export const DashboardPage = () => {
   const { session } = useAuth();
   const { notify } = useToast();
@@ -144,17 +180,22 @@ export const DashboardPage = () => {
         return;
       }
 
-      const appointmentResult = await apiGet<AppointmentsResponse>("/api/v1/appointments?page=1&limit=20");
-      setAppointments(appointmentResult.items);
-
       if (session?.user.role === "SALON_OWNER") {
-        const [staff, services, customers, salonSettings, profile] = await Promise.all([
+        const profile = await apiGet<SalonProfileSummary>("/api/v1/salon/profile");
+        const todayKey = getSalonDateKey(new Date(), profile.timezone || FALLBACK_SALON_TIMEZONE);
+        const appointmentParams = getSalonRangeParams(
+          todayKey,
+          shiftDateKey(todayKey, 14),
+          profile.timezone || FALLBACK_SALON_TIMEZONE
+        );
+        const [appointmentResult, staff, services, customers, salonSettings] = await Promise.all([
+          apiGet<AppointmentsResponse>(`/api/v1/appointments?${appointmentParams.toString()}`),
           apiGet<StaffItem[]>("/api/v1/staff?includeInactive=false"),
           apiGet<ServiceItem[]>("/api/v1/services"),
           apiGet<CustomerResponse>("/api/v1/customers?page=1&limit=1"),
-          apiGet<SalonSettings>("/api/v1/salon/settings"),
-          apiGet<SalonProfileSummary>("/api/v1/salon/profile")
+          apiGet<SalonSettings>("/api/v1/salon/settings")
         ]);
+        setAppointments(appointmentResult.items);
         setStaffCount(staff.length);
         setServiceCount(services.length);
         setCustomerCount(customers.pagination.total);
@@ -163,6 +204,17 @@ export const DashboardPage = () => {
         setOperatorNote(null);
       } else {
         const note = await apiGet<SalonOperatorNote>("/api/v1/salon/staff-note");
+        const timezone = note.timezone || FALLBACK_SALON_TIMEZONE;
+        const todayKey = getSalonDateKey(new Date(), timezone);
+        const appointmentParams = getSalonRangeParams(
+          todayKey,
+          shiftDateKey(todayKey, 14),
+          timezone
+        );
+        const appointmentResult = await apiGet<AppointmentsResponse>(
+          `/api/v1/appointments?${appointmentParams.toString()}`
+        );
+        setAppointments(appointmentResult.items);
         setStaffCount(0);
         setServiceCount(0);
         setCustomerCount(0);
@@ -267,6 +319,98 @@ export const DashboardPage = () => {
   const routingDescription = t(routingDescriptionKeyByMode[routingMode], {
     count: settings?.routingSummary.ringCountBeforeAi ?? 3
   });
+
+  if (session?.user.role === "SALON_OWNER" && isBasicMode) {
+    const displayName = session.user.fullName.split(" ")[0] || session.user.fullName;
+    const appointmentPreview = todayAppointments.slice(0, 4);
+    return (
+      <div className="stack appointments-home">
+        <section className="home-greeting-card">
+          <div className="home-greeting-copy">
+            <p className="eyebrow">Appointments Home</p>
+            <h2>Good day, {displayName}</h2>
+            <p className="muted">{salonProfile?.name ?? t("nav.dashboard")}</p>
+          </div>
+          <div className="home-count-card">
+            <span>{t("dashboard.todayAppointments")}</span>
+            <strong>{todayAppointments.length}</strong>
+          </div>
+        </section>
+
+        <section className="quick-actions primary-actions">
+          <Link to="/appointments#create-appointment">{t("dashboard.addAppointment")}</Link>
+          <Link to="/appointments">{t("dashboard.viewSchedule")}</Link>
+          <Link to="/services">{t("dashboard.manageServices")}</Link>
+          <Link to="/staff">{t("dashboard.manageStaff")}</Link>
+        </section>
+
+        <section className="card">
+          <div className="section-header">
+            <div>
+              <h2>{t("dashboard.todayAppointments")}</h2>
+              <p className="muted">{todayAppointments.length ? t("dashboard.todayOpenStatus") : t("dashboard.todayQuietStatus")}</p>
+            </div>
+            <Link to="/appointments" className="button-secondary">
+              {t("dashboard.openDetails")}
+            </Link>
+          </div>
+          {appointmentPreview.length ? (
+            <div className="entity-grid compact-appointment-grid">
+              {appointmentPreview.map((item) => (
+                <article key={item.id} className="appointment-card">
+                  <div className="appointment-card-header">
+                    <div className="appointment-card-copy">
+                      <strong>
+                        {item.customer.firstName} {item.customer.lastName}
+                      </strong>
+                      <span className="muted">{item.service.name}</span>
+                    </div>
+                    <span className={getStatusToneClass(item.status)}>
+                      {statusLabelKey(item.status) ? t(statusLabelKey(item.status)!) : item.status}
+                    </span>
+                  </div>
+                  <div className="appointment-card-meta">
+                    <div>
+                      <span className="muted">{t("appointments.time")}</span>
+                      <strong>{formatDateTime(item.startTime, salonTimezone)}</strong>
+                    </div>
+                    <div>
+                      <span className="muted">{t("appointments.staff")}</span>
+                      <strong>{item.staff.fullName}</strong>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <EmptyBlock message={t("dashboard.noTodayAppointments")} />
+          )}
+        </section>
+
+        <section className="card routing-status-compact">
+          <div className="section-header">
+            <div>
+              <h2>{routingLabel}</h2>
+              <p className="muted">{routingDescription}</p>
+            </div>
+            <button type="button" className="button-secondary" onClick={toggleAiReception}>
+              {settings?.aiReceptionEnabled ? t("dashboard.toggleAiOff") : t("dashboard.toggleAiOn")}
+            </button>
+          </div>
+          <div className="summary-badges">
+            <span className={settings?.aiReceptionEnabled ? "status-pill success" : "status-pill warning"}>
+              {t("dashboard.aiReceptionStatus")}: {settings?.aiReceptionEnabled ? t("common.statusOn") : t("common.statusOff")}
+              <InfoHint text={t("hints.aiReception")} />
+            </span>
+            <span className={settings?.callCenterEnabled ? "status-pill success" : "status-pill warning"}>
+              {t("dashboard.callCenterStatus")}: {settings?.callCenterEnabled ? t("common.statusOn") : t("common.statusOff")}
+              <InfoHint text={t("hints.callCenter")} />
+            </span>
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="stack">

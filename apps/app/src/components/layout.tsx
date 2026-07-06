@@ -3,7 +3,16 @@ import { DemoAvatar } from "./avatar";
 import { LanguageSwitcher } from "./language-switcher";
 import { NotificationBell } from "./notification-bell";
 import { useI18n, type TranslationKey } from "../lib/i18n";
+import { useUiMode } from "../lib/ui-mode";
 import type { AuthUser } from "../types";
+
+const ownerBasicNav = [
+  { to: "/dashboard", label: "Booking" },
+  { to: "/services", label: "Services" },
+  { to: "/staff", label: "Staff" },
+  { to: "/alerts", label: "Alerts" },
+  { to: "/salon-profile", label: "Salon" }
+];
 
 const ownerNav = [
   { to: "/dashboard", labelKey: "nav.dashboard" },
@@ -65,9 +74,12 @@ export const AppLayout = ({
 }) => {
   const location = useLocation();
   const { t } = useI18n();
+  const { isBasicMode } = useUiMode();
   const nav =
     user.role === "SALON_OWNER"
-      ? ownerNav
+      ? isBasicMode
+        ? ownerBasicNav
+        : ownerNav
       : isCallCenterRole(user.role)
         ? callCenterNav
         : staffNav;
@@ -87,7 +99,7 @@ export const AppLayout = ({
         <nav className="nav-links">
           {nav.map((item) => (
             <NavLink key={item.to} to={item.to} className="nav-item">
-              {t(item.labelKey as TranslationKey)}
+              {"label" in item ? item.label : t(item.labelKey as TranslationKey)}
             </NavLink>
           ))}
         </nav>

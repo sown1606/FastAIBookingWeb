@@ -1,5 +1,5 @@
 import { Fragment, FormEvent, useEffect, useMemo, useState } from "react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, MouseEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import { apiGet, apiPatch, apiPost, extractErrorMessage } from "../lib/api";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
@@ -12,7 +12,7 @@ import { statusLabelKey, useI18n } from "../lib/i18n";
 import { DemoAvatar } from "../components/avatar";
 import { requiredLabel } from "../lib/phone";
 import { useUiMode } from "../lib/ui-mode";
-import { utcToDateTimeLocalInTimeZone } from "../lib/timezone";
+import { dateTimeLocalToUtcIso, utcToDateTimeLocalInTimeZone } from "../lib/timezone";
 
 interface AppointmentItem {
   id: string;
@@ -75,6 +75,13 @@ interface CustomersResponse {
 
 interface SalonProfileTimezone {
   timezone: string;
+}
+
+interface SalonOperatorNote {
+  salonId: string;
+  salonName: string;
+  timezone: string;
+  callCenterRoutingNote: string | null;
 }
 
 interface StaffReminder {
@@ -168,6 +175,21 @@ const shiftDateKey = (dateKey: string, days: number) => {
   return date.toISOString().slice(0, 10);
 };
 
+const buildAppointmentDateParams = (fromDateKey: string, toDateKey: string, timezone: string) => {
+  const params = new URLSearchParams({
+    limit: "100"
+  });
+  const dateFrom = dateTimeLocalToUtcIso(`${fromDateKey}T00:00`, timezone);
+  const dateTo = dateTimeLocalToUtcIso(`${toDateKey}T23:59`, timezone);
+  if (dateFrom) {
+    params.set("dateFrom", dateFrom);
+  }
+  if (dateTo) {
+    params.set("dateTo", dateTo);
+  }
+  return params;
+};
+
 const formatSelectedDateLabel = (dateKey: string, locale: "vi" | "en") => {
   const [year = 1970, month = 1, day = 1] = dateKey.split("-").map(Number);
   const date = new Date(year, month - 1, day, 12);
@@ -219,6 +241,8 @@ export const AppointmentsPage = () => {
   const [error, setError] = useState("");
   const [appointments, setAppointments] = useState<AppointmentItem[]>([]);
   const [reminders, setReminders] = useState<StaffReminder[]>([]);
+  const [selectedAppointment, setSelectedAppointment] = useState<AppointmentItem | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState("");
   const [selectedDate, setSelectedDate] = useState(() => formatSalonDateKey(new Date()));
   const [staffDateInitialized, setStaffDateInitialized] = useState(false);
@@ -252,22 +276,27 @@ export const AppointmentsPage = () => {
     { value: "NO_SHOW", label: t("status.NO_SHOW") }
   ];
 
+  const fetchAppointments = async (baseParams: URLSearchParams) => {
+    const items: AppointmentItem[] = [];
+    let page = 1;
+    let total = 0;
+    do {
+      const params = new URLSearchParams(baseParams);
+      params.set("page", String(page));
+      const appointmentResponse = await apiGet<AppointmentsResponse>(
+        `/api/v1/appointments?${params.toString()}`
+      );
+      items.push(...appointmentResponse.items);
+      total = appointmentResponse.pagination.total;
+      page += 1;
+    } while (items.length < total && page <= 5);
+    return items;
+  };
+
   const load = async () => {
     setError("");
     setLoading(true);
     try {
-      const params = new URLSearchParams({
-        page: "1",
-        limit: "50"
-      });
-      if (statusFilter) {
-        params.set("status", statusFilter);
-      }
-      const appointmentResponse = await apiGet<AppointmentsResponse>(
-        `/api/v1/appointments?${params.toString()}`
-      );
-      setAppointments(appointmentResponse.items);
-
       if (isOwner) {
         const [customerResponse, staffResponse, serviceResponse, salonProfile] = await Promise.all([
           apiGet<CustomersResponse>("/api/v1/customers?page=1&limit=100"),
@@ -275,16 +304,34 @@ export const AppointmentsPage = () => {
           apiGet<ServiceItem[]>("/api/v1/services"),
           apiGet<SalonProfileTimezone>("/api/v1/salon/profile")
         ]);
+        const timezone = salonProfile.timezone || FALLBACK_SALON_TIMEZONE;
+        const params = buildAppointmentDateParams(selectedDate, selectedDate, timezone);
+        if (statusFilter) {
+          params.set("status", statusFilter);
+        }
+        setAppointments(await fetchAppointments(params));
         setCustomers(customerResponse.items);
         setStaff(staffResponse);
         setServices(serviceResponse.filter((item) => item.isActive));
         setSalonProfileTimezone(salonProfile.timezone || "");
         setReminders([]);
       } else {
+        const note = await apiGet<SalonOperatorNote>("/api/v1/salon/staff-note");
+        const timezone = note.timezone || FALLBACK_SALON_TIMEZONE;
+        const todayKey = formatSalonDateKey(new Date(), timezone);
+        const fromDateKey = selectedDate < todayKey ? selectedDate : todayKey;
+        const selectedWindowEnd = shiftDateKey(selectedDate, 1);
+        const upcomingWindowEnd = shiftDateKey(todayKey, 30);
+        const toDateKey = selectedWindowEnd > upcomingWindowEnd ? selectedWindowEnd : upcomingWindowEnd;
+        const params = buildAppointmentDateParams(fromDateKey, toDateKey, timezone);
+        if (statusFilter) {
+          params.set("status", statusFilter);
+        }
+        setAppointments(await fetchAppointments(params));
         setCustomers([]);
         setStaff([]);
         setServices([]);
-        setSalonProfileTimezone("");
+        setSalonProfileTimezone(note.timezone || "");
         const reminderResult = await apiGet<StaffReminder[]>("/api/v1/staff/me/reminders");
         setReminders(reminderResult);
       }
@@ -297,7 +344,7 @@ export const AppointmentsPage = () => {
 
   useEffect(() => {
     void load();
-  }, [isOwner, statusFilter]);
+  }, [isOwner, selectedDate, statusFilter]);
 
   useEffect(() => {
     const interval = window.setInterval(() => setNow(Date.now()), 1000);
@@ -366,6 +413,26 @@ export const AppointmentsPage = () => {
     } catch (createError) {
       notify("error", extractErrorMessage(createError));
     }
+  };
+
+  const selectAppointment = async (appointmentId: string) => {
+    const existing = appointments.find((item) => item.id === appointmentId);
+    if (existing) {
+      setSelectedAppointment(existing);
+      return;
+    }
+    setDetailLoading(true);
+    try {
+      setSelectedAppointment(await apiGet<AppointmentItem>(`/api/v1/appointments/${appointmentId}`));
+    } catch (detailError) {
+      notify("error", extractErrorMessage(detailError));
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  const stopAppointmentAction = (event: MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
   };
 
   const cancelAppointment = async (appointment: AppointmentItem) => {
@@ -797,6 +864,76 @@ export const AppointmentsPage = () => {
         </section>
       ) : null}
 
+      {selectedAppointment || detailLoading ? (
+        <section className="card appointment-detail-card">
+          <div className="section-header">
+            <div>
+              <p className="eyebrow">Appointment detail</p>
+              <h2>
+                {selectedAppointment
+                  ? `${selectedAppointment.customer.firstName} ${selectedAppointment.customer.lastName}`
+                  : t("common.loading")}
+              </h2>
+            </div>
+            <button type="button" className="button-secondary" onClick={() => setSelectedAppointment(null)}>
+              Close
+            </button>
+          </div>
+          {selectedAppointment ? (
+            <>
+              <div className="summary-badges">
+                <span className={selectedAppointment.status === "COMPLETED" ? "status-pill success" : selectedAppointment.status === "IN_PROGRESS" ? "status-pill info" : selectedAppointment.status === "CANCELED" || selectedAppointment.status === "NO_SHOW" ? "status-pill warning" : "status-pill"}>
+                  {statusLabelKey(selectedAppointment.status)
+                    ? t(statusLabelKey(selectedAppointment.status)!)
+                    : selectedAppointment.status}
+                </span>
+                <span className="summary-badge">{selectedAppointment.source}</span>
+              </div>
+              <div className="appointment-card-meta">
+                <div>
+                  <span className="muted">{t("appointments.time")}</span>
+                  <strong>
+                    {t("appointments.timeRange", {
+                      start: formatTimeOnly(selectedAppointment.startTime, salonTimezone),
+                      end: formatTimeOnly(selectedAppointment.endTime, salonTimezone)
+                    })}
+                  </strong>
+                </div>
+                <div>
+                  <span className="muted">{t("appointments.service")}</span>
+                  <strong>{selectedAppointment.service.name}</strong>
+                </div>
+                <div>
+                  <span className="muted">{t("appointments.staff")}</span>
+                  <strong>{selectedAppointment.staff.fullName}</strong>
+                </div>
+                <div>
+                  <span className="muted">{t("appointments.notes")}</span>
+                  <strong>{selectedAppointment.notes || t("appointments.noNotes")}</strong>
+                </div>
+              </div>
+              {isOwner ? (
+                <div className="inline-actions">
+                  <button type="button" className="button-secondary" onClick={() => void updateStatus(selectedAppointment)}>
+                    {t("appointments.updateStatus")}
+                  </button>
+                  <button type="button" className="button-secondary" onClick={() => void rescheduleAppointment(selectedAppointment)}>
+                    {t("appointments.reschedule")}
+                  </button>
+                  <button type="button" className="button-secondary" onClick={() => void cancelAppointment(selectedAppointment)}>
+                    {t("appointments.cancel")}
+                  </button>
+                </div>
+              ) : (
+                <div className="inline-actions">{renderStaffAppointmentActions(selectedAppointment)}</div>
+              )}
+            </>
+          ) : (
+            <LoadingBlock />
+          )}
+        </section>
+      ) : null}
+
       {isOwner ? (
         <section className={isBasicMode ? "card basic-primary-section" : "card"}>
           <div className="section-header">
@@ -871,6 +1008,7 @@ export const AppointmentsPage = () => {
                             id={`appointment-${item.id}`}
                             key={item.id}
                             className={`${getAppointmentToneClass(item)}${getHighlightedClass(item.id)}`}
+                            onClick={() => void selectAppointment(item.id)}
                             style={{
                               gridColumn: staffIndex + 2,
                               gridRow: `${startRow} / span ${span}`
@@ -896,13 +1034,22 @@ export const AppointmentsPage = () => {
                               {item.notes ? <small>{item.notes}</small> : null}
                             </div>
                             <div className="schedule-appointment-actions">
-                              <button type="button" className="button-secondary" onClick={() => void updateStatus(item)}>
+                              <button type="button" className="button-secondary" onClick={(event) => {
+                                stopAppointmentAction(event);
+                                void updateStatus(item);
+                              }}>
                                 {t("appointments.updateStatus")}
                               </button>
-                              <button type="button" className="button-secondary" onClick={() => void rescheduleAppointment(item)}>
+                              <button type="button" className="button-secondary" onClick={(event) => {
+                                stopAppointmentAction(event);
+                                void rescheduleAppointment(item);
+                              }}>
                                 {t("appointments.reschedule")}
                               </button>
-                              <button type="button" className="button-secondary" onClick={() => void cancelAppointment(item)}>
+                              <button type="button" className="button-secondary" onClick={(event) => {
+                                stopAppointmentAction(event);
+                                void cancelAppointment(item);
+                              }}>
                                 {t("appointments.cancel")}
                               </button>
                             </div>
@@ -963,6 +1110,7 @@ export const AppointmentsPage = () => {
               <article
                 id={`appointment-${currentOrNextStaffAppointment.id}`}
                 className={`appointment-card appointment-card-featured${getHighlightedClass(currentOrNextStaffAppointment.id)}`}
+                onClick={() => void selectAppointment(currentOrNextStaffAppointment.id)}
               >
                 <div className="appointment-card-header">
                   <div className="appointment-card-copy">
@@ -998,7 +1146,9 @@ export const AppointmentsPage = () => {
                 {countdownText(currentOrNextStaffAppointment) ? (
                   <span className="timer-pill">{countdownText(currentOrNextStaffAppointment)}</span>
                 ) : null}
-                <div className="inline-actions">{renderStaffAppointmentActions(currentOrNextStaffAppointment)}</div>
+                <div className="inline-actions" onClick={(event) => event.stopPropagation()}>
+                  {renderStaffAppointmentActions(currentOrNextStaffAppointment)}
+                </div>
               </article>
             ) : (
               <EmptyBlock message={t("appointments.noStaff")} />
@@ -1020,6 +1170,7 @@ export const AppointmentsPage = () => {
                     id={`appointment-${item.id}`}
                     key={item.id}
                     className={`mobile-item${getHighlightedClass(item.id)}`}
+                    onClick={() => void selectAppointment(item.id)}
                   >
                     <div className="appointment-card-header">
                       <div className="appointment-card-copy">
@@ -1033,7 +1184,9 @@ export const AppointmentsPage = () => {
                       </span>
                     </div>
                     {item.notes ? <p className="muted">{item.notes}</p> : null}
-                    <div className="inline-actions">{renderStaffAppointmentActions(item)}</div>
+                    <div className="inline-actions" onClick={(event) => event.stopPropagation()}>
+                      {renderStaffAppointmentActions(item)}
+                    </div>
                   </article>
                 ))}
               </div>
@@ -1063,6 +1216,7 @@ export const AppointmentsPage = () => {
                       id={`appointment-${item.id}`}
                       key={item.id}
                       className={`appointment-card${getHighlightedClass(item.id)}`}
+                      onClick={() => void selectAppointment(item.id)}
                     >
                       <div className="appointment-card-header">
                         <div className="appointment-card-copy">
@@ -1094,7 +1248,9 @@ export const AppointmentsPage = () => {
                         {item.notes ? <span className="summary-badge">{t("appointments.notes")}</span> : null}
                       </div>
                       {item.notes ? <p className="muted">{item.notes}</p> : <p className="muted">{t("appointments.noNotes")}</p>}
-                      <div className="inline-actions">{renderStaffAppointmentActions(item)}</div>
+                      <div className="inline-actions" onClick={(event) => event.stopPropagation()}>
+                        {renderStaffAppointmentActions(item)}
+                      </div>
                     </article>
                   ))}
                 </div>

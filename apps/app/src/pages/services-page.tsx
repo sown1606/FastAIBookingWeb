@@ -363,8 +363,15 @@ export const ServicesPage = () => {
             {services.map((item) => (
               <article key={item.id} className="entity-card">
                 <div className="entity-card-header">
-                  <div className="entity-card-copy">
-                    <strong>{item.name}</strong>
+                  <div className="service-card-title">
+                    <span className="service-icon-tile">{item.name.slice(0, 1).toUpperCase()}</span>
+                    <div className="entity-card-copy">
+                      <strong>{item.name}</strong>
+                      <span className="muted">
+                        {item.durationMinutes} min
+                        {item.priceCents > 0 ? ` · ${formatCurrencyCents(item.priceCents)}` : ""}
+                      </span>
+                    </div>
                   </div>
                   <span className={item.isActive ? "status-pill success" : "status-pill warning"}>
                     {statusLabelKey(item.isActive ? "ACTIVE" : "INACTIVE")
