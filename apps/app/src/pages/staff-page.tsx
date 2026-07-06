@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { apiGet, apiPatch, apiPost, extractErrorMessage } from "../lib/api";
+import { apiDelete, apiGet, apiPatch, apiPost, extractErrorMessage } from "../lib/api";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
 import { useToast } from "../components/toast";
 import { useFormDialog } from "../components/form-dialog";
@@ -236,6 +236,19 @@ export const StaffPage = () => {
     }
   };
 
+  const deleteStaffMember = async (item: StaffItem) => {
+    if (!window.confirm(t("staff.deleteConfirm"))) {
+      return;
+    }
+    try {
+      await apiDelete(`/api/v1/staff/${item.id}`);
+      notify("success", t("staff.deleted"));
+      await load();
+    } catch (deleteError) {
+      notify("error", extractErrorMessage(deleteError));
+    }
+  };
+
   if (loading) {
     return <LoadingBlock />;
   }
@@ -378,6 +391,9 @@ export const StaffPage = () => {
                     </button>
                     <button type="button" className="button-secondary" onClick={() => void resetAccess(item)}>
                       {t("staff.reset")}
+                    </button>
+                    <button type="button" className="button-danger-outline" onClick={() => void deleteStaffMember(item)}>
+                      {t("staff.deleteAction")}
                     </button>
                   </div>
                 </article>

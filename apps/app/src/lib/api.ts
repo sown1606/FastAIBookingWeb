@@ -165,3 +165,8 @@ export const apiPut = async <T, B = unknown>(
   const response = await http.put<ApiEnvelope<T>>(url, body, config);
   return unwrap(response);
 };
+
+export const apiDelete = async <T>(url: string, config?: AxiosRequestConfig): Promise<T> => {
+  const response = await http.delete<ApiEnvelope<T>>(url, config);
+  return unwrap(response);
+};

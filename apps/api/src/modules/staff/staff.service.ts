@@ -70,6 +70,11 @@ const staffServiceSelect = {
 const staffWithUserAndServicesInclude = {
   ...staffWithUserInclude,
   staffServices: {
+    where: {
+      service: {
+        deletedAt: null
+      }
+    },
     include: {
       service: {
         select: staffServiceSelect
@@ -139,6 +144,7 @@ const validateServiceIdsBelongToSalon = async (
   const count = await tx.service.count({
     where: {
       salonId,
+      deletedAt: null,
       id: {
         in: serviceIds
       }
@@ -189,6 +195,7 @@ export const listStaff = async (salonId: string, includeInactive = false) => {
   const staff = await prisma.staff.findMany({
     where: {
       salonId,
+      deletedAt: null,
       ...(includeInactive ? {} : { status: StaffStatus.ACTIVE })
     },
     include: staffWithUserAndServicesInclude,
@@ -249,7 +256,8 @@ export const createStaff = async (
       const activeServices = await tx.service.findMany({
         where: {
           salonId,
-          isActive: true
+          isActive: true,
+          deletedAt: null
         },
         select: {
           id: true
@@ -342,7 +350,8 @@ export const updateStaff = async (
   const existing = await prisma.staff.findFirst({
     where: {
       id: staffId,
-      salonId
+      salonId,
+      deletedAt: null
     },
     include: staffWithUserInclude
   });
@@ -449,7 +458,8 @@ const updateStaffStatus = async (
     const existing = await tx.staff.findFirst({
       where: {
         id: staffId,
-        salonId
+        salonId,
+        deletedAt: null
       },
       include: staffWithUserInclude
     });
@@ -525,7 +535,8 @@ export const deleteStaff = async (
     const existing = await tx.staff.findFirst({
       where: {
         id: staffId,
-        salonId
+        salonId,
+        deletedAt: null
       },
       include: staffWithUserInclude
     });
@@ -546,7 +557,8 @@ export const deleteStaff = async (
       },
       data: {
         status: StaffStatus.INACTIVE,
-        isBookable: false
+        isBookable: false,
+        deletedAt: new Date()
       }
     });
 
@@ -600,7 +612,8 @@ export const resetStaffAccess = async (
     const existing = await tx.staff.findFirst({
       where: {
         id: staffId,
-        salonId
+        salonId,
+        deletedAt: null
       },
       include: staffWithUserInclude
     });
@@ -746,7 +759,8 @@ export const getStaffSelfProfile = async (salonId: string, userId: string, staff
           staffServices: {
             where: {
               service: {
-                isActive: true
+                isActive: true,
+                deletedAt: null
               }
             },
             include: {
@@ -762,7 +776,7 @@ export const getStaffSelfProfile = async (salonId: string, userId: string, staff
       }
     }
   });
-  if (!user || !user.staffProfile) {
+  if (!user || !user.staffProfile || user.staffProfile.deletedAt) {
     throw new AppError("Staff profile not found.", 404, "STAFF_PROFILE_NOT_FOUND");
   }
 
@@ -788,7 +802,8 @@ export const getStaffServiceAssignments = async (salonId: string, staffId: strin
   const staff = await prisma.staff.findFirst({
     where: {
       id: staffId,
-      salonId
+      salonId,
+      deletedAt: null
     },
     select: {
       id: true,
@@ -808,7 +823,7 @@ export const getStaffServiceAssignments = async (salonId: string, staffId: strin
 
   const assignedIds = new Set(staff.staffServices.map((row) => row.serviceId));
   const services = await prisma.service.findMany({
-    where: { salonId },
+    where: { salonId, deletedAt: null },
     select: staffServiceSelect,
     orderBy: { name: "asc" }
   });
@@ -840,7 +855,8 @@ export const setStaffServiceAssignments = async (
     const staff = await tx.staff.findFirst({
       where: {
         id: staffId,
-        salonId
+        salonId,
+        deletedAt: null
       },
       select: { id: true }
     });
@@ -868,7 +884,8 @@ export const listStaffSelfServices = async (salonId: string, staffId: string) =>
   const staff = await prisma.staff.findFirst({
     where: {
       id: staffId,
-      salonId
+      salonId,
+      deletedAt: null
     },
     select: {
       id: true,
@@ -878,7 +895,8 @@ export const listStaffSelfServices = async (salonId: string, staffId: string) =>
       staffServices: {
         where: {
           service: {
-            isActive: true
+            isActive: true,
+            deletedAt: null
           }
         },
         include: {

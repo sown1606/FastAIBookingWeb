@@ -24,7 +24,8 @@ const activeStaffServicesInclude = (salonId: string) => ({
       salonId,
       staff: {
         salonId,
-        status: StaffStatus.ACTIVE
+        status: StaffStatus.ACTIVE,
+        deletedAt: null
       }
     },
     include: {
@@ -37,6 +38,7 @@ export const listServices = async (salonId: string, includeInactive = false) => 
   return prisma.service.findMany({
     where: {
       salonId,
+      deletedAt: null,
       ...(includeInactive ? {} : { isActive: true })
     },
     include: activeStaffServicesInclude(salonId),
@@ -55,6 +57,7 @@ const validateActiveStaffIds = async (salonId: string, staffIds: string[]): Prom
     where: {
       salonId,
       status: StaffStatus.ACTIVE,
+      deletedAt: null,
       id: {
         in: uniqueStaffIds
       }
@@ -126,7 +129,8 @@ export const updateService = async (
   const existing = await prisma.service.findFirst({
     where: {
       id: serviceId,
-      salonId
+      salonId,
+      deletedAt: null
     }
   });
   if (!existing) {
@@ -165,7 +169,8 @@ export const setServiceActiveState = async (
   const service = await prisma.service.findFirst({
     where: {
       id: serviceId,
-      salonId
+      salonId,
+      deletedAt: null
     }
   });
   if (!service) {
@@ -198,7 +203,8 @@ export const deleteService = async (
     const existing = await tx.service.findFirst({
       where: {
         id: serviceId,
-        salonId
+        salonId,
+        deletedAt: null
       }
     });
     if (!existing) {
@@ -215,7 +221,8 @@ export const deleteService = async (
     const service = await tx.service.update({
       where: { id: existing.id },
       data: {
-        isActive: false
+        isActive: false,
+        deletedAt: new Date()
       },
       include: activeStaffServicesInclude(salonId)
     });
@@ -251,7 +258,8 @@ export const setServiceStaffMapping = async (
   const existing = await prisma.service.findFirst({
     where: {
       id: serviceId,
-      salonId
+      salonId,
+      deletedAt: null
     }
   });
   if (!existing) {

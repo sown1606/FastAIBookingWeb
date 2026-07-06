@@ -555,7 +555,9 @@ textarea:focus-visible {
 }
 
 .inline-actions .button-primary,
-.inline-actions .button-secondary {
+.inline-actions .button-secondary,
+.inline-actions .button-danger,
+.inline-actions .button-danger-outline {
   flex: 1 1 132px;
 }
 
@@ -762,7 +764,9 @@ td input:disabled {
 }
 
 .button-primary,
-.button-secondary {
+.button-secondary,
+.button-danger,
+.button-danger-outline {
   border-radius: 999px;
   min-height: 44px;
   padding: 10px 14px;
@@ -811,8 +815,36 @@ td input:disabled {
   transform: translateY(-1px);
 }
 
+.button-danger {
+  background: linear-gradient(135deg, #c94735 0%, #9f2f24 100%);
+  color: #fff;
+  box-shadow: 0 12px 24px rgba(159, 47, 36, 0.18);
+}
+
+.button-danger:hover {
+  background: linear-gradient(135deg, #d95643 0%, #8b261d 100%);
+  text-decoration: none;
+  transform: translateY(-1px);
+}
+
+.button-danger-outline {
+  background: rgba(255, 253, 248, 0.88);
+  border-color: rgba(159, 47, 36, 0.3);
+  color: #9f2f24;
+}
+
+.button-danger-outline:hover {
+  background: rgba(159, 47, 36, 0.08);
+  border-color: #9f2f24;
+  color: #7e2119;
+  text-decoration: none;
+  transform: translateY(-1px);
+}
+
 .button-primary:disabled,
-.button-secondary:disabled {
+.button-secondary:disabled,
+.button-danger:disabled,
+.button-danger-outline:disabled {
   opacity: 0.58;
   cursor: not-allowed;
   transform: none;

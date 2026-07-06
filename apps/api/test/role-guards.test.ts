@@ -256,29 +256,46 @@ test("staff create and reset-access support manual and generated password email 
 });
 
 test("staff and service delete APIs are owner-only and soft-delete history safely", () => {
+  const schema = readRepo("apps/api/prisma/schema.prisma");
   const staffRoutes = readApi("modules/staff/staff.routes.ts");
   const staffService = readApi("modules/staff/staff.service.ts");
   const servicesRoutes = readApi("modules/services/services.routes.ts");
   const servicesService = readApi("modules/services/services.service.ts");
 
+  assert.match(schema, /model Staff \{[\s\S]*deletedAt\s+DateTime\?/);
+  assert.match(schema, /model Service \{[\s\S]*deletedAt\s+DateTime\?/);
+  assert.match(schema, /@@index\(\[salonId, deletedAt\]\)/);
+
   assert.match(staffRoutes, /staffRouter\.delete\(\s*"\/:id",\s*requireRoles\(Role\.SALON_OWNER\)/s);
   assert.match(staffService, /export const deleteStaff/);
-  assert.match(staffService, /findFirst\(\{\s*where:\s*\{\s*id: staffId,\s*salonId/s);
+  assert.match(staffService, /export const listStaff[\s\S]*deletedAt:\s*null[\s\S]*includeInactive \? \{\} : \{ status: StaffStatus\.ACTIVE \}/);
+  assert.match(staffService, /export const updateStaff[\s\S]*findFirst\(\{\s*where:\s*\{\s*id: staffId,\s*salonId,\s*deletedAt:\s*null/s);
+  assert.match(staffService, /const updateStaffStatus[\s\S]*findFirst\(\{\s*where:\s*\{\s*id: staffId,\s*salonId,\s*deletedAt:\s*null/s);
+  assert.match(staffService, /export const deleteStaff[\s\S]*findFirst\(\{\s*where:\s*\{\s*id: staffId,\s*salonId,\s*deletedAt:\s*null/s);
   assert.match(staffService, /tx\.staffService\.deleteMany\(\{\s*where:\s*\{\s*salonId,\s*staffId: existing\.id/s);
   assert.match(staffService, /status:\s*StaffStatus\.INACTIVE/);
   assert.match(staffService, /isBookable:\s*false/);
+  assert.match(staffService, /deletedAt:\s*new Date\(\)/);
   assert.match(staffService, /isActive:\s*false/);
   assert.match(staffService, /refreshBillingUsageForSalon\(salonId, tx\)/);
   assert.match(staffService, /action:\s*"STAFF_DELETED"/);
   assert.match(staffService, /deleteMode:\s*"SOFT"/);
+  assert.match(staffService, /export const setStaffServiceAssignments[\s\S]*deletedAt:\s*null/);
+  assert.doesNotMatch(staffService, /appointment\.delete|appointment\.deleteMany/);
 
   assert.match(servicesRoutes, /servicesRouter\.delete\(\s*"\/:id",\s*requireRoles\(Role\.SALON_OWNER\)/s);
   assert.match(servicesService, /export const deleteService/);
-  assert.match(servicesService, /findFirst\(\{\s*where:\s*\{\s*id: serviceId,\s*salonId/s);
+  assert.match(servicesService, /export const listServices[\s\S]*deletedAt:\s*null[\s\S]*includeInactive \? \{\} : \{ isActive: true \}/);
+  assert.match(servicesService, /export const updateService[\s\S]*findFirst\(\{\s*where:\s*\{\s*id: serviceId,\s*salonId,\s*deletedAt:\s*null/s);
+  assert.match(servicesService, /export const setServiceActiveState[\s\S]*findFirst\(\{\s*where:\s*\{\s*id: serviceId,\s*salonId,\s*deletedAt:\s*null/s);
+  assert.match(servicesService, /export const deleteService[\s\S]*findFirst\(\{\s*where:\s*\{\s*id: serviceId,\s*salonId,\s*deletedAt:\s*null/s);
   assert.match(servicesService, /tx\.staffService\.deleteMany\(\{\s*where:\s*\{\s*salonId,\s*serviceId: existing\.id/s);
   assert.match(servicesService, /isActive:\s*false/);
+  assert.match(servicesService, /deletedAt:\s*new Date\(\)/);
   assert.match(servicesService, /action:\s*"SERVICE_DELETED"/);
   assert.match(servicesService, /deleteMode:\s*"SOFT"/);
+  assert.match(servicesService, /export const setServiceStaffMapping[\s\S]*deletedAt:\s*null/);
+  assert.doesNotMatch(servicesService, /appointment\.delete|appointment\.deleteMany/);
 });
 
 test("Postman collection includes mobile staff password and delete requests", () => {

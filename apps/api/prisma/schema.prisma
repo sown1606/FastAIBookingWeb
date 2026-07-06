@@ -265,8 +265,10 @@ model Staff {
   staffServices       StaffService[]
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
+  deletedAt           DateTime?
 
   @@index([salonId, status])
+  @@index([salonId, deletedAt])
 }
 
 model Service {
@@ -283,8 +285,10 @@ model Service {
   staffServices       StaffService[]
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
+  deletedAt           DateTime?
 
   @@index([salonId, isActive])
+  @@index([salonId, deletedAt])
 }
 
 model StaffService {

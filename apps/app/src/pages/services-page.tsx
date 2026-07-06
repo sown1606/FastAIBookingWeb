@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
-import { apiGet, apiPatch, apiPost, apiPut, extractErrorMessage } from "../lib/api";
+import { apiDelete, apiGet, apiPatch, apiPost, apiPut, extractErrorMessage } from "../lib/api";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
 import { useToast } from "../components/toast";
 import { formatCurrencyCents } from "../lib/format";
@@ -179,6 +179,19 @@ export const ServicesPage = () => {
       await load();
     } catch (toggleError) {
       notify("error", extractErrorMessage(toggleError));
+    }
+  };
+
+  const deleteService = async (item: ServiceItem) => {
+    if (!window.confirm(t("services.deleteConfirm"))) {
+      return;
+    }
+    try {
+      await apiDelete(`/api/v1/services/${item.id}`);
+      notify("success", t("services.deleted"));
+      await load();
+    } catch (deleteError) {
+      notify("error", extractErrorMessage(deleteError));
     }
   };
 
@@ -417,6 +430,9 @@ export const ServicesPage = () => {
                   </button>
                   <button type="button" className="button-secondary" onClick={() => void mapServiceToStaff(item)}>
                     {t("services.assignStaff")}
+                  </button>
+                  <button type="button" className="button-danger-outline" onClick={() => void deleteService(item)}>
+                    {t("services.deleteAction")}
                   </button>
                 </div>
               </article>
