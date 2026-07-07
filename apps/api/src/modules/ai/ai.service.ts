@@ -2954,7 +2954,12 @@ const formatUpcomingAppointmentForSpeech = (
 
 const formatFinalConfirmationDateTimeForSpeech = (value: Date, timezone: string): string => {
   const local = DateTime.fromJSDate(value, { zone: "utc" }).setZone(timezone);
-  return `${local.toFormat("cccc, LLLL d")} at ${formatLocalTimeForSpeech(value, timezone)}`;
+  const today = DateTime.now().setZone(timezone).startOf("day");
+  const appointmentDay = local.startOf("day");
+  const dayOffset = Math.round(appointmentDay.diff(today, "days").days);
+  const dayLabel =
+    dayOffset === 0 ? "today" : dayOffset === 1 ? "tomorrow" : local.toFormat("cccc, LLLL d");
+  return `${dayLabel} at ${formatLocalTimeForSpeech(value, timezone)}`;
 };
 
 const dedupeSuggestedSlots = (slots: SuggestedSlot[]): SuggestedSlot[] => {
