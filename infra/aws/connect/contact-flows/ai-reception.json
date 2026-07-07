@@ -373,7 +373,7 @@
           "AmazonConnectContactId": "$.ContactId",
           "InitialContactId": "$.InitialContactId"
         },
-        "Text": "Sorry, I did not catch the service. Please press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Acrylic Full Set, 5 for Dip Powder, or 0 for an operator."
+        "Text": "Sorry, I did not catch the service. Please press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Full Set, 5 for Dip Powder, or 0 for an operator."
       },
       "Transitions": {
         "NextAction": "05553b55-f227-4c66-b391-a3e068b01966",

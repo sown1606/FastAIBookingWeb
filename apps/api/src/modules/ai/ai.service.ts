@@ -239,15 +239,8 @@ const SERVICE_ALIASES: Record<string, string[]> = {
     "gel nails",
     "gel hand service"
   ],
-  "acrylic full set": [
-    "acrilic",
-    "acyclic",
-    "acrylic",
-    "acrylics",
-    "acrylic set",
-    "acrylic full set",
+  "full set": [
     "full set",
-    "full acrylic set",
     "fake nails",
     "extension nails"
   ],
@@ -410,11 +403,7 @@ const getStaticServiceAliasPhrases = (serviceName: string): string[] => {
   const aliases = new Set<string>([serviceName, normalized]);
   Object.entries(SERVICE_ALIASES).forEach(([canonical, phrases]) => {
     const normalizedCanonical = normalizeForMatch(canonical);
-    if (
-      normalized === normalizedCanonical ||
-      normalized.includes(normalizedCanonical) ||
-      (normalized === "full set" && normalizedCanonical === "acrylic full set")
-    ) {
+    if (normalized === normalizedCanonical || normalized.includes(normalizedCanonical)) {
       phrases.forEach((phrase) => aliases.add(phrase));
     }
   });
@@ -3012,7 +3001,7 @@ const buildBookingConfirmationMessage = (input: {
   staffName: string;
   requestedAnyStaff?: boolean;
 }): string => {
-  const service = input.serviceName.toLowerCase();
+  const service = input.serviceName;
   const appointmentTime = formatFinalConfirmationDateTimeForSpeech(
     input.appointmentStartTime,
     input.salonTimezone
@@ -3021,7 +3010,7 @@ const buildBookingConfirmationMessage = (input: {
     ? `I found ${escapeSsml(input.staffName)} available. <break time="300ms"/> `
     : "";
   return speak(
-    `${selectedStaffPrefix}Just to confirm, ${escapeSsml(service)} with ${escapeSsml(input.staffName)} on ${escapeSsml(appointmentTime)}. <break time="300ms"/> Is that correct?`
+    `${selectedStaffPrefix}Just to confirm, ${escapeSsml(service)} with ${escapeSsml(input.staffName)} ${escapeSsml(appointmentTime)}. <break time="300ms"/> Is that correct?`
   );
 };
 
@@ -3542,6 +3531,8 @@ export const createAmazonConnectAIAppointment = async (
     requestedStaffName: normalized.staffPreference,
     staffId: normalized.staffId
   });
+  const staffWasAlreadyAsked =
+    readStringAttribute(normalized.attributes, ["lastAskedSlot"]) === "staffPreference";
   if (staffResolution.status === "matched") {
     normalized.staffPreference = staffResolution.matchedStaff.fullName;
     normalized.staffId = staffResolution.matchedStaff.id;
@@ -3552,7 +3543,7 @@ export const createAmazonConnectAIAppointment = async (
     normalized.staffPreference = undefined;
     normalized.staffId = undefined;
   } else if (staffResolution.status !== "ambiguous") {
-    normalized.staffPreference = "Any staff";
+    normalized.staffPreference = staffWasAlreadyAsked ? "Any staff" : undefined;
     normalized.staffId = undefined;
   }
 
@@ -4069,7 +4060,11 @@ export const createAmazonConnectAIAppointment = async (
   ) {
     missingFields.add("preferredDateTime");
   }
-  if (normalized.invalidStaffDtmfSelection || staffResolution.status === "ambiguous") {
+  const shouldAskStaffOnce =
+    staffResolution.status === "all" &&
+    staffResolution.invalidReason !== "explicit_any" &&
+    !staffWasAlreadyAsked;
+  if (normalized.invalidStaffDtmfSelection || staffResolution.status === "ambiguous" || shouldAskStaffOnce) {
     missingFields.add("staffPreference");
     normalized.staffId = undefined;
   }

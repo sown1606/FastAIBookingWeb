@@ -131,7 +131,7 @@ const DEMO_SERVICE_NAMES = [
   "Manicure",
   "Pedicure",
   "Gel Manicure",
-  "Acrylic Full Set",
+  "Full Set",
   "Dip Powder",
   "Other Services"
 ];
@@ -139,7 +139,7 @@ const SERVICE_DTMF_OPTIONS = {
   "1": "Pedicure",
   "2": "Manicure",
   "3": "Gel Manicure",
-  "4": "Acrylic Full Set",
+  "4": "Full Set",
   "5": "Dip Powder"
 };
 const STAFF_DTMF_OPTIONS = {
@@ -165,9 +165,9 @@ const ANY_STAFF_ALIASES = [
 const SERVICE_DTMF_PROMPT =
   "Hi, thanks for calling. I can help book your appointment. What service would you like today?";
 const SERVICE_KEYPAD_PROMPT =
-  "Sorry, I did not catch the service. Please press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Acrylic Full Set, 5 for Dip Powder, or 0 for an operator.";
+  "I didn't catch the service. You can say Pedicure, Manicure, Gel Manicure, Full Set, Dip Powder, or Other Services. You can also press 1 through 5, or press 0 for an operator.";
 const SERVICE_DTMF_SHORT_PROMPT =
-  "You can say Pedicure, Manicure, Gel Manicure, Acrylic Full Set, Dip Powder, or Other Services, press 1 through 5, or press 0 for an operator.";
+  "You can say Pedicure, Manicure, Gel Manicure, Full Set, Dip Powder, or Other Services. You can also press 1 through 5, or press 0 for an operator.";
 const STAFF_DTMF_PROMPT =
   "Do you prefer Trang, Amy, Kelly, or first available? Press 1 for Trang, 2 for Amy, 3 for Kelly, 4 for first available, or 0 for an operator.";
 const STAFF_DTMF_SHORT_PROMPT =
@@ -213,15 +213,8 @@ const SERVICE_ALIAS_GROUPS = {
     "gel nails",
     "gel hand service"
   ],
-  "Acrylic Full Set": [
-    "acrylic full set",
-    "acrylic set",
-    "acrylic",
-    "acrylics",
-    "acrilic",
-    "acyclic",
+  "Full Set": [
     "full set",
-    "full acrylic set",
     "fake nails",
     "extension nails"
   ],
@@ -1308,6 +1301,12 @@ function getBookingSlotToElicit(event) {
     return "customerPhone";
   }
 
+  const staffPreference = getSessionAttribute(sessionAttributes, slotNames.staffPreference);
+  const staffId = sessionAttributes.staffId || sessionAttributes.selectedStaffId;
+  if (!staffPreference && !staffId && sessionAttributes.lastAskedSlot !== "staffPreference") {
+    return "staffPreference";
+  }
+
   return "";
 }
 
@@ -1912,6 +1911,9 @@ export const handler = async (event) => {
       }
       const slotToElicit = getBookingSlotToElicit(event);
       if (slotToElicit) {
+        if (slotToElicit === "staffPreference") {
+          return await buildDynamicStaffElicitResponse(event, intentName);
+        }
         return buildElicitSlotResponse(event, slotToElicit);
       }
     }
