@@ -280,7 +280,7 @@
           "AmazonConnectContactId": "$.ContactId",
           "InitialContactId": "$.InitialContactId"
         },
-        "Text": "Thank you for calling Kiet Nails & Beauty. How can I help you today? You can say operator at any time, or press 0 for an operator from the main menu."
+        "Text": "Hi, thanks for calling. I can help book your appointment. What service would you like today?"
       },
       "Identifier": "3b2877ca-bc16-4019-a8e6-04200c0ded06",
       "Type": "ConnectParticipantWithLexBot",
@@ -373,7 +373,7 @@
           "AmazonConnectContactId": "$.ContactId",
           "InitialContactId": "$.InitialContactId"
         },
-        "Text": "What service would you like today? You can say Pedicure, Manicure, Gel Manicure, Acrylic Full Set, Dip Powder, or Other Services. You can also press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Acrylic Full Set, or 5 for Dip Powder. Press 0 to speak with an operator."
+        "Text": "Sorry, I did not catch the service. Please press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Acrylic Full Set, 5 for Dip Powder, or 0 for an operator."
       },
       "Transitions": {
         "NextAction": "05553b55-f227-4c66-b391-a3e068b01966",
@@ -489,7 +489,7 @@
       "Type": "MessageParticipant",
       "Parameters": {
         "SkipWhenDTMFBufferEnabled": "false",
-        "Text": "Thank you for calling Kiet Nails & Beauty. How can I help you today? You can say operator at any time, or press 0 for an operator from the main menu."
+        "Text": "Hi, thanks for calling. I can help book your appointment. What service would you like today?"
       },
       "Transitions": {
         "NextAction": "3b2877ca-bc16-4019-a8e6-04200c0ded06",
@@ -630,7 +630,7 @@
           "AmazonConnectContactId": "$.ContactId",
           "InitialContactId": "$.InitialContactId"
         },
-        "Text": "Hi Kiet, thank you for calling Kiet Nails & Beauty. How can I help you today? You can say operator at any time, or press 0 for an operator from the main menu."
+        "Text": "Hi Kiet, thanks for calling. I can help book your appointment. What service would you like today?"
       },
       "Transitions": {
         "NextAction": "05553b55-f227-4c66-b391-a3e068b01966",

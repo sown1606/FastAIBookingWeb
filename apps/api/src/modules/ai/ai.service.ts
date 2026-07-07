@@ -382,12 +382,15 @@ const SERVICE_DTMF_OPTIONS: Record<string, string> = {
   "5": "Dip Powder"
 };
 const STAFF_DTMF_OPTIONS: Record<string, string> = {
-  "0": "Any staff"
+  "1": "Trang",
+  "2": "Amy",
+  "3": "Kelly",
+  "4": "Any staff"
 };
 const SERVICE_DTMF_PROMPT =
   "What service would you like today? You can say Pedicure, Manicure, Gel Manicure, Full Set, Dip Powder, or Other Services. You can also press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Full Set, or 5 for Dip Powder. Press 0 to speak with an operator.";
 const STAFF_DTMF_PROMPT =
-  "Who would you like to book with? Please listen to the available staff options, press 0 for any available staff, or say operator to speak with a person.";
+  "Do you prefer Trang, Amy, Kelly, or first available? Press 1 for Trang, 2 for Amy, 3 for Kelly, 4 for first available, or 0 for an operator.";
 
 const normalizeForMatch = (value?: string | null): string => {
   return (value ?? "")
@@ -407,7 +410,11 @@ const getStaticServiceAliasPhrases = (serviceName: string): string[] => {
   const aliases = new Set<string>([serviceName, normalized]);
   Object.entries(SERVICE_ALIASES).forEach(([canonical, phrases]) => {
     const normalizedCanonical = normalizeForMatch(canonical);
-    if (normalized === normalizedCanonical || normalized.includes(normalizedCanonical)) {
+    if (
+      normalized === normalizedCanonical ||
+      normalized.includes(normalizedCanonical) ||
+      (normalized === "full set" && normalizedCanonical === "acrylic full set")
+    ) {
       phrases.forEach((phrase) => aliases.add(phrase));
     }
   });
@@ -553,7 +560,7 @@ const readStaffDtmfOptions = (
   attributes: Record<string, unknown> | undefined
 ): Record<string, string> => {
   const dynamicOptions = parseJsonStringRecord(readStringAttribute(attributes, ["staffDtmfOptions"]));
-  return Object.keys(dynamicOptions).length ? dynamicOptions : {};
+  return Object.keys(dynamicOptions).length ? dynamicOptions : STAFF_DTMF_OPTIONS;
 };
 
 const readStaffDtmfStaffIds = (
@@ -573,8 +580,19 @@ const isOperatorZeroRequest = (value?: string | null): boolean => {
   return normalized === "zero" || /\b(?:press|pressed|hit|dial)\s+zero\b/.test(normalized);
 };
 
+const STAFF_ALIAS_PHRASES: Record<string, string[]> = {
+  trang: ["trang", "chang", "train", "trangg"],
+  amy: ["amy", "amie", "a me"],
+  kelly: ["kelly", "kelley", "keli", "ke li"]
+};
+
 const getStaffAliasPhrases = (staffName: string): string[] => {
-  return [staffName, staffName.split(/\s+/)[0] ?? ""].filter(Boolean);
+  const firstName = staffName.split(/\s+/)[0] ?? "";
+  return [
+    staffName,
+    firstName,
+    ...((firstName && STAFF_ALIAS_PHRASES[normalizeForMatch(firstName)]) || [])
+  ].filter(Boolean);
 };
 
 const isClearlyInvalidStaffPreference = (value?: string | null): boolean => {
@@ -2822,15 +2840,14 @@ const buildStaffDtmfOptionMaps = (
   staff: StaffCandidate[]
 ): { options: Record<string, string>; staffIds: Record<string, string> } => {
   const orderedStaff = orderStaffForPrompt(dedupeStaffById(staff));
-  const options: Record<string, string> = {
-    "0": "Any staff"
-  };
+  const options: Record<string, string> = {};
   const staffIds: Record<string, string> = {};
   orderedStaff.forEach((member, index) => {
     const digit = String(index + 1);
     options[digit] = member.fullName;
     staffIds[digit] = member.id;
   });
+  options[String(orderedStaff.length + 1)] = "Any staff";
   return { options, staffIds };
 };
 
@@ -2841,17 +2858,20 @@ const buildStaffDtmfPromptText = (staff: StaffCandidate[]): string => {
   }
 
   const { options } = buildStaffDtmfOptionMaps(orderedStaff);
+  const anyStaffDigit = Object.entries(options).find(
+    ([, name]) => normalizeForMatch(name) === "any staff"
+  )?.[0] ?? "4";
   const namedOptions = Object.entries(options)
-    .filter(([digit]) => digit !== "0")
+    .filter(([, name]) => normalizeForMatch(name) !== "any staff")
     .map(([digit, name]) => `press ${digit} for ${escapeSsml(name)}`);
   const dtmfText = formatNameList([
-    "press 0 for any available staff",
-    ...namedOptions
+    ...namedOptions,
+    `press ${anyStaffDigit} for first available`
   ]);
 
   return `Who would you like to book with? Available staff are ${escapeSsml(
     formatNameList(orderedStaff.map((member) => member.fullName))
-  )}. You can ${dtmfText}. You can also say a staff name or say operator to speak with a person.`;
+  )}. You can ${dtmfText}, or press 0 for an operator.`;
 };
 
 const buildStaffPromptSessionAttributes = (staff: StaffCandidate[]): Record<string, string> => {
@@ -3528,8 +3548,11 @@ export const createAmazonConnectAIAppointment = async (
   } else if (staffResolution.status === "all" && staffResolution.invalidReason === "explicit_any") {
     normalized.staffPreference = "Any staff";
     normalized.staffId = undefined;
-  } else if (staffResolution.status !== "ambiguous") {
+  } else if (normalized.invalidStaffDtmfSelection) {
     normalized.staffPreference = undefined;
+    normalized.staffId = undefined;
+  } else if (staffResolution.status !== "ambiguous") {
+    normalized.staffPreference = "Any staff";
     normalized.staffId = undefined;
   }
 
@@ -4046,16 +4069,11 @@ export const createAmazonConnectAIAppointment = async (
   ) {
     missingFields.add("preferredDateTime");
   }
-  const explicitAnyStaffSelected =
-    staffResolution.status === "all" && staffResolution.invalidReason === "explicit_any";
-  const noActiveBookableStaff =
-    staffResolution.status === "all" && staffResolution.allStaff.length === 0;
-  if (staffResolution.status !== "matched" && !explicitAnyStaffSelected && !noActiveBookableStaff) {
+  if (normalized.invalidStaffDtmfSelection || staffResolution.status === "ambiguous") {
     missingFields.add("staffPreference");
-    normalized.staffPreference = undefined;
     normalized.staffId = undefined;
   }
-  if (noActiveBookableStaff) {
+  if (!missingFields.has("staffPreference") && staffResolution.status !== "matched") {
     normalized.staffPreference = "Any staff";
     normalized.staffId = undefined;
   }

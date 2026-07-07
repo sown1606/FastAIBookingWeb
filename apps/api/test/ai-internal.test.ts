@@ -673,7 +673,7 @@ test("missing, invalid, and valid internal tokens are handled", async () => {
   assert.equal(result.body.error.code, "UNAUTHORIZED");
 
   result = await postInternalAppointment(bookingPayload({ customerName: undefined }));
-  assert.equal(result.response.status, 200);
+  assert.equal(result.response.status, 201);
   assert.equal(result.body.success, true);
   assert.equal(state.bookingAttempts.length, 1);
 });
@@ -1000,26 +1000,21 @@ test("unclear service asks the canonical service list without escalation", async
   assert.equal(state.appointments.length, 0);
 });
 
-test("invalid staff preferences are cleared and ask for staff without booking", async () => {
+test("invalid staff preferences default to first available without blocking booking", async () => {
   for (const staffPreference of ["yes", "p.m.", "111115", "7325956266", "3 PM", "Not A Real Technician"]) {
     resetMockState();
     const result = await postInternalAppointment(bookingPayload({ staffPreference }));
 
-    assert.equal(result.response.status, 200);
-    assert.equal(result.body.data.outcome, "MISSING_INFO");
-    assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitSlot");
-    assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "staffPreference");
-    assert.match(result.body.data.lexResponse.message, /press 1 for Trang/i);
-    assert.match(result.body.data.lexResponse.message, /press 0 for any available staff/i);
-    assert.equal(JSON.parse(result.body.data.lexResponse.sessionAttributes.staffDtmfStaffIds)["1"], ids.trang);
+    assert.equal(result.response.status, 201);
+    assert.equal(result.body.data.outcome, "BOOKED");
     const attempt = state.bookingAttempts.at(-1);
-    assert.equal(attempt.requestedStaff, undefined);
-    assert.equal(attempt.normalizedRequest.staffPreference, undefined);
-    assert.equal(state.appointments.length, 0);
+    assert.equal(attempt.normalizedRequest.staffPreference, "Trang");
+    assert.equal(state.appointments.length, 1);
+    assert.equal(state.appointments[0].staffId, ids.trang);
   }
 });
 
-test("service DTMF applies only to serviceName and continues to staff", async () => {
+test("service DTMF applies only to serviceName and continues to confirmation", async () => {
   const result = await postInternalAppointment(
     bookingPayload({
       serviceName: undefined,
@@ -1039,11 +1034,10 @@ test("service DTMF applies only to serviceName and continues to staff", async ()
 
   assert.equal(result.response.status, 200);
   assert.equal(result.body.data.outcome, "MISSING_INFO");
-  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitSlot");
-  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "staffPreference");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
   assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Pedicure");
   assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedServiceName, "Pedicure");
-  assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, undefined);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
   assert.equal(state.appointments.length, 0);
 });
 
@@ -1105,12 +1099,12 @@ test("staff DTMF 3 maps to Kelly and does not ask staff again", async () => {
   assert.equal(state.appointments.length, 0);
 });
 
-test("staff DTMF 0 maps to any staff and resolves before confirmation", async () => {
+test("staff DTMF 4 maps to any staff and resolves before confirmation", async () => {
   const result = await postInternalAppointment(
     bookingPayload({
       staffPreference: undefined,
       confirmationState: undefined,
-      transcript: "0",
+      transcript: "4",
       attributes: {
         lastAskedSlot: "staffPreference",
         serviceName: "Pedicure",
@@ -1141,10 +1135,10 @@ test("staff DTMF uses session staffId mapping instead of name-only matching", as
       attributes: {
         lastAskedSlot: "staffPreference",
         staffDtmfOptions: JSON.stringify({
-          "0": "Any staff",
           "1": "Trang",
           "2": "Amy",
-          "3": "Kelly"
+          "3": "Kelly",
+          "4": "Any staff"
         }),
         staffDtmfStaffIds: JSON.stringify({
           "1": ids.trang,
@@ -1169,43 +1163,20 @@ test("staff DTMF uses session staffId mapping instead of name-only matching", as
   assert.equal(state.appointments.length, 0);
 });
 
-test("new active bookable staff appears in staff DTMF prompt and books by digit", async () => {
-  const linaId = "10000000-0000-4000-8000-000000000008";
-  state.staff.push({
-    id: linaId,
-    salonId: ids.salonA,
-    fullName: "Lina",
-    title: "Nail Technician",
-    status: StaffStatus.ACTIVE,
-    isBookable: true,
-    createdAt: new Date("2026-01-04T00:00:00.000Z")
-  });
-
-  const first = await postInternalAppointment(
+test("missing staff defaults to first available and continues to confirmation", async () => {
+  const result = await postInternalAppointment(
     bookingPayload({
       staffPreference: undefined,
       confirmationState: undefined
     })
   );
 
-  assert.equal(first.response.status, 200);
-  assert.equal(first.body.data.outcome, "MISSING_INFO");
-  assert.equal(first.body.data.lexResponse.dialogAction.slotToElicit, "staffPreference");
-  assert.match(first.body.data.lexResponse.message, /press 4 for Lina/i);
-  assert.equal(JSON.parse(first.body.data.lexResponse.sessionAttributes.staffDtmfStaffIds)["4"], linaId);
-
-  const second = await postInternalAppointment(
-    bookingPayload({
-      staffPreference: undefined,
-      transcript: "4",
-      confirmationState: "Confirmed",
-      attributes: first.body.data.lexResponse.sessionAttributes
-    })
-  );
-
-  assert.equal(second.response.status, 201);
-  assert.equal(second.body.data.outcome, "BOOKED");
-  assert.equal(state.appointments[0].staffId, linaId);
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffId, ids.trang);
+  assert.equal(state.appointments.length, 0);
 });
 
 test("invalid staff DTMF repeats staff options without booking", async () => {

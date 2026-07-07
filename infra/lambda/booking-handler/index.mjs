@@ -143,7 +143,15 @@ const SERVICE_DTMF_OPTIONS = {
   "5": "Dip Powder"
 };
 const STAFF_DTMF_OPTIONS = {
-  "0": "Any staff"
+  "1": "Trang",
+  "2": "Amy",
+  "3": "Kelly",
+  "4": "Any staff"
+};
+const STAFF_ALIAS_GROUPS = {
+  Trang: ["trang", "chang", "train", "trangg"],
+  Amy: ["amy", "amie", "a me"],
+  Kelly: ["kelly", "kelley", "keli", "ke li"]
 };
 const ANY_STAFF_ALIASES = [
   "anyone",
@@ -155,13 +163,15 @@ const ANY_STAFF_ALIASES = [
   "first available"
 ];
 const SERVICE_DTMF_PROMPT =
-  "What service would you like today? You can say Pedicure, Manicure, Gel Manicure, Acrylic Full Set, Dip Powder, or Other Services. You can also press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Acrylic Full Set, or 5 for Dip Powder. Press 0 to speak with an operator.";
+  "Hi, thanks for calling. I can help book your appointment. What service would you like today?";
+const SERVICE_KEYPAD_PROMPT =
+  "Sorry, I did not catch the service. Please press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Acrylic Full Set, 5 for Dip Powder, or 0 for an operator.";
 const SERVICE_DTMF_SHORT_PROMPT =
   "You can say Pedicure, Manicure, Gel Manicure, Acrylic Full Set, Dip Powder, or Other Services, press 1 through 5, or press 0 for an operator.";
 const STAFF_DTMF_PROMPT =
-  "Who would you like to book with? Please listen to the available staff options, press 0 for any available staff, or say operator to speak with a person.";
+  "Do you prefer Trang, Amy, Kelly, or first available? Press 1 for Trang, 2 for Amy, 3 for Kelly, 4 for first available, or 0 for an operator.";
 const STAFF_DTMF_SHORT_PROMPT =
-  "Please choose from the staff list, press 0 for any available staff, or say operator.";
+  "Press 1 for Trang, 2 for Amy, 3 for Kelly, 4 for first available, or 0 for an operator.";
 const NO_INPUT_HUMAN_CONFIRM_PROMPT =
   "Are you still there? Would you like me to connect you to a real person? You can press 0 for an operator.";
 const KNOWN_KIET_CUSTOMER_NAME = "Kiet";
@@ -171,7 +181,7 @@ const WAIT_PROMPTS = {
   service_lookup: "Please wait a moment while I check our services.",
   staff_lookup: "Please wait a moment while I find the available staff.",
   staff_dtmf_options: "Please wait a moment while I find the available staff.",
-  availability_lookup: "Please wait a moment while I check the schedule.",
+  availability_lookup: "Please give me a moment while I check availability.",
   appointment_creation: "Please wait while I create your appointment.",
   appointment_update: "Please wait while I look up your appointment.",
   notification_send: "Please wait while I create your appointment.",
@@ -251,8 +261,8 @@ const WEEKDAY_INDEXES = {
 const SLOT_ELICIT_PROMPTS = {
   serviceName: [
     SERVICE_DTMF_PROMPT,
-    SERVICE_DTMF_PROMPT,
-    SERVICE_DTMF_PROMPT
+    SERVICE_KEYPAD_PROMPT,
+    SERVICE_KEYPAD_PROMPT
   ],
   staffPreference: [
     STAFF_DTMF_PROMPT,
@@ -411,6 +421,11 @@ function extractStaffFromTranscript(text, sessionAttributes = {}) {
   if (ANY_STAFF_ALIASES.some((alias) => normalizedText.includes(normalizeForMatch(alias)))) {
     return "Any staff";
   }
+  for (const [staffName, aliases] of Object.entries(STAFF_ALIAS_GROUPS)) {
+    if (aliases.some((alias) => normalizedText.includes(normalizeForMatch(alias)))) {
+      return staffName;
+    }
+  }
   const dynamicStaffNames = Object.values(getStaffDtmfOptions(sessionAttributes))
     .filter((name) => normalizeForMatch(name) !== "any staff");
   return dynamicStaffNames.find((staffName) => {
@@ -427,6 +442,40 @@ function readDtmfDigit(value) {
   }
   const match = trimmed.match(/^(?:dtmf\s*)?([0-9]{1,2})#?$/i);
   return match?.[1] || "";
+}
+
+function getTranscriptCandidateValues(event) {
+  const values = [event.inputTranscript];
+  for (const transcription of event.transcriptions || []) {
+    values.push(
+      transcription?.transcription,
+      transcription?.transcript,
+      transcription?.inputTranscript,
+      transcription?.resolvedContext?.intent
+    );
+  }
+  for (const interpretation of event.interpretations || []) {
+    values.push(interpretation?.transcription, interpretation?.inputTranscript);
+  }
+  return values.filter((value) => value !== undefined && value !== null && String(value).trim() !== "");
+}
+
+function getDtmfSessionValues(sessionAttributes, expectedSlot) {
+  const slotPrefix = expectedSlot === "serviceName" ? "service" : "staff";
+  return [
+    "dtmf",
+    "DTMF",
+    "dtmfDigit",
+    "dtmfDigits",
+    "inputDigit",
+    "inputDigits",
+    "InputDigits",
+    "CustomerInput",
+    `${expectedSlot}Dtmf`,
+    `${expectedSlot}Digit`,
+    `${slotPrefix}Dtmf`,
+    `${slotPrefix}Digit`
+  ].map((name) => sessionAttributes?.[name]);
 }
 
 function parseDtmfRecord(value) {
@@ -477,14 +526,16 @@ function getScopedDtmfDigit(event, expectedSlot) {
   const candidateValues =
     expectedSlot === "serviceName"
       ? [
-          event.inputTranscript,
+          ...getTranscriptCandidateValues(event),
           getSlotValue(slots, slotNames.serviceName, { preferOriginal: true }),
-          getSessionAttribute(previous, slotNames.serviceName)
+          getSessionAttribute(previous, slotNames.serviceName),
+          ...getDtmfSessionValues(previous, expectedSlot)
         ]
       : [
-          event.inputTranscript,
+          ...getTranscriptCandidateValues(event),
           getSlotValue(slots, slotNames.staffPreference, { preferOriginal: true }),
-          getSessionAttribute(previous, slotNames.staffPreference)
+          getSessionAttribute(previous, slotNames.staffPreference),
+          ...getDtmfSessionValues(previous, expectedSlot)
         ];
   for (const value of candidateValues) {
     const digit = readDtmfDigit(value);
@@ -526,7 +577,7 @@ function readScopedStaffDtmfSelection(event) {
 
 function isStaffAnyDtmfZeroRequest(event) {
   const selection = readScopedStaffDtmfSelection(event);
-  return selection?.digit === "0" && normalizeForMatch(selection.staffName) === "any staff";
+  return selection?.digit === "4" && normalizeForMatch(selection.staffName) === "any staff";
 }
 
 function buildInvalidStaffDtmfResponse(event) {
@@ -1021,6 +1072,9 @@ function promptIndexFor(event, slotName, attemptCount, promptCount) {
 
 function getElicitPrompt(event, slotName, attemptCount) {
   const prompts = SLOT_ELICIT_PROMPTS[slotName] || SLOT_ELICIT_PROMPTS.serviceName;
+  if (slotName === "serviceName" || slotName === "staffPreference") {
+    return prompts[Math.min(Math.max(attemptCount, 1), prompts.length) - 1] || prompts[0];
+  }
   return prompts[promptIndexFor(event, slotName, attemptCount, prompts.length)] || prompts[0];
 }
 
@@ -1244,11 +1298,6 @@ function getBookingSlotToElicit(event) {
     return "requestedTime";
   }
 
-  const staffPreference = getSessionAttribute(sessionAttributes, slotNames.staffPreference);
-  if (!staffPreference) {
-    return "staffPreference";
-  }
-
   const customerName = getSessionAttribute(sessionAttributes, slotNames.customerName);
   if (!customerName) {
     return "customerName";
@@ -1395,9 +1444,14 @@ function buildNoInputResponse(event, slotName) {
 }
 
 function buildBookServiceElicitResponse(event) {
-  return buildElicitSlotResponse(event, "serviceName", {
-    serviceFallbackOffered: "true"
-  });
+  return buildElicitSlotResponse(
+    event,
+    "serviceName",
+    {
+      serviceFallbackOffered: "true"
+    },
+    SERVICE_KEYPAD_PROMPT
+  );
 }
 
 async function buildDynamicStaffElicitResponse(event, intentName) {
@@ -1460,11 +1514,12 @@ function buildBackendFailureEscalationResponse(event, result) {
   const reason = normalizeBackendFailureReason(result?.code);
   return buildLexResponse(
     event,
-    reason === "backend_timeout"
-      ? '<speak>The booking system is taking too long to respond. <break time="300ms"/> Please wait while I connect you.</speak>'
-      : '<speak>I cannot reach the booking system right now. <break time="300ms"/> Please wait while I connect you.</speak>',
+    "This is taking longer than expected. Please wait while I connect you to our team.",
     "Failed",
-    buildForceHumanEscalationAttributes(reason)
+    buildForceHumanEscalationAttributes(reason),
+    {
+      messageContentType: "PlainText"
+    }
   );
 }
 
@@ -1857,9 +1912,6 @@ export const handler = async (event) => {
       }
       const slotToElicit = getBookingSlotToElicit(event);
       if (slotToElicit) {
-        if (slotToElicit === "staffPreference") {
-          return await buildDynamicStaffElicitResponse(event, intentName);
-        }
         return buildElicitSlotResponse(event, slotToElicit);
       }
     }
@@ -1951,7 +2003,7 @@ export const handler = async (event) => {
 
     if (!result.ok) {
       console.error("Appointment API rejected request", result.code);
-      return buildBackendFailureElicitResponse(event, result);
+      return buildBackendFailureEscalationResponse(event, result);
     }
 
     const data = extractResultPayload(result);

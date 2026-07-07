@@ -6,7 +6,11 @@ import path from "node:path";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const lambdaPath = path.join(repoRoot, "infra/lambda/booking-handler/index.mjs");
-const lexV10Root = path.join(repoRoot, "infra/aws/lex/FastAIBookingBot-v10");
+const lexRoots = ["v7", "v8", "v10"].map((version) => ({
+  version,
+  root: path.join(repoRoot, `infra/aws/lex/FastAIBookingBot-${version}`)
+}));
+const connectRoot = path.join(repoRoot, "infra/aws/connect/contact-flows");
 let importCounter = 0;
 
 const slot = (value) => ({
@@ -91,10 +95,10 @@ const successfulBackendPayload = (overrides = {}) => ({
 
 const dynamicStaffAttributes = () => ({
   staffDtmfOptions: JSON.stringify({
-    "0": "Any staff",
     "1": "Trang",
     "2": "Amy",
-    "3": "Kelly"
+    "3": "Kelly",
+    "4": "Any staff"
   }),
   staffDtmfStaffIds: JSON.stringify({
     "1": "staff-trang",
@@ -102,7 +106,7 @@ const dynamicStaffAttributes = () => ({
     "3": "staff-kelly"
   }),
   staffDtmfPromptText:
-    "Who would you like to book with? Available staff are Trang, Amy, and Kelly. You can press 0 for any available staff, press 1 for Trang, press 2 for Amy, or press 3 for Kelly."
+    "Do you prefer Trang, Amy, Kelly, or first available? Press 1 for Trang, 2 for Amy, 3 for Kelly, 4 for first available, or 0 for an operator."
 });
 
 const jsonResponse = (payload, status = 200) => ({
@@ -222,51 +226,85 @@ test("BookAppointmentIntent with complete slots posts the backend contract and m
   );
 });
 
-test("Lex v10 fulfillment progress updates cover slow booking and handoff waits", () => {
-  const readIntent = (intentName) =>
-    JSON.parse(
-      readFileSync(
-        path.join(lexV10Root, "BotLocales/en_US/Intents", intentName, "Intent.json"),
-        "utf8"
-      )
-    );
+test("Lex fulfillment progress updates cover slow booking, appointment changes, and handoff waits", () => {
+  const expectedPrompts = {
+    BookAppointmentIntent: {
+      start: "Please give me a moment while I check availability.",
+      update: "I’m still checking the schedule."
+    },
+    HumanEscalationIntent: {
+      start: "Please wait while I connect you.",
+      update: "Still connecting you. Please wait a moment."
+    },
+    CancelAppointmentIntent: {
+      start: "Please wait while I look up your appointment.",
+      update: "Still looking up your appointment. Please wait a moment."
+    },
+    RescheduleAppointmentIntent: {
+      start: "Please wait while I look up your appointment.",
+      update: "Still looking up your appointment. Please wait a moment."
+    }
+  };
 
-  const book = readIntent("BookAppointmentIntent").fulfillmentCodeHook.fulfillmentUpdatesSpecification;
-  assert.equal(book.active, true);
-  assert.equal(book.startResponse.delayInSeconds <= 1, true);
-  assert.equal(book.updateResponse.frequencyInSeconds <= 3, true);
-  assert.equal(
-    book.startResponse.messageGroups[0].message.plainTextMessage.value,
-    "Please wait a moment while I check the schedule."
-  );
-  assert.equal(
-    book.updateResponse.messageGroups[0].message.plainTextMessage.value,
-    "Please wait while I create your appointment."
-  );
-
-  const human = readIntent("HumanEscalationIntent").fulfillmentCodeHook.fulfillmentUpdatesSpecification;
-  assert.equal(human.active, true);
-  assert.equal(human.startResponse.delayInSeconds <= 1, true);
-  assert.equal(human.updateResponse.frequencyInSeconds <= 3, true);
-  assert.equal(
-    human.startResponse.messageGroups[0].message.plainTextMessage.value,
-    "Please wait while I connect you."
-  );
+  for (const { version, root } of lexRoots) {
+    for (const [intentName, prompts] of Object.entries(expectedPrompts)) {
+      const intent = JSON.parse(
+        readFileSync(
+          path.join(root, "BotLocales/en_US/Intents", intentName, "Intent.json"),
+          "utf8"
+        )
+      );
+      const spec = intent.fulfillmentCodeHook?.fulfillmentUpdatesSpecification;
+      assert.equal(spec?.active, true, `${version} ${intentName} progress updates active`);
+      assert.equal(
+        spec.startResponse.delayInSeconds <= 1,
+        true,
+        `${version} ${intentName} starts within 1 second`
+      );
+      assert.equal(
+        spec.updateResponse.frequencyInSeconds <= 3,
+        true,
+        `${version} ${intentName} repeats within 3 seconds`
+      );
+      assert.equal(
+        spec.startResponse.messageGroups[0].message.plainTextMessage.value,
+        prompts.start,
+        `${version} ${intentName} start prompt`
+      );
+      assert.equal(
+        spec.updateResponse.messageGroups[0].message.plainTextMessage.value,
+        prompts.update,
+        `${version} ${intentName} update prompt`
+      );
+    }
+  }
 });
 
-test("slow staff DTMF generation is timeout guarded and carries the staff wait prompt", async () => {
+test("Connect human escalation flow speaks before queue transfer", () => {
+  const humanEscalationFlow = JSON.parse(
+    readFileSync(path.join(connectRoot, "human-escalation.json"), "utf8")
+  );
+  const actionsById = new Map(
+    humanEscalationFlow.Actions.map((action) => [action.Identifier, action])
+  );
+  const startAction = actionsById.get(humanEscalationFlow.StartAction);
+  const waitPrompt = actionsById.get(startAction.Transitions.NextAction);
+  const queueUpdate = actionsById.get(waitPrompt.Transitions.NextAction);
+  const queueTransfer = actionsById.get(queueUpdate.Transitions.NextAction);
+
+  assert.equal(startAction.Type, "UpdateContactTextToSpeechVoice");
+  assert.equal(waitPrompt.Type, "MessageParticipant");
+  assert.match(waitPrompt.Parameters.Text, /^Please wait while I connect you\./);
+  assert.equal(queueUpdate.Type, "UpdateContactTargetQueue");
+  assert.equal(queueTransfer.Type, "TransferContactToQueue");
+});
+
+test("DialogCodeHook with service and time does not call backend for staff prompt", async () => {
   const handler = await loadHandler({ BOOKING_HANDLER_API_TIMEOUT_MS: "2800" });
   const startedAt = Date.now();
-  const fetchCalls = installFetchMock((_url, options) =>
-    abortableDelayedJsonResponse(
-      successfulBackendPayload({
-        outcome: "MISSING_INFO",
-        appointment: null
-      }),
-      3500,
-      options?.signal
-    )
-  );
+  const fetchCalls = installFetchMock(() => {
+    throw new Error("fetch should not be called for local DialogCodeHook prompts");
+  });
 
   const response = await handler(
     baseEvent({
@@ -288,19 +326,11 @@ test("slow staff DTMF generation is timeout guarded and carries the staff wait p
     })
   );
 
-  assert.equal(fetchCalls.length, 1);
-  assert.equal(
-    fetchCalls[0].options.headers["X-FastAIBooking-Wait-Operation"],
-    "staff_dtmf_options_generation"
-  );
-  assert.equal(
-    fetchCalls[0].options.headers["X-FastAIBooking-Wait-Prompt"],
-    "Please wait a moment while I find the available staff."
-  );
-  assert.equal(Date.now() - startedAt < 3200, true);
-  assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
-  assert.equal(response.sessionState.dialogAction.slotToElicit, "staffPreference");
-  assert.match(response.messages[0].content, /Who would you like to book with/i);
+  assert.equal(fetchCalls.length, 0);
+  assert.equal(Date.now() - startedAt < 1000, true);
+  assert.equal(response.sessionState.dialogAction.type, "Delegate");
+  assert.equal(response.sessionState.sessionAttributes.serviceName, "Pedicure");
+  assert.equal(response.sessionState.sessionAttributes.requestedTime, "3 PM");
 });
 
 test("slow booking fulfillment relies on Lex progress updates and preserves one backend call", async () => {
@@ -318,7 +348,7 @@ test("slow booking fulfillment relies on Lex progress updates and preserves one 
   );
   assert.match(
     fetchCalls[0].options.headers["X-FastAIBooking-Wait-Prompt"],
-    /check the schedule.*create your appointment/i
+    /check availability.*create your appointment/i
   );
   assert.equal(response.sessionState.intent.state, "Fulfilled");
   assert.equal(response.sessionState.sessionAttributes.appointmentId, "appointment-1");
@@ -372,7 +402,7 @@ test("DialogCodeHook no input prompts service menu and keeps known caller", asyn
   assert.equal(response.sessionState.sessionAttributes.customerNameSource, "phone_lookup");
   assert.equal(response.sessionState.sessionAttributes.customerPhone, "+17325956266");
   assert.match(response.messages[0].content, /What service would you like today/i);
-  assert.match(response.messages[0].content, /press 1 for Pedicure/i);
+  assert.doesNotMatch(response.messages[0].content, /press 1 for Pedicure/i);
 });
 
 test("DialogCodeHook second no input uses shorter prompt without transfer", async () => {
@@ -554,27 +584,11 @@ test("DialogCodeHook transcript relative date overrides incorrect Lex date slot"
   assert.equal(response.sessionState.intent.slots.requestedTime.value.interpretedValue, "3 PM");
 });
 
-test("DialogCodeHook known caller with service and time asks staff only", async () => {
+test("DialogCodeHook known caller with service and time delegates without staff prompt", async () => {
   const handler = await loadHandler();
-  const fetchCalls = installFetchMock(() =>
-    jsonResponse(
-      successfulBackendPayload({
-        outcome: "MISSING_INFO",
-        appointment: null,
-        lexResponse: {
-          fulfillmentState: "InProgress",
-          message:
-            "<speak>Who would you like to book with? Available staff are Trang, Amy, and Kelly. You can press 0 for any available staff, press 1 for Trang, press 2 for Amy, or press 3 for Kelly.</speak>",
-          messageContentType: "SSML",
-          dialogAction: {
-            type: "ElicitSlot",
-            slotToElicit: "staffPreference"
-          },
-          sessionAttributes: dynamicStaffAttributes()
-        }
-      })
-    )
-  );
+  const fetchCalls = installFetchMock(() => {
+    throw new Error("fetch should not be called for local DialogCodeHook recovery");
+  });
 
   const response = await handler(
     baseEvent({
@@ -596,41 +610,20 @@ test("DialogCodeHook known caller with service and time asks staff only", async 
     })
   );
 
-  assert.equal(fetchCalls.length, 1);
-  assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
-  assert.equal(response.sessionState.dialogAction.slotToElicit, "staffPreference");
+  assert.equal(fetchCalls.length, 0);
+  assert.equal(response.sessionState.dialogAction.type, "Delegate");
   assert.equal(response.sessionState.sessionAttributes.customerName, "Kiet");
   assert.equal(response.sessionState.sessionAttributes.customerPhone, "+17325956266");
   assert.equal(response.sessionState.sessionAttributes.serviceName, "Pedicure");
   assert.equal(response.sessionState.sessionAttributes.requestedDate, usEasternDate(1));
   assert.equal(response.sessionState.sessionAttributes.requestedTime, "3 PM");
-  assert.equal(JSON.parse(response.sessionState.sessionAttributes.staffDtmfStaffIds)["1"], "staff-trang");
-  assert.match(response.messages[0].content, /Who would you like to book with/i);
-  assert.match(response.messages[0].content, /press 0 for any available staff/i);
-  assert.doesNotMatch(response.messages[0].content, /name|phone/i);
 });
 
-test("DialogCodeHook recovers logged eddie here pedicure utterance before staff lookup", async () => {
+test("DialogCodeHook recovers logged eddie here pedicure utterance without staff lookup", async () => {
   const handler = await loadHandler();
-  const fetchCalls = installFetchMock(() =>
-    jsonResponse(
-      successfulBackendPayload({
-        outcome: "MISSING_INFO",
-        appointment: null,
-        lexResponse: {
-          fulfillmentState: "InProgress",
-          message:
-            "<speak>Who would you like to book with? Available staff are Trang, Amy, and Kelly. You can press 0 for any available staff, press 1 for Trang, press 2 for Amy, or press 3 for Kelly.</speak>",
-          messageContentType: "SSML",
-          dialogAction: {
-            type: "ElicitSlot",
-            slotToElicit: "staffPreference"
-          },
-          sessionAttributes: dynamicStaffAttributes()
-        }
-      })
-    )
-  );
+  const fetchCalls = installFetchMock(() => {
+    throw new Error("fetch should not be called for local DialogCodeHook recovery");
+  });
 
   const response = await handler(
     baseEvent({
@@ -652,14 +645,11 @@ test("DialogCodeHook recovers logged eddie here pedicure utterance before staff 
     })
   );
 
-  assert.equal(fetchCalls.length, 1);
-  assert.equal(fetchCalls[0].body.customerName, "Kiet");
-  assert.equal(fetchCalls[0].body.serviceName, "Pedicure");
-  assert.equal(fetchCalls[0].body.requestedDate, usEasternDate(1));
-  assert.equal(fetchCalls[0].body.requestedTime, "7 PM");
-  assert.match(fetchCalls[0].body.transcript, /eddie here tomorrow at seven p\.m\./i);
-  assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
+  assert.equal(fetchCalls.length, 0);
+  assert.equal(response.sessionState.dialogAction.type, "Delegate");
   assert.equal(response.sessionState.sessionAttributes.serviceName, "Pedicure");
+  assert.equal(response.sessionState.sessionAttributes.requestedDate, usEasternDate(1));
+  assert.equal(response.sessionState.sessionAttributes.requestedTime, "7 PM");
   assert.equal(response.sessionState.sessionAttributes.customerName, "Kiet");
 });
 
@@ -694,11 +684,54 @@ test("DialogCodeHook maps service DTMF only when serviceName was last asked", as
     })
   );
 
-  assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
-  assert.equal(response.sessionState.dialogAction.slotToElicit, "staffPreference");
+  assert.equal(response.sessionState.dialogAction.type, "Delegate");
   assert.equal(response.sessionState.sessionAttributes.serviceName, "Pedicure");
   assert.equal(response.sessionState.sessionAttributes.confirmedServiceName, "Pedicure");
   assert.equal(response.sessionState.intent.slots.serviceName.value.interpretedValue, "Pedicure");
+});
+
+test("press 0 from service prompt escalates to operator", async () => {
+  const handler = await loadHandler();
+  installFetchMock(() =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "HUMAN_ESCALATION",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "Fulfilled",
+          message: "Please wait while I connect you.",
+          messageContentType: "PlainText",
+          sessionAttributes: {
+            transferToQueue: "true",
+            forceHumanEscalation: "true",
+            escalationReason: "customer_pressed_zero"
+          }
+        }
+      })
+    )
+  );
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "0",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          ...baseEvent().sessionState.sessionAttributes,
+          lastAskedSlot: "serviceName"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          slots: {}
+        }
+      }
+    })
+  );
+
+  assert.equal(response.sessionState.dialogAction.type, "Close");
+  assert.equal(response.sessionState.sessionAttributes.transferToQueue, "true");
+  assert.equal(response.sessionState.sessionAttributes.escalationReason, "customer_pressed_zero");
 });
 
 test("DialogCodeHook maps staff DTMF only when staffPreference was last asked", async () => {
@@ -781,7 +814,7 @@ test("DialogCodeHook maps staff DTMF 3 to Kelly when staffPreference was last as
   assert.equal(response.sessionState.sessionAttributes.staffId, "staff-kelly");
 });
 
-test("DialogCodeHook maps staff DTMF 0 to Any staff when staffPreference was last asked", async () => {
+test("DialogCodeHook maps staff DTMF 4 to Any staff when staffPreference was last asked", async () => {
   const handler = await loadHandler();
   globalThis.fetch = async () => {
     throw new Error("fetch should not be called for DialogCodeHook DTMF recovery");
@@ -790,7 +823,7 @@ test("DialogCodeHook maps staff DTMF 0 to Any staff when staffPreference was las
   const response = await handler(
     baseEvent({
       invocationSource: "DialogCodeHook",
-      inputTranscript: "0",
+      inputTranscript: "4",
       sessionState: {
         ...baseEvent().sessionState,
         sessionAttributes: {
@@ -819,6 +852,51 @@ test("DialogCodeHook maps staff DTMF 0 to Any staff when staffPreference was las
   assert.equal(response.sessionState.sessionAttributes.confirmedStaffName, "Any staff");
   assert.equal(response.sessionState.sessionAttributes.staffId, undefined);
   assert.equal(response.sessionState.sessionAttributes.selectedStaffId, undefined);
+});
+
+test("press 0 from staff prompt escalates to operator", async () => {
+  const handler = await loadHandler();
+  installFetchMock(() =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "HUMAN_ESCALATION",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "Fulfilled",
+          message: "Please wait while I connect you.",
+          messageContentType: "PlainText",
+          sessionAttributes: {
+            transferToQueue: "true",
+            forceHumanEscalation: "true",
+            escalationReason: "customer_pressed_zero"
+          }
+        }
+      })
+    )
+  );
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "0",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          ...baseEvent().sessionState.sessionAttributes,
+          lastAskedSlot: "staffPreference",
+          ...dynamicStaffAttributes()
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          slots: {}
+        }
+      }
+    })
+  );
+
+  assert.equal(response.sessionState.dialogAction.type, "Close");
+  assert.equal(response.sessionState.sessionAttributes.transferToQueue, "true");
+  assert.equal(response.sessionState.sessionAttributes.escalationReason, "customer_pressed_zero");
 });
 
 test("DialogCodeHook invalid staff DTMF repeats the dynamic staff list once", async () => {
@@ -863,31 +941,9 @@ test("DialogCodeHook invalid staff DTMF repeats the dynamic staff list once", as
 
 test("DialogCodeHook recovers Kelly staff alias from transcript", async () => {
   const handler = await loadHandler();
-  installFetchMock(() =>
-    jsonResponse(
-      successfulBackendPayload({
-        outcome: "MISSING_INFO",
-        appointment: null,
-        lexResponse: {
-          fulfillmentState: "InProgress",
-          message: "<speak>Just to confirm, pedicure with Kelly tomorrow at 2 PM.</speak>",
-          messageContentType: "SSML",
-          dialogAction: {
-            type: "ConfirmIntent"
-          },
-          sessionAttributes: {
-            staffPreference: "Kelly",
-            confirmedStaffName: "Kelly",
-            staffId: "staff-kelly",
-            selectedStaffId: "staff-kelly",
-            serviceName: "Pedicure",
-            requestedDate: usEasternDate(1),
-            requestedTime: "2 PM"
-          }
-        }
-      })
-    )
-  );
+  const fetchCalls = installFetchMock(() => {
+    throw new Error("fetch should not be called for local DialogCodeHook recovery");
+  });
 
   const response = await handler(
     baseEvent({
@@ -910,12 +966,13 @@ test("DialogCodeHook recovers Kelly staff alias from transcript", async () => {
     })
   );
 
-  assert.equal(response.sessionState.dialogAction.type, "ConfirmIntent");
+  assert.equal(fetchCalls.length, 0);
+  assert.equal(response.sessionState.dialogAction.type, "Delegate");
   assert.equal(response.sessionState.sessionAttributes.serviceName, "Pedicure");
   assert.equal(response.sessionState.sessionAttributes.requestedDate, usEasternDate(1));
   assert.equal(response.sessionState.sessionAttributes.requestedTime, "2 PM");
   assert.equal(response.sessionState.sessionAttributes.staffPreference, "Kelly");
-  assert.equal(response.sessionState.sessionAttributes.staffId, "staff-kelly");
+  assert.equal(response.sessionState.intent.slots.staffPreference.value.interpretedValue, "Kelly");
 });
 
 test("DialogCodeHook preserves recognized customer name over bad Lex name slot", async () => {
@@ -1216,7 +1273,7 @@ test("yes after existing appointment handoff offer transfers only after confirma
   );
 });
 
-test("BookAppointmentIntent backend non-OK response elicits a slot without escalation", async () => {
+test("BookAppointmentIntent backend non-OK response escalates safely", async () => {
   const handler = await loadHandler();
   installFetchMock(() => ({
     ok: false,
@@ -1226,15 +1283,15 @@ test("BookAppointmentIntent backend non-OK response elicits a slot without escal
 
   const response = await handler(baseEvent());
 
-  assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
-  assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName");
-  assert.equal(response.sessionState.sessionAttributes.forceHumanEscalation, "false");
-  assert.equal(response.sessionState.sessionAttributes.transferToQueue, "false");
-  assert.equal(response.sessionState.sessionAttributes.backendFailureReason, "backend_error");
+  assert.equal(response.sessionState.dialogAction.type, "Close");
+  assert.equal(response.sessionState.sessionAttributes.forceHumanEscalation, "true");
+  assert.equal(response.sessionState.sessionAttributes.transferToQueue, "true");
+  assert.equal(response.sessionState.sessionAttributes.escalationReason, "backend_error");
+  assert.match(response.messages[0].content, /taking longer than expected/i);
   assert.doesNotMatch(response.messages[0].content, /database|stack|secret|debug/i);
 });
 
-test("BookAppointmentIntent backend thrown error elicits a slot without escalation", async () => {
+test("BookAppointmentIntent backend thrown error escalates safely", async () => {
   const handler = await loadHandler();
   installFetchMock(() => {
     throw new Error("connection refused with internal host details");
@@ -1242,10 +1299,10 @@ test("BookAppointmentIntent backend thrown error elicits a slot without escalati
 
   const response = await handler(baseEvent());
 
-  assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
-  assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName");
-  assert.equal(response.sessionState.sessionAttributes.forceHumanEscalation, "false");
-  assert.equal(response.sessionState.sessionAttributes.transferToQueue, "false");
-  assert.equal(response.sessionState.sessionAttributes.backendFailureReason, "backend_error");
+  assert.equal(response.sessionState.dialogAction.type, "Close");
+  assert.equal(response.sessionState.sessionAttributes.forceHumanEscalation, "true");
+  assert.equal(response.sessionState.sessionAttributes.transferToQueue, "true");
+  assert.equal(response.sessionState.sessionAttributes.escalationReason, "backend_error");
+  assert.match(response.messages[0].content, /taking longer than expected/i);
   assert.doesNotMatch(response.messages[0].content, /internal host|connection refused/i);
 });

@@ -2,6 +2,19 @@
 
 Date: 2026-06-02
 
+## 2026-07-07 Voice Interrupt, DTMF, and Wait Prompt Update
+
+- AI entry now has an immediate local greeting before Lex/Lambda backend work: `Hi, thanks for calling. I can help book your appointment. What service would you like today?`
+- `BookAppointmentIntent` initial response code hook is disabled in the checked-in Lex exports so Lex does not invoke Lambda before the first useful prompt.
+- Lambda no longer calls the backend just to generate a dynamic staff prompt during `DialogCodeHook`.
+- Service retry switches to keypad-first after one unclear service attempt.
+- Staff is optional. Missing or unrecognized staff defaults to first available/Any staff; ambiguous or invalid DTMF staff input can still elicit one keypad correction.
+- Staff keypad mapping is now `1=Trang`, `2=Amy`, `3=Kelly`, `4=first available`, `0=operator`.
+- Press `0` from service and staff prompts escalates to the operator path.
+- Slow booking fulfillment uses the Lex start/update wait prompts: `Please give me a moment while I check availability.` and `I’m still checking the schedule.`
+- Backend booking API failures now return the safe operator handoff message instead of repeating the same slot question.
+- Connect AI reception has a local greeting prompt before Lex, and the human escalation flow still speaks before queue transfer.
+
 ## 2026-06-02 Demo Fix Update
 
 Current deployed path:
