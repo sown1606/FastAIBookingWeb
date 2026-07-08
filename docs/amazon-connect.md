@@ -97,6 +97,14 @@ Use the repeatable helper to verify and add Approved origins:
 AWS_PROFILE=nailnew AWS_REGION=us-east-1 APP_ORIGIN=https://app-new-nail.kendemo.com ./scripts/aws/ensure-connect-approved-origins.sh
 ```
 
+If the production origin is already present but the embedded CCP still reports CSP `frame-ancestors 'self'`, re-apply only the exact app origin:
+
+```bash
+AWS_PROFILE=nailnew AWS_REGION=us-east-1 APP_ORIGIN=https://app-new-nail.kendemo.com FORCE_REAPPLY=true ./scripts/aws/ensure-connect-approved-origins.sh
+```
+
+The helper prints the AWS caller identity, Connect instance alias/id/region, and Approved origins before and after. It does not remove unrelated origins.
+
 AWS CLI commands used for manual verification:
 
 ```bash
@@ -144,7 +152,7 @@ Troubleshooting blank embedded CCP:
 - Allow browser cookies/popups needed by Amazon Connect login and softphone after the frame-ancestor check passes.
 - Check for frame blocking such as `X-Frame-Options: sameorigin` or CSP `frame-ancestors 'self'`; this usually means the origin has not applied to the intended Connect instance or the CCP URL is wrong.
 - Confirm the AWS region and Connect instance alias/id are the intended `us-east-1` FastAIBooking instance.
-- If embedding is blocked but direct CCP works, use the dashboard side-by-side with the direct CCP popup from `https://fastaibooking.my.connect.aws/ccp-v2/` until Approved origins propagates.
+- If embedding is blocked but direct CCP works, use the dashboard side-by-side with the direct CCP popup from `https://fastaibooking.my.connect.aws/ccp-v2/` until Approved origins propagates. The operator queue and booking tools still use the real FastAIBooking APIs while Direct CCP mode is active.
 
 ## Live Contact Flow Checklist
 

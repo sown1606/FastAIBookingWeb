@@ -1,6 +1,6 @@
 # Operator CCP AWS CLI Pass
 
-Date: 2026-06-12
+Date: 2026-07-08
 
 ## AWS Identity
 
@@ -24,6 +24,33 @@ After update:
 
 - `http://localhost:5173`
 - `https://app-new-nail.kendemo.com`
+
+## Direct CCP Fallback
+
+If the embedded CCP is blocked by browser CSP such as `frame-ancestors 'self'`, treat it as an Amazon Connect Approved origins configuration issue. The operator screen is still usable:
+
+- click `Open Amazon Connect CCP`
+- log in to the direct CCP tab
+- set the agent state to Available
+- keep `/call-center` open for the real queue, salon context, customer creation, booking creation, notes, callbacks, SMS fallback, and completion actions
+
+The `/call-center` page continues lightweight queue polling while embedded CCP is not ready, so queued escalations can still appear during Direct CCP mode.
+
+## FORCE_REAPPLY Usage
+
+Use the helper for the normal verification/add pass:
+
+```bash
+AWS_PROFILE=nailnew AWS_REGION=us-east-1 APP_ORIGIN=https://app-new-nail.kendemo.com ./scripts/aws/ensure-connect-approved-origins.sh
+```
+
+If the production origin is already listed but the iframe is still blocked, re-apply only the exact app origin:
+
+```bash
+AWS_PROFILE=nailnew AWS_REGION=us-east-1 APP_ORIGIN=https://app-new-nail.kendemo.com FORCE_REAPPLY=true ./scripts/aws/ensure-connect-approved-origins.sh
+```
+
+The script prints AWS caller identity, the selected Connect instance alias/id/region, Approved origins before and after, and fails clearly when the profile account does not match the expected FastAIBooking account. `FORCE_REAPPLY=true` never removes unrelated origins.
 
 ## Connect Resources
 
@@ -63,7 +90,8 @@ Routing profiles:
 - `npm run build:app` - passed. Vite emitted only the existing large chunk warning.
 - `npm run typecheck:api` - passed.
 - `npm run build:api` - passed.
-- `AWS_PROFILE=nailnew AWS_REGION=us-east-1 APP_ORIGIN=https://app-new-nail.kendemo.com ./scripts/aws/ensure-connect-approved-origins.sh` - passed; both required origins were already approved on rerun.
+- `AWS_PROFILE=nailnew AWS_REGION=us-east-1 APP_ORIGIN=https://app-new-nail.kendemo.com ./scripts/aws/ensure-connect-approved-origins.sh` - verifies the current account, instance, and Approved origins.
+- `AWS_PROFILE=nailnew AWS_REGION=us-east-1 APP_ORIGIN=https://app-new-nail.kendemo.com FORCE_REAPPLY=true ./scripts/aws/ensure-connect-approved-origins.sh` - re-applies only the production app origin when CSP still blocks the iframe.
 
 ## Remaining Blockers
 
@@ -73,15 +101,14 @@ Routing profiles:
 
 ## Manual Test Checklist
 
-1. Login operator.
+1. Login as `agent.demo@fastaibooking.local`.
 2. Open `/call-center`.
-3. Confirm CCP iframe loads.
-4. Click `Mở Amazon Connect CCP trong tab mới`.
-5. Set agent Available.
-6. Call AI number.
-7. Ask for human operator.
-8. Confirm queue item appears.
-9. Operator accepts call.
-10. Confirm owner note is visible.
-11. Create booking.
-12. Complete call.
+3. Click `Open Amazon Connect CCP`.
+4. Login direct CCP and set agent Available.
+5. Make test call and ask for human operator.
+6. Confirm queue item appears.
+7. Accept/handle call.
+8. Create customer if needed.
+9. Create real appointment.
+10. Complete call.
+11. Confirm owner/staff dashboards still show data correctly.

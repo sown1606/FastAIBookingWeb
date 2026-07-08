@@ -427,6 +427,9 @@ const getWaitingMinutes = (item: QueueItem | EscalationDetail): number => {
 const isStaleWait = (minutes: number): boolean => minutes > 24 * 60;
 
 const getWaitBadgeKey = (minutes: number): "callCenter.urgentWait" | "callCenter.longWait" | null => {
+  if (isStaleWait(minutes)) {
+    return null;
+  }
   if (minutes > 60) {
     return "callCenter.urgentWait";
   }
@@ -439,17 +442,21 @@ const getWaitBadgeKey = (minutes: number): "callCenter.urgentWait" | "callCenter
 interface AmazonConnectCcpPanelProps {
   ccpUrl: string | null;
   region: string | null | undefined;
+  instanceId: string | null | undefined;
   enabled: boolean;
   showTechnicalDetails: boolean;
   onQueueMatch: (item: QueueItem) => void;
+  onEmbeddedReadyChange: (ready: boolean) => void;
 }
 
 const AmazonConnectCcpPanel = ({
   ccpUrl,
   region,
+  instanceId,
   enabled,
   showTechnicalDetails,
-  onQueueMatch
+  onQueueMatch,
+  onEmbeddedReadyChange
 }: AmazonConnectCcpPanelProps) => {
   const { t } = useI18n();
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -468,6 +475,9 @@ const AmazonConnectCcpPanel = ({
   const ccpValidation = useMemo(() => validateCcpUrl(ccpUrl), [ccpUrl]);
   const appOrigin = typeof window === "undefined" ? "" : window.location.origin;
   const approvedOrigin = appOrigin || "https://app-new-nail.kendemo.com";
+  const awsRegion = region || "us-east-1";
+  const approvedOriginScriptCommand = `AWS_PROFILE=nailnew AWS_REGION=${awsRegion} APP_ORIGIN=${approvedOrigin} FORCE_REAPPLY=true ./scripts/aws/ensure-connect-approved-origins.sh`;
+  const listApprovedOriginsCommand = `aws connect list-approved-origins --profile nailnew --region ${awsRegion} --instance-id ${instanceId || "<connect-instance-id>"}`;
   const ccpConfigError =
     ccpValidation.error === "missing"
       ? t("callCenter.ccpConfigMissing")
@@ -487,6 +497,10 @@ const AmazonConnectCcpPanel = ({
       });
     }
   }, [appOrigin, ccpUrl, ccpValidation.url]);
+
+  useEffect(() => {
+    onEmbeddedReadyChange(ccpStatus === "ready");
+  }, [ccpStatus, onEmbeddedReadyChange]);
 
   const clearCcpContainer = useCallback(() => {
     if (containerRef.current) {
@@ -712,6 +726,7 @@ const AmazonConnectCcpPanel = ({
           ? t("callCenter.ccpStatusError")
           : t("callCenter.ccpStatusDisabled");
   const isFrameBlocked = ccpStatus === "blocked";
+  const showDirectCcpFallback = enabled && ccpStatus !== "ready";
 
   return (
     <article className="card ccp-panel">
@@ -734,25 +749,16 @@ const AmazonConnectCcpPanel = ({
         ) : null}
       </div>
 
-      {ccpWarning ? (
-        <div className="ccp-help-box">
-          <strong>{ccpWarning}</strong>
-          <ul className="ccp-checklist">
-            {isFrameBlocked ? (
-              <>
-                <li>{t("callCenter.ccpCspChecklistCli")}</li>
-                <li>{t("callCenter.ccpCspChecklistReapply")}</li>
-                <li>{t("callCenter.ccpCspChecklistReload")}</li>
-              </>
-            ) : (
-              <>
-                <li>{t("callCenter.ccpChecklistLogin")}</li>
-                <li>{t("callCenter.ccpChecklistPopups")}</li>
-                <li>{t("callCenter.ccpChecklistCookies")}</li>
-                <li>{t("callCenter.ccpChecklistOrigin")}</li>
-              </>
-            )}
-          </ul>
+      {showDirectCcpFallback ? (
+        <div className={isFrameBlocked ? "ccp-help-box direct-mode blocked" : "ccp-help-box direct-mode"}>
+          <div className="section-header compact-header">
+            <div>
+              <strong>{t("callCenter.directCcpTitle")}</strong>
+              <p>{isFrameBlocked ? t("callCenter.ccpFrameBlocked") : ccpWarning || t("callCenter.directCcpHint")}</p>
+            </div>
+            <span className="status-pill info">{t("callCenter.directCcpMode")}</span>
+          </div>
+          <p className="muted">{t("callCenter.ccpPollingHint")}</p>
           <div className="ccp-diagnostics">
             <div>
               <span>{t("callCenter.ccpDiagnosticOrigin")}</span>
@@ -766,23 +772,11 @@ const AmazonConnectCcpPanel = ({
               <span>{t("callCenter.ccpDiagnosticApprovedOrigin")}</span>
               <strong>{approvedOrigin}</strong>
             </div>
-            {ccpErrorSignature ? (
-              <>
-                <div>
-                  <span>{t("callCenter.ccpDiagnosticError")}</span>
-                  <strong>{ccpErrorSignature}</strong>
-                </div>
-                <div>
-                  <span>{t("callCenter.ccpDiagnosticCli")}</span>
-                  <strong>aws connect list-approved-origins --instance-id &lt;id&gt; --region us-east-1</strong>
-                </div>
-              </>
-            ) : null}
           </div>
           <div className="ccp-help-actions">
             {ccpValidation.url ? (
               <>
-                <button type="button" className="button-secondary" onClick={openCcpWindow}>
+                <button type="button" className="button-primary" onClick={openCcpWindow}>
                   {t("callCenter.openConnectCcp")}
                 </button>
                 <button type="button" className="button-secondary" onClick={retryCcp}>
@@ -791,10 +785,15 @@ const AmazonConnectCcpPanel = ({
               </>
             ) : null}
           </div>
-          {ccpDebugDetails ? (
+          {(ccpDebugDetails || ccpErrorSignature) ? (
             <details className="ccp-technical-details" open={showTechnicalDetails}>
               <summary>{t("callCenter.technicalDetails")}</summary>
-              <p>{ccpDebugDetails}</p>
+              {ccpDebugDetails ? <p>{ccpDebugDetails}</p> : null}
+              {ccpErrorSignature ? <p>{ccpErrorSignature}</p> : null}
+              <p>{t("callCenter.ccpTechnicalCommandIntro")}</p>
+              <pre>{`aws sts get-caller-identity --profile nailnew
+${listApprovedOriginsCommand}
+${approvedOriginScriptCommand}`}</pre>
             </details>
           ) : null}
         </div>
@@ -849,6 +848,7 @@ export const CallCenterPage = () => {
   const [customers, setCustomers] = useState<CustomerItem[]>([]);
   const [appointments, setAppointments] = useState<AppointmentItem[]>([]);
   const [queue, setQueue] = useState<QueueItem[]>([]);
+  const [ccpEmbeddedReady, setCcpEmbeddedReady] = useState(false);
   const [selectedEscalationId, setSelectedEscalationId] = useState("");
   const [selectedEscalation, setSelectedEscalation] = useState<EscalationDetail | null>(null);
   const [scheduleDateKey, setScheduleDateKey] = useState(() => getDateKeyInTimezone(new Date()));
@@ -1128,6 +1128,22 @@ export const CallCenterPage = () => {
     }
     setSelectedEscalationId(targetEscalationId);
   }, [loading, selectedEscalationId, targetEscalationId]);
+
+  useEffect(() => {
+    if (isOwner || ccpEmbeddedReady) {
+      return;
+    }
+
+    const refreshQueue = () => {
+      void loadQueue(true).catch(() => undefined);
+      if (selectedEscalationId) {
+        void loadEscalationDetail(selectedEscalationId).catch(() => undefined);
+      }
+    };
+
+    const intervalId = window.setInterval(refreshQueue, 10000);
+    return () => window.clearInterval(intervalId);
+  }, [ccpEmbeddedReady, isOwner, selectedEscalationId]);
 
   const createCustomer = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1471,9 +1487,36 @@ export const CallCenterPage = () => {
     setSelectedEscalationId(item.id);
   }, []);
 
+  const handleEmbeddedReadyChange = useCallback((ready: boolean) => {
+    setCcpEmbeddedReady(ready);
+  }, []);
+
   const salonTimezone = selectedSalonDetail?.timezone || FALLBACK_SALON_TIMEZONE;
   const todayDateKey = getDateKeyInTimezone(new Date(), salonTimezone);
-  const selectedSalonQueue = selectedSalonId ? queue.filter((item) => item.salon.id === selectedSalonId) : queue;
+  const selectedSalonQueue = useMemo(() => {
+    const getStatusPriority = (item: QueueItem) => {
+      if (item.status === "QUEUED") {
+        return 0;
+      }
+      if (item.status === "PENDING" || item.status === "CONNECTED") {
+        return 1;
+      }
+      if (item.status === "CLOSED") {
+        return 4;
+      }
+      return 2;
+    };
+
+    return (selectedSalonId ? queue.filter((item) => item.salon.id === selectedSalonId) : queue)
+      .slice()
+      .sort((a, b) => {
+        const priorityDiff = getStatusPriority(a) - getStatusPriority(b);
+        if (priorityDiff !== 0) {
+          return priorityDiff;
+        }
+        return new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime();
+      });
+  }, [queue, selectedSalonId]);
   const openRequests = selectedSalonQueue.filter((item) => item.status !== "CLOSED").length;
   const amazonConnectRuntimeReady = Boolean(runtime?.amazonConnect.configured);
   const amazonConnectPlatformReady = Boolean(runtime?.amazonConnect.adminConfigured);
@@ -2199,9 +2242,11 @@ export const CallCenterPage = () => {
           <AmazonConnectCcpPanel
             ccpUrl={ccpUrl}
             region={runtime?.amazonConnect.region}
+            instanceId={runtime?.amazonConnect.instanceId}
             enabled={amazonConnectRuntimeReady}
             showTechnicalDetails={!isBasicMode}
             onQueueMatch={handleQueueMatch}
+            onEmbeddedReadyChange={handleEmbeddedReadyChange}
           />
 
           <article className="card selected-call-card">
@@ -2502,7 +2547,14 @@ export const CallCenterPage = () => {
                 return (
                   <article
                     key={item.id}
-                    className={item.id === selectedEscalationId ? "queue-row active" : "queue-row"}
+                    className={[
+                      "queue-row",
+                      item.id === selectedEscalationId ? "active" : "",
+                      item.status === "CLOSED" ? "is-closed" : "is-open",
+                      isStaleWait(waitingMinutes) ? "is-stale" : ""
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
                     onClick={() => setSelectedEscalationId(item.id)}
                   >
                     <div className="queue-row-main">
