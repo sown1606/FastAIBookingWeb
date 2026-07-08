@@ -79,6 +79,7 @@ AWS_PROFILE=nailnew AWS_REGION=us-east-1 APP_ORIGIN=https://app-new-nail.kendemo
 - `npm run build:api` - passed.
 - `npm run test:api` - passed, 67 tests.
 - `git diff --check` - passed.
+- `npm run deploy:ec2` - passed; Docker images rebuilt, Prisma reported no pending migrations, app/admin containers were recreated, API was healthy, and nginx reloaded.
 
 ## Risks / Blockers
 
