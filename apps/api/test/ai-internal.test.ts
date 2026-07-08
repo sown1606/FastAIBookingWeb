@@ -703,7 +703,10 @@ test("call flow customer text uses Full Set wording", () => {
     "infra/lambda/booking-handler/index.mjs",
     "infra/aws/lex/FastAIBookingBot-v10",
     "infra/aws/connect/contact-flows/ai-reception.json",
-    "apps/api/src/modules/ai/ai.service.ts"
+    "apps/api/src/modules/ai/ai.service.ts",
+    "tests/lambda/booking-handler.test.mjs",
+    "apps/api/test/ai-internal.test.ts",
+    "docs/AI_CALL_BOOKING_WORKFLOW_AUDIT.md"
   ];
   const staleServiceRoot = ["a", "crylic"].join("");
   const staleWording = new RegExp(
@@ -868,6 +871,42 @@ test("Full Set phrase reaches confirmation without asking service again", async 
   assert.match(result.body.data.lexResponse.message, /Just to confirm, Full Set with Trang tomorrow at 3 PM/i);
   assert.deepEqual(new Set(state.validationStaffIds), new Set([ids.trang]));
   assert.equal(state.appointments.length, 0);
+});
+
+test("Full Set speech aliases resolve to the active Full Set service", async () => {
+  for (const phrase of [
+    "full set",
+    "fullset",
+    "full-set",
+    "full sets",
+    "full nail set",
+    "nail full set",
+    "full nail",
+    "nail set",
+    "new set",
+    "complete set",
+    "false set",
+    "fall set",
+    "four set",
+    "full said"
+  ]) {
+    resetMockState();
+    const result = await postInternalAppointment(
+      bookingPayload({
+        serviceName: undefined,
+        requestedDate: undefined,
+        requestedTime: undefined,
+        staffPreference: "Trang",
+        confirmationState: undefined,
+        transcript: `I want to book a ${phrase} tomorrow at 3 PM. My name is Kiet Nguyen. My phone number is 7325956266.`
+      })
+    );
+
+    assert.equal(result.response.status, 200, phrase);
+    assert.equal(result.body.data.outcome, "MISSING_INFO", phrase);
+    assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Full Set", phrase);
+    assert.notEqual(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName", phrase);
+  }
 });
 
 test("any-staff phrases resolve to an actual staff member before final confirmation", async () => {
@@ -1176,6 +1215,75 @@ test("service DTMF 4 maps to Full Set", async () => {
   assert.match(result.body.data.lexResponse.message, /Just to confirm, Full Set with Trang/i);
   assert.deepEqual(new Set(state.validationStaffIds), new Set([ids.trang]));
   assert.equal(state.appointments.length, 0);
+});
+
+test("after service DTMF 4, name and date turns keep Full Set", async () => {
+  const first = await postInternalAppointment(
+    bookingPayload({
+      customerName: undefined,
+      customerPhone: "+18483487681",
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      transcript: "4",
+      attributes: {
+        lastAskedSlot: "serviceName",
+        customerPhone: "+18483487681"
+      }
+    })
+  );
+
+  assert.equal(first.response.status, 200);
+  assert.equal(first.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
+  assert.equal(first.body.data.lexResponse.sessionAttributes.confirmedServiceName, "Full Set");
+
+  const nameTurn = await postInternalAppointment(
+    bookingPayload({
+      customerName: undefined,
+      customerPhone: "+18483487681",
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      transcript: "my name is Thuyet",
+      attributes: {
+        ...first.body.data.lexResponse.sessionAttributes,
+        lastAskedSlot: "customerName"
+      }
+    })
+  );
+
+  assert.equal(nameTurn.response.status, 200);
+  assert.equal(nameTurn.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
+  assert.equal(nameTurn.body.data.lexResponse.sessionAttributes.confirmedServiceName, "Full Set");
+  assert.equal(nameTurn.body.data.lexResponse.sessionAttributes.customerName, "Thuyet");
+  assert.notEqual(nameTurn.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
+
+  const dateTurn = await postInternalAppointment(
+    bookingPayload({
+      customerName: undefined,
+      customerPhone: "+18483487681",
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      transcript: "tomorrow at 3 PM",
+      attributes: {
+        ...first.body.data.lexResponse.sessionAttributes,
+        lastAskedSlot: "requestedDate"
+      }
+    })
+  );
+
+  assert.equal(dateTurn.response.status, 200);
+  assert.equal(dateTurn.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
+  assert.equal(dateTurn.body.data.lexResponse.sessionAttributes.confirmedServiceName, "Full Set");
+  assert.equal(dateTurn.body.data.lexResponse.sessionAttributes.requestedTime, "15:00");
+  assert.notEqual(dateTurn.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
 });
 
 test("staff DTMF applies only to staffPreference and reaches confirmation", async () => {

@@ -207,7 +207,7 @@ Final active/bookable staff:
 
 Service:
 
-- `Pedicure`, `Manicure`, `Gel Manicure`, `Acrylic Full Set`, and `Dip Powder` are active.
+- `Pedicure`, `Manicure`, `Gel Manicure`, `Full Set`, and `Dip Powder` are active.
 - Duration: 45 minutes.
 - Staff mapping: `Trang`, `Amy`, `Kelly`.
 

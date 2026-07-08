@@ -241,8 +241,27 @@ const SERVICE_ALIASES: Record<string, string[]> = {
   ],
   "full set": [
     "full set",
+    "fullset",
+    "full-set",
+    "full sets",
+    "full nail set",
+    "nail full set",
+    "full nail",
+    "nail set",
+    "new set",
+    "complete set",
+    "false set",
+    "fall set",
+    "four set",
+    "full said",
+    "full sat",
+    "full sad",
+    "full send",
+    "fuel set",
     "fake nails",
-    "extension nails"
+    "extension nails",
+    "nail extensions",
+    "full set appointment"
   ],
   "dip powder": [
     "dip",

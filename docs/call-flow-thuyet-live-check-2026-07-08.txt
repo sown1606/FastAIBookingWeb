@@ -1,0 +1,96 @@
+## Date
+Wed Jul  8 18:26:20 UTC 2026
+
+## AWS caller identity
+{
+    "UserId": "AIDAS36IYC6CWTXUH2L5S",
+    "Account": "197452633989",
+    "Arn": "arn:aws:iam::197452633989:user/fastaibooking-codex-deployer"
+}
+
+## Lambda functions
+---------------------------------------------------------------------------------
+|                                 ListFunctions                                 |
++--------------------------------+-------------+--------------------------------+
+|  fastaibooking-booking-handler |  nodejs20.x |  2026-07-07T07:32:11.000+0000  |
++--------------------------------+-------------+--------------------------------+
+
+## Lambda env/config for likely functions
+
+### fastaibooking-booking-handler
+{
+    "FunctionName": "fastaibooking-booking-handler",
+    "Runtime": "nodejs20.x",
+    "Handler": "index.handler",
+    "Timeout": 15,
+    "MemorySize": 128,
+    "LastModified": "2026-07-07T07:32:11.000+0000",
+    "EnvKeys": [
+        "FASTAIBOOKING_API_INTERNAL_TOKEN",
+        "DEFAULT_SALON_ID",
+        "FASTAIBOOKING_API_BASE_URL"
+    ]
+}
+
+## Lex V2 bots
+-----------------------------------------------------------------
+|                           ListBots                            |
++---------------------------------------------------------------+
+||                        botSummaries                         ||
+|+----------------------+--------------------------------------+|
+||  botId               |  KHMIXGA2US                          ||
+||  botName             |  FastAIBookingBot                    ||
+||  botStatus           |  Available                           ||
+||  botType             |  Bot                                 ||
+||  description         |  FastAIBooking AI booking assistant  ||
+||  lastUpdatedDateTime |  2026-07-07T03:37:29.763000-04:00    ||
+||  latestBotVersion    |  15                                  ||
+|+----------------------+--------------------------------------+|
+
+## Connect instances
+-----------------------------------------------------------------------------------------------------------------------------------------------------------
+|                                                                      ListInstances                                                                      |
++---------------------------------------------------------------------------------------------------------------------------------------------------------+
+||                                                                  InstanceSummaryList                                                                  ||
+|+------------------------+------------------------------------------------------------------------------------------------------------------------------+|
+||  Arn                   |  arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc                                        ||
+||  CreatedTime           |  2026-04-22T06:20:52-04:00                                                                                                   ||
+||  Id                    |  74f78377-766f-46b7-a745-4bc97b68a8dc                                                                                        ||
+||  IdentityManagementType|  CONNECT_MANAGED                                                                                                             ||
+||  InboundCallsEnabled   |  True                                                                                                                        ||
+||  InstanceAccessUrl     |  https://fastaibooking.my.connect.aws                                                                                        ||
+||  InstanceAlias         |  fastaibooking                                                                                                               ||
+||  InstanceStatus        |  ACTIVE                                                                                                                      ||
+||  OutboundCallsEnabled  |  True                                                                                                                        ||
+||  ServiceRole           |  arn:aws:iam::197452633989:role/aws-service-role/connect.amazonaws.com/AWSServiceRoleForAmazonConnect_jctanKRIFoRoCKpf7v4S   ||
+|+------------------------+------------------------------------------------------------------------------------------------------------------------------+|
+
+## Recent CloudWatch errors / Full Set / slow wait logs
+
+### /aws/connect/fastaibooking
+
+### /aws/lambda/fastaibooking-booking-handler
+EVENTS	39771099079552811165133348434625100453095263385113133065	1783397764555	2026/07/07/[$LATEST]ba311aefe6a14063ae026897d39616c1	START RequestId: c00a5904-0f0a-429b-a2ed-e33b4013e2df Version: $LATEST
+	1783397762070
+EVENTS	39771099134747155531496640720818092301309340741194350592	1783397773565	2026/07/07/[$LATEST]ba311aefe6a14063ae026897d39616c1	END RequestId: c00a5904-0f0a-429b-a2ed-e33b4013e2df
+	1783397764545
+EVENTS	39771099134747155531496640720818092301309340741194350593	1783397773565	2026/07/07/[$LATEST]ba311aefe6a14063ae026897d39616c1	REPORT RequestId: c00a5904-0f0a-429b-a2ed-e33b4013e2df	Duration: 2474.14 ms	Billed Duration: 2475 ms	Memory Size: 128 MB	Max Memory Used: 93 MB	
+	1783397764545
+EVENTS	39773897791965687206387543608386508708598638411764727812	1783523267343	2026/07/08/[$LATEST]2b5b6a9b3242422e81d4f0b3a991e98d	2026-07-08T15:07:40.675Z	a6b8ba49-aae4-4347-9a61-163acb4f15c7	INFO	API wait prompt coverage {
+  operationName: 'booking_fulfillment_availability_and_creation',
+  waitPrompt: 'Please give me a moment while I check availability. Please wait while I create your appointment.',
+  mechanism: 'Lex fulfillment update',
+  apiDurationMs: 2019,
+  success: true,
+  failureCode: undefined,
+  callOrSessionId: 'cec28e0b-0c77-4a6e-9506-bbb05fe5072d'
+}
+	1783523260675
+EVENTS	39773900221230463172725383786248137156572470620658139139	1783523369990	2026/07/08/[$LATEST]2b5b6a9b3242422e81d4f0b3a991e98d	START RequestId: a74cc7ce-80c5-4299-87ef-f0283bf33f05 Version: $LATEST
+	1783523369607
+EVENTS	39773900228991122501814040639502567115454100424739323908	1783523369990	2026/07/08/[$LATEST]2b5b6a9b3242422e81d4f0b3a991e98d	END RequestId: a74cc7ce-80c5-4299-87ef-f0283bf33f05
+	1783523369955
+EVENTS	39773900228991122501814040639502567115454100424739323909	1783523369990	2026/07/08/[$LATEST]2b5b6a9b3242422e81d4f0b3a991e98d	REPORT RequestId: a74cc7ce-80c5-4299-87ef-f0283bf33f05	Duration: 347.26 ms	Billed Duration: 348 ms	Memory Size: 128 MB	Max Memory Used: 95 MB	
+	1783523369955
+
+### /aws/lex/KHMIXGA2US

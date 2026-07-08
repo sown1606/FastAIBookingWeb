@@ -215,8 +215,27 @@ const SERVICE_ALIAS_GROUPS = {
   ],
   "Full Set": [
     "full set",
+    "fullset",
+    "full-set",
+    "full sets",
+    "full nail set",
+    "nail full set",
+    "full nail",
+    "nail set",
+    "new set",
+    "complete set",
+    "false set",
+    "fall set",
+    "four set",
+    "full said",
+    "full sat",
+    "full sad",
+    "full send",
+    "fuel set",
     "fake nails",
-    "extension nails"
+    "extension nails",
+    "nail extensions",
+    "full set appointment"
   ],
   "Dip Powder": [
     "dip powder",
@@ -1129,17 +1148,25 @@ function getKnownField(event, fieldName, options = {}) {
 
 function buildKnownBookingSessionAttributes(event) {
   const previous = event.sessionState?.sessionAttributes || {};
-  const initial = previous.initialBookingUtterance || event.inputTranscript || "";
+  const eventTranscriptIsDtmf = Boolean(readDtmfDigit(event.inputTranscript));
+  const initial =
+    previous.initialBookingUtterance ||
+    (eventTranscriptIsDtmf ? "" : event.inputTranscript) ||
+    "";
   const timeZone = getAttribute(event, attributeNames.timezone) || DEFAULT_SALON_TIMEZONE;
-  const transcript = [event.inputTranscript, getAttribute(event, attributeNames.transcript), initial]
+  const transcriptValues = [event.inputTranscript, getAttribute(event, attributeNames.transcript), initial]
     .filter((value, index, values) => value && values.indexOf(value) === index)
-    .join(" ");
-  const recovered = extractBookingDetailsFromText(transcript, timeZone);
+  const transcript = transcriptValues.join(" ");
   const knownDate = getKnownField(event, "requestedDate");
   const knownTime = getKnownField(event, "requestedTime", { preferOriginal: true });
   const rawKnownService = getKnownField(event, "serviceName");
   const serviceDtmfSelection = readScopedDtmfSelection(event, "serviceName", SERVICE_DTMF_OPTIONS);
   const staffDtmfSelection = readScopedStaffDtmfSelection(event);
+  const recoveryTranscript =
+    serviceDtmfSelection || staffDtmfSelection
+      ? transcriptValues.filter((value) => !readDtmfDigit(value)).join(" ")
+      : transcript;
+  const recovered = extractBookingDetailsFromText(recoveryTranscript, timeZone);
   const normalizedKnownService = normalizeServiceName(rawKnownService);
   const knownService =
     normalizedKnownService && !isClearlyInvalidServiceName(normalizedKnownService)
@@ -1506,7 +1533,14 @@ function buildForceHumanEscalationAttributes(reason, extra = {}) {
 }
 
 function normalizeBackendFailureReason(code) {
-  return code === "backend_timeout" ? "backend_timeout" : "backend_error";
+  if (
+    code === "backend_timeout" ||
+    code === "backend_unreachable" ||
+    code === "backend_not_configured"
+  ) {
+    return code;
+  }
+  return "backend_error";
 }
 
 function buildBackendFailureEscalationResponse(event, result) {
@@ -1514,7 +1548,7 @@ function buildBackendFailureEscalationResponse(event, result) {
   return buildLexResponse(
     event,
     "This is taking longer than expected. Please wait while I connect you to our team.",
-    "Failed",
+    "Fulfilled",
     buildForceHumanEscalationAttributes(reason),
     {
       messageContentType: "PlainText"
@@ -1912,6 +1946,9 @@ export const handler = async (event) => {
       const slotToElicit = getBookingSlotToElicit(event);
       if (slotToElicit) {
         if (slotToElicit === "staffPreference") {
+          if (event.invocationSource === "DialogCodeHook" && sessionAttributes.lastAskedSlot !== "staffPreference") {
+            return buildDelegateResponse(event);
+          }
           return await buildDynamicStaffElicitResponse(event, intentName);
         }
         return buildElicitSlotResponse(event, slotToElicit);
@@ -2011,18 +2048,22 @@ export const handler = async (event) => {
     const data = extractResultPayload(result);
     if (
       data.outcome === "HUMAN_ESCALATION" ||
-      data.outcome === "FAILED" ||
       (data.outcome !== "BOOKED" && data.lexResponse?.sessionAttributes?.transferToQueue === "true")
     ) {
-      return buildElicitSlotResponse(
+      return buildLexResponse(
         event,
-        getBookingSlotToElicit(event) || "serviceName",
-        {
-          forceHumanEscalation: "false",
-          transferToQueue: "false",
-          blockedEscalationOutcome: data.outcome || "backend_transfer"
-        }
+        data.lexResponse?.message ||
+          "This is taking longer than expected. Please wait while I connect you to our team.",
+        data.lexResponse?.fulfillmentState || "Fulfilled",
+        buildSessionAttributesFromResult(data),
+        data.lexResponse
       );
+    }
+
+    if (data.outcome === "FAILED") {
+      return buildBackendFailureEscalationResponse(event, {
+        code: data.lexResponse?.sessionAttributes?.escalationReason || "backend_error"
+      });
     }
 
     const lexResponse = removeTransferSessionAttributes(data.lexResponse);

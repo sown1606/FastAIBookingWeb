@@ -432,13 +432,13 @@
       "Type": "MessageParticipant",
       "Parameters": {
         "SkipWhenDTMFBufferEnabled": "false",
-        "Text": "I am sorry, the AI receptionist is having trouble right now. Please call back later. Goodbye."
+        "Text": "This is taking longer than expected. Please wait while I connect you to our team."
       },
       "Transitions": {
-        "NextAction": "ef8d8054-77ea-40c7-aa4e-800ed784c49c",
+        "NextAction": "transfer-human-escalation-flow",
         "Errors": [
           {
-            "NextAction": "ef8d8054-77ea-40c7-aa4e-800ed784c49c",
+            "NextAction": "transfer-human-escalation-flow",
             "ErrorType": "NoMatchingError"
           }
         ]
