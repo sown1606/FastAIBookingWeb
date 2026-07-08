@@ -36,6 +36,14 @@ If the embedded CCP is blocked by browser CSP such as `frame-ancestors 'self'`, 
 
 The `/call-center` page continues lightweight queue polling while embedded CCP is not ready, so queued escalations can still appear during Direct CCP mode.
 
+Production app builds should leave embedded CCP disabled unless the iframe allowlist is verified in-browser:
+
+```dotenv
+VITE_AMAZON_CONNECT_EMBEDDED_CCP_ENABLED=false
+```
+
+This is a Vite build-time value and must be present before `npm run build:app` or the Docker app build. The production Docker build path passes this value through `docker-compose.yml` to `apps/app/Dockerfile`.
+
 ## FORCE_REAPPLY Usage
 
 Use the helper for the normal verification/add pass:

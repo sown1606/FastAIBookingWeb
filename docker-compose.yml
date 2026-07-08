@@ -92,6 +92,7 @@ services:
         VITE_APP_BASE_URL: ${VITE_APP_BASE_URL:-https://app-new-nail.kendemo.com}
         VITE_ADMIN_BASE_URL: ${VITE_ADMIN_BASE_URL:-https://admin-new-nail.kendemo.com}
         VITE_AMAZON_CONNECT_CCP_URL: ${VITE_AMAZON_CONNECT_CCP_URL:-}
+        VITE_AMAZON_CONNECT_EMBEDDED_CCP_ENABLED: ${VITE_AMAZON_CONNECT_EMBEDDED_CCP_ENABLED:-false}
         VITE_APP_NAME: ${VITE_OWNER_APP_NAME:-FastAIBooking}
         VITE_FIREBASE_API_KEY: ${VITE_FIREBASE_API_KEY:-AIzaSyBiGCcPrzXDuD_jz6nrEMN5zK1okkRW7nY}
         VITE_FIREBASE_AUTH_DOMAIN: ${VITE_FIREBASE_AUTH_DOMAIN:-fastaibooking.firebaseapp.com}

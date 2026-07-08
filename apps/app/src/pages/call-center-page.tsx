@@ -444,9 +444,11 @@ interface AmazonConnectCcpPanelProps {
   region: string | null | undefined;
   instanceId: string | null | undefined;
   enabled: boolean;
+  embeddedEnabled: boolean;
   showTechnicalDetails: boolean;
   onQueueMatch: (item: QueueItem) => void;
   onEmbeddedReadyChange: (ready: boolean) => void;
+  onDirectRefresh: () => void;
 }
 
 const AmazonConnectCcpPanel = ({
@@ -454,19 +456,24 @@ const AmazonConnectCcpPanel = ({
   region,
   instanceId,
   enabled,
+  embeddedEnabled,
   showTechnicalDetails,
   onQueueMatch,
-  onEmbeddedReadyChange
+  onEmbeddedReadyChange,
+  onDirectRefresh
 }: AmazonConnectCcpPanelProps) => {
   const { t } = useI18n();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const lastMatchKeyRef = useRef("");
   const initializedCcpKeyRef = useRef("");
-  const [ccpStatus, setCcpStatus] = useState<"disabled" | "loading" | "ready" | "blocked" | "error">("disabled");
+  const attemptedCcpKeyRef = useRef("");
+  const [ccpStatus, setCcpStatus] = useState<"direct" | "disabled" | "loading" | "ready" | "blocked" | "error">("direct");
   const [ccpWarning, setCcpWarning] = useState("");
   const [ccpDebugDetails, setCcpDebugDetails] = useState("");
   const [ccpErrorSignature, setCcpErrorSignature] = useState("");
   const [retryNonce, setRetryNonce] = useState(0);
+  const [manualRetryCount, setManualRetryCount] = useState(0);
+  const [embeddedBlocked, setEmbeddedBlocked] = useState(false);
   const [agentStatus, setAgentStatus] = useState("");
   const [contactStatus, setContactStatus] = useState("");
   const [activeContactId, setActiveContactId] = useState("");
@@ -478,6 +485,8 @@ const AmazonConnectCcpPanel = ({
   const awsRegion = region || "us-east-1";
   const approvedOriginScriptCommand = `AWS_PROFILE=nailnew AWS_REGION=${awsRegion} APP_ORIGIN=${approvedOrigin} FORCE_REAPPLY=true ./scripts/aws/ensure-connect-approved-origins.sh`;
   const listApprovedOriginsCommand = `aws connect list-approved-origins --profile nailnew --region ${awsRegion} --instance-id ${instanceId || "<connect-instance-id>"}`;
+  const embeddedEnabledLabel = embeddedEnabled ? "true" : "false";
+  const awsCheckReportPath = "docs/aws-connect-approved-origin-check-2026-07-08.txt";
   const ccpConfigError =
     ccpValidation.error === "missing"
       ? t("callCenter.ccpConfigMissing")
@@ -507,6 +516,7 @@ const AmazonConnectCcpPanel = ({
       containerRef.current.innerHTML = "";
     }
     initializedCcpKeyRef.current = "";
+    attemptedCcpKeyRef.current = "";
   }, []);
 
   const openCcpWindow = useCallback(() => {
@@ -519,6 +529,7 @@ const AmazonConnectCcpPanel = ({
   const showFrameBlockedError = useCallback(
     (details?: string) => {
       setCcpStatus("blocked");
+      setEmbeddedBlocked(true);
       setCcpWarning(t("callCenter.ccpFrameBlocked"));
       setCcpErrorSignature(CCP_FRAME_BLOCKED_ERROR);
       setCcpDebugDetails(details ?? t("callCenter.ccpFrameBlockedDetails", { ccpUrl: ccpValidation.url ?? "" }));
@@ -527,13 +538,19 @@ const AmazonConnectCcpPanel = ({
   );
 
   const retryCcp = useCallback(() => {
+    if (manualRetryCount >= 1) {
+      onDirectRefresh();
+      return;
+    }
     clearCcpContainer();
+    setEmbeddedBlocked(false);
     setCcpStatus("loading");
     setCcpWarning("");
     setCcpDebugDetails("");
     setCcpErrorSignature("");
+    setManualRetryCount((value) => value + 1);
     setRetryNonce((value) => value + 1);
-  }, [clearCcpContainer]);
+  }, [clearCcpContainer, manualRetryCount, onDirectRefresh]);
 
   const matchActiveContact = useCallback(
     async (callerPhone: string | null, amazonConnectContactId: string | null) => {
@@ -576,12 +593,27 @@ const AmazonConnectCcpPanel = ({
       return;
     }
 
+    if (!embeddedEnabled) {
+      clearCcpContainer();
+      setCcpStatus("direct");
+      setCcpWarning("");
+      setCcpDebugDetails("");
+      setCcpErrorSignature("");
+      return;
+    }
+
     if (!ccpValidation.url) {
       clearCcpContainer();
       setCcpStatus("error");
       setCcpWarning(ccpConfigError);
       setCcpDebugDetails(ccpUrl?.trim() || t("common.none"));
       setCcpErrorSignature("");
+      return;
+    }
+
+    if (embeddedBlocked) {
+      clearCcpContainer();
+      setCcpStatus("blocked");
       return;
     }
 
@@ -593,9 +625,10 @@ const AmazonConnectCcpPanel = ({
     let ready = false;
     const validatedCcpUrl = ccpValidation.url;
     const initKey = `${validatedCcpUrl}:${retryNonce}`;
-    if (initializedCcpKeyRef.current === initKey) {
+    if (initializedCcpKeyRef.current === initKey || attemptedCcpKeyRef.current === initKey) {
       return;
     }
+    attemptedCcpKeyRef.current = initKey;
     containerRef.current.innerHTML = "";
     setCcpStatus("loading");
     setCcpWarning("");
@@ -708,6 +741,8 @@ const AmazonConnectCcpPanel = ({
     ccpValidation.url,
     clearCcpContainer,
     enabled,
+    embeddedBlocked,
+    embeddedEnabled,
     matchActiveContact,
     region,
     retryNonce,
@@ -724,9 +759,18 @@ const AmazonConnectCcpPanel = ({
           ? t("callCenter.ccpStatusFrameBlocked")
         : ccpStatus === "error"
           ? t("callCenter.ccpStatusError")
+        : ccpStatus === "direct"
+          ? t("callCenter.ccpStatusDirect")
           : t("callCenter.ccpStatusDisabled");
   const isFrameBlocked = ccpStatus === "blocked";
-  const showDirectCcpFallback = enabled && ccpStatus !== "ready";
+  const showDirectCcpFallback = enabled && (!embeddedEnabled || ccpStatus !== "ready");
+  const directModeBody = !embeddedEnabled
+    ? t("callCenter.directCcpProductionBody")
+    : isFrameBlocked
+      ? t("callCenter.ccpFrameBlocked")
+      : ccpWarning || t("callCenter.directCcpHint");
+  const canRetryEmbedded = embeddedEnabled && manualRetryCount < 1;
+  const showEmbeddedFrame = embeddedEnabled && ccpStatus !== "blocked" && ccpStatus !== "error";
 
   return (
     <article className="card ccp-panel">
@@ -740,24 +784,32 @@ const AmazonConnectCcpPanel = ({
         </span>
       </div>
 
-      <div className="ccp-frame" ref={containerRef}>
-        {!enabled || !ccpValidation.url ? (
-          <div className="ccp-frame-placeholder">
-            <strong>{t("callCenter.softphoneDisabled")}</strong>
-            <span>{ccpConfigError || t("callCenter.softphoneMissingRuntimeInfo")}</span>
-          </div>
-        ) : null}
-      </div>
+      {showEmbeddedFrame ? (
+        <div className="ccp-frame" ref={containerRef}>
+          {!enabled || !ccpValidation.url ? (
+            <div className="ccp-frame-placeholder">
+              <strong>{t("callCenter.softphoneDisabled")}</strong>
+              <span>{ccpConfigError || t("callCenter.softphoneMissingRuntimeInfo")}</span>
+            </div>
+          ) : null}
+        </div>
+      ) : !enabled || !ccpValidation.url ? (
+        <div className="ccp-frame-placeholder direct-placeholder">
+          <strong>{t("callCenter.softphoneDisabled")}</strong>
+          <span>{ccpConfigError || t("callCenter.softphoneMissingRuntimeInfo")}</span>
+        </div>
+      ) : null}
 
       {showDirectCcpFallback ? (
         <div className={isFrameBlocked ? "ccp-help-box direct-mode blocked" : "ccp-help-box direct-mode"}>
           <div className="section-header compact-header">
             <div>
               <strong>{t("callCenter.directCcpTitle")}</strong>
-              <p>{isFrameBlocked ? t("callCenter.ccpFrameBlocked") : ccpWarning || t("callCenter.directCcpHint")}</p>
+              <p>{directModeBody}</p>
             </div>
             <span className="status-pill info">{t("callCenter.directCcpMode")}</span>
           </div>
+          <p className="direct-mode-note">{t("callCenter.directCcpIndependentNote")}</p>
           <p className="muted">{t("callCenter.ccpPollingHint")}</p>
           <div className="ccp-diagnostics">
             <div>
@@ -779,23 +831,31 @@ const AmazonConnectCcpPanel = ({
                 <button type="button" className="button-primary" onClick={openCcpWindow}>
                   {t("callCenter.openConnectCcp")}
                 </button>
-                <button type="button" className="button-secondary" onClick={retryCcp}>
-                  {t("callCenter.retryCcp")}
+                <button type="button" className="button-secondary" onClick={canRetryEmbedded ? retryCcp : onDirectRefresh}>
+                  {canRetryEmbedded ? t("callCenter.retryCcp") : t("callCenter.directRefreshQueue")}
                 </button>
               </>
             ) : null}
           </div>
-          {(ccpDebugDetails || ccpErrorSignature) ? (
-            <details className="ccp-technical-details" open={showTechnicalDetails}>
-              <summary>{t("callCenter.technicalDetails")}</summary>
-              {ccpDebugDetails ? <p>{ccpDebugDetails}</p> : null}
-              {ccpErrorSignature ? <p>{ccpErrorSignature}</p> : null}
-              <p>{t("callCenter.ccpTechnicalCommandIntro")}</p>
-              <pre>{`aws sts get-caller-identity --profile nailnew
+          <details className="ccp-technical-details" open={showTechnicalDetails}>
+            <summary>{t("callCenter.technicalDetails")}</summary>
+            {ccpDebugDetails ? <p>{ccpDebugDetails}</p> : null}
+            {ccpErrorSignature ? <p>{ccpErrorSignature}</p> : null}
+            <div className="ccp-diagnostics">
+              <div>
+                <span>{t("callCenter.ccpEmbeddedEnabled")}</span>
+                <strong>{embeddedEnabledLabel}</strong>
+              </div>
+              <div>
+                <span>{t("callCenter.awsCheckReportPath")}</span>
+                <strong>{awsCheckReportPath}</strong>
+              </div>
+            </div>
+            <p>{t("callCenter.ccpTechnicalCommandIntro")}</p>
+            <pre>{`aws sts get-caller-identity --profile nailnew
 ${listApprovedOriginsCommand}
 ${approvedOriginScriptCommand}`}</pre>
-            </details>
-          ) : null}
+          </details>
         </div>
       ) : null}
 
@@ -871,6 +931,7 @@ export const CallCenterPage = () => {
   });
   const isOwner = session?.user.role === "SALON_OWNER";
   const configuredCcpUrl = import.meta.env.VITE_AMAZON_CONNECT_CCP_URL?.trim();
+  const embeddedCcpEnabled = import.meta.env.VITE_AMAZON_CONNECT_EMBEDDED_CCP_ENABLED === "true";
   const ccpUrl = configuredCcpUrl || runtime?.amazonConnect.ccpUrl || null;
   const targetSalonId = searchParams.get("salonId") ?? "";
   const targetEscalationId = searchParams.get("escalationId") ?? "";
@@ -1141,7 +1202,7 @@ export const CallCenterPage = () => {
       }
     };
 
-    const intervalId = window.setInterval(refreshQueue, 10000);
+    const intervalId = window.setInterval(refreshQueue, ccpEmbeddedReady ? 10000 : 5000);
     return () => window.clearInterval(intervalId);
   }, [ccpEmbeddedReady, isOwner, selectedEscalationId]);
 
@@ -1490,6 +1551,17 @@ export const CallCenterPage = () => {
   const handleEmbeddedReadyChange = useCallback((ready: boolean) => {
     setCcpEmbeddedReady(ready);
   }, []);
+
+  const refreshDirectCcpQueue = useCallback(() => {
+    void loadQueue(true).catch((queueError) => {
+      notify("error", extractErrorMessage(queueError));
+    });
+    if (selectedEscalationId) {
+      void loadEscalationDetail(selectedEscalationId).catch((detailError) => {
+        notify("error", extractErrorMessage(detailError));
+      });
+    }
+  }, [selectedEscalationId]);
 
   const salonTimezone = selectedSalonDetail?.timezone || FALLBACK_SALON_TIMEZONE;
   const todayDateKey = getDateKeyInTimezone(new Date(), salonTimezone);
@@ -2244,9 +2316,11 @@ export const CallCenterPage = () => {
             region={runtime?.amazonConnect.region}
             instanceId={runtime?.amazonConnect.instanceId}
             enabled={amazonConnectRuntimeReady}
+            embeddedEnabled={embeddedCcpEnabled}
             showTechnicalDetails={!isBasicMode}
             onQueueMatch={handleQueueMatch}
             onEmbeddedReadyChange={handleEmbeddedReadyChange}
+            onDirectRefresh={refreshDirectCcpQueue}
           />
 
           <article className="card selected-call-card">

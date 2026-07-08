@@ -1,0 +1,87 @@
+## Date
+Wed Jul  8 13:15:37 UTC 2026
+
+## AWS caller identity
+{
+    "UserId": "AIDAS36IYC6CWTXUH2L5S",
+    "Account": "197452633989",
+    "Arn": "arn:aws:iam::197452633989:user/fastaibooking-codex-deployer"
+}
+
+## Amazon Connect instances in us-east-1
+-----------------------------------------------------------------------------------------------------------------------------------------------------------
+|                                                                      ListInstances                                                                      |
++---------------------------------------------------------------------------------------------------------------------------------------------------------+
+||                                                                  InstanceSummaryList                                                                  ||
+|+------------------------+------------------------------------------------------------------------------------------------------------------------------+|
+||  Arn                   |  arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc                                        ||
+||  CreatedTime           |  2026-04-22T06:20:52-04:00                                                                                                   ||
+||  Id                    |  74f78377-766f-46b7-a745-4bc97b68a8dc                                                                                        ||
+||  IdentityManagementType|  CONNECT_MANAGED                                                                                                             ||
+||  InboundCallsEnabled   |  True                                                                                                                        ||
+||  InstanceAccessUrl     |  https://fastaibooking.my.connect.aws                                                                                        ||
+||  InstanceAlias         |  fastaibooking                                                                                                               ||
+||  InstanceStatus        |  ACTIVE                                                                                                                      ||
+||  OutboundCallsEnabled  |  True                                                                                                                        ||
+||  ServiceRole           |  arn:aws:iam::197452633989:role/aws-service-role/connect.amazonaws.com/AWSServiceRoleForAmazonConnect_jctanKRIFoRoCKpf7v4S   ||
+|+------------------------+------------------------------------------------------------------------------------------------------------------------------+|
+
+## Matching fastaibooking instances
+---------------------------------------------------------------------
+|                           ListInstances                           |
++---------------------------------------+-----------------+---------+
+|  74f78377-766f-46b7-a745-4bc97b68a8dc |  fastaibooking  |  ACTIVE |
++---------------------------------------+-----------------+---------+
+
+## Approved origins for expected instance
+{
+    "Origins": [
+        "http://localhost:5173",
+        "https://app-new-nail.kendemo.com"
+    ]
+}
+
+## Re-apply exact production origin
+Using AWS profile nailnew in region us-east-1
+AWS caller identity:
+  Account: 197452633989
+  ARN: arn:aws:iam::197452633989:user/fastaibooking-codex-deployer
+  UserId: AIDAS36IYC6CWTXUH2L5S
+Finding Amazon Connect instance matching "fastaibooking"...
+Using Amazon Connect instance:
+  Alias: fastaibooking
+  Id: 74f78377-766f-46b7-a745-4bc97b68a8dc
+  Region: us-east-1
+Checking current Approved origins...
+Approved origins before update:
+  - http://localhost:5173
+  - https://app-new-nail.kendemo.com
+FORCE_REAPPLY=true: disassociating exact APP_ORIGIN only: https://app-new-nail.kendemo.com
+Associating Approved origin: https://app-new-nail.kendemo.com
+Already approved: http://localhost:5173
+Approved origins after update:
+  - http://localhost:5173
+  - https://app-new-nail.kendemo.com
+Approved origins table:
+--------------------------------------
+|         ListApprovedOrigins        |
++------------------------------------+
+|  http://localhost:5173             |
+|  https://app-new-nail.kendemo.com  |
++------------------------------------+
+Command summary:
+  AWS_PROFILE=nailnew
+  AWS_REGION=us-east-1
+  AWS_ACCOUNT_ID=197452633989
+  INSTANCE_ALIAS=fastaibooking
+  INSTANCE_ID=74f78377-766f-46b7-a745-4bc97b68a8dc
+  APP_ORIGIN=https://app-new-nail.kendemo.com
+  FORCE_REAPPLY=true
+
+## Approved origins after re-apply
+{
+    "Origins": [
+        "http://localhost:5173",
+        "https://app-new-nail.kendemo.com"
+    ]
+}

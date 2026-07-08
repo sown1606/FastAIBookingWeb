@@ -183,3 +183,12 @@ aws connect list-approved-origins \
   --instance-id "$INSTANCE_ID" \
   --query 'Origins' \
   --output table
+
+printf 'Command summary:\n'
+printf '  AWS_PROFILE=%s\n' "$AWS_PROFILE"
+printf '  AWS_REGION=%s\n' "$AWS_REGION"
+printf '  AWS_ACCOUNT_ID=%s\n' "$AWS_ACCOUNT_ID"
+printf '  INSTANCE_ALIAS=%s\n' "$INSTANCE_ALIAS"
+printf '  INSTANCE_ID=%s\n' "$INSTANCE_ID"
+printf '  APP_ORIGIN=%s\n' "$APP_ORIGIN_NORMALIZED"
+printf '  FORCE_REAPPLY=%s\n' "$FORCE_REAPPLY"

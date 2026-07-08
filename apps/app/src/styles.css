@@ -1652,6 +1652,14 @@ pre {
   color: var(--text);
 }
 
+.ccp-frame-placeholder.direct-placeholder {
+  min-height: 0;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  place-items: start;
+  text-align: left;
+}
+
 .ccp-help-box {
   display: grid;
   gap: 10px;
@@ -1674,6 +1682,15 @@ pre {
 
 .ccp-help-box.direct-mode p {
   margin: 0;
+}
+
+.direct-mode-note {
+  padding: 10px 12px;
+  border: 1px solid rgba(201, 154, 46, 0.24);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--primary-strong);
+  font-weight: 800;
 }
 
 .ccp-help-box .button-secondary {
