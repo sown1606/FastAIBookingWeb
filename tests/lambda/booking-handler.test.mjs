@@ -737,6 +737,48 @@ test("DialogCodeHook voice full set resolves Full Set and asks the next missing 
   }
 });
 
+test("DialogCodeHook canonicalizes stale Lex full-set resolution to Full Set", async () => {
+  const handler = await loadHandler();
+  const staleFullSetName = ["Acr", "ylic ", "Full Set"].join("");
+  globalThis.fetch = async () => {
+    throw new Error("fetch should not be called for local stale service name recovery");
+  };
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "full set",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: "connect-full-set-stale-lex"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          slots: {
+            serviceName: {
+              shape: "Scalar",
+              value: {
+                originalValue: "full set",
+                interpretedValue: staleFullSetName,
+                resolvedValues: [staleFullSetName]
+              }
+            }
+          }
+        }
+      }
+    })
+  );
+
+  assert.equal(response.sessionState.sessionAttributes.serviceName, "Full Set");
+  assert.equal(response.sessionState.sessionAttributes.confirmedServiceName, undefined);
+  assert.equal(response.sessionState.intent.slots.serviceName.value.interpretedValue, "Full Set");
+  assert.notEqual(response.sessionState.dialogAction.slotToElicit, "serviceName");
+});
+
 test("DialogCodeHook maps service DTMF 4 to Full Set and preserves it for name and date turns", async () => {
   const handler = await loadHandler();
   globalThis.fetch = async () => {

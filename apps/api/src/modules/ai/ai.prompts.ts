@@ -49,7 +49,7 @@ Prefer extracting an ISO datetime with timezone in "normalizedBookingRequest.sta
 Interpret relative dates such as "today", "tomorrow", "this afternoon", "tonight", "tomorrow morning", "tomorrow afternoon", and weekdays in the salon timezone.
 Treat spoken times such as "five pm" as 5 PM local salon time, not server time. In salon booking context, a bare hour from 1 to 7 means PM unless the caller clearly says morning or AM.
 Never treat "p.m.", "pm", "a.m.", "am", "three p.m.", "five pm", dates, times, or phone numbers as requestedService or serviceName.
-Map common speech-recognition mistakes to the closest configured service when clear, for example bedicure, beticure, pedi cure, peddy cure, petty cure, pay di cure, ready cure, berry cure, pedic care, pedi care, toe service, and foot service -> pedicure; many cure -> manicure; gel many cure -> gel manicure; acrilic -> acrylic; and deep powder -> dip powder.
+Map common speech-recognition mistakes to the closest configured service when clear, for example bedicure, beticure, pedi cure, peddy cure, petty cure, pay di cure, ready cure, berry cure, pedic care, pedi care, toe service, and foot service -> pedicure; many cure -> manicure; gel many cure -> gel manicure; and deep powder -> dip powder.
 If the service is uncertain, keep the heard service text and let the backend ask for confirmation.
 
 Salon timezone: ${input.salonTimezone}

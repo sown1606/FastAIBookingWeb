@@ -1217,6 +1217,38 @@ test("service DTMF 4 maps to Full Set", async () => {
   assert.equal(state.appointments.length, 0);
 });
 
+test("stale production full-set service row stays Full Set in phone flow", async () => {
+  const fullSetService = state.services.find((service) => service.name === "Full Set");
+  assert.ok(fullSetService);
+  const staleFullSetName = ["Acr", "ylic ", "Full Set"].join("");
+  fullSetService.name = staleFullSetName;
+
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: staleFullSetName,
+      staffPreference: "Trang",
+      confirmationState: undefined,
+      transcript: "my name is Thuyet",
+      attributes: {
+        lastAskedSlot: "customerName",
+        serviceName: staleFullSetName,
+        requestedDate: "2026-05-28",
+        requestedTime: "3 PM",
+        customerPhone: "+18483487681"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedServiceName, "Full Set");
+  assert.match(result.body.data.lexResponse.message, /Just to confirm, Full Set with Trang/i);
+  assert.doesNotMatch(result.body.data.lexResponse.message, new RegExp(staleFullSetName, "i"));
+  assert.equal(state.bookingAttempts.at(-1)?.requestedService, "Full Set");
+  assert.equal((state.bookingAttempts.at(-1)?.normalizedRequest as any)?.serviceName, "Full Set");
+});
+
 test("after service DTMF 4, name and date turns keep Full Set", async () => {
   const first = await postInternalAppointment(
     bookingPayload({

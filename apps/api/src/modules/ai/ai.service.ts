@@ -417,9 +417,26 @@ const normalizeForMatch = (value?: string | null): string => {
 
 const compactForMatch = (value?: string | null): string => normalizeForMatch(value).replace(/\s/g, "");
 
+const getCustomerFacingServiceName = (serviceName?: string | null): string | undefined => {
+  const trimmed = serviceName?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  const compact = compactForMatch(trimmed);
+  if (compact === "fullset" || compact.endsWith("fullset")) {
+    return "Full Set";
+  }
+  return trimmed;
+};
+
 const getStaticServiceAliasPhrases = (serviceName: string): string[] => {
   const normalized = normalizeForMatch(serviceName);
+  const customerFacingName = getCustomerFacingServiceName(serviceName);
   const aliases = new Set<string>([serviceName, normalized]);
+  if (customerFacingName) {
+    aliases.add(customerFacingName);
+    aliases.add(normalizeForMatch(customerFacingName));
+  }
   Object.entries(SERVICE_ALIASES).forEach(([canonical, phrases]) => {
     const normalizedCanonical = normalizeForMatch(canonical);
     if (normalized === normalizedCanonical || normalized.includes(normalizedCanonical)) {
@@ -438,12 +455,13 @@ const findConfiguredServiceNameInText = (
     return undefined;
   }
 
-  return serviceNames.find((serviceName) =>
+  const matchedServiceName = serviceNames.find((serviceName) =>
     getStaticServiceAliasPhrases(serviceName).some((phrase) => {
       const compact = compactForMatch(phrase);
       return compact.length >= 3 && normalizedText.includes(compact);
     })
   );
+  return getCustomerFacingServiceName(matchedServiceName);
 };
 
 const extractCustomerNameFromText = (text?: string): string | undefined => {
@@ -1281,8 +1299,8 @@ const sanitizeParsedIntentForConfiguredData = async (
   if (serviceValue) {
     const serviceMatch = await resolveServiceMatch(salonId, serviceValue);
     if (serviceMatch && (serviceMatch.exact || serviceMatch.matchedBy === "alias")) {
-      requestedService = serviceMatch.service.name;
-      nextNormalizedRequest.serviceName = serviceMatch.service.name;
+      requestedService = getCustomerFacingServiceName(serviceMatch.service.name);
+      nextNormalizedRequest.serviceName = requestedService;
     }
   } else if (nextNormalizedRequest.serviceName || intent.requestedService) {
     requestedService = undefined;
@@ -2697,7 +2715,7 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
       : rawServiceName;
   const serviceName =
     serviceCandidate && !isClearlyInvalidServiceName(serviceCandidate)
-      ? serviceCandidate
+      ? getCustomerFacingServiceName(serviceCandidate)
       : undefined;
   const requestedDate =
     asTrimmedString(input.requestedDate) ??
@@ -2892,9 +2910,16 @@ const buildStaffPromptSessionAttributes = (staff: StaffCandidate[]): Record<stri
 };
 
 const getServicePromptNames = (serviceNames: string[]): string[] => {
-  const available = new Set(serviceNames.map((name) => normalizeForMatch(name)));
+  const customerFacingNames = Array.from(
+    new Set(
+      serviceNames
+        .map((name) => getCustomerFacingServiceName(name))
+        .filter((name): name is string => Boolean(name))
+    )
+  );
+  const available = new Set(customerFacingNames.map((name) => normalizeForMatch(name)));
   const demoNames = DEMO_SERVICE_NAMES.filter((name) => available.has(normalizeForMatch(name)));
-  return demoNames.length === DEMO_SERVICE_NAMES.length ? demoNames : serviceNames.slice(0, 5);
+  return demoNames.length === DEMO_SERVICE_NAMES.length ? demoNames : customerFacingNames.slice(0, 5);
 };
 
 const formatLocalTimeForSpeech = (value: Date | string, timezone: string): string => {
@@ -2966,7 +2991,7 @@ const formatUpcomingAppointmentForSpeech = (
   appointment: UpcomingAppointmentCandidate,
   timezone: string
 ): string => {
-  const service = appointment.service.name.toLowerCase();
+  const service = (getCustomerFacingServiceName(appointment.service.name) ?? appointment.service.name).toLowerCase();
   const time = formatLocalDateTimeForSpeech(appointment.startTime, timezone);
   return `${service} with ${appointment.staff.fullName} ${time}`;
 };
@@ -3407,8 +3432,10 @@ export const createAmazonConnectAIAppointment = async (
     asTrimmedString(activeBookingAttempt?.customerPhone ?? undefined) ??
     readStringAttribute(activeNormalizedRequest, ["customerPhone"]);
   normalized.serviceName ??=
-    asTrimmedString(activeBookingAttempt?.requestedService ?? undefined) ??
-    readStringAttribute(activeNormalizedRequest, ["serviceName", "suggestedServiceName"]);
+    getCustomerFacingServiceName(activeBookingAttempt?.requestedService ?? undefined) ??
+    getCustomerFacingServiceName(
+      readStringAttribute(activeNormalizedRequest, ["serviceName", "suggestedServiceName"])
+    );
   normalized.staffPreference ??=
     asTrimmedString(activeBookingAttempt?.requestedStaff ?? undefined) ??
     readStringAttribute(activeNormalizedRequest, ["staffPreference", "staffName"]);
@@ -3495,7 +3522,7 @@ export const createAmazonConnectAIAppointment = async (
   if (!normalized.serviceName && normalized.transcriptText) {
     const serviceMention = await findServiceMentionInText(salon.id, normalized.transcriptText);
     if (serviceMention) {
-      normalized.serviceName = serviceMention.service.name;
+      normalized.serviceName = getCustomerFacingServiceName(serviceMention.service.name);
     }
   }
 
@@ -4313,9 +4340,10 @@ export const createAmazonConnectAIAppointment = async (
       select: { name: true },
       orderBy: { createdAt: "asc" }
     });
+    const suggestedServiceName = getCustomerFacingServiceName(serviceMatch.service.name);
     const message = buildServiceClarificationMessage({
       heardServiceName: normalized.serviceName!,
-      suggestedServiceName: serviceMatch.service.name,
+      suggestedServiceName,
       availableServiceNames: services.map((service) => service.name),
       attempts
     });
@@ -4335,7 +4363,8 @@ export const createAmazonConnectAIAppointment = async (
       failureReason: "Service confirmation required.",
       normalizedRequest: {
         serviceName: normalized.serviceName,
-        suggestedServiceName: serviceMatch.service.name,
+        suggestedServiceName,
+        matchedServiceRecordName: serviceMatch.service.name,
         serviceMatchConfidence: serviceMatch.confidence,
         serviceMatchStrategy: serviceMatch.matchedBy,
         startTimeIso: requestedStartTime.toISOString(),
@@ -4349,7 +4378,8 @@ export const createAmazonConnectAIAppointment = async (
       bookingAttemptId: bookingAttempt.id,
       responsePayload: {
         serviceName: normalized.serviceName,
-        suggestedServiceName: serviceMatch.service.name,
+        suggestedServiceName,
+        matchedServiceRecordName: serviceMatch.service.name,
         serviceMatchConfidence: serviceMatch.confidence,
         serviceMatchStrategy: serviceMatch.matchedBy,
         attempts: attempts + 1,
@@ -4378,7 +4408,7 @@ export const createAmazonConnectAIAppointment = async (
           slotToElicit: "serviceName"
         },
         sessionAttributes: buildKnownSessionAttributes({
-          serviceSuggestionName: serviceMatch.service.name,
+          serviceSuggestionName: suggestedServiceName,
           serviceClarificationAttempts: String(attempts + 1),
           lastAskedSlot: "serviceName",
           askedSlotsCount: String(attempts + 1),
@@ -4490,7 +4520,8 @@ export const createAmazonConnectAIAppointment = async (
   }
 
   const service = serviceMatch.service;
-  normalized.serviceName = service.name;
+  const callerServiceName = getCustomerFacingServiceName(service.name) ?? service.name;
+  normalized.serviceName = callerServiceName;
 
   staffResolution =
     staffResolution.rawStaffPreference === normalized.staffPreference
@@ -4509,7 +4540,7 @@ export const createAmazonConnectAIAppointment = async (
       intentType: "BOOK_APPOINTMENT",
       customerName: normalized.customerName,
       customerPhone: normalized.customerPhone,
-      serviceName: service.name,
+      serviceName: callerServiceName,
       staffPreference: staffResolution.rawStaffPreference,
       requestedDateTime: requestedStartTime.toISOString(),
       missingFields: ["staffPreference"],
@@ -4521,7 +4552,8 @@ export const createAmazonConnectAIAppointment = async (
       failureReason: "Staff preference matched multiple active bookable staff.",
       normalizedRequest: {
         serviceId: service.id,
-        serviceName: service.name,
+        serviceName: callerServiceName,
+        serviceRecordName: service.name,
         staffPreference: staffResolution.rawStaffPreference,
         ambiguousStaffNames: staffResolution.ambiguousStaffNames,
         startTimeIso: requestedStartTime.toISOString(),
@@ -4737,7 +4769,7 @@ export const createAmazonConnectAIAppointment = async (
       intentType: "BOOK_APPOINTMENT",
       customerName: normalized.customerName,
       customerPhone: normalized.customerPhone,
-      serviceName: service.name,
+      serviceName: callerServiceName,
       staffPreference: chosenStaff.fullName,
       requestedDateTime: requestedStartTime.toISOString(),
       missingFields: [],
@@ -4750,7 +4782,8 @@ export const createAmazonConnectAIAppointment = async (
       normalizedRequest: {
         serviceId: service.id,
         staffId: chosenStaff.id,
-        serviceName: service.name,
+        serviceName: callerServiceName,
+        serviceRecordName: service.name,
         staffName: chosenStaff.fullName,
         startTimeIso: requestedStartTime.toISOString(),
         timezone: salon.timezone
@@ -4807,7 +4840,7 @@ export const createAmazonConnectAIAppointment = async (
 
   if (!isConfirmationAccepted(normalized.confirmationState)) {
     const message = buildBookingConfirmationMessage({
-      serviceName: service.name,
+      serviceName: callerServiceName,
       appointmentStartTime: requestedStartTime,
       salonTimezone: salon.timezone,
       staffName: chosenStaff.fullName,
@@ -4817,7 +4850,7 @@ export const createAmazonConnectAIAppointment = async (
       intentType: "BOOK_APPOINTMENT",
       customerName: normalized.customerName,
       customerPhone: normalized.customerPhone,
-      serviceName: service.name,
+      serviceName: callerServiceName,
       staffPreference: chosenStaff.fullName,
       requestedDateTime: requestedStartTime.toISOString(),
       missingFields: [],
@@ -4830,7 +4863,8 @@ export const createAmazonConnectAIAppointment = async (
       normalizedRequest: {
         serviceId: service.id,
         staffId: chosenStaff.id,
-        serviceName: service.name,
+        serviceName: callerServiceName,
+        serviceRecordName: service.name,
         staffName: chosenStaff.fullName,
         startTimeIso: requestedStartTime.toISOString(),
         timezone: salon.timezone
@@ -4997,14 +5031,14 @@ export const createAmazonConnectAIAppointment = async (
         outcome: "BOOKED",
         appointmentStartTime: requestedStartTime,
         salonTimezone: salon.timezone,
-        serviceName: service.name,
+        serviceName: callerServiceName,
         staffName: chosenStaff.fullName
       });
       const parsed = buildInternalParsedIntent({
         intentType: "BOOK_APPOINTMENT",
         customerName: normalized.customerName,
         customerPhone: normalized.customerPhone,
-        serviceName: service.name,
+        serviceName: callerServiceName,
         staffPreference: chosenStaff.fullName,
         requestedDateTime: requestedStartTime.toISOString(),
         missingFields: [],
@@ -5079,14 +5113,14 @@ export const createAmazonConnectAIAppointment = async (
     outcome: "BOOKED",
     appointmentStartTime: requestedStartTime,
     salonTimezone: salon.timezone,
-    serviceName: service.name,
+    serviceName: callerServiceName,
     staffName: chosenStaff.fullName
   });
   const parsed = buildInternalParsedIntent({
     intentType: "BOOK_APPOINTMENT",
     customerName: normalized.customerName,
     customerPhone: normalized.customerPhone,
-    serviceName: service.name,
+    serviceName: callerServiceName,
     staffPreference: chosenStaff.fullName,
     requestedDateTime: requestedStartTime.toISOString(),
     missingFields: [],

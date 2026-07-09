@@ -179,8 +179,8 @@ const KNOWN_KIET_PHONE_DIGITS = new Set(["7325956266", "17325956266"]);
 const WAIT_PROMPTS = {
   customer_lookup: "Please wait a moment while I pull up your information.",
   service_lookup: "Please wait a moment while I check our services.",
-  staff_lookup: "Please wait a moment while I find the available staff.",
-  staff_dtmf_options: "Please wait a moment while I find the available staff.",
+  staff_lookup: "Please wait a moment while I check available staff.",
+  staff_dtmf_options: "Please wait a moment while I check available staff.",
   availability_lookup: "Please give me a moment while I check availability.",
   appointment_creation: "Please wait while I create your appointment.",
   appointment_update: "Please wait while I look up your appointment.",
@@ -1652,11 +1652,19 @@ function getCallOrSessionIdFromPayload(payload = {}) {
 function logApiWaitCoverage(payload, coverage, startedAt, result) {
   const durationMs = Date.now() - startedAt;
   const success = Boolean(result?.ok);
+  const resultPayload = extractResultPayload(result);
   const logPayload = {
     operationName: coverage.operationName,
     waitPrompt: coverage.waitPrompt,
     mechanism: coverage.mechanism || "Lex fulfillment update / Lambda timeout guard",
+    durationMs,
     apiDurationMs: durationMs,
+    contactId: payload.amazonConnectContactId || payload.attributes?.AmazonConnectContactId,
+    sessionId: payload.callSessionId,
+    salonId: payload.salonId,
+    serviceName: payload.serviceName || payload.attributes?.serviceName,
+    lastAskedSlot: payload.attributes?.lastAskedSlot,
+    outcome: resultPayload.outcome,
     success,
     failureCode: success ? undefined : result?.code,
     callOrSessionId: getCallOrSessionIdFromPayload(payload)

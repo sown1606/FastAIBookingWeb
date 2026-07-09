@@ -175,17 +175,32 @@ aiInternalRouter.post(
       typeof payload.attributes?.["AmazonConnectContactId"] === "string"
         ? payload.attributes["AmazonConnectContactId"]
         : undefined;
+    const lastAskedSlot =
+      typeof payload.attributes?.["lastAskedSlot"] === "string"
+        ? payload.attributes["lastAskedSlot"]
+        : null;
     const logWaitCoverage = (input: {
       success: boolean;
       outcome?: string;
       reason?: string;
     }) => {
+      const durationMs = Date.now() - startedAt;
       logger.info(
         {
           requestId: req.requestId,
           operationName: waitOperation ?? payload.intentName ?? "internal_ai_appointment",
           waitPrompt: waitPrompt ?? null,
-          apiDurationMs: Date.now() - startedAt,
+          durationMs,
+          apiDurationMs: durationMs,
+          contactId:
+            payload.amazonConnectContactId ??
+            payload.contactId ??
+            amazonConnectContactIdAttribute ??
+            null,
+          sessionId: payload.callSessionId ?? null,
+          salonId: payload.salonId ?? null,
+          serviceName: payload.serviceName ?? payload.service ?? null,
+          lastAskedSlot,
           success: input.success,
           outcome: input.outcome,
           failureReason: input.reason,

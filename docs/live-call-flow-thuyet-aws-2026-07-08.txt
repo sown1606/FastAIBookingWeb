@@ -1,0 +1,599 @@
+## Date
+Thu Jul  9 01:44:30 UTC 2026
+
+## AWS caller identity
+{
+    "UserId": "AIDAS36IYC6CWTXUH2L5S",
+    "Account": "197452633989",
+    "Arn": "arn:aws:iam::197452633989:user/fastaibooking-codex-deployer"
+}
+
+## Connect instance
+-----------------------------------------------------------------------------------------------------------------------------------------------------------
+|                                                                      ListInstances                                                                      |
++---------------------------------------------------------------------------------------------------------------------------------------------------------+
+||                                                                  InstanceSummaryList                                                                  ||
+|+------------------------+------------------------------------------------------------------------------------------------------------------------------+|
+||  Arn                   |  arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc                                        ||
+||  CreatedTime           |  2026-04-22T06:20:52-04:00                                                                                                   ||
+||  Id                    |  74f78377-766f-46b7-a745-4bc97b68a8dc                                                                                        ||
+||  IdentityManagementType|  CONNECT_MANAGED                                                                                                             ||
+||  InboundCallsEnabled   |  True                                                                                                                        ||
+||  InstanceAccessUrl     |  https://fastaibooking.my.connect.aws                                                                                        ||
+||  InstanceAlias         |  fastaibooking                                                                                                               ||
+||  InstanceStatus        |  ACTIVE                                                                                                                      ||
+||  OutboundCallsEnabled  |  True                                                                                                                        ||
+||  ServiceRole           |  arn:aws:iam::197452633989:role/aws-service-role/connect.amazonaws.com/AWSServiceRoleForAmazonConnect_jctanKRIFoRoCKpf7v4S   ||
+|+------------------------+------------------------------------------------------------------------------------------------------------------------------+|
+
+## Connect phone numbers
+{
+    "ListPhoneNumbersSummaryList": [
+        {
+            "PhoneNumberId": "f2e36faa-5264-4955-8a18-e2f53755c102",
+            "PhoneNumberArn": "arn:aws:connect:us-east-1:197452633989:phone-number/f2e36faa-5264-4955-8a18-e2f53755c102",
+            "PhoneNumber": "+18483487681",
+            "PhoneNumberCountryCode": "US",
+            "PhoneNumberType": "DID",
+            "TargetArn": "arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc",
+            "InstanceId": "74f78377-766f-46b7-a745-4bc97b68a8dc",
+            "PhoneNumberDescription": ""
+        }
+    ]
+}
+
+## Contact flows
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+|                                                                                                                                         ListContactFlows                                                                                                                                          |
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+||                                                                                                                                     ContactFlowSummaryList                                                                                                                                      ||
+|+-----------------------------------------------------------------------------------------------------------------------------------------+-------------------+--------------------+-------------------+---------------------------------------+--------------------------------------------------+|
+||                                                                   Arn                                                                   | ContactFlowState  | ContactFlowStatus  |  ContactFlowType  |                  Id                   |                      Name                        ||
+|+-----------------------------------------------------------------------------------------------------------------------------------------+-------------------+--------------------+-------------------+---------------------------------------+--------------------------------------------------+|
+||  arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/contact-flow/d53742ce-51d3-4c1a-bb45-65f1728f4ba7 |  ACTIVE           |  PUBLISHED         |  AGENT_HOLD       |  d53742ce-51d3-4c1a-bb45-65f1728f4ba7 |  Default agent hold                              ||
+||  arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/contact-flow/daa271f5-c53f-406b-bc96-05a6ea7b62fa |  ACTIVE           |  PUBLISHED         |  AGENT_TRANSFER   |  daa271f5-c53f-406b-bc96-05a6ea7b62fa |  Default agent transfer                          ||
+||  arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/contact-flow/f50cb467-d035-468e-970c-faa2e7e543fa |  ACTIVE           |  PUBLISHED         |  AGENT_WHISPER    |  f50cb467-d035-468e-970c-faa2e7e543fa |  Default agent whisper                           ||
+||  arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/contact-flow/85b3b4e3-0969-4be5-8f36-b4f7dcaa9134 |  ACTIVE           |  PUBLISHED         |  CONTACT_FLOW     |  85b3b4e3-0969-4be5-8f36-b4f7dcaa9134 |  Sample after contact work flow                  ||
+||  arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/contact-flow/c53b416b-5082-4842-93bf-b6ffb2333716 |  ACTIVE           |  PUBLISHED         |  CONTACT_FLOW     |  c53b416b-5082-4842-93bf-b6ffb2333716 |  Sample AB test                                  ||
+||  arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/contact-flow/69f775a8-e802-4f03-bff0-b7669b7a39f4 |  ACTIVE           |  PUBLISHED         |  CONTACT_FLOW     |  69f775a8-e802-4f03-bff0-b7669b7a39f4 |  Sample disconnect flow                          ||
+||  arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/contact-flow/429a6b55-bfe2-48b2-a889-f0a65dbee4d0 |  ACTIVE           |  PUBLISHED         |  CONTACT_FLOW     |  429a6b55-bfe2-48b2-a889-f0a65dbee4d0 |  Sample inbound flow (first contact experience)  ||
+||  arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/contact-flow/44568184-3796-4c55-ae5b-47251f04407c |  ACTIVE           |  PUBLISHED         |  CONTACT_FLOW     |  44568184-3796-4c55-ae5b-47251f04407c |  Sample queue configurations flow                ||
+||  arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/contact-flow/31e51783-271f-449b-bb28-c2527a39d234 |  ACTIVE           |  PUBLISHED         |  CONTACT_FLOW     |  31e51783-271f-449b-bb28-c2527a39d234 |  Sample note for screenpop                       ||
+||  arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/contact-flow/bb36915b-0744-4e28-8645-c7363421885a |  ACTIVE           |  PUBLISHED         |  CONTACT_FLOW     |  bb36915b-0744-4e28-8645-c7363421885a |  Sample recording behavior                       ||
+||  arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/contact-flow/dcccf542-587c-426c-a644-a4c6f24da6e4 |  ACTIVE           |  PUBLISHED         |  CONTACT_FLOW     |  dcccf542-587c-426c-a644-a4c6f24da6e4 |  FastAIBooking AI Reception                      ||
+||  arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/contact-flow/5374c2a0-0d0d-4fbf-862a-b2fd37933786 |  ACTIVE           |  PUBLISHED         |  CONTACT_FLOW     |  5374c2a0-0d0d-4fbf-862a-b2fd37933786 |  Sample Lambda integration                       ||
+||  arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/contact-flow/c7386b94-56bb-4382-b517-ee890bbacb51 |  ACTIVE           |  PUBLISHED         |  CONTACT_FLOW     |  c7386b94-56bb-4382-b517-ee890bbacb51 |  FastAIBooking Human Escalation                  ||
+||  arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/contact-flow/bbb0a9a2-72fa-4df7-a4a6-c7209c9eb78b |  ACTIVE           |  PUBLISHED         |  CONTACT_FLOW     |  bbb0a9a2-72fa-4df7-a4a6-c7209c9eb78b |  Sample queue customer                           ||
+||  arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/contact-flow/237f1338-2907-43c3-8b76-6f46e2f6f903 |  ACTIVE           |  PUBLISHED         |  CONTACT_FLOW     |  237f1338-2907-43c3-8b76-6f46e2f6f903 |  Sample secure input with no agent               ||
+||  arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/contact-flow/e916435f-2d98-4ae6-8e51-f6aae3468caa |  ACTIVE           |  PUBLISHED         |  CUSTOMER_HOLD    |  e916435f-2d98-4ae6-8e51-f6aae3468caa |  Default customer hold                           ||
+||  arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/contact-flow/bb15c098-3eee-4b66-9e00-9e1655ccd2f1 |  ACTIVE           |  PUBLISHED         |  CUSTOMER_QUEUE   |  bb15c098-3eee-4b66-9e00-9e1655ccd2f1 |  Sample interruptible queue flow with callback   ||
+||  arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/contact-flow/6bdf546e-4e3a-4bf5-954f-fb78fa6a3d5b |  ACTIVE           |  PUBLISHED         |  CUSTOMER_QUEUE   |  6bdf546e-4e3a-4bf5-954f-fb78fa6a3d5b |  Default customer queue                          ||
+||  arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/contact-flow/2b117c18-6283-4606-a3f8-d3ff9820c4b0 |  ACTIVE           |  PUBLISHED         |  CUSTOMER_WHISPER |  2b117c18-6283-4606-a3f8-d3ff9820c4b0 |  Default customer whisper                        ||
+||  arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/contact-flow/20641217-423d-487d-ae62-10504ca3d8bb |  ACTIVE           |  PUBLISHED         |  OUTBOUND_WHISPER |  20641217-423d-487d-ae62-10504ca3d8bb |  Default outbound                                ||
+||  arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/contact-flow/9b0ecf0a-3844-462f-968d-41cae28d175c |  ACTIVE           |  PUBLISHED         |  QUEUE_TRANSFER   |  9b0ecf0a-3844-462f-968d-41cae28d175c |  Sample secure input with agent                  ||
+||  arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/contact-flow/271766dc-095d-4271-9376-c4c20d757256 |  ACTIVE           |  PUBLISHED         |  QUEUE_TRANSFER   |  271766dc-095d-4271-9376-c4c20d757256 |  Default queue transfer                          ||
+|+-----------------------------------------------------------------------------------------------------------------------------------------+-------------------+--------------------+-------------------+---------------------------------------+--------------------------------------------------+|
+
+## AI Reception contact flow
+{
+    "ContactFlow": {
+        "Arn": "arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/contact-flow/dcccf542-587c-426c-a644-a4c6f24da6e4",
+        "Id": "dcccf542-587c-426c-a644-a4c6f24da6e4",
+        "Name": "FastAIBooking AI Reception",
+        "Type": "CONTACT_FLOW",
+        "State": "ACTIVE",
+        "Status": "PUBLISHED",
+        "Description": "",
+        "Content": "{\n  \"Version\": \"2019-10-30\",\n  \"StartAction\": \"f06e4017-1de8-4fbd-a42a-ae434ddca6bf\",\n  \"Metadata\": {\n    \"entryPointPosition\": {\n      \"x\": 40,\n      \"y\": 40\n    },\n    \"ActionMetadata\": {\n      \"ef8d8054-77ea-40c7-aa4e-800ed784c49c\": {\n        \"position\": {\n          \"x\": 560,\n          \"y\": 520\n        }\n      },\n      \"1fd541b5-7764-41c5-870f-9017436dd5c6\": {\n        \"position\": {\n          \"x\": 279.2,\n          \"y\": 259.2\n        }\n      },\n      \"f06e4017-1de8-4fbd-a42a-ae434ddca6bf\": {\n        \"position\": {\n          \"x\": 280,\n          \"y\": 0\n        },\n        \"parameters\": {\n          \"TextToSpeechVoice\": {\n            \"languageCode\": \"en-US\"\n          }\n        },\n        \"overrideConsoleVoice\": false\n      },\n      \"67ada978-600a-4d39-9965-6230c52810a9\": {\n        \"position\": {\n          \"x\": 560,\n          \"y\": 0\n        }\n      },\n      \"15ce8184-4651-4d56-901b-1a789a2e572e\": {\n        \"position\": {\n          \"x\": 1062.4,\n          \"y\": 297.6\n        },\n        \"parameters\": {\n          \"QueueId\": {\n            \"displayName\": \"FastAIBooking Operator Queue\"\n          }\n        },\n        \"queue\": {\n          \"text\": \"FastAIBooking Operator Queue\"\n        }\n      },\n      \"3b2877ca-bc16-4019-a8e6-04200c0ded06\": {\n        \"position\": {\n          \"x\": 780,\n          \"y\": 260\n        },\n        \"parameters\": {\n          \"LexV2Bot\": {\n            \"AliasArn\": {\n              \"displayName\": \"prod\",\n              \"useLexBotDropdown\": true,\n              \"lexV2BotName\": \"FastAIBookingBot\"\n            }\n          },\n          \"Text\": \"How can I help with your appointment today?\"\n        },\n        \"promptName\": \"Text prompt\",\n        \"useLexBotDropdown\": true,\n        \"lexV2BotName\": \"FastAIBookingBot\",\n        \"lexV2BotAliasName\": \"prod\",\n        \"conditionMetadata\": [\n          {\n            \"id\": \"ae6a2c86-11d4-478e-b067-5e6dbb22657c\",\n            \"operator\": {\n              \"name\": \"Equals\",\n              \"value\": \"Equals\",\n              \"shortDisplay\": \"=\"\n            },\n            \"value\": \"BookAppointmentIntent\"\n          },\n          {\n            \"id\": \"b8657d31-ce5a-400e-b346-a86622feae5a\",\n            \"operator\": {\n              \"name\": \"Equals\",\n              \"value\": \"Equals\",\n              \"shortDisplay\": \"=\"\n            },\n            \"value\": \"HumanEscalationIntent\"\n          }\n        ]\n      },\n      \"05553b55-f227-4c66-b391-a3e068b01966\": {\n        \"position\": {\n          \"x\": 560,\n          \"y\": 260\n        }\n      },\n      \"6fbf4310-c8c6-44a8-a8f5-1d7830974c4d\": {\n        \"position\": {\n          \"x\": 276,\n          \"y\": 760\n        },\n        \"parameters\": {\n          \"LexV2Bot\": {\n            \"AliasArn\": {\n              \"displayName\": \"prod\",\n              \"useLexBotDropdown\": true,\n              \"lexV2BotName\": \"FastAIBookingBot\"\n            }\n          },\n          \"Text\": \"Please tell me the appointment you want, or say operator.\"\n        },\n        \"promptName\": \"Text prompt\",\n        \"useLexBotDropdown\": true,\n        \"lexV2BotName\": \"FastAIBookingBot\",\n        \"lexV2BotAliasName\": \"prod\",\n        \"conditionMetadata\": [\n          {\n            \"id\": \"3a871ecc-9219-45d0-b343-3892e5cf9e55\",\n            \"operator\": {\n              \"name\": \"Equals\",\n              \"value\": \"Equals\",\n              \"shortDisplay\": \"=\"\n            },\n            \"value\": \"BookAppointmentIntent\"\n          },\n          {\n            \"id\": \"3a14af55-003a-4668-a8a2-d2e3a4d99634\",\n            \"operator\": {\n              \"name\": \"Equals\",\n              \"value\": \"Equals\",\n              \"shortDisplay\": \"=\"\n            },\n            \"value\": \"HumanEscalationIntent\"\n          }\n        ]\n      },\n      \"41e3f239-5b57-4363-92fc-9d594579fa98\": {\n        \"position\": {\n          \"x\": 800,\n          \"y\": 620\n        }\n      },\n      \"37dbed23-a7c0-4259-a4f5-9be9db2f9c80\": {\n        \"position\": {\n          \"x\": 1060,\n          \"y\": 520\n        }\n      },\n      \"ai-greeting-prompt\": {\n        \"position\": {\n          \"x\": 520,\n          \"y\": 260\n        }\n      },\n      \"check-transfer-to-queue\": {\n        \"position\": {\n          \"x\": 760,\n          \"y\": 260\n        }\n      },\n      \"transfer-human-escalation-flow\": {\n        \"position\": {\n          \"x\": 1040,\n          \"y\": 160\n        }\n      },\n      \"check-kiet-known-caller\": {\n        \"position\": {\n          \"x\": 420,\n          \"y\": 180\n        }\n      },\n      \"set-kiet-known-customer\": {\n        \"position\": {\n          \"x\": 620,\n          \"y\": 120\n        }\n      },\n      \"kiet-known-caller-greeting-prompt\": {\n        \"position\": {\n          \"x\": 760,\n          \"y\": 120\n        }\n      }\n    },\n    \"Annotations\": []\n  },\n  \"Actions\": [\n    {\n      \"Parameters\": {},\n      \"Identifier\": \"ef8d8054-77ea-40c7-aa4e-800ed784c49c\",\n      \"Type\": \"DisconnectParticipant\",\n      \"Transitions\": {}\n    },\n    {\n      \"Parameters\": {},\n      \"Identifier\": \"1fd541b5-7764-41c5-870f-9017436dd5c6\",\n      \"Type\": \"TransferContactToQueue\",\n      \"Transitions\": {\n        \"NextAction\": \"ef8d8054-77ea-40c7-aa4e-800ed784c49c\",\n        \"Errors\": [\n          {\n            \"NextAction\": \"37dbed23-a7c0-4259-a4f5-9be9db2f9c80\",\n            \"ErrorType\": \"QueueAtCapacity\"\n          },\n          {\n            \"NextAction\": \"37dbed23-a7c0-4259-a4f5-9be9db2f9c80\",\n            \"ErrorType\": \"NoMatchingError\"\n          }\n        ]\n      }\n    },\n    {\n      \"Parameters\": {\n        \"TextToSpeechVoice\": \"Joanna\"\n      },\n      \"Identifier\": \"f06e4017-1de8-4fbd-a42a-ae434ddca6bf\",\n      \"Type\": \"UpdateContactTextToSpeechVoice\",\n      \"Transitions\": {\n        \"NextAction\": \"set-fastaibooking-runtime-attrs\",\n        \"Errors\": [\n          {\n            \"NextAction\": \"set-fastaibooking-runtime-attrs\",\n            \"ErrorType\": \"NoMatchingError\"\n          }\n        ]\n      }\n    },\n    {\n      \"Parameters\": {\n        \"SkipWhenDTMFBufferEnabled\": \"false\",\n        \"Text\": \"Thank you for calling Kiet Nails & Beauty. Goodbye.\"\n      },\n      \"Identifier\": \"67ada978-600a-4d39-9965-6230c52810a9\",\n      \"Type\": \"MessageParticipant\",\n      \"Transitions\": {\n        \"NextAction\": \"ef8d8054-77ea-40c7-aa4e-800ed784c49c\",\n        \"Errors\": [\n          {\n            \"NextAction\": \"ef8d8054-77ea-40c7-aa4e-800ed784c49c\",\n            \"ErrorType\": \"NoMatchingError\"\n          }\n        ]\n      }\n    },\n    {\n      \"Parameters\": {\n        \"QueueId\": \"arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/queue/d0f2a5d8-e983-4609-9bbc-efb0881a465d\"\n      },\n      \"Identifier\": \"15ce8184-4651-4d56-901b-1a789a2e572e\",\n      \"Type\": \"UpdateContactTargetQueue\",\n      \"Transitions\": {\n        \"NextAction\": \"1fd541b5-7764-41c5-870f-9017436dd5c6\",\n        \"Errors\": [\n          {\n            \"NextAction\": \"37dbed23-a7c0-4259-a4f5-9be9db2f9c80\",\n            \"ErrorType\": \"NoMatchingError\"\n          }\n        ]\n      }\n    },\n    {\n      \"Parameters\": {\n        \"LexV2Bot\": {\n          \"AliasArn\": \"arn:aws:lex:us-east-1:197452633989:bot-alias/KHMIXGA2US/JVIPIZDYE3\"\n        },\n        \"LexSessionAttributes\": {\n          \"provider\": \"AMAZON_CONNECT\",\n          \"callerPhone\": \"$.CustomerEndpoint.Address\",\n          \"CustomerEndpointAddress\": \"$.CustomerEndpoint.Address\",\n          \"CallerId\": \"$.CustomerEndpoint.Address\",\n          \"calledNumber\": \"$.SystemEndpoint.Address\",\n          \"CalledNumber\": \"$.SystemEndpoint.Address\",\n          \"SystemEndpointAddress\": \"$.SystemEndpoint.Address\",\n          \"contactId\": \"$.ContactId\",\n          \"ContactId\": \"$.ContactId\",\n          \"AmazonConnectContactId\": \"$.ContactId\",\n          \"InitialContactId\": \"$.InitialContactId\"\n        },\n        \"Text\": \"Hi, thanks for calling. I can help book your appointment. What service would you like today?\"\n      },\n      \"Identifier\": \"3b2877ca-bc16-4019-a8e6-04200c0ded06\",\n      \"Type\": \"ConnectParticipantWithLexBot\",\n      \"Transitions\": {\n        \"NextAction\": \"05553b55-f227-4c66-b391-a3e068b01966\",\n        \"Conditions\": [\n          {\n            \"NextAction\": \"check-transfer-to-queue\",\n            \"Condition\": {\n              \"Operator\": \"Equals\",\n              \"Operands\": [\n                \"BookAppointmentIntent\"\n              ]\n            }\n          },\n          {\n            \"NextAction\": \"check-transfer-to-queue\",\n            \"Condition\": {\n              \"Operator\": \"Equals\",\n              \"Operands\": [\n                \"CancelAppointmentIntent\"\n              ]\n            }\n          },\n          {\n            \"NextAction\": \"check-transfer-to-queue\",\n            \"Condition\": {\n              \"Operator\": \"Equals\",\n              \"Operands\": [\n                \"RescheduleAppointmentIntent\"\n              ]\n            }\n          },\n          {\n            \"NextAction\": \"check-transfer-to-queue\",\n            \"Condition\": {\n              \"Operator\": \"Equals\",\n              \"Operands\": [\n                \"HumanEscalationIntent\"\n              ]\n            }\n          }\n        ],\n        \"Errors\": [\n          {\n            \"NextAction\": \"6fbf4310-c8c6-44a8-a8f5-1d7830974c4d\",\n            \"ErrorType\": \"NoMatchingCondition\"\n          },\n          {\n            \"NextAction\": \"41e3f239-5b57-4363-92fc-9d594579fa98\",\n            \"ErrorType\": \"NoMatchingError\"\n          }\n        ]\n      }\n    },\n    {\n      \"Identifier\": \"05553b55-f227-4c66-b391-a3e068b01966\",\n      \"Type\": \"MessageParticipant\",\n      \"Parameters\": {\n        \"SkipWhenDTMFBufferEnabled\": \"false\",\n        \"Text\": \"Are you still there? You can say operator or press 0 if you want a real person.\"\n      },\n      \"Transitions\": {\n        \"NextAction\": \"6fbf4310-c8c6-44a8-a8f5-1d7830974c4d\",\n        \"Errors\": [\n          {\n            \"NextAction\": \"41e3f239-5b57-4363-92fc-9d594579fa98\",\n            \"ErrorType\": \"NoMatchingError\"\n          }\n        ]\n      }\n    },\n    {\n      \"Identifier\": \"6fbf4310-c8c6-44a8-a8f5-1d7830974c4d\",\n      \"Type\": \"ConnectParticipantWithLexBot\",\n      \"Parameters\": {\n        \"LexV2Bot\": {\n          \"AliasArn\": \"arn:aws:lex:us-east-1:197452633989:bot-alias/KHMIXGA2US/JVIPIZDYE3\"\n        },\n        \"LexSessionAttributes\": {\n          \"provider\": \"AMAZON_CONNECT\",\n          \"callerPhone\": \"$.CustomerEndpoint.Address\",\n          \"CustomerEndpointAddress\": \"$.CustomerEndpoint.Address\",\n          \"CallerId\": \"$.CustomerEndpoint.Address\",\n          \"calledNumber\": \"$.SystemEndpoint.Address\",\n          \"CalledNumber\": \"$.SystemEndpoint.Address\",\n          \"SystemEndpointAddress\": \"$.SystemEndpoint.Address\",\n          \"contactId\": \"$.ContactId\",\n          \"ContactId\": \"$.ContactId\",\n          \"AmazonConnectContactId\": \"$.ContactId\",\n          \"InitialContactId\": \"$.InitialContactId\"\n        },\n        \"Text\": \"Sorry, I did not catch the service. Please press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Full Set, 5 for Dip Powder, or 0 for an operator.\"\n      },\n      \"Transitions\": {\n        \"NextAction\": \"05553b55-f227-4c66-b391-a3e068b01966\",\n        \"Conditions\": [\n          {\n            \"NextAction\": \"check-transfer-to-queue\",\n            \"Condition\": {\n              \"Operator\": \"Equals\",\n              \"Operands\": [\n                \"BookAppointmentIntent\"\n              ]\n            }\n          },\n          {\n            \"NextAction\": \"check-transfer-to-queue\",\n            \"Condition\": {\n              \"Operator\": \"Equals\",\n              \"Operands\": [\n                \"CancelAppointmentIntent\"\n              ]\n            }\n          },\n          {\n            \"NextAction\": \"check-transfer-to-queue\",\n            \"Condition\": {\n              \"Operator\": \"Equals\",\n              \"Operands\": [\n                \"RescheduleAppointmentIntent\"\n              ]\n            }\n          },\n          {\n            \"NextAction\": \"check-transfer-to-queue\",\n            \"Condition\": {\n              \"Operator\": \"Equals\",\n              \"Operands\": [\n                \"HumanEscalationIntent\"\n              ]\n            }\n          }\n        ],\n        \"Errors\": [\n          {\n            \"NextAction\": \"05553b55-f227-4c66-b391-a3e068b01966\",\n            \"ErrorType\": \"NoMatchingCondition\"\n          },\n          {\n            \"NextAction\": \"41e3f239-5b57-4363-92fc-9d594579fa98\",\n            \"ErrorType\": \"NoMatchingError\"\n          }\n        ]\n      }\n    },\n    {\n      \"Identifier\": \"41e3f239-5b57-4363-92fc-9d594579fa98\",\n      \"Type\": \"MessageParticipant\",\n      \"Parameters\": {\n        \"SkipWhenDTMFBufferEnabled\": \"false\",\n        \"Text\": \"This is taking longer than expected. Please wait while I connect you to our team.\"\n      },\n      \"Transitions\": {\n        \"NextAction\": \"transfer-human-escalation-flow\",\n        \"Errors\": [\n          {\n            \"NextAction\": \"transfer-human-escalation-flow\",\n            \"ErrorType\": \"NoMatchingError\"\n          }\n        ]\n      }\n    },\n    {\n      \"Identifier\": \"37dbed23-a7c0-4259-a4f5-9be9db2f9c80\",\n      \"Type\": \"MessageParticipant\",\n      \"Parameters\": {\n        \"SkipWhenDTMFBufferEnabled\": \"false\",\n        \"Text\": \"No agents are available right now. Please call back later or leave a message if voicemail is enabled.\"\n      },\n      \"Transitions\": {\n        \"NextAction\": \"ef8d8054-77ea-40c7-aa4e-800ed784c49c\",\n        \"Errors\": [\n          {\n            \"NextAction\": \"ef8d8054-77ea-40c7-aa4e-800ed784c49c\",\n            \"ErrorType\": \"NoMatchingError\"\n          }\n        ]\n      }\n    },\n    {\n      \"Identifier\": \"set-fastaibooking-runtime-attrs\",\n      \"Type\": \"UpdateContactAttributes\",\n      \"Parameters\": {\n        \"Attributes\": {\n          \"provider\": \"AMAZON_CONNECT\",\n          \"callerPhone\": \"$.CustomerEndpoint.Address\",\n          \"calledNumber\": \"$.SystemEndpoint.Address\",\n          \"contactId\": \"$.ContactId\",\n          \"initialContactId\": \"$.InitialContactId\"\n        },\n        \"TargetContact\": \"Current\"\n      },\n      \"Transitions\": {\n        \"NextAction\": \"check-kiet-known-caller\",\n        \"Errors\": [\n          {\n            \"NextAction\": \"check-kiet-known-caller\",\n            \"ErrorType\": \"NoMatchingError\"\n          }\n        ]\n      }\n    },\n    {\n      \"Identifier\": \"ai-greeting-prompt\",\n      \"Type\": \"MessageParticipant\",\n      \"Parameters\": {\n        \"SkipWhenDTMFBufferEnabled\": \"false\",\n        \"Text\": \"Hi, thanks for calling. I can help book your appointment. What service would you like today?\"\n      },\n      \"Transitions\": {\n        \"NextAction\": \"3b2877ca-bc16-4019-a8e6-04200c0ded06\",\n        \"Errors\": [\n          {\n            \"NextAction\": \"3b2877ca-bc16-4019-a8e6-04200c0ded06\",\n            \"ErrorType\": \"NoMatchingError\"\n          }\n        ]\n      }\n    },\n    {\n      \"Identifier\": \"check-transfer-to-queue\",\n      \"Type\": \"Compare\",\n      \"Parameters\": {\n        \"ComparisonValue\": \"$.Lex.SessionAttributes.transferToQueue\"\n      },\n      \"Transitions\": {\n        \"NextAction\": \"67ada978-600a-4d39-9965-6230c52810a9\",\n        \"Conditions\": [\n          {\n            \"NextAction\": \"transfer-human-escalation-flow\",\n            \"Condition\": {\n              \"Operator\": \"Equals\",\n              \"Operands\": [\n                \"true\"\n              ]\n            }\n          }\n        ],\n        \"Errors\": [\n          {\n            \"NextAction\": \"67ada978-600a-4d39-9965-6230c52810a9\",\n            \"ErrorType\": \"NoMatchingCondition\"\n          }\n        ]\n      }\n    },\n    {\n      \"Identifier\": \"transfer-human-escalation-flow\",\n      \"Type\": \"TransferToFlow\",\n      \"Parameters\": {\n        \"ContactFlowId\": \"arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/contact-flow/c7386b94-56bb-4382-b517-ee890bbacb51\"\n      },\n      \"Transitions\": {\n        \"NextAction\": \"ef8d8054-77ea-40c7-aa4e-800ed784c49c\",\n        \"Errors\": [\n          {\n            \"NextAction\": \"37dbed23-a7c0-4259-a4f5-9be9db2f9c80\",\n            \"ErrorType\": \"NoMatchingError\"\n          }\n        ]\n      }\n    },\n    {\n      \"Identifier\": \"check-kiet-known-caller\",\n      \"Type\": \"Compare\",\n      \"Parameters\": {\n        \"ComparisonValue\": \"$.Attributes.callerPhone\"\n      },\n      \"Transitions\": {\n        \"NextAction\": \"3b2877ca-bc16-4019-a8e6-04200c0ded06\",\n        \"Conditions\": [\n          {\n            \"NextAction\": \"set-kiet-known-customer\",\n            \"Condition\": {\n              \"Operator\": \"Equals\",\n              \"Operands\": [\n                \"+17325956266\"\n              ]\n            }\n          },\n          {\n            \"NextAction\": \"set-kiet-known-customer\",\n            \"Condition\": {\n              \"Operator\": \"Equals\",\n              \"Operands\": [\n                \"7325956266\"\n              ]\n            }\n          },\n          {\n            \"NextAction\": \"set-kiet-known-customer\",\n            \"Condition\": {\n              \"Operator\": \"Equals\",\n              \"Operands\": [\n                \"17325956266\"\n              ]\n            }\n          }\n        ],\n        \"Errors\": [\n          {\n            \"NextAction\": \"3b2877ca-bc16-4019-a8e6-04200c0ded06\",\n            \"ErrorType\": \"NoMatchingCondition\"\n          }\n        ]\n      }\n    },\n    {\n      \"Identifier\": \"set-kiet-known-customer\",\n      \"Type\": \"UpdateContactAttributes\",\n      \"Parameters\": {\n        \"Attributes\": {\n          \"customerName\": \"Kiet\",\n          \"recognizedCustomerName\": \"Kiet\",\n          \"customerNameSource\": \"phone_lookup\"\n        },\n        \"TargetContact\": \"Current\"\n      },\n      \"Transitions\": {\n        \"NextAction\": \"kiet-known-caller-greeting-prompt\",\n        \"Errors\": [\n          {\n            \"NextAction\": \"kiet-known-caller-greeting-prompt\",\n            \"ErrorType\": \"NoMatchingError\"\n          }\n        ]\n      }\n    },\n    {\n      \"Identifier\": \"kiet-known-caller-greeting-prompt\",\n      \"Type\": \"ConnectParticipantWithLexBot\",\n      \"Parameters\": {\n        \"LexV2Bot\": {\n          \"AliasArn\": \"arn:aws:lex:us-east-1:197452633989:bot-alias/KHMIXGA2US/JVIPIZDYE3\"\n        },\n        \"LexSessionAttributes\": {\n          \"provider\": \"AMAZON_CONNECT\",\n          \"callerPhone\": \"$.CustomerEndpoint.Address\",\n          \"CustomerEndpointAddress\": \"$.CustomerEndpoint.Address\",\n          \"CallerId\": \"$.CustomerEndpoint.Address\",\n          \"calledNumber\": \"$.SystemEndpoint.Address\",\n          \"CalledNumber\": \"$.SystemEndpoint.Address\",\n          \"SystemEndpointAddress\": \"$.SystemEndpoint.Address\",\n          \"contactId\": \"$.ContactId\",\n          \"ContactId\": \"$.ContactId\",\n          \"AmazonConnectContactId\": \"$.ContactId\",\n          \"InitialContactId\": \"$.InitialContactId\"\n        },\n        \"Text\": \"Hi Kiet, thanks for calling. I can help book your appointment. What service would you like today?\"\n      },\n      \"Transitions\": {\n        \"NextAction\": \"05553b55-f227-4c66-b391-a3e068b01966\",\n        \"Conditions\": [\n          {\n            \"NextAction\": \"check-transfer-to-queue\",\n            \"Condition\": {\n              \"Operator\": \"Equals\",\n              \"Operands\": [\n                \"BookAppointmentIntent\"\n              ]\n            }\n          },\n          {\n            \"NextAction\": \"check-transfer-to-queue\",\n            \"Condition\": {\n              \"Operator\": \"Equals\",\n              \"Operands\": [\n                \"CancelAppointmentIntent\"\n              ]\n            }\n          },\n          {\n            \"NextAction\": \"check-transfer-to-queue\",\n            \"Condition\": {\n              \"Operator\": \"Equals\",\n              \"Operands\": [\n                \"RescheduleAppointmentIntent\"\n              ]\n            }\n          },\n          {\n            \"NextAction\": \"check-transfer-to-queue\",\n            \"Condition\": {\n              \"Operator\": \"Equals\",\n              \"Operands\": [\n                \"HumanEscalationIntent\"\n              ]\n            }\n          }\n        ],\n        \"Errors\": [\n          {\n            \"NextAction\": \"6fbf4310-c8c6-44a8-a8f5-1d7830974c4d\",\n            \"ErrorType\": \"NoMatchingCondition\"\n          },\n          {\n            \"NextAction\": \"41e3f239-5b57-4363-92fc-9d594579fa98\",\n            \"ErrorType\": \"NoMatchingError\"\n          }\n        ]\n      }\n    }\n  ]\n}\n",
+        "Tags": {}
+    }
+}
+
+## Lex bots
+-----------------------------------------------------------------
+|                           ListBots                            |
++---------------------------------------------------------------+
+||                        botSummaries                         ||
+|+----------------------+--------------------------------------+|
+||  botId               |  KHMIXGA2US                          ||
+||  botName             |  FastAIBookingBot                    ||
+||  botStatus           |  Available                           ||
+||  botType             |  Bot                                 ||
+||  description         |  FastAIBooking AI booking assistant  ||
+||  lastUpdatedDateTime |  2026-07-08T14:45:48.392000-04:00    ||
+||  latestBotVersion    |  17                                  ||
+|+----------------------+--------------------------------------+|
+
+## Lex bot aliases
+------------------------------------------------------------------------------------------------------------------------------------------------------------
+|                                                                      ListBotAliases                                                                      |
++-----------------------------------------------------------+----------------------------------------------------------------------------------------------+
+|  botId                                                    |  KHMIXGA2US                                                                                  |
++-----------------------------------------------------------+----------------------------------------------------------------------------------------------+
+||                                                                    botAliasSummaries                                                                   ||
+|+------------+---------------+-----------------+-------------+-----------------------------------+------------------+------------------------------------+|
+|| botAliasId | botAliasName  | botAliasStatus  | botVersion  |         creationDateTime          |   description    |        lastUpdatedDateTime         ||
+|+------------+---------------+-----------------+-------------+-----------------------------------+------------------+------------------------------------+|
+||  JVIPIZDYE3|  prod         |  Available      |  17         |  2026-05-07T10:32:59.521000-04:00 |                  |  2026-07-08T14:45:55.170000-04:00  ||
+||  TSTALIASID|  TestBotAlias |  Available      |  DRAFT      |  2026-05-07T10:05:07.648000-04:00 |  test bot alias  |  2026-05-07T10:07:05.623000-04:00  ||
+|+------------+---------------+-----------------+-------------+-----------------------------------+------------------+------------------------------------+|
+
+## Lex prod alias detail
+{
+    "botAliasId": "JVIPIZDYE3",
+    "botAliasName": "prod",
+    "botVersion": "17",
+    "botAliasLocaleSettings": {
+        "en_US": {
+            "enabled": true,
+            "codeHookSpecification": {
+                "lambdaCodeHook": {
+                    "lambdaARN": "arn:aws:lambda:us-east-1:197452633989:function:fastaibooking-booking-handler",
+                    "codeHookInterfaceVersion": "1.0"
+                }
+            }
+        }
+    },
+    "botAliasHistoryEvents": [
+        {
+            "botVersion": "16",
+            "startDate": "2026-07-08T14:41:30.371000-04:00",
+            "endDate": "2026-07-08T14:45:55.124000-04:00"
+        },
+        {
+            "botVersion": "15",
+            "startDate": "2026-07-07T03:38:14.275000-04:00",
+            "endDate": "2026-07-08T14:41:30.371000-04:00"
+        },
+        {
+            "botVersion": "14",
+            "startDate": "2026-06-08T03:29:07.822000-04:00",
+            "endDate": "2026-07-07T03:38:14.275000-04:00"
+        },
+        {
+            "botVersion": "13",
+            "startDate": "2026-06-05T13:10:12.070000-04:00",
+            "endDate": "2026-06-08T03:29:07.822000-04:00"
+        },
+        {
+            "botVersion": "12",
+            "startDate": "2026-06-03T08:06:02.036000-04:00",
+            "endDate": "2026-06-05T13:10:12.070000-04:00"
+        },
+        {
+            "botVersion": "11",
+            "startDate": "2026-06-03T07:43:18.537000-04:00",
+            "endDate": "2026-06-03T08:06:02.036000-04:00"
+        },
+        {
+            "botVersion": "10",
+            "startDate": "2026-06-03T02:20:04.676000-04:00",
+            "endDate": "2026-06-03T07:43:18.537000-04:00"
+        },
+        {
+            "botVersion": "9",
+            "startDate": "2026-06-02T21:10:12.928000-04:00",
+            "endDate": "2026-06-03T02:20:04.676000-04:00"
+        },
+        {
+            "botVersion": "8",
+            "startDate": "2026-06-02T06:08:50.053000-04:00",
+            "endDate": "2026-06-02T21:10:12.928000-04:00"
+        },
+        {
+            "botVersion": "17",
+            "startDate": "2026-07-08T14:45:55.124000-04:00"
+        }
+    ],
+    "botAliasStatus": "Available",
+    "botId": "KHMIXGA2US",
+    "creationDateTime": "2026-05-07T10:32:59.521000-04:00",
+    "lastUpdatedDateTime": "2026-07-08T14:45:55.170000-04:00"
+}
+
+## Lex locale status for prod version
+BOT_VERSION=17
+{
+    "botId": "KHMIXGA2US",
+    "botVersion": "17",
+    "localeId": "en_US",
+    "localeName": "English (US)",
+    "nluIntentConfidenceThreshold": 0.4,
+    "intentsCount": 5,
+    "slotTypesCount": 1,
+    "botLocaleStatus": "Built",
+    "creationDateTime": "2026-05-07T10:07:04.284000-04:00",
+    "lastUpdatedDateTime": "2026-07-08T14:45:47.138000-04:00",
+    "lastBuildSubmittedDateTime": "2026-07-08T14:44:49.665000-04:00",
+    "botLocaleHistoryEvents": [
+        {
+            "event": "Included in V16 from DRAFT",
+            "eventDate": "2026-07-08T14:41:07.948000-04:00"
+        },
+        {
+            "event": "Included in V15 from DRAFT",
+            "eventDate": "2026-07-07T03:37:29.289000-04:00"
+        },
+        {
+            "event": "Included in V14 from DRAFT",
+            "eventDate": "2026-06-08T03:29:05.810000-04:00"
+        },
+        {
+            "event": "Included in V13 from DRAFT",
+            "eventDate": "2026-06-05T13:09:58.712000-04:00"
+        },
+        {
+            "event": "Included in V12 from DRAFT",
+            "eventDate": "2026-06-03T08:05:54.989000-04:00"
+        }
+    ]
+}
+
+## NailServiceType in prod version
+----------------------------------------------------------------------------
+|                               ListSlotTypes                              |
++------------------------------------+-------------------------------------+
+|  botId                             |  KHMIXGA2US                         |
+|  botVersion                        |  17                                 |
+|  localeId                          |  en_US                              |
++------------------------------------+-------------------------------------+
+||                            slotTypeSummaries                           ||
+|+----------------------+-------------------------------------------------+|
+||  description         |  Demo nail salon services with speech synonyms  ||
+||  lastUpdatedDateTime |  2026-07-08T14:40:04.842000-04:00               ||
+||  slotTypeCategory    |  Custom                                         ||
+||  slotTypeId          |  CRPHEOWTHG                                     ||
+||  slotTypeName        |  NailServiceType                                ||
+|+----------------------+-------------------------------------------------+|
+SLOT_TYPE_ID=CRPHEOWTHG
+{
+    "slotTypeId": "CRPHEOWTHG",
+    "slotTypeName": "NailServiceType",
+    "description": "Demo nail salon services with speech synonyms",
+    "slotTypeValues": [
+        {
+            "sampleValue": {
+                "value": "Pedicure"
+            },
+            "synonyms": [
+                {
+                    "value": "1"
+                },
+                {
+                    "value": "pedicure"
+                },
+                {
+                    "value": "bedicure"
+                },
+                {
+                    "value": "beticure"
+                },
+                {
+                    "value": "petty cure"
+                },
+                {
+                    "value": "pedi cure"
+                },
+                {
+                    "value": "peddy cure"
+                },
+                {
+                    "value": "pay di cure"
+                },
+                {
+                    "value": "pay the cure"
+                },
+                {
+                    "value": "paydy cure"
+                },
+                {
+                    "value": "ready cure"
+                },
+                {
+                    "value": "reddy cure"
+                },
+                {
+                    "value": "betty cure"
+                },
+                {
+                    "value": "berry cure"
+                },
+                {
+                    "value": "pretty cure"
+                },
+                {
+                    "value": "better cure"
+                },
+                {
+                    "value": "bettercure"
+                },
+                {
+                    "value": "eddie here"
+                },
+                {
+                    "value": "pedic care"
+                },
+                {
+                    "value": "pedi care"
+                },
+                {
+                    "value": "pedicure appointment"
+                },
+                {
+                    "value": "toe service"
+                },
+                {
+                    "value": "foot service"
+                },
+                {
+                    "value": "foot pedicure"
+                },
+                {
+                    "value": "toe pedicure"
+                }
+            ]
+        },
+        {
+            "sampleValue": {
+                "value": "Manicure"
+            },
+            "synonyms": [
+                {
+                    "value": "2"
+                },
+                {
+                    "value": "manicure"
+                },
+                {
+                    "value": "mani cure"
+                },
+                {
+                    "value": "manny cure"
+                },
+                {
+                    "value": "many cure"
+                },
+                {
+                    "value": "nanny cure"
+                },
+                {
+                    "value": "mini cure"
+                },
+                {
+                    "value": "manicure appointment"
+                },
+                {
+                    "value": "hand service"
+                },
+                {
+                    "value": "finger nail service"
+                },
+                {
+                    "value": "basic manicure"
+                },
+                {
+                    "value": "regular manicure"
+                }
+            ]
+        },
+        {
+            "sampleValue": {
+                "value": "Gel Manicure"
+            },
+            "synonyms": [
+                {
+                    "value": "3"
+                },
+                {
+                    "value": "gel manicure"
+                },
+                {
+                    "value": "gel mani"
+                },
+                {
+                    "value": "gel mani cure"
+                },
+                {
+                    "value": "gel manny cure"
+                },
+                {
+                    "value": "gel many cure"
+                },
+                {
+                    "value": "jell manicure"
+                },
+                {
+                    "value": "jail manicure"
+                },
+                {
+                    "value": "gel nail"
+                },
+                {
+                    "value": "gel nails"
+                },
+                {
+                    "value": "gel hand service"
+                },
+                {
+                    "value": "gel manicure appointment"
+                }
+            ]
+        },
+        {
+            "sampleValue": {
+                "value": "Full Set"
+            },
+            "synonyms": [
+                {
+                    "value": "4"
+                },
+                {
+                    "value": "full set"
+                },
+                {
+                    "value": "fullset"
+                },
+                {
+                    "value": "full-set"
+                },
+                {
+                    "value": "full sets"
+                },
+                {
+                    "value": "full nail set"
+                },
+                {
+                    "value": "nail full set"
+                },
+                {
+                    "value": "full nail"
+                },
+                {
+                    "value": "nail set"
+                },
+                {
+                    "value": "new set"
+                },
+                {
+                    "value": "complete set"
+                },
+                {
+                    "value": "false set"
+                },
+                {
+                    "value": "fall set"
+                },
+                {
+                    "value": "four set"
+                },
+                {
+                    "value": "full said"
+                },
+                {
+                    "value": "full sat"
+                },
+                {
+                    "value": "full sad"
+                },
+                {
+                    "value": "full send"
+                },
+                {
+                    "value": "fuel set"
+                },
+                {
+                    "value": "fake nails"
+                },
+                {
+                    "value": "extension nails"
+                },
+                {
+                    "value": "nail extensions"
+                },
+                {
+                    "value": "full set appointment"
+                }
+            ]
+        },
+        {
+            "sampleValue": {
+                "value": "Dip Powder"
+            },
+            "synonyms": [
+                {
+                    "value": "5"
+                },
+                {
+                    "value": "dip powder"
+                },
+                {
+                    "value": "dip"
+                },
+                {
+                    "value": "dip power"
+                },
+                {
+                    "value": "deep powder"
+                },
+                {
+                    "value": "dipping powder"
+                },
+                {
+                    "value": "de powder"
+                },
+                {
+                    "value": "dep powder"
+                },
+                {
+                    "value": "powder dip"
+                },
+                {
+                    "value": "dip nails"
+                },
+                {
+                    "value": "dip powder nails"
+                },
+                {
+                    "value": "dip powder appointment"
+                }
+            ]
+        },
+        {
+            "sampleValue": {
+                "value": "Other Services"
+            },
+            "synonyms": [
+                {
+                    "value": "other services"
+                },
+                {
+                    "value": "other service"
+                },
+                {
+                    "value": "others services"
+                },
+                {
+                    "value": "something else"
+                },
+                {
+                    "value": "different service"
+                },
+                {
+                    "value": "custom service"
+                }
+            ]
+        }
+    ],
+    "valueSelectionSetting": {
+        "resolutionStrategy": "TopResolution"
+    },
+    "botId": "KHMIXGA2US",
+    "botVersion": "17",
+    "localeId": "en_US",
+    "creationDateTime": "2026-06-02T06:05:50.597000-04:00",
+    "lastUpdatedDateTime": "2026-07-08T14:40:04.842000-04:00"
+}
+
+## Lambda booking handler config
+{
+    "FunctionName": "fastaibooking-booking-handler",
+    "Runtime": "nodejs20.x",
+    "Handler": "index.handler",
+    "Timeout": 15,
+    "MemorySize": 128,
+    "LastModified": "2026-07-08T18:37:46.000+0000",
+    "CodeSha256": "gSYcd/qfnTBwtTXPj8ViJMzCNPNHgCVS4RqJHA8DpOk=",
+    "EnvKeys": [
+        "FASTAIBOOKING_API_INTERNAL_TOKEN",
+        "DEFAULT_SALON_ID",
+        "FASTAIBOOKING_API_BASE_URL"
+    ]
+}
+
+## Recent Lambda/Connect/Lex logs last 6h
+
+### /aws/connect/fastaibooking
+
+### /aws/lambda/fastaibooking-booking-handler
+
+### /aws/lex/KHMIXGA2US
