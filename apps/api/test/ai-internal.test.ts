@@ -532,6 +532,7 @@ const setupPrismaMock = () => {
     } else {
       session = {
         id: newId("call-session", state.callSessions),
+        createdAt: new Date(),
         ...args.create
       };
       state.callSessions.push(session);
@@ -548,6 +549,17 @@ const setupPrismaMock = () => {
       ) ?? null
     );
   });
+  patch(prisma.callSession as any, "findMany", async (args: any) => {
+    const phoneCandidates = args?.where?.callerPhone?.in as string[] | undefined;
+    return state.callSessions
+      .filter(
+        (item) =>
+          item.salonId === args?.where?.salonId &&
+          (!phoneCandidates || phoneCandidates.includes(item.callerPhone))
+      )
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
+      .slice(0, args.take ?? 25);
+  });
   patch(prisma.callSession as any, "update", async (args: any) => {
     const session = state.callSessions.find((item) => item.id === args.where.id);
     if (session) {
@@ -562,6 +574,19 @@ const setupPrismaMock = () => {
   });
 
   patch(prisma.bookingAttempt as any, "findFirst", async (args: any) => {
+    const phoneCandidates = args?.where?.customerPhone?.in as string[] | undefined;
+    if (phoneCandidates) {
+      return (
+        state.bookingAttempts
+          .filter(
+            (attempt) =>
+              attempt.salonId === args.where.salonId &&
+              phoneCandidates.includes(attempt.customerPhone) &&
+              Boolean(attempt.customerName)
+          )
+          .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())[0] ?? null
+      );
+    }
     return (
       state.bookingAttempts
         .filter(
@@ -572,8 +597,26 @@ const setupPrismaMock = () => {
         .at(-1) ?? null
     );
   });
+  patch(prisma.bookingAttempt as any, "findMany", async (args: any) => {
+    const phoneCandidates = args?.where?.customerPhone?.in as string[] | undefined;
+    if (phoneCandidates) {
+      return state.bookingAttempts
+        .filter(
+          (attempt) =>
+            attempt.salonId === args.where.salonId &&
+            phoneCandidates.includes(attempt.customerPhone) &&
+            Boolean(attempt.customerName)
+        )
+        .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
+        .slice(0, args.take ?? 20);
+    }
+    return state.bookingAttempts
+      .filter((attempt) => attempt.salonId === args?.where?.salonId)
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
+      .slice(0, args?.take ?? state.bookingAttempts.length);
+  });
   patch(prisma.bookingAttempt as any, "create", async (args: any) => {
-    const attempt = { id: newId("attempt", state.bookingAttempts), ...args.data };
+    const attempt = { id: newId("attempt", state.bookingAttempts), createdAt: new Date(), ...args.data };
     state.bookingAttempts.push(attempt);
     return attempt;
   });
@@ -709,6 +752,15 @@ test("call flow customer text uses Full Set wording", () => {
     "docs/AI_CALL_BOOKING_WORKFLOW_AUDIT.md"
   ];
   const staleServiceRoot = ["a", "crylic"].join("");
+  const unavailablePhrase = ["AI services", "not available"].join(" ");
+  const knownCallerName = ["k", "iet"].join("");
+  const hardcodedKnownCallerFlow = new RegExp(
+    [
+      `check-${knownCallerName}-known-caller`,
+      `set-${knownCallerName}-known-customer`,
+      `${knownCallerName}-known-caller-greeting-prompt`
+    ].join("|")
+  );
   const staleWording = new RegExp(
     [
       `${staleServiceRoot} Full Set`,
@@ -724,7 +776,10 @@ test("call flow customer text uses Full Set wording", () => {
 
   for (const relativePath of scannedPaths) {
     for (const filePath of collectTextFiles(join(repoRootPath, relativePath))) {
-      assert.doesNotMatch(readFileSync(filePath, "utf8"), staleWording, filePath);
+      const fileContent = readFileSync(filePath, "utf8");
+      assert.doesNotMatch(fileContent, staleWording, filePath);
+      assert.doesNotMatch(fileContent, new RegExp(unavailablePhrase, "i"), filePath);
+      assert.doesNotMatch(fileContent, hardcodedKnownCallerFlow, filePath);
     }
   }
 });
@@ -835,6 +890,66 @@ test("known Amazon Connect caller phone skips name and phone prompts", async () 
   assert.equal(state.appointments.length, 0);
 });
 
+test("AI caller memory reuses +84 caller name from latest booking attempt", async () => {
+  const first = await postInternalAppointment(
+    bookingPayload({
+      customerName: "Thuyet",
+      customerPhone: "+84798171999",
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      transcript: "my name is Thuyet",
+      amazonConnectContactId: undefined
+    })
+  );
+
+  assert.equal(first.response.status, 200);
+  assert.equal(first.body.data.outcome, "MISSING_INFO");
+  assert.equal(state.bookingAttempts.at(-1)?.customerName, "Thuyet");
+  assert.equal(state.bookingAttempts.at(-1)?.customerPhone, "+84798171999");
+  state.bookingAttempts.push({
+    id: "attempt-bad-caller-name",
+    salonId: ids.salonA,
+    callSessionId: null,
+    status: BookingAttemptStatus.NEEDS_INPUT,
+    source: "amazon_connect_ai",
+    customerName: "three",
+    customerPhone: "+84798171999",
+    requestedService: "Full Set",
+    requestedStaff: null,
+    requestedDateTimeText: "2026-07-09",
+    normalizedRequest: {},
+    failureReason: "Historical misrecognized caller name.",
+    rawInput: {},
+    createdAt: new Date(Date.now() + 1000),
+    updatedAt: new Date(Date.now() + 1000)
+  });
+
+  const second = await postInternalAppointment(
+    bookingPayload({
+      customerName: undefined,
+      customerPhone: "+84798171999",
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      transcript: "I want to book a manicure",
+      amazonConnectContactId: undefined
+    })
+  );
+
+  assert.equal(second.response.status, 200);
+  assert.equal(second.body.data.lexResponse.sessionAttributes.customerName, "Thuyet");
+  assert.equal(second.body.data.lexResponse.sessionAttributes.customerPhone, "+84798171999");
+  assert.equal(second.body.data.lexResponse.sessionAttributes.customerNameSource, "booking_attempt");
+  assert.equal(second.body.data.missingFields.includes("customerName"), false);
+  assert.equal(second.body.data.missingFields.includes("customerPhone"), false);
+  assert.notEqual(second.body.data.lexResponse.sessionAttributes.transferToQueue, "true");
+});
+
 test("missing booking fields return a Lex needs-input response instead of crashing", async () => {
   const result = await postInternalAppointment({
     salonId: ids.salonA,
@@ -871,6 +986,34 @@ test("Full Set phrase reaches confirmation without asking service again", async 
   assert.match(result.body.data.lexResponse.message, /Just to confirm, Full Set with Trang tomorrow at 3 PM/i);
   assert.deepEqual(new Set(state.validationStaffIds), new Set([ids.trang]));
   assert.equal(state.appointments.length, 0);
+});
+
+test("Full Set full utterance with Lee keeps service date time and staff", async () => {
+  const result = await postInternalAppointment(
+    bookingPayload({
+      customerName: undefined,
+      customerPhone: "+84798171999",
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      transcript: "I want to book a Full Set tomorrow at 3 PM with Trang. My name is Lee."
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedServiceName, "Full Set");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.customerName, "Lee");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.customerPhone, "+84798171999");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "15:00");
+  assert.notEqual(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
+  assert.notEqual(result.body.data.lexResponse.dialogAction.slotToElicit, "requestedDate");
+  assert.notEqual(result.body.data.lexResponse.dialogAction.slotToElicit, "requestedTime");
+  assert.notEqual(result.body.data.lexResponse.sessionAttributes.transferToQueue, "true");
 });
 
 test("Full Set speech aliases resolve to the active Full Set service", async () => {

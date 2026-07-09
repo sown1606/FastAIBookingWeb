@@ -174,8 +174,6 @@ const STAFF_DTMF_SHORT_PROMPT =
   "Press 1 for Trang, 2 for Amy, 3 for Kelly, 4 for first available, or 0 for an operator.";
 const NO_INPUT_HUMAN_CONFIRM_PROMPT =
   "Are you still there? Would you like me to connect you to a real person? You can press 0 for an operator.";
-const KNOWN_KIET_CUSTOMER_NAME = "Kiet";
-const KNOWN_KIET_PHONE_DIGITS = new Set(["7325956266", "17325956266"]);
 const WAIT_PROMPTS = {
   customer_lookup: "Please wait a moment while I pull up your information.",
   service_lookup: "Please wait a moment while I check our services.",
@@ -370,21 +368,6 @@ function normalizeForMatch(value) {
     .replace(/[^a-z0-9]+/g, " ")
     .trim()
     .replace(/\s+/g, " ");
-}
-
-function normalizeCustomerPhoneDigits(value) {
-  return String(value || "").replace(/\D/g, "");
-}
-
-function stripLeadingCountryCode(value) {
-  const digits = normalizeCustomerPhoneDigits(value);
-  return digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
-}
-
-function isKnownKietCallerPhone(value) {
-  const digits = normalizeCustomerPhoneDigits(value);
-  const localDigits = stripLeadingCountryCode(value);
-  return KNOWN_KIET_PHONE_DIGITS.has(digits) || KNOWN_KIET_PHONE_DIGITS.has(localDigits);
 }
 
 function compactForMatch(value) {
@@ -610,6 +593,27 @@ function extractCustomerNameFromText(text) {
     /(?:my name is|name is|this is|i am|i'm)\s+([a-zA-Z][a-zA-Z'-]*(?:\s+[a-zA-Z][a-zA-Z'-]*){0,4})(?=\s*(?:[,.!?;]|$|and\s+(?:my\s+)?phone|(?:my\s+)?phone\s+(?:number\s+)?(?:is|should|to)))/i
   );
   return match?.[1]?.trim() || "";
+}
+
+function extractBareCustomerNameAnswer(text) {
+  const raw = String(text || "").trim();
+  const normalized = normalizeForMatch(raw);
+  if (
+    !raw ||
+    readDtmfDigit(raw) ||
+    isExplicitHumanRequestText(raw) ||
+    extractServiceFromTranscript(raw) ||
+    extractStaffFromTranscript(raw) ||
+    getPreferredDateCandidate(raw) ||
+    normalizeTimePhrase(extractTimeCandidate(raw)) ||
+    /(?:phone|number|appointment|book|service|tomorrow|today|morning|afternoon|evening|night|zero|one|two|three|four|five|six|seven|eight|nine|ten)\b/i.test(raw)
+  ) {
+    return "";
+  }
+  if (!/^[a-z][a-z' -]{0,80}$/i.test(raw) || normalized.split(" ").length > 4) {
+    return "";
+  }
+  return raw.replace(/\s+/g, " ");
 }
 
 function extractCustomerPhoneFromText(text) {
@@ -1195,6 +1199,7 @@ function getKnownField(event, fieldName, options = {}) {
 
 function buildKnownBookingSessionAttributes(event) {
   const previous = event.sessionState?.sessionAttributes || {};
+  const slots = event.sessionState?.intent?.slots || {};
   const eventTranscriptIsDtmf = Boolean(readDtmfDigit(event.inputTranscript));
   const initial =
     previous.initialBookingUtterance ||
@@ -1204,9 +1209,17 @@ function buildKnownBookingSessionAttributes(event) {
   const transcriptValues = [event.inputTranscript, getAttribute(event, attributeNames.transcript), initial]
     .filter((value, index, values) => value && values.indexOf(value) === index)
   const transcript = transcriptValues.join(" ");
-  const knownDate = getKnownField(event, "requestedDate");
-  const knownTime = getKnownField(event, "requestedTime", { preferOriginal: true });
-  const rawKnownService = getKnownField(event, "serviceName");
+  const knownDate =
+    getSlotValue(slots, slotNames.requestedDate) ||
+    getSessionAttribute(previous, slotNames.requestedDate);
+  const previousDate = getSessionAttribute(previous, slotNames.requestedDate);
+  const knownTime =
+    getSlotValue(slots, slotNames.requestedTime, { preferOriginal: true }) ||
+    getSessionAttribute(previous, slotNames.requestedTime);
+  const previousTime = getSessionAttribute(previous, slotNames.requestedTime);
+  const rawKnownService =
+    getSlotValue(slots, slotNames.serviceName, { preferOriginal: true }) ||
+    getSessionAttribute(previous, slotNames.serviceName);
   const serviceDtmfSelection = readScopedDtmfSelection(event, "serviceName", SERVICE_DTMF_OPTIONS);
   const staffDtmfSelection = readScopedStaffDtmfSelection(event);
   const recoveryTranscript =
@@ -1219,19 +1232,24 @@ function buildKnownBookingSessionAttributes(event) {
     normalizedKnownService && !isClearlyInvalidServiceName(normalizedKnownService)
       ? normalizedKnownService
       : "";
-  const explicitCustomerName = recovered.customerName;
+  const previousService = normalizeServiceName(
+    previous.confirmedServiceName || getSessionAttribute(previous, slotNames.serviceName)
+  );
+  const stablePreviousService =
+    previousService && !isClearlyInvalidServiceName(previousService) ? previousService : "";
+  const explicitCustomerName =
+    recovered.customerName ||
+    (previous.lastAskedSlot === "customerName" ? extractBareCustomerNameAnswer(event.inputTranscript) : "");
   const amazonConnectCustomerPhone = getAttribute(event, attributeNames.customerNumber);
-  const knownCallerName = isKnownKietCallerPhone(amazonConnectCustomerPhone)
-    ? KNOWN_KIET_CUSTOMER_NAME
-    : "";
   const protectedCustomerName =
     previous.recognizedCustomerName ||
-    (previous.customerNameSource === "phone_lookup" ? previous.customerName : "") ||
-    knownCallerName;
+    (previous.customerNameSource === "phone_lookup" ? previous.customerName : "");
+  const previousStaffPreference =
+    getSessionAttribute(previous, slotNames.staffPreference) || previous.confirmedStaffName;
   const known = {
-    recognizedCustomerName: knownCallerName || previous.recognizedCustomerName,
+    recognizedCustomerName: previous.recognizedCustomerName,
     customerNameSource:
-      knownCallerName || previous.customerNameSource === "phone_lookup"
+      previous.customerNameSource === "phone_lookup"
         ? "phone_lookup"
         : previous.customerNameSource,
     customerName:
@@ -1243,16 +1261,22 @@ function buildKnownBookingSessionAttributes(event) {
       getKnownField(event, "customerPhone") ||
       recovered.customerPhone ||
       amazonConnectCustomerPhone,
-    serviceName: serviceDtmfSelection || knownService || recovered.serviceName,
-    requestedDate: recovered.requestedDate || resolveKnownDateValue(knownDate, timeZone),
+    serviceName: serviceDtmfSelection || stablePreviousService || recovered.serviceName || knownService,
+    requestedDate:
+      recovered.requestedDate ||
+      resolveKnownDateValue(previousDate, timeZone) ||
+      resolveKnownDateValue(knownDate, timeZone),
     requestedTime:
       recovered.requestedTime ||
+      normalizeTimePhrase(previousTime) ||
+      previousTime ||
       normalizeTimePhrase(knownTime) ||
       knownTime,
     staffPreference:
       (staffDtmfSelection && !staffDtmfSelection.invalid ? staffDtmfSelection.staffName : "") ||
-      getKnownField(event, "staffPreference") ||
-      extractStaffFromTranscript(transcript, previous),
+      previousStaffPreference ||
+      extractStaffFromTranscript(transcript, previous) ||
+      getKnownField(event, "staffPreference"),
     staffId:
       (staffDtmfSelection && !staffDtmfSelection.invalid ? staffDtmfSelection.staffId : "") ||
       previous.staffId ||
@@ -1694,6 +1718,54 @@ function buildDelegateResponse(event) {
   };
 }
 
+function withSessionAttributes(event, sessionAttributes = {}) {
+  return {
+    ...event,
+    sessionState: {
+      ...(event.sessionState || {}),
+      sessionAttributes: {
+        ...(event.sessionState?.sessionAttributes || {}),
+        ...sessionAttributes
+      }
+    }
+  };
+}
+
+async function buildKnownCallerLookupResponse(event, intentName) {
+  const known = buildKnownBookingSessionAttributes(event);
+  if (!known.customerPhone || known.customerName) {
+    return null;
+  }
+
+  const result = await postInternalAppointment(buildInternalPayload(event, intentName), {
+    operationName: "customer_lookup",
+    waitPrompt: WAIT_PROMPTS.customer_lookup,
+    mechanism: "Lambda customer lookup before local name prompt"
+  });
+  if (!result.ok) {
+    return null;
+  }
+
+  const data = extractResultPayload(result);
+  const resultAttributes = buildSessionAttributesFromResult(data);
+  const customerName = resultAttributes.customerName || resultAttributes.recognizedCustomerName;
+  if (!customerName) {
+    return null;
+  }
+
+  const enrichedEvent = withSessionAttributes(event, {
+    ...resultAttributes,
+    customerName,
+    recognizedCustomerName: resultAttributes.recognizedCustomerName || customerName,
+    customerNameSource: resultAttributes.customerNameSource || "phone_lookup"
+  });
+  const nextSlot = getBookingSlotToElicit(enrichedEvent);
+  if (nextSlot) {
+    return buildElicitSlotResponse(enrichedEvent, nextSlot);
+  }
+  return buildDelegateResponse(enrichedEvent);
+}
+
 function getCallOrSessionIdFromPayload(payload = {}) {
   return (
     payload.amazonConnectContactId ||
@@ -2010,6 +2082,12 @@ export const handler = async (event) => {
       }
       const slotToElicit = getBookingSlotToElicit(event);
       if (slotToElicit) {
+        if (slotToElicit === "customerName") {
+          const lookupResponse = await buildKnownCallerLookupResponse(event, intentName);
+          if (lookupResponse) {
+            return lookupResponse;
+          }
+        }
         if (slotToElicit === "staffPreference") {
           if (event.invocationSource === "DialogCodeHook" && sessionAttributes.lastAskedSlot !== "staffPreference") {
             return buildDelegateResponse(event);

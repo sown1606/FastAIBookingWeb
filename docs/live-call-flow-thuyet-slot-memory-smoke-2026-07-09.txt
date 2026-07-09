@@ -1,0 +1,159 @@
+## Smoke date
+Thu Jul  9 05:50:00 UTC 2026
+
+## Lex runtime full-set smoke
+{
+    "messages": [
+        {
+            "content": "Your name?",
+            "contentType": "PlainText"
+        }
+    ],
+    "sessionState": {
+        "dialogAction": {
+            "type": "ElicitSlot",
+            "slotToElicit": "customerName"
+        },
+        "intent": {
+            "name": "BookAppointmentIntent",
+            "slots": {
+                "customerName": null,
+                "customerPhone": null,
+                "requestedDate": null,
+                "requestedTime": {
+                    "value": {
+                        "originalValue": "3",
+                        "resolvedValues": [
+                            "03:00",
+                            "15:00"
+                        ]
+                    }
+                },
+                "serviceName": {
+                    "value": {
+                        "originalValue": "Full Set",
+                        "interpretedValue": "Full Set",
+                        "resolvedValues": [
+                            "Full Set"
+                        ]
+                    }
+                },
+                "staffPreference": {
+                    "value": {
+                        "originalValue": "Trang",
+                        "interpretedValue": "trang",
+                        "resolvedValues": [
+                            "trang"
+                        ]
+                    }
+                }
+            },
+            "state": "InProgress",
+            "confirmationState": "None"
+        },
+        "sessionAttributes": {
+            "AmazonConnectContactId": "codex-slot-memory-lex-smoke",
+            "CalledNumber": "+18483487681",
+            "CustomerEndpointAddress": "+84798171999",
+            "calledNumber": "+18483487681",
+            "callerPhone": "+84798171999",
+            "contactId": "codex-slot-memory-lex-smoke",
+            "customerPhone": "+84798171999",
+            "provider": "AMAZON_CONNECT",
+            "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147"
+        },
+        "originatingRequestId": "3617e6b0-5a2c-46ad-beb9-47c1a44b5d57"
+    },
+    "interpretations": [
+        {
+            "nluConfidence": {
+                "score": 0.94
+            },
+            "intent": {
+                "name": "BookAppointmentIntent",
+                "slots": {
+                    "customerName": null,
+                    "customerPhone": null,
+                    "requestedDate": null,
+                    "requestedTime": {
+                        "value": {
+                            "originalValue": "3",
+                            "resolvedValues": [
+                                "03:00",
+                                "15:00"
+                            ]
+                        }
+                    },
+                    "serviceName": {
+                        "value": {
+                            "originalValue": "Full Set",
+                            "interpretedValue": "Full Set",
+                            "resolvedValues": [
+                                "Full Set"
+                            ]
+                        }
+                    },
+                    "staffPreference": {
+                        "value": {
+                            "originalValue": "Trang",
+                            "interpretedValue": "trang",
+                            "resolvedValues": [
+                                "trang"
+                            ]
+                        }
+                    }
+                },
+                "state": "InProgress",
+                "confirmationState": "None"
+            },
+            "interpretationSource": "Lex"
+        },
+        {
+            "intent": {
+                "name": "FallbackIntent",
+                "slots": {}
+            },
+            "interpretationSource": "Lex"
+        },
+        {
+            "nluConfidence": {
+                "score": 0.49
+            },
+            "intent": {
+                "name": "HumanEscalationIntent",
+                "slots": {}
+            },
+            "interpretationSource": "Lex"
+        }
+    ],
+    "sessionId": "codex-slot-memory-lex-smoke-1783576200"
+}
+
+## Lambda direct DTMF 4
+{
+    "StatusCode": 200,
+    "ExecutedVersion": "$LATEST"
+}
+{"sessionState":{"sessionAttributes":{"salonId":"9bd14a12-85ed-418a-af7d-3f5cb329c147","provider":"AMAZON_CONNECT","CalledNumber":"+18483487681","calledNumber":"+18483487681","CustomerEndpointAddress":"+84798171999","customerPhone":"+84798171999","callerPhone":"+84798171999","AmazonConnectContactId":"codex-slot-memory-smoke","contactId":"codex-slot-memory-smoke","lastAskedSlot":"requestedDate","serviceName":"Full Set","confirmedServiceName":"Full Set","askedSlotsCount":"1","fallbackCount":"1","errorCount":"1"},"dialogAction":{"type":"ElicitSlot","slotToElicit":"requestedDate"},"intent":{"name":"BookAppointmentIntent","state":"InProgress","confirmationState":"None","slots":{"customerPhone":{"shape":"Scalar","value":{"originalValue":"+84798171999","interpretedValue":"+84798171999","resolvedValues":["+84798171999"]}},"serviceName":{"shape":"Scalar","value":{"originalValue":"Full Set","interpretedValue":"Full Set","resolvedValues":["Full Set"]}},"requestedDate":null}}},"messages":[{"contentType":"PlainText","content":"What day would you like to come in? Press 0 to speak with an operator."}]}
+## Lambda direct after DTMF name
+{
+    "StatusCode": 200,
+    "ExecutedVersion": "$LATEST"
+}
+{"sessionState":{"sessionAttributes":{"salonId":"9bd14a12-85ed-418a-af7d-3f5cb329c147","provider":"AMAZON_CONNECT","CalledNumber":"+18483487681","calledNumber":"+18483487681","CustomerEndpointAddress":"+84798171999","customerPhone":"+84798171999","callerPhone":"+84798171999","AmazonConnectContactId":"codex-slot-memory-smoke","contactId":"codex-slot-memory-smoke","lastAskedSlot":"requestedDate","serviceName":"Full Set","confirmedServiceName":"Full Set","askedSlotsCount":"2","fallbackCount":"2","errorCount":"2","customerName":"Thuyet","initialBookingUtterance":"My name is Thuyet"},"dialogAction":{"type":"ElicitSlot","slotToElicit":"requestedDate"},"intent":{"name":"BookAppointmentIntent","state":"InProgress","confirmationState":"None","slots":{"customerName":{"shape":"Scalar","value":{"originalValue":"Thuyet","interpretedValue":"Thuyet","resolvedValues":["Thuyet"]}},"customerPhone":{"shape":"Scalar","value":{"originalValue":"+84798171999","interpretedValue":"+84798171999","resolvedValues":["+84798171999"]}},"serviceName":{"shape":"Scalar","value":{"originalValue":"Full Set","interpretedValue":"Full Set","resolvedValues":["Full Set"]}},"requestedDate":null}}},"messages":[{"contentType":"PlainText","content":"Do you want that today, tomorrow, or another day? Press 0 to speak with an operator."}]}
+## Lambda direct after DTMF date/time
+{
+    "StatusCode": 200,
+    "ExecutedVersion": "$LATEST"
+}
+{"sessionState":{"sessionAttributes":{"salonId":"9bd14a12-85ed-418a-af7d-3f5cb329c147","provider":"AMAZON_CONNECT","CalledNumber":"+18483487681","calledNumber":"+18483487681","CustomerEndpointAddress":"+84798171999","customerPhone":"+84798171999","callerPhone":"+84798171999","AmazonConnectContactId":"codex-slot-memory-smoke","contactId":"codex-slot-memory-smoke","lastAskedSlot":"customerName","serviceName":"Full Set","confirmedServiceName":"Full Set","askedSlotsCount":"1","fallbackCount":"1","errorCount":"1","requestedDate":"2026-07-10","requestedTime":"3 PM","initialBookingUtterance":"Tomorrow at 3 PM"},"dialogAction":{"type":"ElicitSlot","slotToElicit":"customerName"},"intent":{"name":"BookAppointmentIntent","state":"InProgress","confirmationState":"None","slots":{"customerPhone":{"shape":"Scalar","value":{"originalValue":"+84798171999","interpretedValue":"+84798171999","resolvedValues":["+84798171999"]}},"serviceName":{"shape":"Scalar","value":{"originalValue":"Full Set","interpretedValue":"Full Set","resolvedValues":["Full Set"]}},"requestedDate":{"shape":"Scalar","value":{"originalValue":"2026-07-10","interpretedValue":"2026-07-10","resolvedValues":["2026-07-10"]}},"requestedTime":{"shape":"Scalar","value":{"originalValue":"3 PM","interpretedValue":"3 PM","resolvedValues":["3 PM"]}},"customerName":null}}},"messages":[{"contentType":"PlainText","content":"What name should I put the appointment under? Press 0 to speak with an operator."}]}
+## Lambda direct full utterance then Lee
+{
+    "StatusCode": 200,
+    "ExecutedVersion": "$LATEST"
+}
+{"sessionState":{"sessionAttributes":{"salonId":"9bd14a12-85ed-418a-af7d-3f5cb329c147","provider":"AMAZON_CONNECT","CalledNumber":"+18483487681","calledNumber":"+18483487681","CustomerEndpointAddress":"+84798171999","customerPhone":"+84798171999","callerPhone":"+84798171999","AmazonConnectContactId":"codex-slot-memory-smoke","contactId":"codex-slot-memory-smoke","serviceName":"Full Set","requestedDate":"2026-07-10","requestedTime":"3 PM","staffPreference":"Trang","initialBookingUtterance":"I want to book a Full Set tomorrow at 3 PM with Trang.","lastAskedSlot":"customerName","askedSlotsCount":"1","fallbackCount":"1","errorCount":"1"},"dialogAction":{"type":"ElicitSlot","slotToElicit":"customerName"},"intent":{"name":"BookAppointmentIntent","state":"InProgress","confirmationState":"None","slots":{"customerPhone":{"shape":"Scalar","value":{"originalValue":"+84798171999","interpretedValue":"+84798171999","resolvedValues":["+84798171999"]}},"serviceName":{"shape":"Scalar","value":{"originalValue":"Full Set","interpretedValue":"Full Set","resolvedValues":["Full Set"]}},"requestedDate":{"shape":"Scalar","value":{"originalValue":"2026-07-10","interpretedValue":"2026-07-10","resolvedValues":["2026-07-10"]}},"requestedTime":{"shape":"Scalar","value":{"originalValue":"3 PM","interpretedValue":"3 PM","resolvedValues":["3 PM"]}},"staffPreference":{"shape":"Scalar","value":{"originalValue":"Trang","interpretedValue":"Trang","resolvedValues":["Trang"]}},"customerName":null}}},"messages":[{"contentType":"PlainText","content":"What is your name? Press 0 to speak with an operator."}]}{
+    "StatusCode": 200,
+    "ExecutedVersion": "$LATEST"
+}
+{"sessionState":{"sessionAttributes":{"salonId":"9bd14a12-85ed-418a-af7d-3f5cb329c147","provider":"AMAZON_CONNECT","CalledNumber":"+18483487681","calledNumber":"+18483487681","CustomerEndpointAddress":"+84798171999","customerPhone":"+84798171999","callerPhone":"+84798171999","AmazonConnectContactId":"codex-slot-memory-smoke","contactId":"codex-slot-memory-smoke","serviceName":"Full Set","requestedDate":"2026-07-10","requestedTime":"3 PM","staffPreference":"Trang","initialBookingUtterance":"I want to book a Full Set tomorrow at 3 PM with Trang.","lastAskedSlot":"customerName","askedSlotsCount":"1","fallbackCount":"1","errorCount":"1","customerName":"Lee"},"dialogAction":{"type":"Delegate"},"intent":{"name":"BookAppointmentIntent","state":"InProgress","confirmationState":"None","slots":{"customerName":{"shape":"Scalar","value":{"originalValue":"Lee","interpretedValue":"Lee","resolvedValues":["Lee"]}},"customerPhone":{"shape":"Scalar","value":{"originalValue":"+84798171999","interpretedValue":"+84798171999","resolvedValues":["+84798171999"]}},"serviceName":{"shape":"Scalar","value":{"originalValue":"Full Set","interpretedValue":"Full Set","resolvedValues":["Full Set"]}},"requestedDate":{"shape":"Scalar","value":{"originalValue":"2026-07-10","interpretedValue":"2026-07-10","resolvedValues":["2026-07-10"]}},"requestedTime":{"shape":"Scalar","value":{"originalValue":"3 PM","interpretedValue":"3 PM","resolvedValues":["3 PM"]}},"staffPreference":{"shape":"Scalar","value":{"originalValue":"Trang","interpretedValue":"Trang","resolvedValues":["Trang"]}}}}}}

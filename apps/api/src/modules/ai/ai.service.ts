@@ -606,6 +606,28 @@ const isOperatorZeroRequest = (value?: string | null): boolean => {
   return normalized === "zero" || /\b(?:press|pressed|hit|dial)\s+zero\b/.test(normalized);
 };
 
+const extractBareCustomerNameAnswer = (value?: string | null): string | undefined => {
+  const raw = value?.trim();
+  const normalized = normalizeForMatch(raw);
+  if (
+    !raw ||
+    readDtmfDigit(raw) ||
+    isOperatorZeroRequest(raw) ||
+    /\b(real person|live person|human|operator|representative|talk to a person|talk to someone|speak to someone|speak with someone)\b/.test(normalized) ||
+    /\b(book|booking|appointment|service|pedicure|manicure|full set|dip|powder|tomorrow|today|morning|afternoon|evening|night|phone|number|zero|one|two|three|four|five|six|seven|eight|nine|ten)\b/.test(normalized)
+  ) {
+    return undefined;
+  }
+  if (!/^[a-z][a-z' -]{0,80}$/i.test(raw) || normalized.split(" ").length > 4) {
+    return undefined;
+  }
+  return raw.replace(/\s+/g, " ");
+};
+
+const isReusableCallerName = (value?: string | null): value is string => {
+  return Boolean(extractBareCustomerNameAnswer(value));
+};
+
 const STAFF_ALIAS_PHRASES: Record<string, string[]> = {
   trang: ["trang", "chang", "train", "trangg"],
   amy: ["amy", "amie", "a me"],
@@ -2643,6 +2665,110 @@ const asTrimmedString = (value?: string | null): string | undefined => {
   return trimmed && trimmed.length > 0 ? trimmed : undefined;
 };
 
+const readNestedString = (value: unknown, paths: string[][]): string | undefined => {
+  for (const path of paths) {
+    let cursor = value;
+    for (const key of path) {
+      if (!cursor || typeof cursor !== "object" || Array.isArray(cursor) || !(key in cursor)) {
+        cursor = undefined;
+        break;
+      }
+      cursor = (cursor as Record<string, unknown>)[key];
+    }
+    if (typeof cursor === "string" && cursor.trim()) {
+      return cursor.trim();
+    }
+  }
+  return undefined;
+};
+
+const findKnownCallerMemoryByPhone = async (input: {
+  salonId: string;
+  customerPhone?: string | null;
+}): Promise<{ customerName: string; customerPhone?: string; source: string } | null> => {
+  const lookupValues = buildPhoneLookupValues(input.customerPhone);
+  if (!lookupValues.length) {
+    return null;
+  }
+
+  const existingCustomer = await findExistingCustomerByPhone(input);
+  if (existingCustomer) {
+    const existingCustomerName = customerDisplayName(existingCustomer);
+    if (isReusableCallerName(existingCustomerName)) {
+      return {
+        customerName: existingCustomerName,
+        customerPhone: existingCustomer.phone,
+        source: "customer"
+      };
+    }
+  }
+
+  const latestAttempts = await prisma.bookingAttempt.findMany({
+    where: {
+      salonId: input.salonId,
+      customerPhone: {
+        in: lookupValues
+      },
+      customerName: {
+        not: null
+      }
+    },
+    select: {
+      customerName: true,
+      customerPhone: true
+    },
+    orderBy: {
+      createdAt: "desc"
+    },
+    take: 20
+  });
+  const latestAttempt = latestAttempts.find((attempt) => isReusableCallerName(attempt.customerName));
+  if (latestAttempt?.customerName?.trim()) {
+    return {
+      customerName: latestAttempt.customerName.trim(),
+      customerPhone: latestAttempt.customerPhone ?? undefined,
+      source: "booking_attempt"
+    };
+  }
+
+  const recentCalls = await prisma.callSession.findMany({
+    where: {
+      salonId: input.salonId,
+      callerPhone: {
+        in: lookupValues
+      }
+    },
+    select: {
+      callerPhone: true,
+      aiSummary: true,
+      bookingResult: true
+    },
+    orderBy: {
+      createdAt: "desc"
+    },
+    take: 25
+  });
+  for (const call of recentCalls) {
+    const customerName = readNestedString(call.aiSummary, [
+      ["customer", "name"],
+      ["parsed", "customer", "name"],
+      ["normalizedRequest", "customerName"]
+    ]) ?? readNestedString(call.bookingResult, [
+      ["customer", "name"],
+      ["normalizedRequest", "customerName"]
+    ]);
+    if (isReusableCallerName(customerName)) {
+      return {
+        customerName,
+        customerPhone: call.callerPhone ?? input.customerPhone ?? undefined,
+        source: "call_session"
+      };
+    }
+  }
+
+  return null;
+};
+
 const hasTimeComponent = (value?: string): boolean => {
   if (!value) {
     return false;
@@ -3484,9 +3610,15 @@ export const createAmazonConnectAIAppointment = async (
   const explicitCustomerName = normalized.transcriptText
     ? extractCustomerNameFromText(normalized.transcriptText)
     : undefined;
+  const bareCustomerName =
+    !explicitCustomerName && readStringAttribute(normalized.attributes, ["lastAskedSlot"]) === "customerName"
+      ? extractBareCustomerNameAnswer(normalized.transcriptText)
+      : undefined;
   if (normalized.transcriptText) {
     if (explicitCustomerName) {
       normalized.customerName = explicitCustomerName;
+    } else if (bareCustomerName) {
+      normalized.customerName = bareCustomerName;
     }
     normalized.customerPhone ??= extractCustomerPhoneFromText(normalized.transcriptText);
   }
@@ -3497,9 +3629,23 @@ export const createAmazonConnectAIAppointment = async (
         customerPhone: normalized.customerPhone
       })
     : null;
-  if (recognizedCustomer && !explicitCustomerName) {
+  if (recognizedCustomer && !explicitCustomerName && !bareCustomerName) {
     normalized.customerName = customerDisplayName(recognizedCustomer);
     normalized.customerPhone = normalizePhoneForMatching(normalized.customerPhone) ?? recognizedCustomer.phone;
+  }
+  const knownCallerMemory =
+    !recognizedCustomer && normalized.customerPhone && !explicitCustomerName && !bareCustomerName
+      ? await findKnownCallerMemoryByPhone({
+          salonId: salon.id,
+          customerPhone: normalized.customerPhone
+        })
+      : null;
+  if (knownCallerMemory && !normalized.customerName) {
+    normalized.customerName = knownCallerMemory.customerName;
+    normalized.customerPhone =
+      normalizePhoneForMatching(normalized.customerPhone) ??
+      knownCallerMemory.customerPhone ??
+      normalized.customerPhone;
   }
 
   const transcript =
@@ -3764,7 +3910,12 @@ export const createAmazonConnectAIAppointment = async (
       Object.entries({
         customerId: recognizedCustomer?.id,
         recognizedCustomerId: recognizedCustomer?.id,
-        recognizedCustomerName: recognizedCustomer ? customerDisplayName(recognizedCustomer) : undefined,
+        recognizedCustomerName: recognizedCustomer
+          ? customerDisplayName(recognizedCustomer)
+          : knownCallerMemory?.customerName,
+        customerNameSource: recognizedCustomer
+          ? "customer"
+          : knownCallerMemory?.source,
         customerName: normalized.customerName,
         customerPhone: normalized.customerPhone,
         serviceName: normalized.serviceName,

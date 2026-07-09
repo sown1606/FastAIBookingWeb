@@ -166,24 +166,6 @@
           "x": 1040,
           "y": 160
         }
-      },
-      "check-kiet-known-caller": {
-        "position": {
-          "x": 420,
-          "y": 180
-        }
-      },
-      "set-kiet-known-customer": {
-        "position": {
-          "x": 620,
-          "y": 120
-        }
-      },
-      "kiet-known-caller-greeting-prompt": {
-        "position": {
-          "x": 760,
-          "y": 120
-        }
       }
     },
     "Annotations": []
@@ -475,10 +457,10 @@
         "TargetContact": "Current"
       },
       "Transitions": {
-        "NextAction": "check-kiet-known-caller",
+        "NextAction": "3b2877ca-bc16-4019-a8e6-04200c0ded06",
         "Errors": [
           {
-            "NextAction": "check-kiet-known-caller",
+            "NextAction": "3b2877ca-bc16-4019-a8e6-04200c0ded06",
             "ErrorType": "NoMatchingError"
           }
         ]
@@ -539,146 +521,6 @@
         "Errors": [
           {
             "NextAction": "37dbed23-a7c0-4259-a4f5-9be9db2f9c80",
-            "ErrorType": "NoMatchingError"
-          }
-        ]
-      }
-    },
-    {
-      "Identifier": "check-kiet-known-caller",
-      "Type": "Compare",
-      "Parameters": {
-        "ComparisonValue": "$.Attributes.callerPhone"
-      },
-      "Transitions": {
-        "NextAction": "3b2877ca-bc16-4019-a8e6-04200c0ded06",
-        "Conditions": [
-          {
-            "NextAction": "set-kiet-known-customer",
-            "Condition": {
-              "Operator": "Equals",
-              "Operands": [
-                "+17325956266"
-              ]
-            }
-          },
-          {
-            "NextAction": "set-kiet-known-customer",
-            "Condition": {
-              "Operator": "Equals",
-              "Operands": [
-                "7325956266"
-              ]
-            }
-          },
-          {
-            "NextAction": "set-kiet-known-customer",
-            "Condition": {
-              "Operator": "Equals",
-              "Operands": [
-                "17325956266"
-              ]
-            }
-          }
-        ],
-        "Errors": [
-          {
-            "NextAction": "3b2877ca-bc16-4019-a8e6-04200c0ded06",
-            "ErrorType": "NoMatchingCondition"
-          }
-        ]
-      }
-    },
-    {
-      "Identifier": "set-kiet-known-customer",
-      "Type": "UpdateContactAttributes",
-      "Parameters": {
-        "Attributes": {
-          "customerName": "Kiet",
-          "recognizedCustomerName": "Kiet",
-          "customerNameSource": "phone_lookup"
-        },
-        "TargetContact": "Current"
-      },
-      "Transitions": {
-        "NextAction": "kiet-known-caller-greeting-prompt",
-        "Errors": [
-          {
-            "NextAction": "kiet-known-caller-greeting-prompt",
-            "ErrorType": "NoMatchingError"
-          }
-        ]
-      }
-    },
-    {
-      "Identifier": "kiet-known-caller-greeting-prompt",
-      "Type": "ConnectParticipantWithLexBot",
-      "Parameters": {
-        "LexV2Bot": {
-          "AliasArn": "arn:aws:lex:us-east-1:197452633989:bot-alias/KHMIXGA2US/JVIPIZDYE3"
-        },
-        "LexSessionAttributes": {
-          "provider": "AMAZON_CONNECT",
-          "callerPhone": "$.CustomerEndpoint.Address",
-          "CustomerEndpointAddress": "$.CustomerEndpoint.Address",
-          "CallerId": "$.CustomerEndpoint.Address",
-          "calledNumber": "$.SystemEndpoint.Address",
-          "CalledNumber": "$.SystemEndpoint.Address",
-          "SystemEndpointAddress": "$.SystemEndpoint.Address",
-          "contactId": "$.ContactId",
-          "ContactId": "$.ContactId",
-          "AmazonConnectContactId": "$.ContactId",
-          "InitialContactId": "$.InitialContactId"
-        },
-        "Text": "Hi Kiet, thanks for calling. I can help book your appointment. What service would you like today?"
-      },
-      "Transitions": {
-        "NextAction": "05553b55-f227-4c66-b391-a3e068b01966",
-        "Conditions": [
-          {
-            "NextAction": "check-transfer-to-queue",
-            "Condition": {
-              "Operator": "Equals",
-              "Operands": [
-                "BookAppointmentIntent"
-              ]
-            }
-          },
-          {
-            "NextAction": "check-transfer-to-queue",
-            "Condition": {
-              "Operator": "Equals",
-              "Operands": [
-                "CancelAppointmentIntent"
-              ]
-            }
-          },
-          {
-            "NextAction": "check-transfer-to-queue",
-            "Condition": {
-              "Operator": "Equals",
-              "Operands": [
-                "RescheduleAppointmentIntent"
-              ]
-            }
-          },
-          {
-            "NextAction": "check-transfer-to-queue",
-            "Condition": {
-              "Operator": "Equals",
-              "Operands": [
-                "HumanEscalationIntent"
-              ]
-            }
-          }
-        ],
-        "Errors": [
-          {
-            "NextAction": "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d",
-            "ErrorType": "NoMatchingCondition"
-          },
-          {
-            "NextAction": "41e3f239-5b57-4363-92fc-9d594579fa98",
             "ErrorType": "NoMatchingError"
           }
         ]
