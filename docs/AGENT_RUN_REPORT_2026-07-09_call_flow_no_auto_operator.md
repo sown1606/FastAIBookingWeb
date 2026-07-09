@@ -112,4 +112,4 @@ Raw captures:
 8. Press `0` only when intentionally testing operator transfer. Expected: “Please wait while I connect you.” then queue/hold music.
 
 ## Commit
-- Fix commit hash: pending before commit.
+- Fix commit hash: `7f41753`
