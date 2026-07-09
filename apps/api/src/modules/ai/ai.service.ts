@@ -672,12 +672,24 @@ const readStringAttribute = (
   return undefined;
 };
 
+const readNumberAttribute = (
+  attributes: Record<string, unknown> | undefined,
+  names: string[]
+): number | undefined => {
+  for (const name of names) {
+    const value = attributes?.[name];
+    const parsed = typeof value === "number" ? value : Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return undefined;
+};
+
 const parseAttemptCount = (value?: string): number => {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 };
-
-const MAX_SLOT_RETRY_COUNT = 3;
 
 const BOOKING_ATTRIBUTE_NAMES = {
   customerName: ["customerName", "CustomerName"],
@@ -2767,7 +2779,7 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
   };
 };
 
-const shouldEscalateToHuman = (input: {
+const shouldTransferToHuman = (input: {
   intentName?: string;
   transcriptText?: string;
   serviceName?: string;
@@ -2799,17 +2811,6 @@ const getHumanEscalationReason = (input: {
   }
 
   if (
-    readStringAttribute(input.attributes, ["forceHumanEscalation"]) === "true" ||
-    readStringAttribute(input.attributes, ["transferToQueue"]) === "true"
-  ) {
-    return "caller_requested_human";
-  }
-
-  if (intent === "humanescalationintent") {
-    return "caller_requested_human";
-  }
-
-  if (
     readStringAttribute(input.attributes, ["humanEscalationOffer"]) &&
     (isAffirmative(input.transcriptText) || isAffirmative(input.serviceName))
   ) {
@@ -2817,9 +2818,24 @@ const getHumanEscalationReason = (input: {
   }
 
   const text = input.transcriptText?.toLowerCase() ?? "";
-  return /\b(real person|live person|human|operator|representative|talk to a person|speak to someone|speak with someone)\b/.test(text)
-    ? "caller_requested_human"
-    : undefined;
+  if (
+    /\b(real person|live person|human|operator|representative|talk to a person|talk to someone|speak to someone|speak with someone)\b/.test(text)
+  ) {
+    return "caller_requested_human";
+  }
+
+  if (intent === "humanescalationintent") {
+    const confidence = readNumberAttribute(input.attributes, [
+      "intentConfidence",
+      "nluConfidence",
+      "lexIntentConfidence"
+    ]);
+    if (confidence !== undefined && confidence >= 0.7) {
+      return "caller_requested_human";
+    }
+  }
+
+  return undefined;
 };
 
 const buildInternalParsedIntent = (input: {
@@ -3185,7 +3201,7 @@ const buildLexMessage = (input: {
     `${escapeSsml(
       input.failureReason ??
         "I could not confirm the appointment right now."
-    )} <break time="300ms"/> Please wait while I connect you.`
+    )} <break time="300ms"/> You can press 0 to speak with an operator, or I can take a callback request.`
   );
 };
 
@@ -3196,7 +3212,6 @@ const getElicitSlotForMissingFields = (
   slotToElicit: string;
   promptMissingFields: string[];
   attemptCount: number;
-  shouldEscalate: boolean;
   sessionAttributes: Record<string, string>;
 } => {
   let slotToElicit = "serviceName";
@@ -3226,10 +3241,6 @@ const getElicitSlotForMissingFields = (
     slotToElicit,
     promptMissingFields,
     attemptCount,
-    shouldEscalate:
-      attemptCount >= MAX_SLOT_RETRY_COUNT &&
-      slotToElicit !== "serviceName" &&
-      slotToElicit !== "staffPreference",
     sessionAttributes: {
       lastAskedSlot: slotToElicit,
       askedSlotsCount: String(attemptCount),
@@ -4003,7 +4014,9 @@ export const createAmazonConnectAIAppointment = async (
     };
   }
 
-  const humanEscalationReason = getHumanEscalationReason(normalized);
+  const humanEscalationReason = shouldTransferToHuman(normalized)
+    ? getHumanEscalationReason(normalized)
+    : undefined;
   if (humanEscalationReason) {
     const humanFailureReason =
       humanEscalationReason === "customer_pressed_zero"
@@ -4155,97 +4168,6 @@ export const createAmazonConnectAIAppointment = async (
     const staffPromptOptions = elicitDecision.promptMissingFields.includes("staffPreference")
       ? await getStaffCandidates({ salonId: salon.id })
       : [];
-    if (elicitDecision.shouldEscalate) {
-      const reason = `Missing ${elicitDecision.slotToElicit} after repeated attempts.`;
-      const parsed = buildInternalParsedIntent({
-        intentType: "BOOK_APPOINTMENT",
-        customerName: normalized.customerName,
-        customerPhone: normalized.customerPhone,
-        serviceName: normalized.serviceName,
-        staffPreference: normalized.staffPreference,
-        requestedDateTime: normalized.requestedDate,
-        missingFields: Array.from(missingFields.values()),
-        isReadyToBook: false
-      });
-      const bookingAttempt = await createAttempt({
-        status: BookingAttemptStatus.NEEDS_INPUT,
-        failureReason: reason,
-        normalizedRequest: {
-          requestedDateTimeText,
-          lastAskedSlot: elicitDecision.slotToElicit,
-          askedSlotsCount: elicitDecision.attemptCount
-        }
-      });
-      const escalation = callSession
-        ? await createOrUpdateCallEscalation({
-            salonId: salon.id,
-            callSessionId: callSession.id,
-            requestedBy: "AMAZON_CONNECT_LEX",
-            escalationReason: reason,
-            customerPhone: normalized.customerPhone ?? null,
-            messageToCaller: "Please wait while I connect you.",
-            metadata: {
-              bookingAttemptId: bookingAttempt.id,
-              transcriptId: transcript?.id,
-              intentName: normalized.intentName,
-              contactId: normalized.contactId,
-              lastAskedSlot: elicitDecision.slotToElicit,
-              askedSlotsCount: elicitDecision.attemptCount
-            }
-          })
-        : null;
-      const message = buildLexMessage({
-        outcome: "HUMAN_ESCALATION",
-        knownFields: normalized
-      });
-      const aiInteraction = await createInteraction({
-        outcome: "HUMAN_ESCALATION",
-        message,
-        parsed,
-        bookingAttemptId: bookingAttempt.id,
-        responsePayload: {
-          escalationId: escalation?.id ?? null,
-          reason,
-          missingFields: Array.from(missingFields.values())
-        },
-        isValid: true
-      });
-      await finalizeCall({
-        outcome: "HUMAN_ESCALATION",
-        bookingAttemptId: bookingAttempt.id,
-        bookingStatus: bookingAttempt.status,
-        parsed,
-        message,
-        escalation,
-        routingOutcome:
-          escalation?.routingOutcome === "QUEUED"
-            ? CallRoutingOutcome.QUEUED
-            : CallRoutingOutcome.CALL_CENTER_ESCALATION,
-        failureReason: bookingAttempt.failureReason ?? undefined
-      });
-
-      return {
-        outcome: "HUMAN_ESCALATION" as const,
-        message,
-        lexResponse: {
-          fulfillmentState: "Fulfilled",
-          message,
-          messageContentType: "SSML",
-          sessionAttributes: buildHumanEscalationSessionAttributes(reason, escalation, {
-            ...elicitDecision.sessionAttributes
-          })
-        },
-        appointment: null,
-        bookingAttempt,
-        callSession,
-        transcript,
-        aiInteraction,
-        escalation,
-        alternatives: [],
-        missingFields: [],
-        salonResolutionSource: resolutionSource
-      };
-    }
 
     const message = buildLexMessage({
       outcome: "MISSING_INFO",

@@ -1270,6 +1270,8 @@ test("after service DTMF 4, name and date turns keep Full Set", async () => {
   assert.equal(first.response.status, 200);
   assert.equal(first.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
   assert.equal(first.body.data.lexResponse.sessionAttributes.confirmedServiceName, "Full Set");
+  assert.notEqual(first.body.data.lexResponse.sessionAttributes.transferToQueue, "true");
+  assert.notEqual(first.body.data.lexResponse.sessionAttributes.forceHumanEscalation, "true");
 
   const nameTurn = await postInternalAppointment(
     bookingPayload({
@@ -1292,6 +1294,8 @@ test("after service DTMF 4, name and date turns keep Full Set", async () => {
   assert.equal(nameTurn.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
   assert.equal(nameTurn.body.data.lexResponse.sessionAttributes.confirmedServiceName, "Full Set");
   assert.equal(nameTurn.body.data.lexResponse.sessionAttributes.customerName, "Thuyet");
+  assert.notEqual(nameTurn.body.data.lexResponse.sessionAttributes.transferToQueue, "true");
+  assert.notEqual(nameTurn.body.data.lexResponse.sessionAttributes.forceHumanEscalation, "true");
   assert.notEqual(nameTurn.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
 
   const dateTurn = await postInternalAppointment(
@@ -1315,6 +1319,8 @@ test("after service DTMF 4, name and date turns keep Full Set", async () => {
   assert.equal(dateTurn.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
   assert.equal(dateTurn.body.data.lexResponse.sessionAttributes.confirmedServiceName, "Full Set");
   assert.equal(dateTurn.body.data.lexResponse.sessionAttributes.requestedTime, "15:00");
+  assert.notEqual(dateTurn.body.data.lexResponse.sessionAttributes.transferToQueue, "true");
+  assert.notEqual(dateTurn.body.data.lexResponse.sessionAttributes.forceHumanEscalation, "true");
   assert.notEqual(dateTurn.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
 });
 
@@ -1782,20 +1788,24 @@ test("explicit human intent does not transfer when no agents are assigned", asyn
   assert.equal(state.escalations[0].messageToCaller, "No agents available.");
 });
 
-test("backend errors and timeouts return safe Lex human escalation payloads", async () => {
+test("backend errors and timeouts return safe Lex reprompts without auto transfer", async () => {
   state.throwOnSalonFind = new Error("database query timed out");
   let result = await postInternalAppointment(bookingPayload());
   assert.equal(result.response.status, 200);
-  assert.equal(result.body.data.outcome, "HUMAN_ESCALATION");
-  assert.equal(result.body.data.lexResponse.sessionAttributes.forceHumanEscalation, "true");
-  assert.equal(result.body.data.lexResponse.sessionAttributes.transferToQueue, "true");
-  assert.equal(result.body.data.lexResponse.sessionAttributes.escalationReason, "backend_timeout");
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.forceHumanEscalation, "false");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.transferToQueue, "false");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.recoverableErrorReason, "backend_timeout");
+  assert.match(result.body.data.lexResponse.message, /press 0 to speak with an operator/i);
   assert.doesNotMatch(result.body.data.lexResponse.message, /database|query|timed out/i);
 
   resetMockState();
   state.throwOnSalonFind = new Error("database host detail");
   result = await postInternalAppointment(bookingPayload());
   assert.equal(result.response.status, 200);
-  assert.equal(result.body.data.lexResponse.sessionAttributes.escalationReason, "backend_error");
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.transferToQueue, "false");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.forceHumanEscalation, "false");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.recoverableErrorReason, "backend_error");
   assert.doesNotMatch(result.body.data.lexResponse.message, /database|host detail/i);
 });

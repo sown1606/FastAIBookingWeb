@@ -934,14 +934,61 @@ function extractBookingDetailsFromText(text, timeZone = DEFAULT_SALON_TIMEZONE) 
   };
 }
 
-function isHumanEscalationRequest(intentName, text) {
-  if (intentName === "HumanEscalationIntent") {
-    return true;
+function getIntentConfidence(event, intentName) {
+  const scores = [];
+  for (const interpretation of event.interpretations || []) {
+    const interpretedIntentName = interpretation?.intent?.name;
+    if (intentName && interpretedIntentName && interpretedIntentName !== intentName) {
+      continue;
+    }
+    const score = Number(
+      interpretation?.nluConfidence?.score ??
+        interpretation?.intent?.nluConfidence?.score ??
+        interpretation?.intentConfidence
+    );
+    if (Number.isFinite(score)) {
+      scores.push(score);
+    }
   }
+  return scores.length ? Math.max(...scores) : null;
+}
+
+function isExplicitHumanRequestText(text) {
   const normalized = normalizeForMatch(text);
-  return /\b(real person|live person|human|operator|representative|talk to a person|speak to someone|speak with someone)\b/.test(
+  return /\b(real person|live person|human|operator|representative|talk to a person|talk to someone|speak to someone|speak with someone)\b/.test(
     normalized
   );
+}
+
+function shouldTransferToHuman(event, intentName) {
+  if (!isStaffAnyDtmfZeroRequest(event) && isOperatorZeroRequest(event)) {
+    return {
+      transfer: true,
+      reason: "customer_pressed_zero"
+    };
+  }
+
+  if (isExplicitHumanRequestText(event.inputTranscript)) {
+    return {
+      transfer: true,
+      reason: "caller_requested_human"
+    };
+  }
+
+  if (intentName === "HumanEscalationIntent") {
+    const confidence = getIntentConfidence(event, intentName);
+    if (confidence !== null && confidence >= 0.7) {
+      return {
+        transfer: true,
+        reason: "caller_requested_human"
+      };
+    }
+  }
+
+  return {
+    transfer: false,
+    reason: ""
+  };
 }
 
 function isOperatorZeroRequest(event) {
@@ -1493,13 +1540,11 @@ async function buildDynamicStaffElicitResponse(event, intentName) {
 
   const data = extractResultPayload(result);
   if (data.outcome === "HUMAN_ESCALATION") {
-    return buildLexResponse(
-      event,
-      data.lexResponse?.message || "Please wait while I connect you.",
-      data.lexResponse?.fulfillmentState || "Fulfilled",
-      buildSessionAttributesFromResult(data),
-      data.lexResponse
-    );
+    return buildElicitSlotResponse(event, "staffPreference", {
+      forceHumanEscalation: "false",
+      transferToQueue: "false",
+      backendEscalationSuppressed: "true"
+    });
   }
 
   const lexResponse = data.lexResponse || {};
@@ -1547,7 +1592,7 @@ function buildBackendFailureEscalationResponse(event, result) {
   const reason = normalizeBackendFailureReason(result?.code);
   return buildLexResponse(
     event,
-    "This is taking longer than expected. Please wait while I connect you to our team.",
+    "Please wait while I connect you.",
     "Fulfilled",
     buildForceHumanEscalationAttributes(reason),
     {
@@ -1557,14 +1602,24 @@ function buildBackendFailureEscalationResponse(event, result) {
 }
 
 function buildBackendFailureElicitResponse(event, result) {
+  const slotToElicit = getBookingSlotToElicit(event) || "serviceName";
+  const waitPrompt =
+    slotToElicit === "staffPreference"
+      ? WAIT_PROMPTS.staff_lookup
+      : slotToElicit === "customerName" || slotToElicit === "customerPhone"
+        ? WAIT_PROMPTS.customer_lookup
+        : slotToElicit === "serviceName"
+          ? WAIT_PROMPTS.service_lookup
+          : WAIT_PROMPTS.availability_lookup;
   return buildElicitSlotResponse(
     event,
-    getBookingSlotToElicit(event) || "serviceName",
+    slotToElicit,
     {
       backendFailureReason: normalizeBackendFailureReason(result?.code),
       forceHumanEscalation: "false",
       transferToQueue: "false"
-    }
+    },
+    `${waitPrompt} I'm having trouble checking that right now. You can press 0 to speak with an operator, or I can take a callback request.`
   );
 }
 
@@ -1751,7 +1806,7 @@ function buildInternalPayload(event, intentName, extraAttributes = {}) {
   const knownField = (fieldName, options = {}) =>
     getSessionAttribute(sessionAttributes, slotNames[fieldName] || [fieldName]) ||
     getKnownField(event, fieldName, options);
-  const backendIntentName = isHumanEscalationRequest(intentName)
+  const backendIntentName = shouldTransferToHuman(event, intentName).transfer
     ? "HumanEscalationIntent"
     : intentName;
   const calledNumber = getAttribute(event, attributeNames.calledNumber);
@@ -1847,12 +1902,14 @@ function removeTransferSessionAttributes(lexResponse) {
 export const handler = async (event) => {
   try {
     const intentName = event.sessionState?.intent?.name || "";
-    const pressedZeroForOperator = !isStaffAnyDtmfZeroRequest(event) && isOperatorZeroRequest(event);
-    const shouldEscalate =
-      pressedZeroForOperator || isHumanEscalationRequest(intentName, event.inputTranscript);
+    const transferDecision = shouldTransferToHuman(event, intentName);
+    const shouldEscalate = transferDecision.transfer;
     const sessionAttributes = event.sessionState?.sessionAttributes || {};
-    const escalationAttributes = pressedZeroForOperator
-      ? buildForceHumanEscalationAttributes("customer_pressed_zero")
+    const intentConfidence = getIntentConfidence(event, intentName);
+    const escalationAttributes = shouldEscalate
+      ? buildForceHumanEscalationAttributes(transferDecision.reason, {
+          ...(intentConfidence !== null ? { intentConfidence: String(intentConfidence) } : {})
+        })
       : {};
 
     if (
@@ -2001,7 +2058,7 @@ export const handler = async (event) => {
       });
       if (!result.ok) {
         console.error("Appointment API rejected cancel request", result.code);
-        return buildBackendFailureEscalationResponse(event, result);
+        return buildBackendFailureElicitResponse(event, result);
       }
       const data = extractResultPayload(result);
       return buildLexResponse(
@@ -2022,7 +2079,7 @@ export const handler = async (event) => {
       });
       if (!result.ok) {
         console.error("Appointment API rejected reschedule request", result.code);
-        return buildBackendFailureEscalationResponse(event, result);
+        return buildBackendFailureElicitResponse(event, result);
       }
       const data = extractResultPayload(result);
       return buildLexResponse(
@@ -2050,7 +2107,7 @@ export const handler = async (event) => {
 
     if (!result.ok) {
       console.error("Appointment API rejected request", result.code);
-      return buildBackendFailureEscalationResponse(event, result);
+      return buildBackendFailureElicitResponse(event, result);
     }
 
     const data = extractResultPayload(result);
@@ -2058,10 +2115,15 @@ export const handler = async (event) => {
       data.outcome === "HUMAN_ESCALATION" ||
       (data.outcome !== "BOOKED" && data.lexResponse?.sessionAttributes?.transferToQueue === "true")
     ) {
+      if (!shouldEscalate) {
+        return buildBackendFailureElicitResponse(event, {
+          code: data.lexResponse?.sessionAttributes?.escalationReason || "backend_error"
+        });
+      }
       return buildLexResponse(
         event,
         data.lexResponse?.message ||
-          "This is taking longer than expected. Please wait while I connect you to our team.",
+          "Please wait while I connect you.",
         data.lexResponse?.fulfillmentState || "Fulfilled",
         buildSessionAttributesFromResult(data),
         data.lexResponse
@@ -2069,7 +2131,7 @@ export const handler = async (event) => {
     }
 
     if (data.outcome === "FAILED") {
-      return buildBackendFailureEscalationResponse(event, {
+      return buildBackendFailureElicitResponse(event, {
         code: data.lexResponse?.sessionAttributes?.escalationReason || "backend_error"
       });
     }
@@ -2084,7 +2146,7 @@ export const handler = async (event) => {
       lexResponse?.message ||
       (data.outcome === "BOOKED"
         ? "<speak>You're all set. <break time=\"300ms\"/> Your appointment is booked. Thank you for calling.</speak>"
-        : '<speak>I could not confirm the booking yet. <break time="300ms"/> Please wait while I connect you.</speak>');
+        : '<speak>Please wait a moment while I check our services. <break time="300ms"/> I&apos;m having trouble checking that right now. You can press 0 to speak with an operator, or I can take a callback request.</speak>');
 
     return buildLexResponse(
       event,
@@ -2096,7 +2158,7 @@ export const handler = async (event) => {
   } catch (error) {
     console.error("Booking handler error", error);
     const caughtIntentName = event.sessionState?.intent?.name || "";
-    if (!isHumanEscalationRequest(caughtIntentName)) {
+    if (!shouldTransferToHuman(event, caughtIntentName).transfer) {
       return buildElicitSlotResponse(
         event,
         getBookingSlotToElicit(event) || "serviceName",

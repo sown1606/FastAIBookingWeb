@@ -97,23 +97,25 @@ const tokensMatch = (actual: string, expected: string): boolean => {
   );
 };
 
-const safeEscalationResponse = (reason: "backend_error" | "backend_timeout") => ({
-  outcome: "HUMAN_ESCALATION" as const,
-  message: "Please wait while I connect you.",
+const RECOVERABLE_AI_ERROR_MESSAGE =
+  "Please wait a moment while I check our services. I'm having trouble checking that right now. You can press 0 to speak with an operator, or I can take a callback request.";
+
+const safeRecoverableResponse = (reason: "backend_error" | "backend_timeout") => ({
+  outcome: "MISSING_INFO" as const,
+  message: RECOVERABLE_AI_ERROR_MESSAGE,
   data: {
-    outcome: "HUMAN_ESCALATION",
+    outcome: "MISSING_INFO",
     lexResponse: {
-      fulfillmentState: "Fulfilled",
-      message: "Please wait while I connect you.",
+      fulfillmentState: "InProgress",
+      message: RECOVERABLE_AI_ERROR_MESSAGE,
       messageContentType: "PlainText",
+      dialogAction: {
+        type: "ElicitIntent"
+      },
       sessionAttributes: {
-        forceHumanEscalation: "true",
-        transferToQueue: "true",
-        escalationReason: reason,
-        fallbackMode: "operator_queue",
-        ...(env.AMAZON_CONNECT_QUEUE_ID_DEFAULT
-          ? { queueId: env.AMAZON_CONNECT_QUEUE_ID_DEFAULT }
-          : {})
+        forceHumanEscalation: "false",
+        transferToQueue: "false",
+        recoverableErrorReason: reason
       }
     },
     appointment: null,
@@ -221,7 +223,7 @@ aiInternalRouter.post(
       const reason = classifyInternalAIError(error);
       logWaitCoverage({
         success: false,
-        outcome: "HUMAN_ESCALATION",
+        outcome: "MISSING_INFO",
         reason
       });
       logger.error(
@@ -230,11 +232,11 @@ aiInternalRouter.post(
           reason,
           errorName: error instanceof Error ? error.name : typeof error
         },
-        "Internal AI appointment flow failed. Returning caller-safe human escalation."
+        "Internal AI appointment flow failed. Returning recoverable caller-safe prompt."
       );
       return sendSuccess(res, {
         statusCode: 200,
-        ...safeEscalationResponse(reason)
+        ...safeRecoverableResponse(reason)
       });
     }
     logWaitCoverage({

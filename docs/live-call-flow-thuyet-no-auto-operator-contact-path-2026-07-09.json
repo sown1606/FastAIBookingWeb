@@ -1,0 +1,101 @@
+{
+  "generatedAt": "2026-07-09T02:41:41.865Z",
+  "phoneNumber": "+18483487681",
+  "connectInstanceId": "74f78377-766f-46b7-a745-4bc97b68a8dc",
+  "phoneNumberRecord": {
+    "PhoneNumberId": "f2e36faa-5264-4955-8a18-e2f53755c102",
+    "PhoneNumberArn": "arn:aws:connect:us-east-1:197452633989:phone-number/f2e36faa-5264-4955-8a18-e2f53755c102",
+    "PhoneNumber": "+18483487681",
+    "PhoneNumberCountryCode": "US",
+    "PhoneNumberType": "DID",
+    "TargetArn": "arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc",
+    "InstanceId": "74f78377-766f-46b7-a745-4bc97b68a8dc",
+    "PhoneNumberDescription": ""
+  },
+  "aiReceptionContactFlow": {
+    "id": "dcccf542-587c-426c-a644-a4c6f24da6e4",
+    "name": "FastAIBooking AI Reception",
+    "status": "PUBLISHED",
+    "lexAliasArns": [
+      "arn:aws:lex:us-east-1:197452633989:bot-alias/KHMIXGA2US/JVIPIZDYE3",
+      "arn:aws:lex:us-east-1:197452633989:bot-alias/KHMIXGA2US/JVIPIZDYE3",
+      "arn:aws:lex:us-east-1:197452633989:bot-alias/KHMIXGA2US/JVIPIZDYE3"
+    ],
+    "transferGate": {
+      "comparisonValue": "$.Lex.SessionAttributes.transferToQueue",
+      "trueTarget": "transfer-human-escalation-flow"
+    },
+    "lexNoMatchingErrorBranchAfter": {
+      "id": "41e3f239-5b57-4363-92fc-9d594579fa98",
+      "text": "I am having trouble hearing that. Please tell me the appointment you want, or press 0 for an operator.",
+      "nextAction": "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d",
+      "errors": [
+        {
+          "NextAction": "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d",
+          "ErrorType": "NoMatchingError"
+        }
+      ]
+    },
+    "containsOldAutoTransferErrorText": false,
+    "containsAiServicesUnavailable": false
+  },
+  "humanEscalationFlow": {
+    "id": "c7386b94-56bb-4382-b517-ee890bbacb51",
+    "name": "FastAIBooking Human Escalation",
+    "status": "PUBLISHED",
+    "waitPrompts": [
+      "Please wait while I connect you to our team.",
+      "No agents available."
+    ],
+    "transfersToQueue": true
+  },
+  "customerQueueFlow": {
+    "id": "6bdf546e-4e3a-4bf5-954f-fb78fa6a3d5b",
+    "name": "Default customer queue",
+    "status": "PUBLISHED",
+    "hasIterativeMusicBlock": true,
+    "prompts": []
+  },
+  "operatorQueue": {
+    "QueueId": "d0f2a5d8-e983-4609-9bbc-efb0881a465d",
+    "Name": "FastAIBooking Operator Queue",
+    "Status": "ENABLED",
+    "HoursOfOperationId": "f42fbbf1-e7e1-4361-bd0d-e235a0048d0b"
+  },
+  "lexAliasBefore": {
+    "botAliasId": "JVIPIZDYE3",
+    "botVersion": "17",
+    "status": "Available"
+  },
+  "lexAliasAfter": {
+    "botAliasName": "prod",
+    "botAliasId": "JVIPIZDYE3",
+    "botVersion": "17",
+    "botAliasStatus": "Available",
+    "lastUpdatedDateTime": "2026-07-08T14:45:55.170000-04:00"
+  },
+  "lambdaBefore": {
+    "LastModified": "2026-07-09T01:56:53.000+0000",
+    "CodeSha256": "TJ8DcCrnNET+T9Qoy4nf0ON7tFCPizd9ezv/0CsRcGw="
+  },
+  "lambdaAfter": {
+    "FunctionName": "fastaibooking-booking-handler",
+    "LastModified": "2026-07-09T02:36:46.000+0000",
+    "CodeSha256": "9PJ7a/4Cz9IypNCpFjcMtAeJgzFe3mgPO02N6Z3FBg8=",
+    "Timeout": 15,
+    "EnvKeys": [
+      "FASTAIBOOKING_API_INTERNAL_TOKEN",
+      "DEFAULT_SALON_ID",
+      "FASTAIBOOKING_API_BASE_URL"
+    ]
+  },
+  "apiBefore": {
+    "image": "sha256:ddbf68e3463024d37b91750f2f908e53e101d19ea033161daa88b6b5378a8227",
+    "startedAt": "2026-07-09T01:57:49Z"
+  },
+  "apiAfter": "sha256:ace10eba7b4ab21f3271f56f85714fe4e90aff9da7c68669969e93ff165e593d 2026-07-09T02:37:37.999146909Z healthy",
+  "lexChanged": false,
+  "lambdaChanged": true,
+  "apiChanged": true,
+  "connectFlowChanged": true
+}

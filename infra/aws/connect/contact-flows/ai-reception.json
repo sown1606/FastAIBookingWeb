@@ -432,13 +432,13 @@
       "Type": "MessageParticipant",
       "Parameters": {
         "SkipWhenDTMFBufferEnabled": "false",
-        "Text": "This is taking longer than expected. Please wait while I connect you to our team."
+        "Text": "I am having trouble hearing that. Please tell me the appointment you want, or press 0 for an operator."
       },
       "Transitions": {
-        "NextAction": "transfer-human-escalation-flow",
+        "NextAction": "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d",
         "Errors": [
           {
-            "NextAction": "transfer-human-escalation-flow",
+            "NextAction": "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d",
             "ErrorType": "NoMatchingError"
           }
         ]
