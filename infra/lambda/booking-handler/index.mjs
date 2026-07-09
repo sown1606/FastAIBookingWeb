@@ -140,7 +140,8 @@ const SERVICE_DTMF_OPTIONS = {
   "2": "Manicure",
   "3": "Gel Manicure",
   "4": "Full Set",
-  "5": "Dip Powder"
+  "5": "Dip Powder",
+  "0": "__operator__"
 };
 const STAFF_DTMF_OPTIONS = {
   "1": "Trang",
@@ -180,13 +181,13 @@ const ANY_STAFF_ALIASES = [
   "first available"
 ];
 const SERVICE_DTMF_PROMPT =
-  "Hi, thanks for calling. I can help book your appointment. What service would you like today? You can press 0 for a real person.";
+  "Hi, I can help book your appointment. You can say the service, press 4 for Full Set, or press 0 for a real person.";
 const SERVICE_KEYPAD_PROMPT =
   "I didn't catch the service. You can say Pedicure, Manicure, Gel Manicure, Full Set, Dip Powder, or Other Services. You can also press 1 through 5, or press 0 for an operator.";
 const SERVICE_DTMF_SHORT_PROMPT =
   "You can say Pedicure, Manicure, Gel Manicure, Full Set, Dip Powder, or Other Services. You can also press 1 through 5, or press 0 for an operator.";
 const STAFF_DTMF_PROMPT =
-  "Which staff would you like? You can say Trang, Amy, Kelly, or first available. Press 0 for an operator.";
+  "Which staff would you like, Trang, Amy, Kelly, or first available?";
 const STAFF_DTMF_SHORT_PROMPT =
   "For staff, press 1 for Trang, 2 for Amy, 3 for Kelly, 4 for first available, or 0 for an operator.";
 const NO_INPUT_HUMAN_CONFIRM_PROMPT =
@@ -301,24 +302,24 @@ const SLOT_ELICIT_PROMPTS = {
     STAFF_DTMF_PROMPT
   ],
   requestedDate: [
-    "What day would you like to come in? Press 0 to speak with an operator.",
-    "Could you repeat the appointment date? Press 0 to speak with an operator.",
-    "Do you want that today, tomorrow, or another day? Press 0 to speak with an operator."
+    "What day would you like? You can say today or tomorrow.",
+    "What day would you like? You can say today or tomorrow.",
+    "What day would you like? You can say today or tomorrow."
   ],
   requestedTime: [
-    "What time would you like? Press 0 to speak with an operator.",
-    "Could you repeat the appointment time? Press 0 to speak with an operator.",
-    "What time works best for you? Press 0 to speak with an operator."
+    "What time works best?",
+    "Could you repeat the appointment time?",
+    "What time works best?"
   ],
   customerName: [
-    "What name should I put the appointment under? Press 0 to speak with an operator.",
-    "Could you say your name for the booking? Press 0 to speak with an operator.",
-    "What is your name? Press 0 to speak with an operator."
+    "What name should I put on the appointment?",
+    "Sorry, could you spell the name for me?",
+    "Sorry, could you spell the name for me?"
   ],
   customerPhone: [
-    "What phone number should I use for the appointment? Press 0 to speak with an operator.",
-    "Could you repeat your phone number? Press 0 to speak with an operator.",
-    "What is the best phone number for you? Press 0 to speak with an operator."
+    "What phone number should I use for the appointment?",
+    "Could you repeat your phone number?",
+    "What is the best phone number for you?"
   ]
 };
 
@@ -400,6 +401,38 @@ function normalizeSpokenNumbers(value) {
     /\b(one|two|three|tree|tri|four|five|fife|six|seven|eight|nine|ten|eleven|twelve)\b/gi,
     (match) => String(NUMBER_WORDS[match.toLowerCase()] || match)
   );
+}
+
+function digitSequenceFromUtterance(value) {
+  const normalized = normalizeForMatch(value)
+    .replace(/^(?:press|pressed|hit|dial|number|option)\s+/, "")
+    .trim();
+  if (!normalized) {
+    return [];
+  }
+  if (/^\d{2,}$/.test(normalized)) {
+    return normalized.split("");
+  }
+  const tokens = normalized.split(/\s+/);
+  const digits = tokens.map((token) => {
+    if (/^\d$/.test(token)) {
+      return token;
+    }
+    if (token === "zero") {
+      return "0";
+    }
+    const number = NUMBER_WORDS[token];
+    return number !== undefined && number >= 0 && number <= 9 ? String(number) : "";
+  });
+  return digits.every(Boolean) ? digits : [];
+}
+
+function isDigitOnlyOrSequenceUtterance(value) {
+  return digitSequenceFromUtterance(value).length > 0;
+}
+
+function isMultiDigitOrDigitSequenceUtterance(value) {
+  return digitSequenceFromUtterance(value).length > 1;
 }
 
 function normalizeServiceName(value) {
@@ -540,6 +573,13 @@ function isOperatorZeroValue(value) {
 function getScopedDtmfDigit(event, expectedSlot) {
   const previous = event.sessionState?.sessionAttributes || {};
   const lastAskedSlot = previous.lastAskedSlot;
+  const activeDtmfMenu = previous.activeDtmfMenu;
+  if (activeDtmfMenu === "service" && expectedSlot !== "serviceName") {
+    return "";
+  }
+  if (activeDtmfMenu === "staff" && expectedSlot !== "staffPreference") {
+    return "";
+  }
   if (lastAskedSlot !== expectedSlot) {
     return "";
   }
@@ -577,8 +617,7 @@ function getCurrentTurnTranscript(event) {
 }
 
 function isBareDigitUtterance(value) {
-  const normalized = normalizeForMatch(value).replace(/^(?:press|number) /, "");
-  return /^(?:[0-9]|zero|one|two|three|four|five|six|seven|eight|nine)$/.test(normalized);
+  return digitSequenceFromUtterance(value).length === 1;
 }
 
 function hasCurrentTurnTimePhrase(transcript) {
@@ -586,7 +625,7 @@ function hasCurrentTurnTimePhrase(transcript) {
   if (!raw.trim()) {
     return false;
   }
-  if (isBareDigitUtterance(raw)) {
+  if (isDigitOnlyOrSequenceUtterance(raw)) {
     return false;
   }
   return Boolean(normalizeTimePhrase(extractTimeCandidate(raw)));
@@ -599,7 +638,18 @@ function hasCurrentTurnDatePhrase(transcript) {
 
 function isInvalidCustomerNameNoise(value) {
   const normalized = normalizeForMatch(value);
-  return Boolean(normalized && CUSTOMER_NAME_NOISE.has(normalized));
+  return Boolean(
+    normalized &&
+      (CUSTOMER_NAME_NOISE.has(normalized) ||
+        isDigitOnlyOrSequenceUtterance(value) ||
+        extractServiceFromTranscript(value) ||
+        extractStaffFromTranscript(value) ||
+        getPreferredDateCandidate(value) ||
+        normalizeTimePhrase(extractTimeCandidate(value)) ||
+        /(?:phone|number|appointment|book|service|tomorrow|today|morning|afternoon|evening|night|zero|one|two|three|four|five|six|seven|eight|nine|ten)\b/i.test(
+          String(value || "")
+        ))
+  );
 }
 
 function isAcceptableCustomerName(value) {
@@ -712,9 +762,106 @@ function readCurrentTurnDigit(event) {
   return "";
 }
 
+function getCurrentTurnDtmfDiagnostics(event) {
+  const previous = event.sessionState?.sessionAttributes || {};
+  const transcriptCandidateRecords = [
+    { source: "inputTranscript", value: event.inputTranscript }
+  ];
+  for (const [index, transcription] of (event.transcriptions || []).entries()) {
+    transcriptCandidateRecords.push(
+      { source: `transcriptions.${index}.transcription`, value: transcription?.transcription },
+      { source: `transcriptions.${index}.transcript`, value: transcription?.transcript },
+      { source: `transcriptions.${index}.inputTranscript`, value: transcription?.inputTranscript }
+    );
+  }
+  for (const [index, interpretation] of (event.interpretations || []).entries()) {
+    transcriptCandidateRecords.push(
+      { source: `interpretations.${index}.transcription`, value: interpretation?.transcription },
+      { source: `interpretations.${index}.inputTranscript`, value: interpretation?.inputTranscript }
+    );
+  }
+
+  const sessionAttributeNames = [
+    "dtmf",
+    "DTMF",
+    "dtmfDigit",
+    "dtmfDigits",
+    "inputDigit",
+    "inputDigits",
+    "InputDigits",
+    "CustomerInput",
+    "serviceNameDtmf",
+    "serviceNameDigit",
+    "serviceDtmf",
+    "serviceDigit",
+    "staffPreferenceDtmf",
+    "staffPreferenceDigit",
+    "staffDtmf",
+    "staffDigit"
+  ];
+  const sessionAttributeRecords = sessionAttributeNames.map((name) => ({
+    source: `sessionAttributes.${name}`,
+    value: previous[name]
+  }));
+  const candidates = [...transcriptCandidateRecords, ...sessionAttributeRecords]
+    .filter((candidate) => candidate.value !== undefined && candidate.value !== null)
+    .map((candidate) => ({
+      source: candidate.source,
+      value: String(candidate.value).trim()
+    }))
+    .filter((candidate) => candidate.value);
+
+  let digitsExtractedSingle = "";
+  let readSource = "none";
+  const sequenceValues = [];
+  for (const candidate of candidates) {
+    const digit = readDtmfDigit(candidate.value);
+    if (!digitsExtractedSingle && digit && /^[0-9]$/.test(digit)) {
+      digitsExtractedSingle = digit;
+      readSource = candidate.source.includes("sessionAttributes")
+        ? "sessionAttribute"
+        : candidate.source === "inputTranscript"
+          ? "inputTranscript"
+          : "transcription";
+    }
+    const sequence = digitSequenceFromUtterance(candidate.value);
+    if (sequence.length) {
+      sequenceValues.push(...sequence);
+    }
+  }
+
+  const rawInputTranscript = getCurrentTurnTranscript(event);
+  const inputSequence = digitSequenceFromUtterance(rawInputTranscript);
+  const digitsExtractedSequence = inputSequence.length
+    ? inputSequence
+    : Array.from(new Set(sequenceValues));
+
+  return {
+    rawInputTranscript,
+    inputMode: getInputMode(event),
+    transcriptCandidates: transcriptCandidateRecords
+      .map((candidate) => candidate.value)
+      .filter((value) => value !== undefined && value !== null && String(value).trim() !== "")
+      .map(String),
+    sessionAttributeCandidates: Object.fromEntries(
+      sessionAttributeRecords
+        .filter((candidate) => candidate.value !== undefined && candidate.value !== null && String(candidate.value).trim())
+        .map((candidate) => [candidate.source.replace("sessionAttributes.", ""), String(candidate.value)])
+    ),
+    digitsExtractedSingle,
+    digitsExtractedSequence,
+    isBareDigitUtterance: isBareDigitUtterance(rawInputTranscript),
+    isMultiDigitOrDigitSequence: isMultiDigitOrDigitSequenceUtterance(rawInputTranscript),
+    readSource,
+    activeDtmfMenuBefore: previous.activeDtmfMenu || "",
+    lastAskedSlotBefore: previous.lastAskedSlot || ""
+  };
+}
+
 function buildDtmfRouting(event) {
   const previous = event.sessionState?.sessionAttributes || {};
-  const digit = readCurrentTurnDigit(event);
+  const diagnostics = getCurrentTurnDtmfDiagnostics(event);
+  const digit = diagnostics.digitsExtractedSingle || readCurrentTurnDigit(event);
   const lastAskedSlotBefore = previous.lastAskedSlot || "";
   const activeDtmfMenuBefore =
     previous.activeDtmfMenu === "service" || previous.activeDtmfMenu === "staff"
@@ -729,14 +876,37 @@ function buildDtmfRouting(event) {
     accepted: false,
     ignoredReason: "",
     nextSlot: "",
+    digitSequence: diagnostics.digitsExtractedSequence,
+    isBareDigitUtterance: diagnostics.isBareDigitUtterance,
+    isMultiDigitOrDigitSequence: diagnostics.isMultiDigitOrDigitSequence,
+    readSource: diagnostics.readSource,
     menuMismatch: Boolean(
       activeDtmfMenuBefore &&
         ((activeDtmfMenuBefore === "service" && lastAskedSlotBefore !== "serviceName") ||
           (activeDtmfMenuBefore === "staff" && lastAskedSlotBefore !== "staffPreference"))
     )
   };
-  if (!digit) {
+  if (!digit && !diagnostics.isMultiDigitOrDigitSequence) {
     return base;
+  }
+  if (!digit && diagnostics.isMultiDigitOrDigitSequence) {
+    const nextSlot = ["requestedDate", "requestedTime", "customerName", "customerPhone"].includes(lastAskedSlotBefore)
+      ? lastAskedSlotBefore
+      : "";
+    return {
+      ...base,
+      route: activeDtmfMenuBefore
+        ? `${activeDtmfMenuBefore}_menu`
+        : lastAskedSlotBefore
+          ? "wrong_slot"
+          : "no_active_menu",
+      ignoredReason: activeDtmfMenuBefore
+        ? "multi_digit_sequence_not_valid_for_menu"
+        : lastAskedSlotBefore
+          ? `digit_sequence_not_valid_for_${lastAskedSlotBefore}`
+          : "digit_sequence_without_active_menu",
+      nextSlot
+    };
   }
   if (digit === "0") {
     return {
@@ -855,6 +1025,85 @@ function collectTrustedBookingSlots(sessionAttributes = {}) {
   );
 }
 
+function buildSlotDecisionDebug(event, finalAttributes = {}) {
+  const previous = event.sessionState?.sessionAttributes || {};
+  const slots = event.sessionState?.intent?.slots || {};
+  const timeZone = getAttribute(event, attributeNames.timezone) || DEFAULT_SALON_TIMEZONE;
+  const currentTurnTranscript = getCurrentTurnTranscript(event);
+  const dtmfDiagnostics = getCurrentTurnDtmfDiagnostics(event);
+  const recoveryTranscript = [
+    event.inputTranscript,
+    getAttribute(event, attributeNames.transcript),
+    previous.initialBookingUtterance
+  ]
+    .filter((value, index, values) => value && values.indexOf(value) === index)
+    .join(" ");
+  const recovered = extractBookingDetailsFromText(recoveryTranscript, timeZone);
+  const decisions = {};
+  for (const fieldName of [
+    "serviceName",
+    "requestedDate",
+    "requestedTime",
+    "staffPreference",
+    "customerName"
+  ]) {
+    const names = slotNames[fieldName] || [fieldName];
+    const lexSlot = getSlotValue(slots, names, {
+      preferOriginal: fieldName === "requestedTime"
+    });
+    const previousValue =
+      getSessionAttribute(previous, names) ||
+      (fieldName === "serviceName" ? previous.confirmedServiceName : "") ||
+      (fieldName === "staffPreference" ? previous.confirmedStaffName : "");
+    const recoveredValue = recovered[fieldName] || "";
+    const finalValue =
+      getSessionAttribute(finalAttributes, names) ||
+      (fieldName === "serviceName" ? finalAttributes.confirmedServiceName : "") ||
+      (fieldName === "staffPreference" ? finalAttributes.confirmedStaffName : "");
+    const currentGrounded = slotValueIsGroundedInCurrentTranscript(
+      fieldName,
+      lexSlot || recoveredValue || finalValue,
+      currentTurnTranscript,
+      timeZone
+    );
+    const digitNoise =
+      dtmfDiagnostics.isBareDigitUtterance || dtmfDiagnostics.isMultiDigitOrDigitSequence;
+    let decision = finalValue ? "preserved_or_recovered" : "missing";
+    let reason = "";
+    if (finalValue && previousValue && valuesEquivalent(fieldName, finalValue, previousValue, timeZone)) {
+      decision = "preserved_previous";
+    }
+    if (finalValue && lexSlot && valuesEquivalent(fieldName, finalValue, lexSlot, timeZone)) {
+      decision = "accepted_lex_slot";
+    }
+    if (finalValue && recoveredValue && valuesEquivalent(fieldName, finalValue, recoveredValue, timeZone)) {
+      decision = "recovered_from_transcript";
+    }
+    if (
+      ["requestedDate", "requestedTime"].includes(fieldName) &&
+      lexSlot &&
+      digitNoise &&
+      !currentGrounded &&
+      (!previousValue || !valuesEquivalent(fieldName, lexSlot, previousValue, timeZone))
+    ) {
+      decision = previousValue ? "rejected_lex_preserved_previous" : "rejected_lex";
+      reason = `${fieldName}_digit_sequence_not_grounded`;
+    } else if (lexSlot && !currentGrounded && previous.lastAskedSlot && !previousValue) {
+      reason = `${fieldName}_not_grounded_in_current_turn`;
+    }
+    decisions[fieldName] = {
+      before: previousValue || undefined,
+      lexSlot: lexSlot || undefined,
+      recovered: recoveredValue || undefined,
+      previous: previousValue || undefined,
+      final: finalValue || undefined,
+      decision,
+      reason: reason || undefined
+    };
+  }
+  return decisions;
+}
+
 function slotValueLooksLikeScopedDtmfPollution(slot, digit) {
   if (!slot || !digit) {
     return false;
@@ -946,15 +1195,18 @@ function currentTurnRecognizedService(event) {
 function analyzeLexTurnSanitization(event) {
   const previous = event.sessionState?.sessionAttributes || {};
   const slots = event.sessionState?.intent?.slots || {};
+  const dtmfDiagnostics = getCurrentTurnDtmfDiagnostics(event);
   const dtmfRouting = buildDtmfRouting(event);
-  const scopedServiceDigit =
-    dtmfRouting.accepted && dtmfRouting.route === "service_menu"
+  const scopedServiceDigit = dtmfRouting.accepted
+    ? dtmfRouting.route === "service_menu"
       ? dtmfRouting.digit
-      : getScopedDtmfDigit(event, "serviceName");
-  const scopedStaffDigit =
-    dtmfRouting.accepted && dtmfRouting.route === "staff_menu"
+      : ""
+    : getScopedDtmfDigit(event, "serviceName");
+  const scopedStaffDigit = dtmfRouting.accepted
+    ? dtmfRouting.route === "staff_menu"
       ? dtmfRouting.digit
-      : getScopedDtmfDigit(event, "staffPreference");
+      : ""
+    : getScopedDtmfDigit(event, "staffPreference");
   const scopedDtmfDigit = dtmfRouting.digit || scopedServiceDigit || scopedStaffDigit || "";
   const ignoredPollutedSlots = [];
   const ignoredUngroundedSlots = [];
@@ -1056,27 +1308,35 @@ function analyzeLexTurnSanitization(event) {
     const isDtmfAcceptedSlot =
       (fieldName === "serviceName" && dtmfRouting.accepted && dtmfRouting.route === "service_menu") ||
       (fieldName === "staffPreference" && dtmfRouting.accepted && dtmfRouting.route === "staff_menu");
+    const currentTurnDigitOnlyOrSequence =
+      dtmfDiagnostics.isBareDigitUtterance || dtmfDiagnostics.isMultiDigitOrDigitSequence;
 
     if (
       fieldName === "requestedTime" &&
-      !hasCurrentTurnTimePhrase(currentTurnTranscript) &&
-      previous.lastAskedSlot !== "requestedTime" &&
+      (!hasCurrentTurnTimePhrase(currentTurnTranscript) || currentTurnDigitOnlyOrSequence) &&
       !alreadyTrusted
     ) {
       delete sanitizedSlots[name];
-      ignoredUngroundedSlots.push(fieldName);
+      ignoredUngroundedSlots.push(
+        currentTurnDigitOnlyOrSequence
+          ? "requestedTime_digit_sequence_not_grounded"
+          : fieldName
+      );
       changed = true;
       continue;
     }
 
     if (
       fieldName === "requestedDate" &&
-      !hasCurrentTurnDatePhrase(currentTurnTranscript) &&
-      !isCurrentAskedSlot &&
+      (!hasCurrentTurnDatePhrase(currentTurnTranscript) || currentTurnDigitOnlyOrSequence) &&
       !alreadyTrusted
     ) {
       delete sanitizedSlots[name];
-      ignoredUngroundedSlots.push(fieldName);
+      ignoredUngroundedSlots.push(
+        currentTurnDigitOnlyOrSequence
+          ? "requestedDate_digit_sequence_not_grounded"
+          : fieldName
+      );
       changed = true;
       continue;
     }
@@ -1165,6 +1425,7 @@ function analyzeLexTurnSanitization(event) {
   return {
     scopedDtmfDigit,
     currentTurnTranscript,
+    dtmfDiagnostics,
     dtmfRouting,
     ignoredPollutedSlots: Array.from(new Set(ignoredPollutedSlots)),
     ignoredUngroundedSlots: Array.from(new Set(ignoredUngroundedSlots)),
@@ -1234,7 +1495,7 @@ function sanitizeLexEvent(event, analysis) {
   return {
     ...event,
     lexTurnDebug,
-    inputTranscript: analysis.replacementInputTranscript || event.inputTranscript,
+    inputTranscript: event.inputTranscript,
     sessionState: {
       ...(event.sessionState || {}),
       sessionAttributes,
@@ -1886,8 +2147,134 @@ function getElicitPrompt(event, slotName, attemptCount) {
   return prompts[promptIndexFor(event, slotName, attemptCount, prompts.length)] || prompts[0];
 }
 
+function formatDateForPrompt(value, timeZone = DEFAULT_SALON_TIMEZONE) {
+  const resolved = resolveKnownDateValue(value, timeZone);
+  if (!resolved) {
+    return "";
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(resolved)) {
+    return value;
+  }
+  const today = formatDateParts(getZonedDateParts(timeZone));
+  const tomorrow = formatDateParts(addDaysToDateParts(getZonedDateParts(timeZone), 1));
+  if (resolved === today) {
+    return "today";
+  }
+  if (resolved === tomorrow) {
+    return "tomorrow";
+  }
+  const [year, month, day] = resolved.split("-").map(Number);
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "UTC",
+    weekday: "long",
+    month: "short",
+    day: "numeric"
+  }).format(new Date(Date.UTC(year, month - 1, day)));
+}
+
+function formatTimeForPrompt(value) {
+  const normalized = normalizeTimePhrase(value);
+  if (normalized) {
+    return normalized;
+  }
+  const raw = String(value || "").trim();
+  const match = raw.match(/^([01]?\d|2[0-3]):([0-5]\d)$/);
+  if (!match) {
+    return raw;
+  }
+  let hour = Number(match[1]);
+  const minute = Number(match[2]);
+  const period = hour >= 12 ? "PM" : "AM";
+  if (hour === 0) {
+    hour = 12;
+  } else if (hour > 12) {
+    hour -= 12;
+  }
+  return minute === 0 ? `${hour} ${period}` : `${hour}:${String(minute).padStart(2, "0")} ${period}`;
+}
+
+function buildKnownBookingPromptSummary(event, options = {}) {
+  const known = buildKnownBookingSessionAttributes(event);
+  const timeZone = getAttribute(event, attributeNames.timezone) || DEFAULT_SALON_TIMEZONE;
+  const serviceName = normalizeServiceName(known.confirmedServiceName || known.serviceName);
+  const date = formatDateForPrompt(known.requestedDate, timeZone);
+  const time = formatTimeForPrompt(known.requestedTime);
+  const staff = known.staffPreference || known.confirmedStaffName;
+  const pieces = [];
+  if (serviceName) {
+    pieces.push(serviceName);
+  }
+  if (date && time) {
+    pieces.push(options.forPhrase ? `for ${date} at ${time}` : `${date} at ${time}`);
+  } else if (date) {
+    pieces.push(options.forPhrase ? `for ${date}` : date);
+  } else if (time) {
+    pieces.push(`at ${time}`);
+  }
+  if (staff) {
+    pieces.push(`with ${staff}`);
+  }
+  return pieces.join(" ").replace(/\s+/g, " ").trim();
+}
+
+function currentTurnRepeatsKnownBookingField(event) {
+  const known = buildKnownBookingSessionAttributes(event);
+  const transcript = getCurrentTurnTranscript(event);
+  const timeZone = getAttribute(event, attributeNames.timezone) || DEFAULT_SALON_TIMEZONE;
+  const currentDetails = extractBookingDetailsFromText(transcript, timeZone);
+  const knownService = normalizeServiceName(known.confirmedServiceName || known.serviceName);
+  if (
+    currentDetails.serviceName &&
+    knownService &&
+    valuesEquivalent("serviceName", currentDetails.serviceName, knownService, timeZone)
+  ) {
+    return true;
+  }
+  if (
+    currentDetails.requestedDate &&
+    known.requestedDate &&
+    valuesEquivalent("requestedDate", currentDetails.requestedDate, known.requestedDate, timeZone)
+  ) {
+    return true;
+  }
+  if (
+    currentDetails.requestedTime &&
+    known.requestedTime &&
+    valuesEquivalent("requestedTime", currentDetails.requestedTime, known.requestedTime, timeZone)
+  ) {
+    return true;
+  }
+  const staff = extractStaffFromTranscript(transcript, known);
+  return Boolean(
+    staff &&
+      (known.staffPreference || known.confirmedStaffName) &&
+      valuesEquivalent("staffPreference", staff, known.staffPreference || known.confirmedStaffName, timeZone)
+  );
+}
+
+function buildCustomerNamePrompt(event, options = {}) {
+  const summary = buildKnownBookingPromptSummary(event, {
+    forPhrase: options.already
+  });
+  if (options.retry && !options.already) {
+    return "Sorry, could you spell the name for me?";
+  }
+  if (options.already && summary) {
+    return `I already have ${summary}. What name should I put on the appointment?`;
+  }
+  if (summary) {
+    return `Got it: ${summary}. What name should I put on the appointment?`;
+  }
+  return "What name should I put on the appointment?";
+}
+
 function getServiceAwareElicitPrompt(event, slotName, attemptCount) {
   const prompt = getElicitPrompt(event, slotName, attemptCount);
+  if (slotName === "customerName") {
+    return buildCustomerNamePrompt(event, {
+      retry: attemptCount > 1
+    });
+  }
   if (slotName !== "staffPreference") {
     return prompt;
   }
@@ -1958,6 +2345,7 @@ function getKnownField(event, fieldName, options = {}) {
 function buildKnownBookingSessionAttributes(event) {
   const previous = event.sessionState?.sessionAttributes || {};
   const slots = event.sessionState?.intent?.slots || {};
+  const dtmfDiagnostics = getCurrentTurnDtmfDiagnostics(event);
   const eventTranscriptIsDtmf = Boolean(readDtmfDigit(event.inputTranscript));
   const eventInputIsScopedServiceDtmf =
     eventTranscriptIsDtmf || previous.scopedServiceDtmfInput === "true";
@@ -2011,8 +2399,30 @@ function buildKnownBookingSessionAttributes(event) {
     getKnownField(event, "staffPreference"),
     previous
   );
-  const suppressBareDigitRecovery =
-    isBareDigitUtterance(event.inputTranscript) && previous.lastAskedSlot !== "requestedTime";
+  const currentTurnIsDigitNoise =
+    dtmfDiagnostics.isBareDigitUtterance || dtmfDiagnostics.isMultiDigitOrDigitSequence;
+  const currentTurnHasGroundedDate = hasCurrentTurnDatePhrase(event.inputTranscript);
+  const currentTurnHasGroundedTime = hasCurrentTurnTimePhrase(event.inputTranscript);
+  const recoveredDateIsGrounded =
+    Boolean(recovered.requestedDate) &&
+    (currentTurnHasGroundedDate ||
+      (!currentTurnIsDigitNoise && hasCurrentTurnDatePhrase(recoveryTranscript)));
+  const recoveredTimeIsGrounded =
+    Boolean(recovered.requestedTime) &&
+    (currentTurnHasGroundedTime ||
+      (!currentTurnIsDigitNoise && hasCurrentTurnTimePhrase(recoveryTranscript)));
+  const previousResolvedDate = resolveKnownDateValue(previousDate, timeZone);
+  const knownResolvedDate = resolveKnownDateValue(knownDate, timeZone);
+  const previousResolvedTime = normalizeTimePhrase(previousTime) || previousTime;
+  const knownResolvedTime = normalizeTimePhrase(knownTime) || knownTime;
+  const finalDate = previousResolvedDate && !recoveredDateIsGrounded
+    ? previousResolvedDate
+    : recovered.requestedDate || previousResolvedDate || knownResolvedDate;
+  const finalTime = previousResolvedTime && !recoveredTimeIsGrounded
+    ? previousResolvedTime
+    : (recoveredTimeIsGrounded ? recovered.requestedTime : "") ||
+      previousResolvedTime ||
+      knownResolvedTime;
   const known = {
     recognizedCustomerName: previous.recognizedCustomerName,
     customerNameSource:
@@ -2029,16 +2439,8 @@ function buildKnownBookingSessionAttributes(event) {
       recovered.customerPhone ||
       amazonConnectCustomerPhone,
     serviceName: serviceDtmfSelection || stablePreviousService || recovered.serviceName || knownService,
-    requestedDate:
-      recovered.requestedDate ||
-      resolveKnownDateValue(previousDate, timeZone) ||
-      resolveKnownDateValue(knownDate, timeZone),
-    requestedTime:
-      (suppressBareDigitRecovery ? "" : recovered.requestedTime) ||
-      normalizeTimePhrase(previousTime) ||
-      previousTime ||
-      normalizeTimePhrase(knownTime) ||
-      knownTime,
+    requestedDate: finalDate,
+    requestedTime: finalTime,
     staffPreference:
       (staffDtmfSelection && !staffDtmfSelection.invalid ? staffDtmfSelection.staffName : "") ||
       cleanPreviousStaffPreference ||
@@ -2165,16 +2567,6 @@ function getBookingSlotToElicit(event) {
     return "requestedTime";
   }
 
-  const customerName = getSessionAttribute(sessionAttributes, slotNames.customerName);
-  if (!customerName) {
-    return "customerName";
-  }
-
-  const customerPhone = getSessionAttribute(sessionAttributes, slotNames.customerPhone);
-  if (!isValidCustomerPhone(customerPhone)) {
-    return "customerPhone";
-  }
-
   const staffPreference = getSessionAttribute(sessionAttributes, slotNames.staffPreference);
   const staffId = sessionAttributes.staffId || sessionAttributes.selectedStaffId;
   if (isInvalidStaffPreferenceNoise(staffPreference, sessionAttributes)) {
@@ -2185,6 +2577,16 @@ function getBookingSlotToElicit(event) {
   }
   if (!staffPreference && !staffId && sessionAttributes.lastAskedSlot !== "staffPreference") {
     return "staffPreference";
+  }
+
+  const customerName = getSessionAttribute(sessionAttributes, slotNames.customerName);
+  if (!customerName) {
+    return "customerName";
+  }
+
+  const customerPhone = getSessionAttribute(sessionAttributes, slotNames.customerPhone);
+  if (!isValidCustomerPhone(customerPhone)) {
+    return "customerPhone";
   }
 
   return "";
@@ -2225,7 +2627,8 @@ function buildElicitSlotResponse(event, slotName, extraAttributes = {}, messageO
     slotName
   );
 
-  return {
+  const responseMessage = messageOverride || getServiceAwareElicitPrompt(event, slotName, attemptCount);
+  const response = {
     sessionState: {
       sessionAttributes: responseSessionAttributes,
       dialogAction: {
@@ -2242,10 +2645,15 @@ function buildElicitSlotResponse(event, slotName, extraAttributes = {}, messageO
 	    messages: [
 	      {
 	        contentType: "PlainText",
-	        content: messageOverride || getServiceAwareElicitPrompt(event, slotName, attemptCount)
+	        content: responseMessage
 	      }
 	    ]
 	  };
+  return commitDialogState(response, {
+    slotToElicit: slotName,
+    trustedSlots: responseSessionAttributes,
+    responseMessage
+  });
 	}
 
 function getNoInputPrompt(slotName, noInputCount, event) {
@@ -2441,8 +2849,18 @@ function buildBackendFailureElicitResponse(event, result) {
           ? WAIT_PROMPTS.service_lookup
           : WAIT_PROMPTS.availability_lookup;
   const servicePrefix = confirmedService && slotToElicit !== "serviceName"
-    ? `I already have ${confirmedService}. `
+    ? `I still have ${confirmedService}. `
     : "";
+  const recoveryPrompt =
+    slotToElicit === "requestedTime"
+      ? "I had trouble checking the schedule. What time would you like?"
+      : slotToElicit === "staffPreference"
+        ? "I had trouble checking the schedule. Which staff would you like, Trang, Amy, Kelly, or first available?"
+        : slotToElicit === "customerName"
+          ? "I had trouble checking the schedule. What name should I put on the appointment?"
+          : slotToElicit === "requestedDate"
+            ? "I had trouble checking the schedule. What day would you like?"
+            : `${waitPrompt} I had trouble checking that right now.`;
   return buildElicitSlotResponse(
     event,
     slotToElicit,
@@ -2451,7 +2869,7 @@ function buildBackendFailureElicitResponse(event, result) {
       forceHumanEscalation: "false",
       transferToQueue: "false"
     },
-    `${servicePrefix}${waitPrompt} I'm having trouble checking that right now. You can press 0 to speak with an operator, or I can take a callback request.`
+    `${servicePrefix}${recoveryPrompt}`
   );
 }
 
@@ -2537,7 +2955,7 @@ function buildLexResponse(event, message, state = "Fulfilled", sessionAttributes
     mergedSessionAttributes,
     dialogAction.type === "ElicitSlot" ? dialogAction.slotToElicit : ""
   );
-  return {
+  const response = {
     sessionState: {
       sessionAttributes: responseSessionAttributes,
       dialogAction,
@@ -2553,6 +2971,11 @@ function buildLexResponse(event, message, state = "Fulfilled", sessionAttributes
 	      }
 	    ]
 	  };
+  return commitDialogState(response, {
+    slotToElicit: dialogAction.type === "ElicitSlot" ? dialogAction.slotToElicit : "",
+    trustedSlots: responseSessionAttributes,
+    responseMessage
+  });
 	}
 
 function buildDelegateResponse(event) {
@@ -2867,12 +3290,84 @@ function applyActiveDtmfMenuAttributes(sessionAttributes = {}, slotName = "") {
     next.activeDtmfOptionsJson = JSON.stringify(SERVICE_DTMF_OPTIONS);
   } else if (slotName === "staffPreference") {
     next.activeDtmfMenu = "staff";
-    next.activeDtmfOptionsJson = next.staffDtmfOptions || JSON.stringify(STAFF_DTMF_OPTIONS);
+    next.activeDtmfOptionsJson = JSON.stringify({
+      ...parseDtmfRecord(next.staffDtmfOptions),
+      ...(Object.keys(parseDtmfRecord(next.staffDtmfOptions)).length ? {} : STAFF_DTMF_OPTIONS),
+      "0": "__operator__"
+    });
   } else {
     delete next.activeDtmfMenu;
     delete next.activeDtmfOptionsJson;
   }
   return next;
+}
+
+function commitDialogState(response, options = {}) {
+  const slotToElicit =
+    options.slotToElicit || response?.sessionState?.dialogAction?.slotToElicit || "";
+  const responseMessage =
+    options.responseMessage || response?.messages?.[0]?.content || "";
+  const sessionAttributes = {
+    ...(response?.sessionState?.sessionAttributes || {})
+  };
+  const trustedSlots = options.trustedSlots || {};
+
+  if (slotToElicit) {
+    sessionAttributes.lastAskedSlot = slotToElicit;
+    sessionAttributes.slotToElicit = slotToElicit;
+  }
+  for (const field of [
+    "serviceName",
+    "confirmedServiceName",
+    "requestedDate",
+    "requestedTime",
+    "staffPreference",
+    "customerName",
+    "customerPhone"
+  ]) {
+    const value = trustedSlots[field] ?? sessionAttributes[field];
+    if (value !== undefined && value !== null && String(value).trim() !== "") {
+      sessionAttributes[field] = String(value);
+    }
+  }
+
+  if (options.activeDtmfMenu !== undefined) {
+    if (options.activeDtmfMenu) {
+      sessionAttributes.activeDtmfMenu = options.activeDtmfMenu;
+      sessionAttributes.activeDtmfOptionsJson = JSON.stringify(options.activeDtmfOptions || {});
+    } else {
+      delete sessionAttributes.activeDtmfMenu;
+      delete sessionAttributes.activeDtmfOptionsJson;
+    }
+  } else if (slotToElicit === "serviceName") {
+    sessionAttributes.activeDtmfMenu = "service";
+    sessionAttributes.activeDtmfOptionsJson = JSON.stringify(SERVICE_DTMF_OPTIONS);
+  } else if (slotToElicit === "staffPreference") {
+    sessionAttributes.activeDtmfMenu = "staff";
+    sessionAttributes.activeDtmfOptionsJson = JSON.stringify({
+      ...getStaffDtmfOptions(sessionAttributes),
+      "0": "__operator__"
+    });
+  } else if (slotToElicit) {
+    delete sessionAttributes.activeDtmfMenu;
+    delete sessionAttributes.activeDtmfOptionsJson;
+  }
+
+  if (
+    options.operatorHelpMentioned ||
+    sessionAttributes.operatorHelpMentioned === "true" ||
+    /\bpress\s+0\b/i.test(responseMessage)
+  ) {
+    sessionAttributes.operatorHelpMentioned = "true";
+  }
+
+  return {
+    ...response,
+    sessionState: {
+      ...(response.sessionState || {}),
+      sessionAttributes
+    }
+  };
 }
 
 function redactLogObject(value) {
@@ -2893,6 +3388,7 @@ function getInputMode(event) {
 function buildLexTurnDebug(event, analysis = {}) {
   const attributesBefore = event.sessionState?.sessionAttributes || {};
   const slots = event.sessionState?.intent?.slots || {};
+  const knownAfterSanitization = buildKnownBookingSessionAttributes(event);
   return {
     contactId:
       getAttribute(event, attributeNames.contactId) ||
@@ -2907,18 +3403,22 @@ function buildLexTurnDebug(event, analysis = {}) {
     intentName: event.sessionState?.intent?.name || "",
     lastAskedSlotBefore: attributesBefore.lastAskedSlot,
     activeDtmfMenuBefore: attributesBefore.activeDtmfMenu,
+    activeDtmfOptionsBefore: getActiveDtmfOptions(attributesBefore),
     slotsOriginalValues: collectSlotOriginalValues(slots),
     slotsInterpretedValues: collectSlotInterpretedValues(slots),
     trustedSlotsBefore: collectTrustedBookingSlots(attributesBefore),
     attributesBefore: redactLogObject(attributesBefore),
+    dtmfDiagnostics: analysis.dtmfDiagnostics ?? getCurrentTurnDtmfDiagnostics(event),
     dtmfRouting: analysis.dtmfRouting,
+    slotDecisions: buildSlotDecisionDebug(event, knownAfterSanitization),
     sanitization: {
       clearedStaleRequestedTime: Boolean(analysis.clearedStaleRequestedTime),
       ignoredPollutedSlots: analysis.ignoredPollutedSlots || [],
       ignoredUngroundedSlots: analysis.ignoredUngroundedSlots || [],
       ignoredNoiseFields: analysis.ignoredNoiseFields || [],
       preservedConfirmedService: Boolean(analysis.preservedConfirmedService)
-    }
+    },
+    trustedSlotsAfter: collectTrustedBookingSlots(knownAfterSanitization)
   };
 }
 
@@ -2938,10 +3438,14 @@ function logStructuredLexTurn(event, response, analysis = {}) {
     lastAskedSlotAfter: sessionAttributesAfter.lastAskedSlot,
     activeDtmfMenuBefore: sessionAttributesBefore.activeDtmfMenu,
     activeDtmfMenuAfter: sessionAttributesAfter.activeDtmfMenu,
+    activeDtmfOptionsBefore: getActiveDtmfOptions(sessionAttributesBefore),
+    activeDtmfOptionsAfter: getActiveDtmfOptions(sessionAttributesAfter),
     slotsOriginalValues: collectSlotOriginalValues(slots),
     slotsInterpretedValues: collectSlotInterpretedValues(slots),
     scopedDtmfDigit: analysis.scopedDtmfDigit || "",
+    dtmfDiagnostics: analysis.dtmfDiagnostics ?? getCurrentTurnDtmfDiagnostics(event),
     dtmfRouting: analysis.dtmfRouting,
+    slotDecisions: buildSlotDecisionDebug(event, sessionAttributesAfter),
     sanitization: {
       clearedStaleRequestedTime: Boolean(analysis.clearedStaleRequestedTime),
       ignoredPollutedSlots: analysis.ignoredPollutedSlots || [],
@@ -2963,9 +3467,7 @@ function buildWrongSlotDtmfPrompt(event, slotName) {
   const known = buildKnownBookingSessionAttributes(event);
   const confirmedService = normalizeServiceName(known.confirmedServiceName || known.serviceName);
   if (slotName === "requestedDate") {
-    return confirmedService
-      ? `I already have ${confirmedService}. What day would you like?`
-      : "What day would you like?";
+    return "What day would you like? You can say today or tomorrow.";
   }
   if (slotName === "requestedTime") {
     return confirmedService
@@ -2973,7 +3475,9 @@ function buildWrongSlotDtmfPrompt(event, slotName) {
       : "What time would you like?";
   }
   if (slotName === "customerName") {
-    return "What name should I put on the appointment?";
+    return buildCustomerNamePrompt(event, {
+      already: currentTurnRepeatsKnownBookingField(event)
+    });
   }
   if (slotName === "customerPhone") {
     return "What phone number should I use for the appointment?";
@@ -3002,31 +3506,98 @@ async function handleLexEvent(event, analysis = {}) {
       analysis.ignoredNoiseFields?.includes("customerName") &&
       sessionAttributes.lastAskedSlot === "customerName"
     ) {
-      return buildElicitSlotResponse(
+      const previousNameAttempts = parseAttemptCount(
+        sessionAttributes.askedSlotsCount || sessionAttributes.fallbackCount || sessionAttributes.errorCount
+      );
+      const response = buildElicitSlotResponse(
         event,
         "customerName",
         {
           ignoredNoiseFields: JSON.stringify(analysis.ignoredNoiseFields)
         },
-        "What name should I put on the appointment?"
+        buildCustomerNamePrompt(event, {
+          already: currentTurnRepeatsKnownBookingField(event),
+          retry: previousNameAttempts >= 1
+        })
       );
+      await postInternalAppointment(
+        buildInternalPayload(event, intentName, {
+          ignoredNoiseFields: JSON.stringify(analysis.ignoredNoiseFields)
+        }),
+        {
+          operationName: "booking_turn_logging",
+          waitPrompt: WAIT_PROMPTS.customer_lookup,
+          mechanism: "Lambda local customer name noise reprompt"
+        }
+      );
+      return response;
     }
 
     if (
       !shouldEscalate &&
-      analysis.dtmfRouting?.digit &&
+      sessionAttributes.lastAskedSlot === "customerName" &&
+      currentTurnRepeatsKnownBookingField(event) &&
+      !getKnownField(event, "customerName")
+    ) {
+      const response = buildElicitSlotResponse(
+        event,
+        "customerName",
+        {
+          ignoredNoiseFields: JSON.stringify(["customerName"])
+        },
+        buildCustomerNamePrompt(event, {
+          already: true
+        })
+      );
+      const lexTurnDebug = {
+        ...(event.lexTurnDebug || {}),
+        sanitization: {
+          ...((event.lexTurnDebug || {}).sanitization || {}),
+          ignoredNoiseFields: ["customerName"]
+        }
+      };
+      await postInternalAppointment(
+        buildInternalPayload(
+          {
+            ...event,
+            lexTurnDebug
+          },
+          intentName,
+          {
+            ignoredNoiseFields: JSON.stringify(["customerName"])
+          }
+        ),
+        {
+          operationName: "booking_turn_logging",
+          waitPrompt: WAIT_PROMPTS.customer_lookup,
+          mechanism: "Lambda local repeated known field reprompt"
+        }
+      );
+      return response;
+    }
+
+    if (
+      !shouldEscalate &&
+      (analysis.dtmfRouting?.digit || analysis.dtmfRouting?.isMultiDigitOrDigitSequence) &&
       !analysis.dtmfRouting.accepted &&
       ["wrong_slot", "no_active_menu"].includes(analysis.dtmfRouting.route) &&
       analysis.dtmfRouting.nextSlot
     ) {
-      return buildElicitSlotResponse(
-        event,
-        analysis.dtmfRouting.nextSlot,
-        {
-          dtmfRouting: JSON.stringify(analysis.dtmfRouting)
-        },
-        buildWrongSlotDtmfPrompt(event, analysis.dtmfRouting.nextSlot)
+      const actualMissingSlot = getBookingSlotToElicit(event);
+      const knownValueForWrongSlot = getSessionAttribute(
+        buildKnownBookingSessionAttributes(event),
+        slotNames[analysis.dtmfRouting.nextSlot] || [analysis.dtmfRouting.nextSlot]
       );
+      if (!knownValueForWrongSlot || actualMissingSlot === analysis.dtmfRouting.nextSlot) {
+        return buildElicitSlotResponse(
+          event,
+          analysis.dtmfRouting.nextSlot,
+          {
+            dtmfRouting: JSON.stringify(analysis.dtmfRouting)
+          },
+          buildWrongSlotDtmfPrompt(event, analysis.dtmfRouting.nextSlot)
+        );
+      }
     }
 
     if (
@@ -3134,12 +3705,19 @@ async function handleLexEvent(event, analysis = {}) {
           }
         }
         if (slotToElicit === "staffPreference") {
-          if (event.invocationSource === "DialogCodeHook" && sessionAttributes.lastAskedSlot !== "staffPreference") {
-            return buildDelegateResponse(event);
-          }
           return await buildDynamicStaffElicitResponse(event, intentName);
         }
-        return buildElicitSlotResponse(event, slotToElicit);
+        const response = buildElicitSlotResponse(event, slotToElicit);
+        const rawDtmfTurn =
+          event.inputMode === "DTMF" || /^\s*\d\s*$/.test(String(event.inputTranscript || ""));
+        if (analysis.dtmfRouting?.accepted && rawDtmfTurn) {
+          await postInternalAppointment(buildInternalPayload(event, intentName), {
+            operationName: "booking_turn_logging",
+            waitPrompt: WAIT_PROMPTS.availability_lookup,
+            mechanism: "Lambda local accepted DTMF reprompt"
+          });
+        }
+        return response;
       }
     }
 

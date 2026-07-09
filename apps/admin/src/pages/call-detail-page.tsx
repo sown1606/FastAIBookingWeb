@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { apiGet, extractErrorMessage } from "../lib/api";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
 import { formatDateTime } from "../lib/format";
@@ -58,6 +58,10 @@ interface CallDetail {
     taskType: string;
     model: string | null;
     createdAt: string;
+    requestText?: string | null;
+    responseText?: string | null;
+    requestPayload?: unknown;
+    responsePayload?: unknown;
   }>;
   callEscalations: Array<{
     id: string;
@@ -84,6 +88,45 @@ const routingLabelKeyByValue = {
   VOICEMAIL: "routing.VOICEMAIL",
   QUEUED: "routing.QUEUED"
 } as const;
+
+const asRecord = (value: unknown): Record<string, unknown> =>
+  value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+
+const readNestedRecord = (value: unknown, key: string): Record<string, unknown> => asRecord(asRecord(value)[key]);
+
+const buildAiTurnDebug = (item: CallDetail["aiInteractions"][number]) => {
+  const requestPayload = asRecord(item.requestPayload);
+  const responsePayload = asRecord(item.responsePayload);
+  const requestAttributes = readNestedRecord(requestPayload, "attributes");
+  const requestDebug = asRecord(requestAttributes.lexTurnDebug);
+  const responseDebug = readNestedRecord(responsePayload, "lexTurnDebug");
+  const debug = Object.keys(responseDebug).length ? responseDebug : requestDebug;
+  return {
+    currentTurnTranscript:
+      responsePayload.currentTurnTranscript ??
+      debug.currentTurnTranscript ??
+      requestPayload.currentTurnTranscript ??
+      item.requestText,
+    aggregatedTranscript:
+      responsePayload.aggregatedBookingTranscript ??
+      requestPayload.aggregatedBookingTranscript ??
+      requestPayload.transcript,
+    contactId:
+      debug.contactId ??
+      requestPayload.amazonConnectContactId ??
+      requestPayload.contactId ??
+      requestAttributes.AmazonConnectContactId,
+    lastAskedSlotBefore: debug.lastAskedSlotBefore,
+    lastAskedSlotAfter: debug.lastAskedSlotAfter ?? asRecord(debug.sessionAttributesAfter).lastAskedSlot,
+    activeDtmfMenuBefore: debug.activeDtmfMenuBefore,
+    activeDtmfMenuAfter: debug.activeDtmfMenuAfter ?? asRecord(debug.sessionAttributesAfter).activeDtmfMenu,
+    dtmfDiagnostics: debug.dtmfDiagnostics,
+    dtmfRouting: debug.dtmfRouting,
+    slotDecisions: debug.slotDecisions,
+    trustedSlotsBefore: debug.trustedSlotsBefore,
+    trustedSlotsAfter: debug.trustedSlotsAfter
+  };
+};
 
 export const CallDetailPage = () => {
   const { t } = useI18n();
@@ -281,13 +324,43 @@ export const CallDetailPage = () => {
           <h4>{t("calls.aiInteractions")}</h4>
           {call.aiInteractions.length ? (
             <div className="mobile-list">
-              {call.aiInteractions.map((item) => (
+              {call.aiInteractions.map((item, index) => {
+                const turnDebug = buildAiTurnDebug(item);
+                return (
                 <article key={item.id} className="mobile-item">
-                  <strong>{item.taskType}</strong>
+                  <strong>
+                    AI turn {call.aiInteractions.length - index} / {call.aiInteractions.length}: {item.taskType}
+                  </strong>
                   <span>{item.model ?? t("common.none")}</span>
                   <small>{formatDateTime(item.createdAt)}</small>
+                  <small>ContactId: {String(turnDebug.contactId ?? t("common.none"))}</small>
+                  <small>
+                    lastAskedSlot: {String(turnDebug.lastAskedSlotBefore ?? t("common.none"))} /{" "}
+                    {String(turnDebug.lastAskedSlotAfter ?? t("common.none"))}
+                  </small>
+                  <small>
+                    activeDtmfMenu: {String(turnDebug.activeDtmfMenuBefore ?? t("common.none"))} /{" "}
+                    {String(turnDebug.activeDtmfMenuAfter ?? t("common.none"))}
+                  </small>
+                  <Link to={`/ai-logs/${item.id}`}>{t("common.open")}</Link>
+                  <pre>
+                    {JSON.stringify(
+                      {
+                        currentTurnTranscript: turnDebug.currentTurnTranscript,
+                        aggregatedTranscript: turnDebug.aggregatedTranscript,
+                        dtmfDiagnostics: turnDebug.dtmfDiagnostics,
+                        dtmfRouting: turnDebug.dtmfRouting,
+                        slotDecisions: turnDebug.slotDecisions,
+                        trustedSlotsBefore: turnDebug.trustedSlotsBefore,
+                        trustedSlotsAfter: turnDebug.trustedSlotsAfter
+                      },
+                      null,
+                      2
+                    )}
+                  </pre>
                 </article>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <EmptyBlock message={t("calls.aiInteractionsEmpty")} />

@@ -52,7 +52,16 @@ interface AiLogDebugTimelineItem {
   lastAskedSlotAfter?: unknown;
   activeDtmfMenuBefore?: unknown;
   activeDtmfMenuAfter?: unknown;
+  activeDtmfOptionsBefore?: unknown;
+  activeDtmfOptionsAfter?: unknown;
+  inputMode?: unknown;
+  slotToElicit?: unknown;
+  responseText?: unknown;
   dtmfRouting?: unknown;
+  dtmfDiagnostics?: unknown;
+  slotDecisions?: unknown;
+  trustedSlotsBefore?: unknown;
+  trustedSlotsAfter?: unknown;
   ignoredUngroundedSlots?: unknown;
   ignoredPollutedSlots?: unknown;
   ignoredNoiseFields?: unknown;
@@ -148,7 +157,12 @@ export const AiLogDetailPage = () => {
     return <EmptyBlock message={t("aiLogs.notFound")} />;
   }
 
-  const selectedDebugTurn = callDebug?.timeline?.find((item) => item.aiInteractionId === log.id);
+  const selectedDebugTurn = [...(callDebug?.timeline ?? [])]
+    .reverse()
+    .find((item) => item.aiInteractionId === log.id);
+  const selectedTurnIndex =
+    callDebug?.timeline?.findIndex((item) => item === selectedDebugTurn) ?? -1;
+  const turnCount = callDebug?.timeline?.length ?? 0;
   const stringifyDebug = (value: unknown) => JSON.stringify(value ?? null, null, 2);
   const displayDebugValue = (value: unknown) => {
     if (value === undefined || value === null || value === "") {
@@ -231,6 +245,24 @@ export const AiLogDetailPage = () => {
             <strong>{displayDebugValue(selectedDebugTurn?.aggregatedRequestText)}</strong>
           </div>
           <div>
+            <span className="muted">ContactId</span>
+            <strong>{displayDebugValue(selectedDebugTurn?.contactId ?? callDebug?.contactIds?.[0])}</strong>
+          </div>
+          <div>
+            <span className="muted">Turn</span>
+            <strong>
+              {turnCount ? `${selectedTurnIndex + 1} / ${turnCount}` : t("common.none")}
+            </strong>
+          </div>
+          <div>
+            <span className="muted">Input mode</span>
+            <strong>{displayDebugValue(selectedDebugTurn?.inputMode)}</strong>
+          </div>
+          <div>
+            <span className="muted">Slot to elicit</span>
+            <strong>{displayDebugValue(selectedDebugTurn?.slotToElicit)}</strong>
+          </div>
+          <div>
             <span className="muted">{t("aiLogs.lastAskedSlot")}</span>
             <strong>
               {displayDebugValue(selectedDebugTurn?.lastAskedSlotBefore)} /{" "}
@@ -253,6 +285,23 @@ export const AiLogDetailPage = () => {
           <pre>{stringifyDebug(selectedDebugTurn?.dtmfRouting)}</pre>
         </article>
         <article className="card">
+          <h3>Raw DTMF diagnostics</h3>
+          <pre>{stringifyDebug(selectedDebugTurn?.dtmfDiagnostics)}</pre>
+        </article>
+        <article className="card">
+          <h3>Slot decisions</h3>
+          <pre>{stringifyDebug(selectedDebugTurn?.slotDecisions)}</pre>
+        </article>
+        <article className="card">
+          <h3>Trusted slots</h3>
+          <pre>
+            {stringifyDebug({
+              before: selectedDebugTurn?.trustedSlotsBefore,
+              after: selectedDebugTurn?.trustedSlotsAfter
+            })}
+          </pre>
+        </article>
+        <article className="card">
           <h3>{t("aiLogs.ignoredSlotsNoise")}</h3>
           <pre>
             {stringifyDebug({
@@ -263,6 +312,44 @@ export const AiLogDetailPage = () => {
           </pre>
         </article>
       </section>
+
+      {callDebug?.timeline?.length ? (
+        <section className="card">
+          <h3>Turn history</h3>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Turn</th>
+                  <th>Caller said</th>
+                  <th>Response</th>
+                  <th>Last asked</th>
+                  <th>DTMF</th>
+                  <th>Slot</th>
+                </tr>
+              </thead>
+              <tbody>
+                {callDebug.timeline.map((turn, index) => (
+                  <tr key={`${String(turn.aiInteractionId)}-${index}`}>
+                    <td>{index + 1}</td>
+                    <td>{displayDebugValue(turn.currentTurnTranscript)}</td>
+                    <td>{displayDebugValue(turn.responseText)}</td>
+                    <td>
+                      {displayDebugValue(turn.lastAskedSlotBefore)} /{" "}
+                      {displayDebugValue(turn.lastAskedSlotAfter)}
+                    </td>
+                    <td>
+                      {displayDebugValue(turn.activeDtmfMenuBefore)} /{" "}
+                      {displayDebugValue(turn.activeDtmfMenuAfter)}
+                    </td>
+                    <td>{displayDebugValue(turn.slotToElicit)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
 
       <section className="card">
         <h3>{t("aiLogs.requestText")}</h3>

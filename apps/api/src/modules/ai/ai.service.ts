@@ -393,7 +393,8 @@ const SERVICE_DTMF_OPTIONS: Record<string, string> = {
   "2": "Manicure",
   "3": "Gel Manicure",
   "4": "Full Set",
-  "5": "Dip Powder"
+  "5": "Dip Powder",
+  "0": "__operator__"
 };
 const STAFF_DTMF_OPTIONS: Record<string, string> = {
   "1": "Trang",
@@ -419,9 +420,9 @@ const CUSTOMER_NAME_NOISE = new Set([
   "four"
 ]);
 const SERVICE_DTMF_PROMPT =
-  "What service would you like today? You can say Pedicure, Manicure, Gel Manicure, Full Set, Dip Powder, or Other Services. You can also press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Full Set, or 5 for Dip Powder. Press 0 to speak with an operator.";
+  "Hi, I can help book your appointment. You can say the service, press 4 for Full Set, or press 0 for a real person.";
 const STAFF_DTMF_PROMPT =
-  "Do you prefer Trang, Amy, Kelly, or first available? Press 1 for Trang, 2 for Amy, 3 for Kelly, 4 for first available, or 0 for an operator.";
+  "Which staff would you like, Trang, Amy, Kelly, or first available?";
 
 const normalizeForMatch = (value?: string | null): string => {
   return (value ?? "")
@@ -568,11 +569,11 @@ const readDtmfDigit = (value?: string | null): string | undefined => {
 };
 
 const readScopedDtmfSelection = (
-  lastAskedSlot: string | undefined,
+  isScoped: boolean,
   values: Array<string | undefined>,
   options: Record<string, string>
 ): string | undefined => {
-  if (lastAskedSlot !== "serviceName" && lastAskedSlot !== "staffPreference") {
+  if (!isScoped) {
     return undefined;
   }
   for (const value of values) {
@@ -635,7 +636,14 @@ const isOperatorZeroRequest = (value?: string | null): boolean => {
 
 const isInvalidCustomerNameNoise = (value?: string | null): boolean => {
   const normalized = normalizeForMatch(value);
-  return Boolean(normalized && CUSTOMER_NAME_NOISE.has(normalized));
+  return Boolean(
+    normalized &&
+      (CUSTOMER_NAME_NOISE.has(normalized) ||
+        isDigitOnlyOrSequenceUtterance(value) ||
+        /\b(book|booking|appointment|service|pedicure|manicure|full set|dip|powder|tomorrow|today|morning|afternoon|evening|night|phone|number|zero|one|two|three|four|five|six|seven|eight|nine|ten)\b/.test(
+          normalized
+        ))
+  );
 };
 
 const isAcceptableCustomerName = (value?: string | null): value is string => {
@@ -813,6 +821,33 @@ const normalizeSpokenNumbers = (value: string): string => {
     (match) => String(NUMBER_WORDS[match.toLowerCase()] ?? match)
   );
 };
+
+const digitSequenceFromUtterance = (value?: string | null): string[] => {
+  const normalized = normalizeForMatch(value)
+    .replace(/^(?:press|pressed|hit|dial|number|option)\s+/, "")
+    .trim();
+  if (!normalized) {
+    return [];
+  }
+  if (/^\d{2,}$/.test(normalized)) {
+    return normalized.split("");
+  }
+  const tokens = normalized.split(/\s+/);
+  const digits = tokens.map((token) => {
+    if (/^\d$/.test(token)) {
+      return token;
+    }
+    if (token === "zero") {
+      return "0";
+    }
+    const number = NUMBER_WORDS[token];
+    return number !== undefined && number >= 0 && number <= 9 ? String(number) : "";
+  });
+  return digits.every(Boolean) ? digits : [];
+};
+
+const isDigitOnlyOrSequenceUtterance = (value?: string | null): boolean =>
+  digitSequenceFromUtterance(value).length > 0;
 
 const parseMonthDayDateText = (value: string, timezone: string): DateTime | null => {
   const normalized = normalizeForMatch(value);
@@ -1029,6 +1064,18 @@ const getPreferredDateCandidate = (
     (left, right) => left.index - right.index
   );
   return relativeMatches[0] ?? null;
+};
+
+const hasGroundedDatePhrase = (value?: string | null): boolean =>
+  Boolean(value?.trim() && getPreferredDateCandidate(value));
+
+const hasGroundedTimePhrase = (value?: string | null): boolean => {
+  if (!value?.trim() || isDigitOnlyOrSequenceUtterance(value)) {
+    return false;
+  }
+  const timeCandidate = extractTimeCandidate(value);
+  const parsed = timeCandidate ? parseLocalTimeText(timeCandidate) : null;
+  return Boolean(parsed && !parsed.ambiguous);
 };
 
 const parseDateTimeText = (
@@ -1459,7 +1506,7 @@ const getSalonAIContext = async (salonId: string) => {
   };
 };
 
-const createAIInteractionLog = async (input: {
+type CreateAIInteractionLogInput = {
   salonId: string;
   actorUserId?: string;
   callSessionId?: string;
@@ -1476,7 +1523,9 @@ const createAIInteractionLog = async (input: {
   isValid: boolean;
   validationErrors?: unknown;
   confidence?: number;
-}) => {
+};
+
+const createAIInteractionLog = async (input: CreateAIInteractionLogInput) => {
   return prisma.aiInteractionLog.create({
     data: {
       salonId: input.salonId,
@@ -1497,6 +1546,172 @@ const createAIInteractionLog = async (input: {
       bookingAttemptId: input.bookingAttemptId,
       createdByUserId: input.actorUserId
     }
+  });
+};
+
+const recordFromUnknown = (value: unknown): Record<string, unknown> =>
+  value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+
+const arrayFromUnknown = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
+
+const readSessionAttributeRecord = (value: unknown): Record<string, unknown> => recordFromUnknown(value);
+
+const parseDtmfOptionsForHistory = (value: unknown): Record<string, string> => {
+  if (typeof value !== "string" || !value.trim()) {
+    return {};
+  }
+  return parseJsonStringRecord(value);
+};
+
+const buildAmazonConnectTurnHistoryItem = (input: {
+  index: number;
+  createdAt: string;
+  interactionInput: CreateAIInteractionLogInput;
+}) => {
+  const requestPayload = recordFromUnknown(input.interactionInput.requestPayload);
+  const responsePayload = recordFromUnknown(input.interactionInput.responsePayload);
+  const requestAttributes = recordFromUnknown(requestPayload.attributes);
+  const responseDebug = recordFromUnknown(responsePayload.lexTurnDebug);
+  const sanitization = recordFromUnknown(responseDebug.sanitization);
+  const sessionAttributesBefore = readSessionAttributeRecord(
+    responseDebug.sessionAttributesBefore ?? responseDebug.attributesBefore
+  );
+  const sessionAttributesAfter = readSessionAttributeRecord(
+    responseDebug.sessionAttributesAfter ??
+      responseDebug.attributesAfter ??
+      responsePayload.sessionAttributes ??
+      recordFromUnknown(recordFromUnknown(responsePayload.lexResponse).sessionAttributes)
+  );
+  const activeDtmfOptionsBefore =
+    responseDebug.activeDtmfOptionsBefore ??
+    parseDtmfOptionsForHistory(sessionAttributesBefore.activeDtmfOptionsJson);
+  const activeDtmfOptionsAfter =
+    responseDebug.activeDtmfOptionsAfter ??
+    parseDtmfOptionsForHistory(sessionAttributesAfter.activeDtmfOptionsJson);
+  const slotToElicit =
+    responseDebug.slotToElicit ??
+    responsePayload.slotToElicit ??
+    recordFromUnknown(recordFromUnknown(responsePayload.lexResponse).dialogAction).slotToElicit;
+
+  return {
+    index: input.index,
+    createdAt: input.createdAt,
+    currentTurnTranscript:
+      responsePayload.currentTurnTranscript ??
+      responseDebug.currentTurnTranscript ??
+      requestPayload.currentTurnTranscript ??
+      requestPayload.text ??
+      null,
+    aggregatedBookingTranscript:
+      responsePayload.aggregatedBookingTranscript ??
+      requestPayload.aggregatedBookingTranscript ??
+      requestPayload.transcript ??
+      input.interactionInput.requestText ??
+      null,
+    responseText: input.interactionInput.responseText ?? null,
+    intentName: requestPayload.intentName ?? responseDebug.intentName ?? null,
+    inputMode: responseDebug.inputMode ?? requestPayload.inputMode ?? null,
+    lastAskedSlotBefore:
+      responseDebug.lastAskedSlotBefore ?? sessionAttributesBefore.lastAskedSlot ?? requestAttributes.lastAskedSlot ?? null,
+    lastAskedSlotAfter:
+      responseDebug.lastAskedSlotAfter ?? sessionAttributesAfter.lastAskedSlot ?? null,
+    activeDtmfMenuBefore:
+      responseDebug.activeDtmfMenuBefore ?? sessionAttributesBefore.activeDtmfMenu ?? null,
+    activeDtmfMenuAfter:
+      responseDebug.activeDtmfMenuAfter ?? sessionAttributesAfter.activeDtmfMenu ?? null,
+    activeDtmfOptionsBefore,
+    activeDtmfOptionsAfter,
+    dtmfRouting: responseDebug.dtmfRouting ?? null,
+    trustedSlotsBefore: responseDebug.trustedSlotsBefore ?? null,
+    trustedSlotsAfter: responseDebug.trustedSlotsAfter ?? null,
+    sessionAttributesBefore,
+    sessionAttributesAfter,
+    slotsOriginalValues: responseDebug.slotsOriginalValues ?? null,
+    slotsInterpretedValues: responseDebug.slotsInterpretedValues ?? null,
+    ignoredUngroundedSlots:
+      sanitization.ignoredUngroundedSlots ?? responsePayload.ignoredUngroundedSlots ?? [],
+    ignoredPollutedSlots:
+      sanitization.ignoredPollutedSlots ?? responsePayload.ignoredPollutedSlots ?? [],
+    ignoredNoiseFields:
+      sanitization.ignoredNoiseFields ?? responsePayload.ignoredNoiseFields ?? [],
+    slotToElicit: slotToElicit ?? null,
+    missingFields: responsePayload.missingFields ?? null,
+    promptMissingFields: responsePayload.promptMissingFields ?? null,
+    transferToQueue:
+      sessionAttributesAfter.transferToQueue ?? responsePayload.transferToQueue ?? null,
+    forceHumanEscalation:
+      sessionAttributesAfter.forceHumanEscalation ?? responsePayload.forceHumanEscalation ?? null
+  };
+};
+
+const getAmazonConnectTurnHistory = (responsePayload: unknown): unknown[] => {
+  const payload = recordFromUnknown(responsePayload);
+  return arrayFromUnknown(payload.turnHistory);
+};
+
+const withAmazonConnectTurnHistory = (
+  responsePayload: unknown,
+  turnHistory: unknown[]
+): Record<string, unknown> => ({
+  ...recordFromUnknown(responsePayload),
+  turnHistory,
+  turnCount: turnHistory.length,
+  latestTurn: turnHistory[turnHistory.length - 1] ?? null
+});
+
+const upsertAmazonConnectBookingAIInteractionLog = async (
+  input: CreateAIInteractionLogInput
+) => {
+  const existing =
+    input.callSessionId
+      ? await prisma.aiInteractionLog.findFirst({
+          where: {
+            salonId: input.salonId,
+            provider: ExternalProvider.AMAZON_CONNECT,
+            taskType: "amazon_connect_booking_fulfillment",
+            callSessionId: input.callSessionId
+          },
+          orderBy: {
+            createdAt: "asc"
+          }
+        })
+      : null;
+  const existingHistory = existing ? getAmazonConnectTurnHistory(existing.responsePayload) : [];
+  const turn = buildAmazonConnectTurnHistoryItem({
+    index: existingHistory.length + 1,
+    createdAt: new Date().toISOString(),
+    interactionInput: input
+  });
+  const responsePayload = withAmazonConnectTurnHistory(input.responsePayload, [
+    ...existingHistory,
+    turn
+  ]);
+
+  if (existing) {
+    return prisma.aiInteractionLog.update({
+      where: {
+        id: existing.id
+      },
+      data: {
+        requestText: input.requestText,
+        requestPayload: toJson(input.requestPayload),
+        responseText: input.responseText,
+        responsePayload: toJson(responsePayload),
+        parsedOutput: toJson(input.parsedOutput),
+        isValid: input.isValid,
+        validationErrors:
+          input.validationErrors === undefined ? undefined : toJson(input.validationErrors),
+        confidence: input.confidence,
+        transcriptId: input.transcriptId,
+        bookingAttemptId: input.bookingAttemptId,
+        createdByUserId: input.actorUserId
+      }
+    });
+  }
+
+  return createAIInteractionLog({
+    ...input,
+    responsePayload
   });
 };
 
@@ -2832,6 +3047,7 @@ const hasTimeComponent = (value?: string): boolean => {
 const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppointmentInput) => {
   const attributes = input.attributes ?? {};
   const lastAskedSlot = readStringAttribute(attributes, ["lastAskedSlot"]);
+  const activeDtmfMenu = readStringAttribute(attributes, ["activeDtmfMenu"]);
   const currentTurnTranscript =
     asTrimmedString(input.currentTurnTranscript) ??
     readStringAttribute(attributes, ["currentTurnTranscript"]) ??
@@ -2854,33 +3070,31 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
     "serviceSuggestionName",
     "aiSuggestedServiceName"
   ]);
+  const serviceDtmfScoped = activeDtmfMenu === "service" || lastAskedSlot === "serviceName";
+  const staffDtmfScoped = activeDtmfMenu === "staff" || lastAskedSlot === "staffPreference";
   const serviceDtmfSelection =
-    lastAskedSlot === "serviceName"
-      ? readScopedDtmfSelection(
-          lastAskedSlot,
-          [
-            transcriptText,
-            asTrimmedString(input.serviceName),
-            asTrimmedString(input.service),
-            readBookingFieldAttribute(attributes, "serviceName")
-          ],
-          SERVICE_DTMF_OPTIONS
-        )
-      : undefined;
+    readScopedDtmfSelection(
+      serviceDtmfScoped,
+      [
+        transcriptText,
+        asTrimmedString(input.serviceName),
+        asTrimmedString(input.service),
+        readBookingFieldAttribute(attributes, "serviceName")
+      ],
+      SERVICE_DTMF_OPTIONS
+    );
   const staffDtmfSelection =
-    lastAskedSlot === "staffPreference"
-      ? readScopedDtmfSelection(
-          lastAskedSlot,
-          [
-            transcriptText,
-            asTrimmedString(input.staffPreference),
-            readBookingFieldAttribute(attributes, "staffPreference")
-          ],
-          readStaffDtmfOptions(attributes)
-        )
-      : undefined;
+    readScopedDtmfSelection(
+      staffDtmfScoped,
+      [
+        transcriptText,
+        asTrimmedString(input.staffPreference),
+        readBookingFieldAttribute(attributes, "staffPreference")
+      ],
+      readStaffDtmfOptions(attributes)
+    );
   const staffDtmfDigit =
-    lastAskedSlot === "staffPreference"
+    staffDtmfScoped
       ? [
           transcriptText,
           asTrimmedString(input.staffPreference),
@@ -2904,10 +3118,13 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
     asTrimmedString(input.customerPhone) ??
     asTrimmedString(input.customer?.phone) ??
     readBookingFieldAttribute(attributes, "customerPhone");
+  const currentTurnIsDigitNoise = isDigitOnlyOrSequenceUtterance(transcriptText);
+  const confirmedServiceName = readStringAttribute(attributes, ["confirmedServiceName"]);
+  const inputServiceName = asTrimmedString(input.serviceName) ?? asTrimmedString(input.service);
   const rawServiceName =
     serviceDtmfSelection ??
-    asTrimmedString(input.serviceName) ??
-    asTrimmedString(input.service) ??
+    (currentTurnIsDigitNoise && confirmedServiceName ? confirmedServiceName : undefined) ??
+    inputServiceName ??
     readBookingFieldAttribute(attributes, "serviceName");
   const serviceCandidate =
     rawServiceName && isAffirmative(rawServiceName) && suggestedServiceName
@@ -2917,12 +3134,29 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
     serviceCandidate && !isClearlyInvalidServiceName(serviceCandidate)
       ? getCustomerFacingServiceName(serviceCandidate)
       : undefined;
+  const previousRequestedDate = readBookingFieldAttribute(attributes, "requestedDate");
+  const previousRequestedTime = readBookingFieldAttribute(attributes, "requestedTime");
+  const inputRequestedDate =
+    asTrimmedString(input.requestedDate) ?? asTrimmedString(input.preferredDateTime);
+  const inputRequestedTime = asTrimmedString(input.requestedTime);
+  const currentTurnHasDate = hasGroundedDatePhrase(transcriptText);
+  const currentTurnHasTime = hasGroundedTimePhrase(transcriptText);
   const requestedDate =
-    asTrimmedString(input.requestedDate) ??
-    asTrimmedString(input.preferredDateTime) ??
-    readBookingFieldAttribute(attributes, "requestedDate");
+    currentTurnIsDigitNoise && previousRequestedDate
+      ? previousRequestedDate
+      : inputRequestedDate && previousRequestedDate && !currentTurnHasDate
+        ? previousRequestedDate
+        : currentTurnIsDigitNoise
+          ? previousRequestedDate
+          : inputRequestedDate ?? previousRequestedDate;
   const requestedTime =
-    asTrimmedString(input.requestedTime) ?? readBookingFieldAttribute(attributes, "requestedTime");
+    currentTurnIsDigitNoise && previousRequestedTime
+      ? previousRequestedTime
+      : inputRequestedTime && previousRequestedTime && !currentTurnHasTime
+        ? previousRequestedTime
+        : currentTurnIsDigitNoise
+          ? previousRequestedTime
+          : inputRequestedTime ?? previousRequestedTime;
   const contactId =
     asTrimmedString(input.amazonConnectContactId) ??
     asTrimmedString(input.contactId) ??
@@ -2968,6 +3202,25 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
     attributes
   };
 };
+
+const pickNormalizedAppointmentDebug = (
+  normalized: ReturnType<typeof normalizeAmazonConnectAppointmentInput>
+) => ({
+  customerName: normalized.customerName,
+  customerPhone: normalized.customerPhone,
+  serviceName: normalized.serviceName,
+  requestedDate: normalized.requestedDate,
+  requestedTime: normalized.requestedTime,
+  staffPreference: normalized.staffPreference,
+  staffId: normalized.staffId,
+  contactId: normalized.contactId,
+  currentTurnTranscript: normalized.currentTurnTranscript,
+  aggregatedBookingTranscript: normalized.aggregatedBookingTranscript,
+  lastAskedSlot: readStringAttribute(normalized.attributes, ["lastAskedSlot"]),
+  activeDtmfMenu: readStringAttribute(normalized.attributes, ["activeDtmfMenu"]),
+  ignoredUngroundedSlots: readStringAttribute(normalized.attributes, ["ignoredUngroundedSlots"]),
+  ignoredNoiseFields: readStringAttribute(normalized.attributes, ["ignoredNoiseFields"])
+});
 
 const shouldTransferToHuman = (input: {
   intentName?: string;
@@ -3089,28 +3342,16 @@ const buildStaffDtmfPromptText = (staff: StaffCandidate[]): string => {
     return "I don't see any active bookable staff right now. I can check any available staff, or you can say operator to speak with a person.";
   }
 
-  const { options } = buildStaffDtmfOptionMaps(orderedStaff);
-  const anyStaffDigit = Object.entries(options).find(
-    ([, name]) => normalizeForMatch(name) === "any staff"
-  )?.[0] ?? "4";
   const staffNames = orderedStaff.map((member) => member.fullName);
   if (orderedStaff.length > 4) {
-    return `Which staff would you like? You can say ${escapeSsml(
-      formatNameList(staffNames.slice(0, 4))
-    )}, or first available. Press 0 for an operator.`;
+    return `Which staff would you like, ${escapeSsml(
+      staffNames.slice(0, 4).join(", ")
+    )}, or first available?`;
   }
 
-  const namedOptions = Object.entries(options)
-    .filter(([, name]) => normalizeForMatch(name) !== "any staff")
-    .map(([digit, name]) => `${digit} for ${escapeSsml(name)}`);
-  const dtmfText = formatNameList([
-    ...namedOptions,
-    `${anyStaffDigit} for first available`
-  ]);
-
-  return `Which staff would you like? You can say ${escapeSsml(
-    formatNameList(staffNames)
-  )}, or first available. For staff, press ${dtmfText}. Press 0 for an operator.`;
+  return `Which staff would you like, ${escapeSsml(
+    staffNames.join(", ")
+  )}, or first available?`;
 };
 
 const buildStaffPromptSessionAttributes = (staff: StaffCandidate[]): Record<string, string> => {
@@ -3120,7 +3361,10 @@ const buildStaffPromptSessionAttributes = (staff: StaffCandidate[]): Record<stri
     staffDtmfStaffIds: JSON.stringify(staffIds),
     staffDtmfPromptText: buildStaffDtmfPromptText(staff),
     activeDtmfMenu: "staff",
-    activeDtmfOptionsJson: JSON.stringify(options)
+    activeDtmfOptionsJson: JSON.stringify({
+      ...options,
+      "0": "__operator__"
+    })
   };
 };
 
@@ -3153,8 +3397,108 @@ const formatLocalDateTimeForSpeech = (value: Date, timezone: string): string => 
       ? "today"
       : local.hasSame(now.plus({ days: 1 }), "day")
         ? "tomorrow"
-        : local.toFormat("cccc, LLL d");
+    : local.toFormat("cccc, LLL d");
   return `${date} at ${formatLocalTimeForSpeech(value, timezone)}`;
+};
+
+const formatKnownDateForPrompt = (value?: string, timezone = "America/New_York"): string | undefined => {
+  if (!value?.trim()) {
+    return undefined;
+  }
+  const parsed = parseLocalDateText(value, timezone);
+  if (!parsed?.isValid) {
+    return value;
+  }
+  const today = DateTime.now().setZone(timezone).startOf("day");
+  if (parsed.hasSame(today, "day")) {
+    return "today";
+  }
+  if (parsed.hasSame(today.plus({ days: 1 }), "day")) {
+    return "tomorrow";
+  }
+  return parsed.toFormat("cccc, LLL d");
+};
+
+const formatKnownTimeForPrompt = (value?: string): string | undefined => {
+  if (!value?.trim()) {
+    return undefined;
+  }
+  const parsed = parseLocalTimeText(value);
+  if (parsed && !parsed.ambiguous) {
+    const date = DateTime.fromObject({
+      year: 2026,
+      month: 1,
+      day: 1,
+      hour: parsed.hour,
+      minute: parsed.minute
+    });
+    return parsed.minute === 0 ? date.toFormat("h a") : date.toFormat("h:mm a");
+  }
+  return value;
+};
+
+const buildKnownBookingPromptSummary = (
+  knownFields: {
+    serviceName?: string;
+    requestedDate?: string;
+    requestedTime?: string;
+    staffPreference?: string;
+  } = {},
+  timezone = "America/New_York",
+  options: { forPhrase?: boolean } = {}
+): string => {
+  const service = knownFields.serviceName;
+  const date = formatKnownDateForPrompt(knownFields.requestedDate, timezone);
+  const time = formatKnownTimeForPrompt(knownFields.requestedTime);
+  const pieces = [service].filter((value): value is string => Boolean(value));
+  if (date && time) {
+    pieces.push(options.forPhrase ? `for ${date} at ${time}` : `${date} at ${time}`);
+  } else if (date) {
+    pieces.push(options.forPhrase ? `for ${date}` : date);
+  } else if (time) {
+    pieces.push(`at ${time}`);
+  }
+  if (knownFields.staffPreference) {
+    pieces.push(`with ${knownFields.staffPreference}`);
+  }
+  return pieces.join(" ").replace(/\s+/g, " ").trim();
+};
+
+const currentTurnRepeatsKnownBookingField = (
+  currentTurnTranscript: string | undefined,
+  knownFields: {
+    serviceName?: string;
+    requestedDate?: string;
+    requestedTime?: string;
+    staffPreference?: string;
+  },
+  timezone = "America/New_York"
+): boolean => {
+  const normalizedTurn = normalizeForMatch(currentTurnTranscript);
+  if (!normalizedTurn) {
+    return false;
+  }
+
+  const serviceName = getCustomerFacingServiceName(knownFields.serviceName);
+  if (serviceName && normalizedTurn === normalizeForMatch(serviceName)) {
+    return true;
+  }
+
+  if (knownFields.staffPreference && normalizedTurn === normalizeForMatch(knownFields.staffPreference)) {
+    return true;
+  }
+
+  const datePrompt = formatKnownDateForPrompt(knownFields.requestedDate, timezone);
+  if (datePrompt && normalizedTurn === normalizeForMatch(datePrompt)) {
+    return true;
+  }
+
+  const timePrompt = formatKnownTimeForPrompt(knownFields.requestedTime);
+  return Boolean(
+    timePrompt &&
+      (normalizedTurn === normalizeForMatch(timePrompt) ||
+        normalizedTurn === normalizeForMatch(knownFields.requestedTime))
+  );
 };
 
 type ExistingAppointmentRequestKind = "existing" | "ambiguous" | "new_booking" | "none";
@@ -3299,6 +3643,7 @@ const buildLexMessage = (input: {
   };
   attemptCount?: number;
   invalidStaffDtmfSelection?: boolean;
+  repeatedKnownFieldWhileAskingName?: boolean;
 }): string => {
   if (input.outcome === "BOOKED") {
     const appointmentTime = input.appointmentStartTime
@@ -3339,30 +3684,53 @@ const buildLexMessage = (input: {
       );
     }
     if (input.missingFields?.includes("customerName")) {
+      const summary = buildKnownBookingPromptSummary(
+        {
+          serviceName: input.knownFields?.serviceName,
+          requestedDate: input.knownFields?.requestedDate,
+          requestedTime: input.knownFields?.requestedTime,
+          staffPreference: input.knownFields?.staffPreference
+        },
+        input.salonTimezone,
+        {
+          forPhrase: Boolean(input.repeatedKnownFieldWhileAskingName)
+        }
+      );
       return speak(
-        `${intro} <break time="300ms"/> What's the best name for this booking? Press 0 to speak with an operator.`
+        isRetry && input.repeatedKnownFieldWhileAskingName && summary
+          ? `I already have ${escapeSsml(summary)}. <break time="300ms"/> What name should I put on the appointment?`
+          : isRetry
+          ? "Sorry, could you spell the name for me?"
+          : summary
+            ? `Got it: ${escapeSsml(summary)}. <break time="300ms"/> What name should I put on the appointment?`
+            : "What name should I put on the appointment?"
       );
     }
     if (input.missingFields?.includes("customerPhone")) {
       const name = input.knownFields?.customerName;
       return speak(
-        `${name ? `Thanks, ${escapeSsml(name)}.` : intro} <break time="300ms"/> What phone number should we keep on the appointment? Press 0 to speak with an operator.`
+        `${name ? `Thanks, ${escapeSsml(name)}.` : intro} <break time="300ms"/> What phone number should we keep on the appointment?`
       );
     }
     if (input.missingFields?.includes("serviceName")) {
-      return speak(SERVICE_DTMF_PROMPT);
+      const firstName = input.knownFields?.customerName?.split(/\s+/)[0];
+      return speak(
+        firstName
+          ? `Hi ${escapeSsml(firstName)}, I can help book your appointment. ${SERVICE_DTMF_PROMPT}`
+          : SERVICE_DTMF_PROMPT
+      );
     }
     if (input.missingFields?.includes("preferredDateTime")) {
       return input.knownFields?.requestedDate
         ? speak(
-            `${intro} <break time="300ms"/> What time works best? Press 0 to speak with an operator.`
+            `${intro} <break time="300ms"/> What time works best?`
           )
         : speak(
-            `${intro} <break time="300ms"/> What day and time works best? Press 0 to speak with an operator.`
+            `${intro} <break time="300ms"/> What day would you like?`
           );
     }
     return speak(
-      `${intro} <break time="300ms"/> What appointment detail should I use next? Press 0 to speak with an operator.`
+      `${intro} <break time="300ms"/> What appointment detail should I use next?`
     );
   }
 
@@ -3443,16 +3811,22 @@ const getElicitSlotForMissingFields = (
       ? ["preferredDateTime"]
       : [slotToElicit];
 
+  const sessionAttributes: Record<string, string> = {
+    lastAskedSlot: slotToElicit,
+    askedSlotsCount: String(attemptCount),
+    fallbackCount: String(attemptCount),
+    errorCount: String(attemptCount)
+  };
+  if (slotToElicit === "serviceName") {
+    sessionAttributes.activeDtmfMenu = "service";
+    sessionAttributes.activeDtmfOptionsJson = JSON.stringify(SERVICE_DTMF_OPTIONS);
+  }
+
   return {
     slotToElicit,
     promptMissingFields,
     attemptCount,
-    sessionAttributes: {
-      lastAskedSlot: slotToElicit,
-      askedSlotsCount: String(attemptCount),
-      fallbackCount: String(attemptCount),
-      errorCount: String(attemptCount)
-    }
+    sessionAttributes
   };
 };
 
@@ -3611,6 +3985,7 @@ export const createAmazonConnectAIAppointment = async (
   input: CreateAmazonConnectAIAppointmentInput
 ) => {
   const normalized = normalizeAmazonConnectAppointmentInput(input);
+  const normalizedBeforeDebug = pickNormalizedAppointmentDebug(normalized);
   const { salon, resolutionSource } = await resolveAmazonConnectSalon({
     salonId: input.salonId,
     amazonConnectPhoneNumber: normalized.amazonConnectPhoneNumber,
@@ -3701,6 +4076,9 @@ export const createAmazonConnectAIAppointment = async (
       normalized.customerName = bareCustomerName;
     }
     normalized.customerPhone ??= extractCustomerPhoneFromText(normalized.transcriptText);
+  }
+  if (normalized.customerName && !isAcceptableCustomerName(normalized.customerName)) {
+    normalized.customerName = undefined;
   }
 
   const recognizedCustomer = normalized.customerPhone
@@ -3967,24 +4345,83 @@ export const createAmazonConnectAIAppointment = async (
       !Array.isArray(inputForInteraction.responsePayload)
         ? (inputForInteraction.responsePayload as Record<string, unknown>)
         : { payload: inputForInteraction.responsePayload };
+    const responseSessionAttributes =
+      inputForInteraction.responsePayload &&
+      typeof inputForInteraction.responsePayload === "object" &&
+      !Array.isArray(inputForInteraction.responsePayload) &&
+      "sessionAttributes" in inputForInteraction.responsePayload
+        ? (inputForInteraction.responsePayload as { sessionAttributes?: unknown }).sessionAttributes
+        : undefined;
+    const responseSessionAttributesRecord =
+      responseSessionAttributes &&
+      typeof responseSessionAttributes === "object" &&
+      !Array.isArray(responseSessionAttributes)
+        ? (responseSessionAttributes as Record<string, unknown>)
+        : {};
+    const responseSlotToElicit =
+      inputForInteraction.responsePayload &&
+      typeof inputForInteraction.responsePayload === "object" &&
+      !Array.isArray(inputForInteraction.responsePayload) &&
+      "slotToElicit" in inputForInteraction.responsePayload
+        ? (inputForInteraction.responsePayload as { slotToElicit?: unknown }).slotToElicit
+        : undefined;
+    const inferredResponseSessionAttributes =
+      Object.keys(responseSessionAttributesRecord).length || typeof responseSlotToElicit !== "string"
+        ? responseSessionAttributesRecord
+        : buildKnownSessionAttributes({
+            lastAskedSlot: responseSlotToElicit,
+            slotToElicit: responseSlotToElicit,
+            askedSlotsCount: "1",
+            fallbackCount: "1",
+            errorCount: "1"
+          });
+    if (
+      typeof responseSlotToElicit === "string" &&
+      responseSlotToElicit === "staffPreference" &&
+      !inferredResponseSessionAttributes.activeDtmfMenu
+    ) {
+      Object.assign(inferredResponseSessionAttributes, {
+        activeDtmfMenu: "staff",
+        activeDtmfOptionsJson: JSON.stringify({
+          ...readStaffDtmfOptions(inferredResponseSessionAttributes),
+          "0": "__operator__"
+        })
+      });
+    }
+    if (
+      typeof responseSlotToElicit === "string" &&
+      responseSlotToElicit === "serviceName" &&
+      !inferredResponseSessionAttributes.activeDtmfMenu
+    ) {
+      Object.assign(inferredResponseSessionAttributes, {
+        activeDtmfMenu: "service",
+        activeDtmfOptionsJson: JSON.stringify(SERVICE_DTMF_OPTIONS)
+      });
+    }
     const responsePayloadDebug =
       input.attributes?.lexTurnDebug && typeof input.attributes.lexTurnDebug === "object"
         ? {
             ...input.attributes.lexTurnDebug,
-            attributesAfter:
-              inputForInteraction.responsePayload &&
-              typeof inputForInteraction.responsePayload === "object" &&
-              !Array.isArray(inputForInteraction.responsePayload) &&
-              "sessionAttributes" in inputForInteraction.responsePayload
-                ? (inputForInteraction.responsePayload as { sessionAttributes?: unknown }).sessionAttributes
-                : undefined,
-            slotToElicit:
-              inputForInteraction.responsePayload &&
-              typeof inputForInteraction.responsePayload === "object" &&
-              !Array.isArray(inputForInteraction.responsePayload) &&
-              "slotToElicit" in inputForInteraction.responsePayload
-                ? (inputForInteraction.responsePayload as { slotToElicit?: unknown }).slotToElicit
-                : undefined,
+            attributesAfter: inferredResponseSessionAttributes,
+            sessionAttributesAfter: inferredResponseSessionAttributes,
+            lastAskedSlotAfter: inferredResponseSessionAttributes.lastAskedSlot,
+            activeDtmfMenuAfter: inferredResponseSessionAttributes.activeDtmfMenu,
+            activeDtmfOptionsAfter: parseDtmfOptionsForHistory(
+              inferredResponseSessionAttributes.activeDtmfOptionsJson
+            ),
+            trustedSlotsAfter: {
+              customerName: inferredResponseSessionAttributes.customerName,
+              customerPhone: inferredResponseSessionAttributes.customerPhone,
+              serviceName: inferredResponseSessionAttributes.serviceName,
+              confirmedServiceName: inferredResponseSessionAttributes.confirmedServiceName,
+              requestedDate: inferredResponseSessionAttributes.requestedDate,
+              requestedTime: inferredResponseSessionAttributes.requestedTime,
+              staffPreference: inferredResponseSessionAttributes.staffPreference,
+              confirmedStaffName: inferredResponseSessionAttributes.confirmedStaffName,
+              staffId: inferredResponseSessionAttributes.staffId,
+              selectedStaffId: inferredResponseSessionAttributes.selectedStaffId
+            },
+            slotToElicit: responseSlotToElicit,
             responseMessage: inputForInteraction.message
           }
         : undefined;
@@ -3992,16 +4429,30 @@ export const createAmazonConnectAIAppointment = async (
       ? {
           currentTurnTranscript: normalized.currentTurnTranscript ?? normalized.transcriptText,
           aggregatedBookingTranscript: normalized.aggregatedBookingTranscript ?? normalized.transcriptText,
+          normalizedBefore: normalizedBeforeDebug,
+          normalizedAfter: pickNormalizedAppointmentDebug(normalized),
+          slotDecision:
+            input.attributes?.lexTurnDebug &&
+            typeof input.attributes.lexTurnDebug === "object" &&
+            !Array.isArray(input.attributes.lexTurnDebug)
+              ? (input.attributes.lexTurnDebug as Record<string, unknown>).slotDecisions
+              : undefined,
           ...responsePayloadBase,
+          sessionAttributes:
+            responsePayloadBase.sessionAttributes ?? inferredResponseSessionAttributes,
           lexTurnDebug: responsePayloadDebug
         }
       : {
           currentTurnTranscript: normalized.currentTurnTranscript ?? normalized.transcriptText,
           aggregatedBookingTranscript: normalized.aggregatedBookingTranscript ?? normalized.transcriptText,
-          ...responsePayloadBase
+          normalizedBefore: normalizedBeforeDebug,
+          normalizedAfter: pickNormalizedAppointmentDebug(normalized),
+          ...responsePayloadBase,
+          sessionAttributes:
+            responsePayloadBase.sessionAttributes ?? inferredResponseSessionAttributes
         };
 
-    return createAIInteractionLog({
+    return upsertAmazonConnectBookingAIInteractionLog({
       salonId: salon.id,
       actorUserId,
       callSessionId: callSession?.id,
@@ -4445,8 +4896,17 @@ export const createAmazonConnectAIAppointment = async (
       missingFields: elicitDecision.promptMissingFields,
       staffOptions: staffPromptOptions,
       knownFields: normalized,
+      salonTimezone: salon.timezone,
       attemptCount: elicitDecision.attemptCount,
-      invalidStaffDtmfSelection: normalized.invalidStaffDtmfSelection
+      invalidStaffDtmfSelection: normalized.invalidStaffDtmfSelection,
+      repeatedKnownFieldWhileAskingName:
+        elicitDecision.slotToElicit === "customerName" &&
+        readStringAttribute(normalized.attributes, ["lastAskedSlot"]) === "customerName" &&
+        currentTurnRepeatsKnownBookingField(
+          normalized.currentTurnTranscript ?? normalized.transcriptText,
+          normalized,
+          salon.timezone
+        )
     });
     const staffPromptAttributes = elicitDecision.promptMissingFields.includes("staffPreference")
       ? buildStaffPromptSessionAttributes(staffPromptOptions)
@@ -4468,6 +4928,10 @@ export const createAmazonConnectAIAppointment = async (
         requestedDateTimeText
       }
     });
+    const lexSessionAttributes = buildKnownSessionAttributes({
+      ...elicitDecision.sessionAttributes,
+      ...staffPromptAttributes
+    });
     const aiInteraction = await createInteraction({
       outcome: "MISSING_INFO",
       message,
@@ -4476,7 +4940,8 @@ export const createAmazonConnectAIAppointment = async (
       responsePayload: {
         missingFields: Array.from(missingFields.values()),
         promptMissingFields: elicitDecision.promptMissingFields,
-        slotToElicit: elicitDecision.slotToElicit
+        slotToElicit: elicitDecision.slotToElicit,
+        sessionAttributes: lexSessionAttributes
       },
       isValid: true
     });
@@ -4500,10 +4965,7 @@ export const createAmazonConnectAIAppointment = async (
           type: "ElicitSlot",
           slotToElicit: elicitDecision.slotToElicit
         },
-        sessionAttributes: buildKnownSessionAttributes({
-          ...elicitDecision.sessionAttributes,
-          ...staffPromptAttributes
-        })
+        sessionAttributes: lexSessionAttributes
       },
       appointment: null,
       bookingAttempt,
@@ -6243,7 +6705,19 @@ const buildAdminDebugTimelineItem = (
       asRecord(sessionAttributesAfter).activeDtmfMenu ??
       asRecord(responsePayload.sessionAttributes).activeDtmfMenu ??
       asRecord(lexResponse.sessionAttributes).activeDtmfMenu,
+    activeDtmfOptionsBefore:
+      debug.activeDtmfOptionsBefore ??
+      parseDtmfOptionsForHistory(asRecord(sessionAttributesBefore).activeDtmfOptionsJson),
+    activeDtmfOptionsAfter:
+      debug.activeDtmfOptionsAfter ??
+      parseDtmfOptionsForHistory(
+        asRecord(sessionAttributesAfter).activeDtmfOptionsJson ??
+          asRecord(responsePayload.sessionAttributes).activeDtmfOptionsJson ??
+          asRecord(lexResponse.sessionAttributes).activeDtmfOptionsJson
+      ),
+    dtmfDiagnostics: debug.dtmfDiagnostics,
     dtmfRouting: debug.dtmfRouting,
+    slotDecisions: debug.slotDecisions ?? responsePayload.slotDecision,
     slotsOriginalValues: debug.slotsOriginalValues,
     slotsInterpretedValues: debug.slotsInterpretedValues,
     trustedSlotsBefore:
@@ -6287,6 +6761,68 @@ const buildAdminDebugTimelineItem = (
     requestPayload: interaction.requestPayload,
     responsePayload: interaction.responsePayload
   };
+};
+
+const buildAdminDebugTimelineItems = (
+  interaction: Awaited<ReturnType<typeof prisma.aiInteractionLog.findMany>>[number],
+  index: number
+): Array<ReturnType<typeof buildAdminDebugTimelineItem>> => {
+  const responsePayload = asRecord(interaction.responsePayload);
+  const turnHistory = Array.isArray(responsePayload.turnHistory)
+    ? responsePayload.turnHistory.map((turn) => asRecord(turn))
+    : [];
+  if (!turnHistory.length) {
+    return [buildAdminDebugTimelineItem(interaction, index)];
+  }
+
+  const base = buildAdminDebugTimelineItem(interaction, index);
+  return turnHistory.map((turn, turnIndex): ReturnType<typeof buildAdminDebugTimelineItem> => {
+    const sessionAttributesBefore = turn.sessionAttributesBefore;
+    const sessionAttributesAfter = turn.sessionAttributesAfter;
+    const turnCreatedAt =
+      typeof turn.createdAt === "string" && !Number.isNaN(new Date(turn.createdAt).getTime())
+        ? new Date(turn.createdAt)
+        : base.createdAt;
+    return {
+      ...base,
+      index: Number(turn.index ?? turnIndex + 1) - 1,
+      aiInteractionId: interaction.id,
+      createdAt: turnCreatedAt,
+      currentTurnTranscript: turn.currentTurnTranscript,
+      aggregatedRequestText:
+        typeof turn.aggregatedBookingTranscript === "string"
+          ? turn.aggregatedBookingTranscript
+          : base.aggregatedRequestText,
+      requestText: interaction.requestText,
+      responseText:
+        typeof turn.responseText === "string" ? turn.responseText : interaction.responseText,
+      intentName: turn.intentName ?? base.intentName,
+      inputMode: turn.inputMode ?? base.inputMode,
+      lastAskedSlotBefore: turn.lastAskedSlotBefore,
+      lastAskedSlotAfter: turn.lastAskedSlotAfter,
+      activeDtmfMenuBefore: turn.activeDtmfMenuBefore,
+      activeDtmfMenuAfter: turn.activeDtmfMenuAfter,
+      activeDtmfOptionsBefore: recordFromUnknown(turn.activeDtmfOptionsBefore),
+      activeDtmfOptionsAfter: recordFromUnknown(turn.activeDtmfOptionsAfter),
+      dtmfRouting: turn.dtmfRouting,
+      slotsOriginalValues: turn.slotsOriginalValues,
+      slotsInterpretedValues: turn.slotsInterpretedValues,
+      trustedSlotsBefore: recordFromUnknown(turn.trustedSlotsBefore),
+      trustedSlotsAfter: recordFromUnknown(turn.trustedSlotsAfter),
+      ignoredUngroundedSlots: turn.ignoredUngroundedSlots,
+      ignoredPollutedSlots: turn.ignoredPollutedSlots,
+      ignoredNoiseFields: turn.ignoredNoiseFields,
+      sessionAttributesBefore,
+      sessionAttributesAfter,
+      slotToElicit: turn.slotToElicit,
+      missingFields: turn.missingFields,
+      promptMissingFields: turn.promptMissingFields,
+      transferToQueue: turn.transferToQueue,
+      forceHumanEscalation: turn.forceHumanEscalation,
+      requestPayload: interaction.requestPayload,
+      responsePayload: interaction.responsePayload
+    };
+  });
 };
 
 export const getAIInteractionCallDebugForAdmin = async (interactionId: string) => {
@@ -6352,7 +6888,7 @@ export const getAIInteractionCallDebugForAdmin = async (interactionId: string) =
     contactIds,
     callerPhone: callSession?.callerPhone ?? interaction.bookingAttempt?.customerPhone ?? null,
     calledNumber: callSession?.dialedPhone ?? callSession?.trackingNumber ?? null,
-    timeline: aiInteractions.map((item, index) => buildAdminDebugTimelineItem(item, index))
+    timeline: aiInteractions.flatMap((item, index) => buildAdminDebugTimelineItems(item, index))
   };
 };
 

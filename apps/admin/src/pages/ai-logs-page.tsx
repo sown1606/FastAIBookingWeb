@@ -25,12 +25,93 @@ interface AiLogItem {
     callerPhone: string | null;
   } | null;
   bookingAttemptId?: string | null;
+  requestPayload?: unknown;
+  responsePayload?: unknown;
+  requestText?: string | null;
+  responseText?: string | null;
 }
 
 interface AiLogsResponse {
   items: AiLogItem[];
   pagination: Pagination;
 }
+
+interface AiLogCallGroup {
+  key: string;
+  latest: AiLogItem;
+  items: AiLogItem[];
+  turnCount: number;
+  firstTurnAt: string;
+  lastTurnAt: string;
+}
+
+const asRecord = (value: unknown): Record<string, unknown> =>
+  value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+
+const readNestedRecord = (value: unknown, key: string): Record<string, unknown> => asRecord(asRecord(value)[key]);
+
+const readContactId = (item: AiLogItem): string => {
+  const requestPayload = asRecord(item.requestPayload);
+  const responsePayload = asRecord(item.responsePayload);
+  const requestAttributes = readNestedRecord(requestPayload, "attributes");
+  const responseDebug = readNestedRecord(responsePayload, "lexTurnDebug");
+  return String(
+    item.callSession?.providerCallId ??
+      requestPayload.amazonConnectContactId ??
+      requestPayload.contactId ??
+      requestAttributes.AmazonConnectContactId ??
+      requestAttributes.amazonConnectContactId ??
+      responseDebug.contactId ??
+      item.callSessionId ??
+      item.id
+  );
+};
+
+const readTurnCount = (item: AiLogItem): number => {
+  const responsePayload = asRecord(item.responsePayload);
+  const turnHistory = responsePayload.turnHistory;
+  return Array.isArray(turnHistory) && turnHistory.length ? turnHistory.length : 1;
+};
+
+const readTurnTimes = (item: AiLogItem): { first: string; last: string } => {
+  const responsePayload = asRecord(item.responsePayload);
+  const turnHistory = Array.isArray(responsePayload.turnHistory)
+    ? responsePayload.turnHistory.map(asRecord)
+    : [];
+  const times = turnHistory
+    .map((turn) => (typeof turn.createdAt === "string" ? turn.createdAt : ""))
+    .filter(Boolean);
+  return {
+    first: times[0] ?? item.createdAt,
+    last: times[times.length - 1] ?? item.createdAt
+  };
+};
+
+const groupAiLogsByCall = (items: AiLogItem[]): AiLogCallGroup[] => {
+  const groups = new Map<string, AiLogItem[]>();
+  for (const item of items) {
+    const key = item.callSession?.id ?? readContactId(item);
+    groups.set(key, [...(groups.get(key) ?? []), item]);
+  }
+  return Array.from(groups.entries())
+    .map(([key, groupItems]) => {
+      const sorted = [...groupItems].sort(
+        (left, right) => new Date(readTurnTimes(right).last).getTime() - new Date(readTurnTimes(left).last).getTime()
+      );
+      const chronological = [...groupItems].sort(
+        (left, right) => new Date(readTurnTimes(left).first).getTime() - new Date(readTurnTimes(right).first).getTime()
+      );
+      return {
+        key,
+        latest: sorted[0],
+        items: sorted,
+        turnCount: groupItems.reduce((total, item) => total + readTurnCount(item), 0),
+        firstTurnAt: chronological[0] ? readTurnTimes(chronological[0]).first : readTurnTimes(sorted[0]).first,
+        lastTurnAt: readTurnTimes(sorted[0]).last
+      };
+    })
+    .sort((left, right) => new Date(right.lastTurnAt).getTime() - new Date(left.lastTurnAt).getTime());
+};
 
 export const AiLogsPage = () => {
   const { t } = useI18n();
@@ -87,6 +168,8 @@ export const AiLogsPage = () => {
     return <ErrorBlock message={error} onRetry={load} />;
   }
 
+  const groupedItems = groupAiLogsByCall(data?.items ?? []);
+
   return (
     <section className="card">
       <div className="section-header">
@@ -124,7 +207,7 @@ export const AiLogsPage = () => {
           {t("aiLogs.apply")}
         </button>
       </form>
-      {data?.items.length ? (
+      {groupedItems.length ? (
         <div className="table-wrap">
           <table>
             <thead>
@@ -140,12 +223,21 @@ export const AiLogsPage = () => {
               </tr>
             </thead>
             <tbody>
-              {data.items.map((item) => (
-                <tr key={item.id}>
-                  <td>{formatDateTime(item.createdAt)}</td>
+              {groupedItems.map((group) => {
+                const item = group.latest;
+                return (
+                <tr key={group.key}>
+                  <td>
+                    <div>{formatDateTime(group.lastTurnAt)}</div>
+                    <small className="muted">
+                      {group.turnCount > 1
+                        ? `${group.turnCount} AI turns since ${formatDateTime(group.firstTurnAt)}`
+                        : "1 AI turn"}
+                    </small>
+                  </td>
                   <td>{item.salon?.name ?? t("common.none")}</td>
                   <td>
-                    <div>{item.callSession?.providerCallId ?? item.callSessionId ?? t("common.none")}</div>
+                    <div>{item.callSession?.providerCallId ?? readContactId(item) ?? t("common.none")}</div>
                     <small className="muted">{item.callSession?.callerPhone ?? item.bookingAttemptId ?? ""}</small>
                   </td>
                   <td>{item.taskType}</td>
@@ -156,7 +248,8 @@ export const AiLogsPage = () => {
                     <Link to={`/ai-logs/${item.id}`}>{t("common.open")}</Link>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

@@ -324,11 +324,11 @@ test("Connect AI reception Lex error branch reprompts instead of transferring", 
   assert.notEqual(errorPrompt.Transitions.NextAction, "transfer-human-escalation-flow");
 });
 
-test("DialogCodeHook with service and time does not call backend for staff prompt", async () => {
+test("DialogCodeHook with service and time prompts staff next", async () => {
   const handler = await loadHandler({ BOOKING_HANDLER_API_TIMEOUT_MS: "2800" });
   const startedAt = Date.now();
   const fetchCalls = installFetchMock(() => {
-    throw new Error("fetch should not be called for local DialogCodeHook prompts");
+    throw new Error("staff options backend unavailable");
   });
 
   const response = await handler(
@@ -354,9 +354,10 @@ test("DialogCodeHook with service and time does not call backend for staff promp
     })
   );
 
-  assert.equal(fetchCalls.length, 0);
+  assert.equal(fetchCalls.length, 1);
   assert.equal(Date.now() - startedAt < 1000, true);
-  assert.equal(response.sessionState.dialogAction.type, "Delegate");
+  assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "staffPreference");
   assert.equal(response.sessionState.sessionAttributes.serviceName, "Pedicure");
   assert.equal(response.sessionState.sessionAttributes.requestedTime, "3 PM");
 });
@@ -426,8 +427,8 @@ test("DialogCodeHook no input prompts service menu and keeps known caller", asyn
   assert.equal(response.sessionState.sessionAttributes.noInputCount, "1");
   assert.equal(response.sessionState.sessionAttributes.awaitingNoInputHumanConfirmation, "false");
   assert.equal(response.sessionState.sessionAttributes.customerPhone, "+17325956266");
-  assert.match(response.messages[0].content, /What service would you like today/i);
-  assert.doesNotMatch(response.messages[0].content, /press 1 for Pedicure/i);
+  assert.match(response.messages[0].content, /say the service, press 4 for Full Set/i);
+  assert.match(response.messages[0].content, /4 for Full Set/i);
 });
 
 test("DialogCodeHook second no input uses shorter prompt without transfer", async () => {
@@ -609,10 +610,10 @@ test("DialogCodeHook transcript relative date overrides incorrect Lex date slot"
   assert.equal(response.sessionState.intent.slots.requestedTime.value.interpretedValue, "3 PM");
 });
 
-test("DialogCodeHook known caller with service and time delegates without staff prompt", async () => {
+test("DialogCodeHook known caller with service and time prompts staff without asking name", async () => {
   const handler = await loadHandler();
   const fetchCalls = installFetchMock(() => {
-    throw new Error("fetch should not be called for local DialogCodeHook recovery");
+    throw new Error("staff options backend unavailable");
   });
 
   const response = await handler(
@@ -638,8 +639,9 @@ test("DialogCodeHook known caller with service and time delegates without staff 
     })
   );
 
-  assert.equal(fetchCalls.length, 0);
-  assert.equal(response.sessionState.dialogAction.type, "Delegate");
+  assert.equal(fetchCalls.length, 1);
+  assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "staffPreference");
   assert.equal(response.sessionState.sessionAttributes.customerName, "Kiet");
   assert.equal(response.sessionState.sessionAttributes.customerPhone, "+17325956266");
   assert.equal(response.sessionState.sessionAttributes.serviceName, "Pedicure");
@@ -647,10 +649,10 @@ test("DialogCodeHook known caller with service and time delegates without staff 
   assert.equal(response.sessionState.sessionAttributes.requestedTime, "3 PM");
 });
 
-test("DialogCodeHook recovers logged eddie here pedicure utterance without staff lookup", async () => {
+test("DialogCodeHook recovers logged eddie here pedicure utterance then asks staff", async () => {
   const handler = await loadHandler();
   const fetchCalls = installFetchMock(() => {
-    throw new Error("fetch should not be called for local DialogCodeHook recovery");
+    throw new Error("staff options backend unavailable");
   });
 
   const response = await handler(
@@ -676,8 +678,9 @@ test("DialogCodeHook recovers logged eddie here pedicure utterance without staff
     })
   );
 
-  assert.equal(fetchCalls.length, 0);
-  assert.equal(response.sessionState.dialogAction.type, "Delegate");
+  assert.equal(fetchCalls.length, 1);
+  assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "staffPreference");
   assert.equal(response.sessionState.sessionAttributes.serviceName, "Pedicure");
   assert.equal(response.sessionState.sessionAttributes.requestedDate, usEasternDate(1));
   assert.equal(response.sessionState.sessionAttributes.requestedTime, "7 PM");
@@ -715,7 +718,8 @@ test("DialogCodeHook maps service DTMF only when serviceName was last asked", as
     })
   );
 
-  assert.equal(response.sessionState.dialogAction.type, "Delegate");
+  assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "staffPreference");
   assert.equal(response.sessionState.sessionAttributes.serviceName, "Pedicure");
   assert.equal(response.sessionState.sessionAttributes.confirmedServiceName, "Pedicure");
   assert.equal(response.sessionState.intent.slots.serviceName.value.interpretedValue, "Pedicure");
@@ -1218,7 +1222,10 @@ test("DialogCodeHook scopes polluted ViberOut service DTMF 4 to serviceName only
   assert.notEqual(response.sessionState.dialogAction.slotToElicit, "serviceName");
   assert.notEqual(response.sessionState.sessionAttributes.transferToQueue, "true");
   assert.notEqual(response.sessionState.sessionAttributes.forceHumanEscalation, "true");
-  assert.equal(fetchCalls.length, 0);
+  assert.equal(fetchCalls.length, 1);
+  assert.equal(fetchCalls[0].body.currentTurnTranscript, "4");
+  assert.equal(fetchCalls[0].body.attributes.lexTurnDebug.dtmfRouting.accepted, true);
+  assert.equal(fetchCalls[0].body.attributes.lexTurnDebug.dtmfRouting.selection, "Full Set");
 });
 
 test("DialogCodeHook clears stale requestedTime when Full Set speech is recognized from service prompt", async () => {
@@ -1710,7 +1717,124 @@ test("DialogCodeHook customerName noise does not persist sorry", async () => {
   assert.deepEqual(JSON.parse(response.sessionState.sessionAttributes.ignoredNoiseFields), [
     "customerName"
   ]);
-  assert.equal(response.messages[0].content, "What name should I put on the appointment?");
+  assert.equal(
+    response.messages[0].content,
+    "Got it: Full Set tomorrow at 3 PM. What name should I put on the appointment?"
+  );
+});
+
+test("Full utterance asks only for customer name with persisted slot state", async () => {
+  const handler = await loadHandler();
+  installFetchMock(() =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "MISSING_INFO",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "InProgress",
+          message: "No known caller name.",
+          messageContentType: "PlainText",
+          sessionAttributes: {}
+        },
+        missingFields: ["customerName"]
+      })
+    )
+  );
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "i want to book a full set tomorrow at two p m with trang",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+84798171999",
+          AmazonConnectContactId: "connect-full-utterance-name",
+          operatorHelpMentioned: "true"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          slots: {}
+        }
+      }
+    })
+  );
+
+  assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "customerName");
+  assert.equal(response.sessionState.sessionAttributes.serviceName, "Full Set");
+  assert.equal(response.sessionState.sessionAttributes.confirmedServiceName, "Full Set");
+  assert.equal(response.sessionState.sessionAttributes.requestedDate, usEasternDate(1));
+  assert.equal(response.sessionState.sessionAttributes.requestedTime, "2 PM");
+  assert.equal(response.sessionState.sessionAttributes.staffPreference, "Trang");
+  assert.equal(response.sessionState.sessionAttributes.customerPhone, "+84798171999");
+  assert.equal(response.sessionState.sessionAttributes.lastAskedSlot, "customerName");
+  assert.equal(response.sessionState.sessionAttributes.slotToElicit, "customerName");
+  assert.match(response.messages[0].content, /Got it: Full Set tomorrow at 2 PM with Trang/i);
+  assert.doesNotMatch(response.messages[0].content, /service|Press 0|press 0/i);
+});
+
+test("Repeat service while asking customerName keeps context and does not reset", async () => {
+  const handler = await loadHandler();
+  const fetchCalls = installFetchMock(() =>
+    jsonResponse({
+      outcome: "MISSING_INFO",
+      lexResponse: {
+        fulfillmentState: "InProgress",
+        message: "Logged.",
+        sessionAttributes: {}
+      }
+    })
+  );
+
+  for (const slots of [{ customerName: slot("full set") }, { serviceName: slot("Full Set") }]) {
+    const response = await handler(
+      baseEvent({
+        invocationSource: "DialogCodeHook",
+        inputTranscript: "full set",
+        sessionState: {
+          ...baseEvent().sessionState,
+          sessionAttributes: {
+            salonId: "salon-explicit",
+            CalledNumber: "+18483487681",
+            CustomerEndpointAddress: "+84798171999",
+            AmazonConnectContactId: "connect-repeat-service-name",
+            lastAskedSlot: "customerName",
+            serviceName: "Full Set",
+            confirmedServiceName: "Full Set",
+            requestedDate: usEasternDate(1),
+            requestedTime: "2 PM",
+            staffPreference: "Trang",
+            customerPhone: "+84798171999",
+            operatorHelpMentioned: "true"
+          },
+          intent: {
+            ...baseEvent().sessionState.intent,
+            slots
+          }
+        }
+      })
+    );
+
+    assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
+    assert.equal(response.sessionState.dialogAction.slotToElicit, "customerName");
+    assert.equal(response.sessionState.sessionAttributes.lastAskedSlot, "customerName");
+    assert.equal(response.sessionState.sessionAttributes.slotToElicit, "customerName");
+    assert.equal(
+      response.messages[0].content,
+      "I already have Full Set for tomorrow at 2 PM with Trang. What name should I put on the appointment?"
+    );
+    assert.doesNotMatch(response.messages[0].content, /Sorry|service/i);
+    assert.equal(response.sessionState.sessionAttributes.customerName, undefined);
+  }
+  assert.equal(fetchCalls.length, 2);
+  for (const call of fetchCalls) {
+    assert.equal(call.body.currentTurnTranscript, "full set");
+    assert.equal(call.body.attributes.lastAskedSlot, "customerName");
+    assert.equal(call.body.attributes.ignoredNoiseFields, JSON.stringify(["customerName"]));
+  }
 });
 
 test("DialogCodeHook digit 4 at requestedDate does not become time or service", async () => {
@@ -1759,8 +1883,101 @@ test("DialogCodeHook digit 4 at requestedDate does not become time or service", 
   assert.equal(routing.route, "wrong_slot");
   assert.equal(routing.accepted, false);
   assert.equal(routing.nextSlot, "requestedDate");
-  assert.match(response.messages[0].content, /I already have Full Set/i);
+  assert.equal(response.messages[0].content, "What day would you like? You can say today or tomorrow.");
   assert.notEqual(response.sessionState.dialogAction.slotToElicit, "serviceName");
+});
+
+test("DialogCodeHook preserves Full Set tomorrow 3 PM when next turn is spoken digit noise", async () => {
+  const handler = await loadHandler();
+  const fetchCalls = installFetchMock(() =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "MISSING_INFO",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "InProgress",
+          message:
+            "Which staff would you like? You can say Trang, Amy, Kelly, or first available. For staff, press 1 for Trang, 2 for Amy, 3 for Kelly, 4 for first available. Press 0 for an operator.",
+          messageContentType: "PlainText",
+          dialogAction: {
+            type: "ElicitSlot",
+            slotToElicit: "staffPreference"
+          },
+          sessionAttributes: dynamicStaffAttributes()
+        },
+        missingFields: ["staffPreference"]
+      })
+    )
+  );
+
+  for (const inputTranscript of ["two, three.", "two three", "2 3", "23"]) {
+    const response = await handler(
+      baseEvent({
+        invocationSource: "DialogCodeHook",
+        inputMode: "Speech",
+        inputTranscript,
+        sessionState: {
+          ...baseEvent().sessionState,
+          sessionAttributes: {
+            salonId: "salon-explicit",
+            CalledNumber: "+18483487681",
+            CustomerEndpointAddress: "+84798171999",
+            AmazonConnectContactId: `connect-live-noise-${inputTranscript.replace(/\W+/g, "-")}`,
+            lastAskedSlot: "requestedDate",
+            serviceName: "Full Set",
+            confirmedServiceName: "Full Set",
+            requestedDate: usEasternDate(1),
+            requestedTime: "3 PM",
+            customerName: "Thuyet",
+            recognizedCustomerName: "Thuyet",
+            customerNameSource: "phone_lookup",
+            customerPhone: "+84798171999"
+          },
+          intent: {
+            ...baseEvent().sessionState.intent,
+            slots: {
+              requestedDate: slotWith({
+                originalValue: inputTranscript,
+                interpretedValue: "2027-02-03",
+                resolvedValues: ["2027-02-03"]
+              }),
+              requestedTime: slotWith({
+                originalValue: inputTranscript,
+                interpretedValue: "2 PM",
+                resolvedValues: ["2 PM"]
+              })
+            }
+          }
+        }
+      })
+    );
+
+    const latestFetch = fetchCalls.at(-1);
+    assert.equal(latestFetch.body.requestedDate, usEasternDate(1), inputTranscript);
+    assert.equal(latestFetch.body.requestedTime, "3 PM", inputTranscript);
+    assert.notEqual(latestFetch.body.requestedDate, "2027-02-03", inputTranscript);
+    assert.equal(response.sessionState.sessionAttributes.serviceName, "Full Set", inputTranscript);
+    assert.equal(response.sessionState.sessionAttributes.confirmedServiceName, "Full Set", inputTranscript);
+    assert.equal(response.sessionState.sessionAttributes.requestedDate, usEasternDate(1), inputTranscript);
+    assert.equal(response.sessionState.sessionAttributes.requestedTime, "3 PM", inputTranscript);
+    assert.equal(response.sessionState.dialogAction.type, "ElicitSlot", inputTranscript);
+    assert.equal(response.sessionState.dialogAction.slotToElicit, "staffPreference", inputTranscript);
+    assert.equal(response.sessionState.sessionAttributes.lastAskedSlot, "staffPreference", inputTranscript);
+    assert.notEqual(response.sessionState.dialogAction.slotToElicit, "serviceName", inputTranscript);
+    assert.notEqual(response.sessionState.dialogAction.slotToElicit, "requestedDate", inputTranscript);
+    assert.notEqual(response.sessionState.dialogAction.slotToElicit, "requestedTime", inputTranscript);
+    assert.deepEqual(
+      latestFetch.body.attributes.lexTurnDebug.dtmfDiagnostics.digitsExtractedSequence,
+      ["2", "3"],
+      inputTranscript
+    );
+    assert.ok(
+      latestFetch.body.attributes.lexTurnDebug.sanitization.ignoredUngroundedSlots.includes(
+        "requestedDate_digit_sequence_not_grounded"
+      ),
+      inputTranscript
+    );
+  }
 });
 
 test("press 0 from service prompt escalates to operator", async () => {
@@ -2316,7 +2533,7 @@ test("BookAppointmentIntent backend human escalation response is suppressed with
   assert.equal(response.sessionState.sessionAttributes.forceHumanEscalation, "false");
   assert.equal(response.sessionState.sessionAttributes.transferToQueue, "false");
   assert.equal(response.sessionState.sessionAttributes.queueId, undefined);
-  assert.match(response.messages[0].content, /press 0 to speak with an operator/i);
+  assert.doesNotMatch(response.messages[0].content, /press 0 to speak with an operator/i);
   assert.doesNotMatch(response.messages[0].content, /goodbye/i);
 });
 
@@ -2425,8 +2642,8 @@ test("BookAppointmentIntent backend non-OK response reprompts without auto trans
   assert.equal(response.sessionState.sessionAttributes.forceHumanEscalation, "false");
   assert.equal(response.sessionState.sessionAttributes.transferToQueue, "false");
   assert.equal(response.sessionState.sessionAttributes.backendFailureReason, "backend_error");
-  assert.match(response.messages[0].content, /I already have Pedicure/i);
-  assert.match(response.messages[0].content, /press 0 to speak with an operator/i);
+  assert.match(response.messages[0].content, /I still have Pedicure/i);
+  assert.doesNotMatch(response.messages[0].content, /press 0 to speak with an operator/i);
   assert.doesNotMatch(response.messages[0].content, /database|stack|secret|debug/i);
 });
 
@@ -2471,7 +2688,7 @@ test("BookAppointmentIntent backend failure after Full Set does not ask service 
   assert.equal(response.sessionState.sessionAttributes.confirmedServiceName, "Full Set");
   assert.equal(response.sessionState.sessionAttributes.forceHumanEscalation, "false");
   assert.equal(response.sessionState.sessionAttributes.transferToQueue, "false");
-  assert.match(response.messages[0].content, /I already have Full Set/i);
+  assert.match(response.messages[0].content, /I still have Full Set/i);
   assert.doesNotMatch(response.messages[0].content, /What service/i);
 });
 
@@ -2487,8 +2704,8 @@ test("BookAppointmentIntent backend thrown error reprompts without auto transfer
   assert.equal(response.sessionState.sessionAttributes.forceHumanEscalation, "false");
   assert.equal(response.sessionState.sessionAttributes.transferToQueue, "false");
   assert.equal(response.sessionState.sessionAttributes.backendFailureReason, "backend_unreachable");
-  assert.match(response.messages[0].content, /I already have Pedicure/i);
-  assert.match(response.messages[0].content, /press 0 to speak with an operator/i);
+  assert.match(response.messages[0].content, /I still have Pedicure/i);
+  assert.doesNotMatch(response.messages[0].content, /press 0 to speak with an operator/i);
   assert.doesNotMatch(response.messages[0].content, /goodbye/i);
   assert.doesNotMatch(response.messages[0].content, /internal host|connection refused/i);
 });
@@ -2505,7 +2722,7 @@ test("BookAppointmentIntent backend timeout reprompts with wait prompt and no au
   assert.equal(response.sessionState.sessionAttributes.forceHumanEscalation, "false");
   assert.equal(response.sessionState.sessionAttributes.transferToQueue, "false");
   assert.equal(response.sessionState.sessionAttributes.backendFailureReason, "backend_timeout");
-  assert.match(response.messages[0].content, /I already have Pedicure/i);
+  assert.match(response.messages[0].content, /I still have Pedicure/i);
   assert.doesNotMatch(response.messages[0].content, /goodbye/i);
 });
 
@@ -2521,7 +2738,7 @@ test("BookAppointmentIntent backend not configured reprompts with wait prompt an
   assert.equal(response.sessionState.sessionAttributes.forceHumanEscalation, "false");
   assert.equal(response.sessionState.sessionAttributes.transferToQueue, "false");
   assert.equal(response.sessionState.sessionAttributes.backendFailureReason, "backend_not_configured");
-  assert.match(response.messages[0].content, /I already have Pedicure/i);
+  assert.match(response.messages[0].content, /I still have Pedicure/i);
   assert.doesNotMatch(response.messages[0].content, /goodbye/i);
 });
 

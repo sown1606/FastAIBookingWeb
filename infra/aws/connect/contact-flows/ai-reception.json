@@ -259,10 +259,13 @@
           "SystemEndpointAddress": "$.SystemEndpoint.Address",
           "contactId": "$.ContactId",
           "ContactId": "$.ContactId",
-          "AmazonConnectContactId": "$.ContactId",
-          "InitialContactId": "$.InitialContactId"
+      "AmazonConnectContactId": "$.ContactId",
+      "InitialContactId": "$.InitialContactId",
+      "operatorHelpMentioned": "true",
+      "activeDtmfMenu": "service",
+      "activeDtmfOptionsJson": "{\"1\":\"Pedicure\",\"2\":\"Manicure\",\"3\":\"Gel Manicure\",\"4\":\"Full Set\",\"5\":\"Dip Powder\",\"0\":\"__operator__\"}"
         },
-          "Text": "Hi, thanks for calling. I can help book your appointment. You can say the service, press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Full Set, 5 for Dip Powder, or press 0 for a real person."
+      "Text": "Hi, I can help book your appointment. You can say the service, press 4 for Full Set, or press 0 for a real person."
       },
       "Identifier": "3b2877ca-bc16-4019-a8e6-04200c0ded06",
       "Type": "ConnectParticipantWithLexBot",
@@ -352,8 +355,11 @@
           "SystemEndpointAddress": "$.SystemEndpoint.Address",
           "contactId": "$.ContactId",
           "ContactId": "$.ContactId",
-          "AmazonConnectContactId": "$.ContactId",
-          "InitialContactId": "$.InitialContactId"
+      "AmazonConnectContactId": "$.ContactId",
+      "InitialContactId": "$.InitialContactId",
+      "operatorHelpMentioned": "true",
+      "activeDtmfMenu": "service",
+      "activeDtmfOptionsJson": "{\"1\":\"Pedicure\",\"2\":\"Manicure\",\"3\":\"Gel Manicure\",\"4\":\"Full Set\",\"5\":\"Dip Powder\",\"0\":\"__operator__\"}"
         },
         "Text": "Sorry, I did not catch the service. Please press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Full Set, 5 for Dip Powder, or 0 for an operator."
       },
@@ -471,7 +477,7 @@
       "Type": "MessageParticipant",
       "Parameters": {
         "SkipWhenDTMFBufferEnabled": "false",
-        "Text": "Hi, thanks for calling. I can help book your appointment. You can say the service, press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Full Set, 5 for Dip Powder, or press 0 for a real person."
+      "Text": "Hi, I can help book your appointment. You can say the service, press 4 for Full Set, or press 0 for a real person."
       },
       "Transitions": {
         "NextAction": "3b2877ca-bc16-4019-a8e6-04200c0ded06",
