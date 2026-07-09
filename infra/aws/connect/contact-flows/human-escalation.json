@@ -38,9 +38,22 @@
           "text": "FastAIBooking Operator Queue"
         }
       },
+      "set-customer-queue-flow": {
+        "position": {
+          "x": 760,
+          "y": 160
+        },
+        "parameters": {
+          "EventHooks": {
+            "CustomerQueue": {
+              "displayName": "Default customer queue"
+            }
+          }
+        }
+      },
       "aa49aa8c-76f5-43f1-a8dd-d818f103fa62": {
         "position": {
-          "x": 860,
+          "x": 980,
           "y": 40
         }
       },
@@ -79,7 +92,7 @@
     {
       "Parameters": {
         "SkipWhenDTMFBufferEnabled": "false",
-        "Text": "Please wait while I connect you. If there is a short wait, you may hear quiet hold music while an operator joins."
+        "Text": "Please wait while I connect you."
       },
       "Identifier": "01253de2-7cc9-4992-945d-63910b9eb695",
       "Type": "MessageParticipant",
@@ -100,13 +113,32 @@
       "Identifier": "8b1827c6-e89a-4794-87ad-3894cb4e2982",
       "Type": "UpdateContactTargetQueue",
       "Transitions": {
-        "NextAction": "aa49aa8c-76f5-43f1-a8dd-d818f103fa62",
+        "NextAction": "set-customer-queue-flow",
         "Errors": [
           {
             "NextAction": "queue-fallback-message",
             "ErrorType": "NoMatchingError"
           }
         ]
+      }
+    },
+    {
+      "Identifier": "set-customer-queue-flow",
+      "Type": "UpdateContactEventHooks",
+      "Parameters": {
+        "EventHooks": {
+          "CustomerQueue": "arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/contact-flow/6bdf546e-4e3a-4bf5-954f-fb78fa6a3d5b"
+        }
+      },
+      "Transitions": {
+        "NextAction": "aa49aa8c-76f5-43f1-a8dd-d818f103fa62",
+        "Errors": [
+          {
+            "NextAction": "aa49aa8c-76f5-43f1-a8dd-d818f103fa62",
+            "ErrorType": "NoMatchingError"
+          }
+        ],
+        "Conditions": []
       }
     },
     {

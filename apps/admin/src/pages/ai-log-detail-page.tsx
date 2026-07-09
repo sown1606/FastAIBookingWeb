@@ -41,6 +41,28 @@ interface AiLogDetail {
   } | null;
 }
 
+interface AiLogDebugTimelineItem {
+  aiInteractionId: string;
+  currentTurnTranscript?: unknown;
+  aggregatedRequestText?: unknown;
+  contactId?: unknown;
+  internalCallSessionId?: unknown;
+  amazonConnectContactId?: unknown;
+  lastAskedSlotBefore?: unknown;
+  lastAskedSlotAfter?: unknown;
+  activeDtmfMenuBefore?: unknown;
+  activeDtmfMenuAfter?: unknown;
+  dtmfRouting?: unknown;
+  ignoredUngroundedSlots?: unknown;
+  ignoredPollutedSlots?: unknown;
+  ignoredNoiseFields?: unknown;
+}
+
+interface AiLogCallDebug {
+  contactIds?: string[];
+  timeline?: AiLogDebugTimelineItem[];
+}
+
 const routingLabelKeyByValue = {
   SALON_RING: "routing.SALON_RING",
   AI_RECEPTION: "routing.AI_RECEPTION",
@@ -57,6 +79,8 @@ export const AiLogDetailPage = () => {
   const [log, setLog] = useState<AiLogDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [copyStatus, setCopyStatus] = useState("");
+  const [callDebug, setCallDebug] = useState<AiLogCallDebug | null>(null);
 
   const translateStatus = (value: string | null | undefined) => {
     if (!value) {
@@ -83,8 +107,12 @@ export const AiLogDetailPage = () => {
     setError("");
     setLoading(true);
     try {
-      const response = await apiGet<AiLogDetail>(`/api/v1/admin/ai-logs/${id}`);
+      const [response, debugResponse] = await Promise.all([
+        apiGet<AiLogDetail>(`/api/v1/admin/ai-logs/${id}`),
+        apiGet<AiLogCallDebug>(`/api/v1/admin/ai-logs/${id}/debug`)
+      ]);
       setLog(response);
+      setCallDebug(debugResponse);
     } catch (loadError) {
       setError(extractErrorMessage(loadError));
     } finally {
@@ -95,6 +123,18 @@ export const AiLogDetailPage = () => {
   useEffect(() => {
     void load();
   }, [id]);
+
+  const copyFullDebug = async () => {
+    if (!id) return;
+    setCopyStatus("");
+    try {
+      const response = await apiGet<unknown>(`/api/v1/admin/ai-logs/${id}/debug`);
+      await navigator.clipboard.writeText(JSON.stringify(response, null, 2));
+      setCopyStatus(t("aiLogs.debugCopied"));
+    } catch (copyError) {
+      setCopyStatus(extractErrorMessage(copyError));
+    }
+  };
 
   if (loading) {
     return <LoadingBlock />;
@@ -108,10 +148,25 @@ export const AiLogDetailPage = () => {
     return <EmptyBlock message={t("aiLogs.notFound")} />;
   }
 
+  const selectedDebugTurn = callDebug?.timeline?.find((item) => item.aiInteractionId === log.id);
+  const stringifyDebug = (value: unknown) => JSON.stringify(value ?? null, null, 2);
+  const displayDebugValue = (value: unknown) => {
+    if (value === undefined || value === null || value === "") {
+      return t("common.none");
+    }
+    return String(value);
+  };
+
   return (
     <div className="stack">
       <section className="card">
-        <h2>{t("aiLogs.detailTitle")}</h2>
+        <div className="section-header">
+          <h2>{t("aiLogs.detailTitle")}</h2>
+          <button type="button" className="secondary" onClick={copyFullDebug}>
+            {t("aiLogs.copyDebug")}
+          </button>
+        </div>
+        {copyStatus ? <p className="muted">{copyStatus}</p> : null}
         <div className="metrics-grid">
           <div>
             <span className="muted">{t("aiLogs.taskType")}</span>
@@ -150,6 +205,10 @@ export const AiLogDetailPage = () => {
             <strong>{log.callSession?.id ?? t("common.none")}</strong>
           </div>
           <div>
+            <span className="muted">{t("aiLogs.amazonConnectContactId")}</span>
+            <strong>{callDebug?.contactIds?.[0] ?? t("common.none")}</strong>
+          </div>
+          <div>
             <span className="muted">{t("aiLogs.callOutcome")}</span>
             <strong>{translateRouting(log.callSession?.routingOutcome)}</strong>
           </div>
@@ -158,6 +217,51 @@ export const AiLogDetailPage = () => {
             <strong>{translateStatus(log.bookingAttempt?.status)}</strong>
           </div>
         </div>
+      </section>
+
+      <section className="card">
+        <h3>{t("aiLogs.phoneTurnDebug")}</h3>
+        <div className="metrics-grid">
+          <div>
+            <span className="muted">{t("aiLogs.currentTurnTranscript")}</span>
+            <strong>{displayDebugValue(selectedDebugTurn?.currentTurnTranscript)}</strong>
+          </div>
+          <div>
+            <span className="muted">{t("aiLogs.aggregatedRequestText")}</span>
+            <strong>{displayDebugValue(selectedDebugTurn?.aggregatedRequestText)}</strong>
+          </div>
+          <div>
+            <span className="muted">{t("aiLogs.lastAskedSlot")}</span>
+            <strong>
+              {displayDebugValue(selectedDebugTurn?.lastAskedSlotBefore)} /{" "}
+              {displayDebugValue(selectedDebugTurn?.lastAskedSlotAfter)}
+            </strong>
+          </div>
+          <div>
+            <span className="muted">{t("aiLogs.activeDtmfMenu")}</span>
+            <strong>
+              {displayDebugValue(selectedDebugTurn?.activeDtmfMenuBefore)} /{" "}
+              {displayDebugValue(selectedDebugTurn?.activeDtmfMenuAfter)}
+            </strong>
+          </div>
+        </div>
+      </section>
+
+      <section className="card-grid">
+        <article className="card">
+          <h3>{t("aiLogs.dtmfRouting")}</h3>
+          <pre>{stringifyDebug(selectedDebugTurn?.dtmfRouting)}</pre>
+        </article>
+        <article className="card">
+          <h3>{t("aiLogs.ignoredSlotsNoise")}</h3>
+          <pre>
+            {stringifyDebug({
+              ignoredUngroundedSlots: selectedDebugTurn?.ignoredUngroundedSlots,
+              ignoredPollutedSlots: selectedDebugTurn?.ignoredPollutedSlots,
+              ignoredNoiseFields: selectedDebugTurn?.ignoredNoiseFields
+            })}
+          </pre>
+        </article>
       </section>
 
       <section className="card">

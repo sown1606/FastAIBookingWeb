@@ -1601,9 +1601,9 @@ test("missing staff asks once, then first available resolves before confirmation
   assert.equal(first.body.data.outcome, "MISSING_INFO");
   assert.equal(first.body.data.lexResponse.dialogAction.type, "ElicitSlot");
   assert.equal(first.body.data.lexResponse.dialogAction.slotToElicit, "staffPreference");
-  assert.match(first.body.data.lexResponse.message, /Who would you like to book with/i);
+  assert.match(first.body.data.lexResponse.message, /Got it, Pedicure\. Which staff would you like/i);
   assert.match(first.body.data.lexResponse.message, /press 1 for Trang/i);
-  assert.match(first.body.data.lexResponse.message, /press 4 for first available/i);
+  assert.match(first.body.data.lexResponse.message, /4 for first available/i);
   assert.equal(state.appointments.length, 0);
 
   const second = await postInternalAppointment(

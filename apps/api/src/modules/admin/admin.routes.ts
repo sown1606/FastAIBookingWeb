@@ -20,6 +20,7 @@ import {
 } from "../ai-reception/ai-reception.service";
 import {
   exportAIInteractionsForAdmin,
+  getAIInteractionCallDebugForAdmin,
   getAIInteractionByIdForAdmin,
   listAIInteractionsForAdmin
 } from "../ai/ai.service";
@@ -1069,6 +1070,18 @@ adminRouter.get(
       "salonId" | "taskType" | "callSessionId" | "contactId" | "callerPhone" | "q"
     >;
     const result = await exportAIInteractionsForAdmin(query);
+    return sendSuccess(res, {
+      data: result
+    });
+  })
+);
+
+adminRouter.get(
+  "/ai-logs/:id/debug",
+  validate(idSchema, "params"),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params as z.infer<typeof idSchema>;
+    const result = await getAIInteractionCallDebugForAdmin(id);
     return sendSuccess(res, {
       data: result
     });

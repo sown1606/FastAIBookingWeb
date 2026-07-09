@@ -262,7 +262,7 @@
           "AmazonConnectContactId": "$.ContactId",
           "InitialContactId": "$.InitialContactId"
         },
-        "Text": "Hi, thanks for calling. I can help book your appointment. What service would you like today?"
+          "Text": "Hi, thanks for calling. I can help book your appointment. You can say the service, press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Full Set, 5 for Dip Powder, or press 0 for a real person."
       },
       "Identifier": "3b2877ca-bc16-4019-a8e6-04200c0ded06",
       "Type": "ConnectParticipantWithLexBot",
@@ -471,7 +471,7 @@
       "Type": "MessageParticipant",
       "Parameters": {
         "SkipWhenDTMFBufferEnabled": "false",
-        "Text": "Hi, thanks for calling. I can help book your appointment. What service would you like today?"
+        "Text": "Hi, thanks for calling. I can help book your appointment. You can say the service, press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Full Set, 5 for Dip Powder, or press 0 for a real person."
       },
       "Transitions": {
         "NextAction": "3b2877ca-bc16-4019-a8e6-04200c0ded06",

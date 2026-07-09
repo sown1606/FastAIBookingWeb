@@ -53,6 +53,8 @@ interface CreateAmazonConnectAIAppointmentInput {
   intentName?: string;
   text?: string;
   transcript?: string;
+  currentTurnTranscript?: string;
+  aggregatedBookingTranscript?: string;
   customer?: {
     name?: string;
     phone?: string;
@@ -399,6 +401,23 @@ const STAFF_DTMF_OPTIONS: Record<string, string> = {
   "3": "Kelly",
   "4": "Any staff"
 };
+const CUSTOMER_NAME_NOISE = new Set([
+  "sorry",
+  "ah",
+  "uh",
+  "um",
+  "okay",
+  "ok",
+  "yes",
+  "no",
+  "toss",
+  "full set",
+  "tomorrow",
+  "today",
+  "operator",
+  "zero",
+  "four"
+]);
 const SERVICE_DTMF_PROMPT =
   "What service would you like today? You can say Pedicure, Manicure, Gel Manicure, Full Set, Dip Powder, or Other Services. You can also press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Full Set, or 5 for Dip Powder. Press 0 to speak with an operator.";
 const STAFF_DTMF_PROMPT =
@@ -468,7 +487,8 @@ const extractCustomerNameFromText = (text?: string): string | undefined => {
   const match = text?.match(
     /(?:my name is|name is|this is|i am|i'm)\s+([a-zA-Z][a-zA-Z'-]*(?:\s+[a-zA-Z][a-zA-Z'-]*){0,4})(?=\s*(?:[,.!?;]|$|and\s+(?:my\s+)?phone|(?:my\s+)?phone\s+(?:number\s+)?(?:is|should|to)))/i
   );
-  return match?.[1]?.trim();
+  const name = match?.[1]?.trim();
+  return isAcceptableCustomerName(name) ? name : undefined;
 };
 
 const extractCustomerPhoneFromText = (text?: string): string | undefined => {
@@ -535,6 +555,13 @@ const readDtmfDigit = (value?: string | null): string | undefined => {
   const trimmed = (value ?? "").trim();
   if (/^(?:zero|press zero|pressed zero)$/i.test(trimmed)) {
     return "0";
+  }
+  const normalized = normalizeForMatch(trimmed);
+  const spokenDigitMatch = normalized.match(
+    /^(?:(?:number|option|press|pressed)\s+)?(one|two|three|tree|tri|four|five|six|seven|eight|nine)$/
+  );
+  if (spokenDigitMatch?.[1]) {
+    return String(NUMBER_WORDS[spokenDigitMatch[1]] ?? "");
   }
   const match = trimmed.match(/^(?:dtmf\s*)?([0-9]{1,2})#?$/i);
   return match?.[1];
@@ -606,6 +633,23 @@ const isOperatorZeroRequest = (value?: string | null): boolean => {
   return normalized === "zero" || /\b(?:press|pressed|hit|dial)\s+zero\b/.test(normalized);
 };
 
+const isInvalidCustomerNameNoise = (value?: string | null): boolean => {
+  const normalized = normalizeForMatch(value);
+  return Boolean(normalized && CUSTOMER_NAME_NOISE.has(normalized));
+};
+
+const isAcceptableCustomerName = (value?: string | null): value is string => {
+  const raw = value?.trim();
+  const normalized = normalizeForMatch(raw);
+  if (!raw || isInvalidCustomerNameNoise(raw) || readDtmfDigit(raw)) {
+    return false;
+  }
+  if (!/^[a-z][a-z' -]{0,80}$/i.test(raw) || normalized.split(" ").length > 4) {
+    return false;
+  }
+  return true;
+};
+
 const extractBareCustomerNameAnswer = (value?: string | null): string | undefined => {
   const raw = value?.trim();
   const normalized = normalizeForMatch(raw);
@@ -613,6 +657,7 @@ const extractBareCustomerNameAnswer = (value?: string | null): string | undefine
     !raw ||
     readDtmfDigit(raw) ||
     isOperatorZeroRequest(raw) ||
+    isInvalidCustomerNameNoise(raw) ||
     /\b(real person|live person|human|operator|representative|talk to a person|talk to someone|speak to someone|speak with someone)\b/.test(normalized) ||
     /\b(book|booking|appointment|service|pedicure|manicure|full set|dip|powder|tomorrow|today|morning|afternoon|evening|night|phone|number|zero|one|two|three|four|five|six|seven|eight|nine|ten)\b/.test(normalized)
   ) {
@@ -724,10 +769,10 @@ const BOOKING_ATTRIBUTE_NAMES = {
     "CallerId",
     "ANI"
   ],
-  serviceName: ["serviceName", "ServiceName", "service", "Service"],
+  serviceName: ["serviceName", "ServiceName", "service", "Service", "confirmedServiceName"],
   requestedDate: ["requestedDate", "RequestedDate", "preferredDate", "preferredDateTime"],
   requestedTime: ["requestedTime", "RequestedTime", "preferredTime"],
-  staffPreference: ["staffPreference", "StaffPreference"],
+  staffPreference: ["staffPreference", "StaffPreference", "confirmedStaffName"],
   staffId: ["staffId", "StaffId", "selectedStaffId", "SelectedStaffId", "confirmedStaffId"],
   contactId: ["contactId", "amazonConnectContactId", "AmazonConnectContactId", "callSessionId"],
   amazonConnectPhoneNumber: [
@@ -2660,8 +2705,8 @@ const buildStructuredCallSummary = (input: {
   };
 };
 
-const asTrimmedString = (value?: string | null): string | undefined => {
-  const trimmed = value?.trim();
+const asTrimmedString = (value?: unknown): string | undefined => {
+  const trimmed = typeof value === "string" ? value.trim() : undefined;
   return trimmed && trimmed.length > 0 ? trimmed : undefined;
 };
 
@@ -2787,7 +2832,24 @@ const hasTimeComponent = (value?: string): boolean => {
 const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppointmentInput) => {
   const attributes = input.attributes ?? {};
   const lastAskedSlot = readStringAttribute(attributes, ["lastAskedSlot"]);
-  const transcriptText = asTrimmedString(input.transcript) ?? asTrimmedString(input.text);
+  const currentTurnTranscript =
+    asTrimmedString(input.currentTurnTranscript) ??
+    readStringAttribute(attributes, ["currentTurnTranscript"]) ??
+    asTrimmedString(
+      input.attributes &&
+        typeof input.attributes.lexTurnDebug === "object" &&
+        input.attributes.lexTurnDebug !== null &&
+        !Array.isArray(input.attributes.lexTurnDebug)
+        ? (input.attributes.lexTurnDebug as Record<string, unknown>).currentTurnTranscript
+        : undefined
+    ) ??
+    asTrimmedString(input.text);
+  const aggregatedBookingTranscript =
+    asTrimmedString(input.aggregatedBookingTranscript) ??
+    readStringAttribute(attributes, ["aggregatedBookingTranscript"]) ??
+    asTrimmedString(input.transcript) ??
+    currentTurnTranscript;
+  const transcriptText = currentTurnTranscript ?? aggregatedBookingTranscript;
   const suggestedServiceName = readStringAttribute(attributes, [
     "serviceSuggestionName",
     "aiSuggestedServiceName"
@@ -2892,6 +2954,8 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
     source,
     contactId,
     transcriptText,
+    currentTurnTranscript,
+    aggregatedBookingTranscript,
     amazonConnectPhoneNumber:
       asTrimmedString(input.amazonConnectPhoneNumber) ??
       readBookingFieldAttribute(attributes, "amazonConnectPhoneNumber"),
@@ -3029,17 +3093,24 @@ const buildStaffDtmfPromptText = (staff: StaffCandidate[]): string => {
   const anyStaffDigit = Object.entries(options).find(
     ([, name]) => normalizeForMatch(name) === "any staff"
   )?.[0] ?? "4";
+  const staffNames = orderedStaff.map((member) => member.fullName);
+  if (orderedStaff.length > 4) {
+    return `Which staff would you like? You can say ${escapeSsml(
+      formatNameList(staffNames.slice(0, 4))
+    )}, or first available. Press 0 for an operator.`;
+  }
+
   const namedOptions = Object.entries(options)
     .filter(([, name]) => normalizeForMatch(name) !== "any staff")
-    .map(([digit, name]) => `press ${digit} for ${escapeSsml(name)}`);
+    .map(([digit, name]) => `${digit} for ${escapeSsml(name)}`);
   const dtmfText = formatNameList([
     ...namedOptions,
-    `press ${anyStaffDigit} for first available`
+    `${anyStaffDigit} for first available`
   ]);
 
-  return `Who would you like to book with? Available staff are ${escapeSsml(
-    formatNameList(orderedStaff.map((member) => member.fullName))
-  )}. You can ${dtmfText}, or press 0 for an operator.`;
+  return `Which staff would you like? You can say ${escapeSsml(
+    formatNameList(staffNames)
+  )}, or first available. For staff, press ${dtmfText}. Press 0 for an operator.`;
 };
 
 const buildStaffPromptSessionAttributes = (staff: StaffCandidate[]): Record<string, string> => {
@@ -3047,7 +3118,9 @@ const buildStaffPromptSessionAttributes = (staff: StaffCandidate[]): Record<stri
   return {
     staffDtmfOptions: JSON.stringify(options),
     staffDtmfStaffIds: JSON.stringify(staffIds),
-    staffDtmfPromptText: buildStaffDtmfPromptText(staff)
+    staffDtmfPromptText: buildStaffDtmfPromptText(staff),
+    activeDtmfMenu: "staff",
+    activeDtmfOptionsJson: JSON.stringify(options)
   };
 };
 
@@ -3256,7 +3329,14 @@ const buildLexMessage = (input: {
         : "Got it.";
     if (input.missingFields?.includes("staffPreference")) {
       const prompt = buildStaffDtmfPromptText(input.staffOptions ?? []);
-      return speak(input.invalidStaffDtmfSelection ? `${intro} <break time="300ms"/> ${prompt}` : prompt);
+      const serviceIntro = input.knownFields?.serviceName
+        ? `Got it, ${escapeSsml(input.knownFields.serviceName)}. `
+        : "";
+      return speak(
+        input.invalidStaffDtmfSelection
+          ? `${intro} <break time="300ms"/> ${prompt}`
+          : `${serviceIntro}${prompt}`
+      );
     }
     if (input.missingFields?.includes("customerName")) {
       return speak(
@@ -3881,6 +3961,46 @@ export const createAmazonConnectAIAppointment = async (
     responsePayload: unknown;
     isValid: boolean;
   }) => {
+    const responsePayloadBase =
+      inputForInteraction.responsePayload &&
+      typeof inputForInteraction.responsePayload === "object" &&
+      !Array.isArray(inputForInteraction.responsePayload)
+        ? (inputForInteraction.responsePayload as Record<string, unknown>)
+        : { payload: inputForInteraction.responsePayload };
+    const responsePayloadDebug =
+      input.attributes?.lexTurnDebug && typeof input.attributes.lexTurnDebug === "object"
+        ? {
+            ...input.attributes.lexTurnDebug,
+            attributesAfter:
+              inputForInteraction.responsePayload &&
+              typeof inputForInteraction.responsePayload === "object" &&
+              !Array.isArray(inputForInteraction.responsePayload) &&
+              "sessionAttributes" in inputForInteraction.responsePayload
+                ? (inputForInteraction.responsePayload as { sessionAttributes?: unknown }).sessionAttributes
+                : undefined,
+            slotToElicit:
+              inputForInteraction.responsePayload &&
+              typeof inputForInteraction.responsePayload === "object" &&
+              !Array.isArray(inputForInteraction.responsePayload) &&
+              "slotToElicit" in inputForInteraction.responsePayload
+                ? (inputForInteraction.responsePayload as { slotToElicit?: unknown }).slotToElicit
+                : undefined,
+            responseMessage: inputForInteraction.message
+          }
+        : undefined;
+    const responsePayload = responsePayloadDebug
+      ? {
+          currentTurnTranscript: normalized.currentTurnTranscript ?? normalized.transcriptText,
+          aggregatedBookingTranscript: normalized.aggregatedBookingTranscript ?? normalized.transcriptText,
+          ...responsePayloadBase,
+          lexTurnDebug: responsePayloadDebug
+        }
+      : {
+          currentTurnTranscript: normalized.currentTurnTranscript ?? normalized.transcriptText,
+          aggregatedBookingTranscript: normalized.aggregatedBookingTranscript ?? normalized.transcriptText,
+          ...responsePayloadBase
+        };
+
     return createAIInteractionLog({
       salonId: salon.id,
       actorUserId,
@@ -3890,10 +4010,10 @@ export const createAmazonConnectAIAppointment = async (
       provider: ExternalProvider.AMAZON_CONNECT,
       model: env.AMAZON_LEX_BOT_ID ?? "amazon-lex",
       taskType: "amazon_connect_booking_fulfillment",
-      requestText: normalized.transcriptText ?? "",
+      requestText: normalized.aggregatedBookingTranscript ?? normalized.transcriptText ?? "",
       requestPayload: input,
       responseText: inputForInteraction.message,
-      responsePayload: inputForInteraction.responsePayload,
+      responsePayload,
       parsedOutput: {
         outcome: inputForInteraction.outcome,
         parsed: inputForInteraction.parsed
@@ -6012,6 +6132,228 @@ export const getAIInteractionByIdForAdmin = async (interactionId: string) => {
     throw new AppError("AI interaction log not found.", 404, "AI_INTERACTION_NOT_FOUND");
   }
   return interaction;
+};
+
+const asRecord = (value: unknown): Record<string, unknown> =>
+  value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+
+const readNestedRecord = (value: unknown, key: string): Record<string, unknown> => asRecord(asRecord(value)[key]);
+
+const readNestedValue = (value: unknown, path: string[]): unknown =>
+  path.reduce<unknown>((current, key) => asRecord(current)[key], value);
+
+const compactValues = (values: unknown[]): string[] =>
+  Array.from(
+    new Set(
+      values
+        .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+        .map((value) => value.trim())
+    )
+  );
+
+const pickRecordFields = (
+  value: unknown,
+  fields: string[]
+): Record<string, unknown> => {
+  const record = asRecord(value);
+  return Object.fromEntries(
+    fields
+      .map((field) => [field, record[field]])
+      .filter(([, entry]) => entry !== undefined && entry !== null && String(entry).trim() !== "")
+  );
+};
+
+const bookingDebugFields = [
+  "customerName",
+  "customerPhone",
+  "serviceName",
+  "confirmedServiceName",
+  "requestedDate",
+  "requestedTime",
+  "staffPreference",
+  "confirmedStaffName",
+  "staffId",
+  "selectedStaffId"
+];
+
+const buildAdminDebugTimelineItem = (
+  interaction: Awaited<ReturnType<typeof prisma.aiInteractionLog.findMany>>[number],
+  index: number
+) => {
+  const requestPayload = asRecord(interaction.requestPayload);
+  const responsePayload = asRecord(interaction.responsePayload);
+  const parsedOutput = asRecord(interaction.parsedOutput);
+  const requestAttributes = readNestedRecord(requestPayload, "attributes");
+  const responseDebug = readNestedRecord(responsePayload, "lexTurnDebug");
+  const requestDebug = asRecord(requestAttributes.lexTurnDebug);
+  const debug = Object.keys(responseDebug).length ? responseDebug : requestDebug;
+  const sanitization = asRecord(debug.sanitization);
+  const lexResponse = readNestedRecord(responsePayload, "lexResponse");
+  const dialogAction = readNestedRecord(lexResponse, "dialogAction");
+  const sessionAttributesBefore = debug.attributesBefore ?? debug.sessionAttributesBefore;
+  const sessionAttributesAfter =
+    debug.attributesAfter ?? responsePayload.sessionAttributes ?? lexResponse.sessionAttributes;
+  const amazonConnectContactId =
+    requestPayload.amazonConnectContactId ??
+    requestPayload.contactId ??
+    requestAttributes.amazonConnectContactId ??
+    requestAttributes.AmazonConnectContactId ??
+    debug.contactId;
+  const slotToElicit = debug.slotToElicit ?? responsePayload.slotToElicit ?? dialogAction.slotToElicit;
+  const inferredDialogAction =
+    Object.keys(dialogAction).length
+      ? dialogAction
+      : slotToElicit
+        ? { type: "ElicitSlot", slotToElicit }
+        : responsePayload.transferToQueue === "true"
+          ? { type: "Close" }
+          : undefined;
+
+  return {
+    index,
+    aiInteractionId: interaction.id,
+    createdAt: interaction.createdAt,
+    currentTurnTranscript:
+      responsePayload.currentTurnTranscript ??
+      debug.currentTurnTranscript ??
+      debug.inputTranscript ??
+      requestPayload.currentTurnTranscript ??
+      requestPayload.text,
+    aggregatedRequestText:
+      responsePayload.aggregatedBookingTranscript ??
+      requestPayload.aggregatedBookingTranscript ??
+      requestPayload.transcript ??
+      interaction.requestText,
+    requestText: interaction.requestText,
+    responseText: interaction.responseText,
+    contactId: amazonConnectContactId,
+    internalCallSessionId: interaction.callSessionId ?? requestPayload.callSessionId,
+    amazonConnectContactId,
+    intentName: requestPayload.intentName ?? debug.intentName,
+    inputMode: debug.inputMode ?? requestPayload.inputMode,
+    lastAskedSlotBefore:
+      debug.lastAskedSlotBefore ?? asRecord(sessionAttributesBefore).lastAskedSlot ?? requestAttributes.lastAskedSlot,
+    lastAskedSlotAfter:
+      asRecord(sessionAttributesAfter).lastAskedSlot ??
+      asRecord(responsePayload.sessionAttributes).lastAskedSlot ??
+      asRecord(lexResponse.sessionAttributes).lastAskedSlot,
+    activeDtmfMenuBefore:
+      debug.activeDtmfMenuBefore ?? asRecord(sessionAttributesBefore).activeDtmfMenu,
+    activeDtmfMenuAfter:
+      asRecord(sessionAttributesAfter).activeDtmfMenu ??
+      asRecord(responsePayload.sessionAttributes).activeDtmfMenu ??
+      asRecord(lexResponse.sessionAttributes).activeDtmfMenu,
+    dtmfRouting: debug.dtmfRouting,
+    slotsOriginalValues: debug.slotsOriginalValues,
+    slotsInterpretedValues: debug.slotsInterpretedValues,
+    trustedSlotsBefore:
+      debug.trustedSlotsBefore ?? pickRecordFields(sessionAttributesBefore, bookingDebugFields),
+    trustedSlotsAfter:
+      debug.trustedSlotsAfter ?? pickRecordFields(sessionAttributesAfter, bookingDebugFields),
+    ignoredUngroundedSlots: sanitization.ignoredUngroundedSlots ?? responsePayload.ignoredUngroundedSlots,
+    ignoredPollutedSlots: sanitization.ignoredPollutedSlots ?? responsePayload.ignoredPollutedSlots,
+    ignoredNoiseFields: sanitization.ignoredNoiseFields ?? responsePayload.ignoredNoiseFields,
+    sessionAttributesBefore,
+    sessionAttributesAfter,
+    dialogAction: inferredDialogAction,
+    slotToElicit,
+    missingFields: responsePayload.missingFields ?? readNestedValue(parsedOutput, ["parsed", "missingFields"]),
+    promptMissingFields: responsePayload.promptMissingFields,
+    fallbackCount:
+      asRecord(sessionAttributesAfter).fallbackCount ??
+      asRecord(responsePayload.sessionAttributes).fallbackCount ??
+      asRecord(lexResponse.sessionAttributes).fallbackCount,
+    errorCount:
+      asRecord(sessionAttributesAfter).errorCount ??
+      asRecord(responsePayload.sessionAttributes).errorCount ??
+      asRecord(lexResponse.sessionAttributes).errorCount,
+    askedSlotsCount:
+      asRecord(sessionAttributesAfter).askedSlotsCount ??
+      asRecord(responsePayload.sessionAttributes).askedSlotsCount ??
+      asRecord(lexResponse.sessionAttributes).askedSlotsCount,
+    transferToQueue:
+      asRecord(sessionAttributesAfter).transferToQueue ??
+      asRecord(responsePayload.sessionAttributes).transferToQueue ??
+      asRecord(lexResponse.sessionAttributes).transferToQueue,
+    forceHumanEscalation:
+      asRecord(sessionAttributesAfter).forceHumanEscalation ??
+      asRecord(responsePayload.sessionAttributes).forceHumanEscalation ??
+      asRecord(lexResponse.sessionAttributes).forceHumanEscalation,
+    escalationReason:
+      asRecord(sessionAttributesAfter).escalationReason ??
+      asRecord(responsePayload.sessionAttributes).escalationReason ??
+      asRecord(lexResponse.sessionAttributes).escalationReason,
+    parsedOutput: interaction.parsedOutput,
+    requestPayload: interaction.requestPayload,
+    responsePayload: interaction.responsePayload
+  };
+};
+
+export const getAIInteractionCallDebugForAdmin = async (interactionId: string) => {
+  const interaction = await prisma.aiInteractionLog.findUnique({
+    where: { id: interactionId },
+    include: {
+      callSession: true,
+      bookingAttempt: true,
+      transcript: true,
+      salon: {
+        select: {
+          id: true,
+          name: true
+        }
+      }
+    }
+  });
+  if (!interaction) {
+    throw new AppError("AI interaction log not found.", 404, "AI_INTERACTION_NOT_FOUND");
+  }
+
+  const callSessionId = interaction.callSessionId ?? interaction.bookingAttempt?.callSessionId;
+  const callSession = callSessionId
+    ? await prisma.callSession.findUnique({
+        where: { id: callSessionId },
+        include: {
+          transcripts: {
+            orderBy: { createdAt: "asc" }
+          },
+          bookingAttempts: {
+            orderBy: { createdAt: "asc" }
+          },
+          aiInteractions: {
+            orderBy: { createdAt: "asc" }
+          }
+        }
+      })
+    : null;
+
+  const aiInteractions = callSession?.aiInteractions ?? [interaction];
+  const contactIds = compactValues([
+    callSession?.providerCallId,
+    ...aiInteractions.flatMap((item) => {
+      const requestPayload = asRecord(item.requestPayload);
+      const responsePayload = asRecord(item.responsePayload);
+      const requestAttributes = readNestedRecord(requestPayload, "attributes");
+      return [
+        requestPayload.amazonConnectContactId,
+        requestPayload.contactId,
+        requestAttributes.amazonConnectContactId,
+        requestAttributes.AmazonConnectContactId,
+        requestAttributes.contactId,
+        readNestedValue(responsePayload, ["lexTurnDebug", "contactId"])
+      ];
+    })
+  ]);
+
+  return {
+    callSession,
+    aiInteractions,
+    bookingAttempts: callSession?.bookingAttempts ?? (interaction.bookingAttempt ? [interaction.bookingAttempt] : []),
+    transcripts: callSession?.transcripts ?? (interaction.transcript ? [interaction.transcript] : []),
+    contactIds,
+    callerPhone: callSession?.callerPhone ?? interaction.bookingAttempt?.customerPhone ?? null,
+    calledNumber: callSession?.dialedPhone ?? callSession?.trackingNumber ?? null,
+    timeline: aiInteractions.map((item, index) => buildAdminDebugTimelineItem(item, index))
+  };
 };
 
 export const listAIInteractionsForAdmin = async (input: {
