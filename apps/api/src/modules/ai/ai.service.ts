@@ -2257,7 +2257,8 @@ const getActiveBookableStaff = async (salonId: string): Promise<StaffCandidate[]
     where: {
       salonId,
       status: StaffStatus.ACTIVE,
-      isBookable: true
+      isBookable: true,
+      deletedAt: null
     },
     select: {
       id: true,
@@ -2281,13 +2282,50 @@ const getActiveBookableStaffById = async (
       id: staffId.trim(),
       salonId,
       status: StaffStatus.ACTIVE,
-      isBookable: true
+      isBookable: true,
+      deletedAt: null
     },
     select: {
       id: true,
       fullName: true
     }
   });
+};
+
+const getMappedActiveBookableStaffForService = async (input: {
+  salonId: string;
+  serviceId: string;
+}): Promise<StaffCandidate[]> => {
+  const rows = await prisma.staffService.findMany({
+    where: {
+      salonId: input.salonId,
+      serviceId: input.serviceId,
+      staff: {
+        salonId: input.salonId,
+        status: StaffStatus.ACTIVE,
+        isBookable: true,
+        deletedAt: null
+      },
+      service: {
+        salonId: input.salonId,
+        isActive: true,
+        deletedAt: null
+      }
+    },
+    select: {
+      staff: {
+        select: {
+          id: true,
+          fullName: true
+        }
+      }
+    },
+    orderBy: {
+      createdAt: "asc"
+    }
+  });
+
+  return orderStaffForPrompt(dedupeStaffById(rows.map((row) => row.staff)));
 };
 
 const resolveStaffPreferenceFromCandidates = (
@@ -5410,9 +5448,16 @@ export const createAmazonConnectAIAppointment = async (
 
   if (missingFields.size > 0 || !requestedStartTime) {
     const elicitDecision = getElicitSlotForMissingFields(missingFields, normalized);
-    const staffPromptOptions = elicitDecision.promptMissingFields.includes("staffPreference")
-      ? await getStaffCandidates({ salonId: salon.id })
-      : [];
+    const shouldPromptStaff = elicitDecision.promptMissingFields.includes("staffPreference");
+    const staffPromptOptions =
+      shouldPromptStaff && serviceMatch?.service.id
+        ? await getMappedActiveBookableStaffForService({
+            salonId: salon.id,
+            serviceId: serviceMatch.service.id
+          })
+        : shouldPromptStaff
+          ? await getStaffCandidates({ salonId: salon.id })
+          : [];
 
     const message = buildLexMessage({
       outcome: "MISSING_INFO",
@@ -5431,7 +5476,7 @@ export const createAmazonConnectAIAppointment = async (
           salon.timezone
         )
     });
-    const staffPromptAttributes = elicitDecision.promptMissingFields.includes("staffPreference")
+    const staffPromptAttributes = shouldPromptStaff
       ? buildStaffPromptSessionAttributes(staffPromptOptions)
       : {};
     const parsed = buildInternalParsedIntent({
@@ -5795,8 +5840,215 @@ export const createAmazonConnectAIAppointment = async (
     normalized.staffId = staffResolution.matchedStaff.id;
   }
 
-  const preferredStaffCandidates = staffResolution.candidates;
-  const allStaffCandidates = staffResolution.allStaff;
+  const mappedStaffCandidates = await getMappedActiveBookableStaffForService({
+    salonId: salon.id,
+    serviceId: service.id
+  });
+  const mappedStaffIds = new Set(mappedStaffCandidates.map((staff) => staff.id));
+
+  if (staffResolution.status === "matched" && !mappedStaffIds.has(staffResolution.matchedStaff.id)) {
+    const invalidStaffName = staffResolution.matchedStaff.fullName;
+    const invalidStaffId = staffResolution.matchedStaff.id;
+    normalized.staffPreference = undefined;
+    normalized.staffId = undefined;
+    const message = speak(
+      `${escapeSsml(invalidStaffName)} doesn't provide ${escapeSsml(callerServiceName)}. Please choose another technician, or say first available. Press 0 for a person.`
+    );
+    const parsed = buildInternalParsedIntent({
+      intentType: "BOOK_APPOINTMENT",
+      customerName: normalized.customerName,
+      customerPhone: normalized.customerPhone,
+      serviceName: normalized.serviceName,
+      staffPreference: undefined,
+      requestedDateTime: requestedStartTime.toISOString(),
+      missingFields: ["staffPreference"],
+      isReadyToBook: false
+    });
+    const lexSessionAttributes = buildKnownSessionAttributes({
+      lastAskedSlot: "staffPreference",
+      askedSlotsCount: "1",
+      fallbackCount: "1",
+      errorCount: "1",
+      ...buildStaffPromptSessionAttributes(mappedStaffCandidates)
+    });
+    const bookingAttempt = await createAttempt({
+      status: BookingAttemptStatus.NEEDS_INPUT,
+      requestedStartTime,
+      failureReason: `STAFF_NOT_MAPPED: ${invalidStaffName} is not assigned to ${callerServiceName}.`,
+      normalizedRequest: {
+        serviceId: service.id,
+        serviceName: callerServiceName,
+        invalidStaffId,
+        invalidStaffName,
+        mappedStaffIds: mappedStaffCandidates.map((staff) => staff.id),
+        startTimeIso: requestedStartTime.toISOString(),
+        timezone: salon.timezone
+      }
+    });
+    const aiInteraction = await createInteraction({
+      outcome: "MISSING_INFO",
+      message,
+      parsed,
+      bookingAttemptId: bookingAttempt.id,
+      responsePayload: {
+        errorCode: "STAFF_NOT_MAPPED",
+        invalidStaffId,
+        invalidStaffName,
+        serviceId: service.id,
+        serviceName: callerServiceName,
+        missingFields: ["staffPreference"],
+        promptMissingFields: ["staffPreference"],
+        slotToElicit: "staffPreference",
+        sessionAttributes: lexSessionAttributes
+      },
+      isValid: true
+    });
+    await finalizeCall({
+      outcome: "MISSING_INFO",
+      bookingAttemptId: bookingAttempt.id,
+      bookingStatus: bookingAttempt.status,
+      parsed,
+      message,
+      failureReason: bookingAttempt.failureReason ?? undefined
+    });
+
+    return {
+      outcome: "MISSING_INFO" as const,
+      message,
+      lexResponse: {
+        fulfillmentState: "InProgress",
+        message,
+        messageContentType: "SSML",
+        dialogAction: {
+          type: "ElicitSlot",
+          slotToElicit: "staffPreference"
+        },
+        sessionAttributes: lexSessionAttributes
+      },
+      appointment: null,
+      bookingAttempt,
+      callSession,
+      transcript,
+      aiInteraction,
+      escalation: null,
+      alternatives: [],
+      missingFields: ["staffPreference"],
+      salonResolutionSource: resolutionSource
+    };
+  }
+
+  if (
+    callSession &&
+    staffResolution.status === "matched" &&
+    isConfirmationAccepted(normalized.confirmationState)
+  ) {
+    const successfulAttempt = await prisma.bookingAttempt.findFirst({
+      where: {
+        callSessionId: callSession.id,
+        status: BookingAttemptStatus.SUCCESS,
+        appointmentId: {
+          not: null
+        }
+      },
+      orderBy: {
+        createdAt: "desc"
+      }
+    });
+    const previousRequest =
+      successfulAttempt?.normalizedRequest &&
+      typeof successfulAttempt.normalizedRequest === "object" &&
+      !Array.isArray(successfulAttempt.normalizedRequest)
+        ? (successfulAttempt.normalizedRequest as Record<string, unknown>)
+        : {};
+    const successfulAppointmentId = successfulAttempt?.appointmentId ?? null;
+    const isSameConfirmedBooking =
+      Boolean(successfulAppointmentId) &&
+      previousRequest.serviceId === service.id &&
+      previousRequest.staffId === staffResolution.matchedStaff.id &&
+      previousRequest.startTimeIso === requestedStartTime.toISOString();
+
+    if (successfulAttempt && successfulAppointmentId && isSameConfirmedBooking) {
+      const appointment = await getAppointmentDetail(salon.id, successfulAppointmentId);
+      const message = buildLexMessage({
+        outcome: "BOOKED",
+        appointmentStartTime: requestedStartTime,
+        salonTimezone: salon.timezone,
+        serviceName: callerServiceName,
+        staffName: staffResolution.matchedStaff.fullName
+      });
+      const parsed = buildInternalParsedIntent({
+        intentType: "BOOK_APPOINTMENT",
+        customerName: normalized.customerName,
+        customerPhone: normalized.customerPhone,
+        serviceName: callerServiceName,
+        staffPreference: staffResolution.matchedStaff.fullName,
+        requestedDateTime: requestedStartTime.toISOString(),
+        missingFields: [],
+        isReadyToBook: true
+      });
+      const aiInteraction = await createInteraction({
+        outcome: "BOOKED",
+        message,
+        parsed,
+        bookingAttemptId: successfulAttempt.id,
+        responsePayload: {
+          appointmentId: successfulAppointmentId,
+          idempotentRetry: true
+        },
+        isValid: true
+      });
+      await finalizeCall({
+        outcome: "BOOKED",
+        bookingAttemptId: successfulAttempt.id,
+        bookingStatus: successfulAttempt.status,
+        parsed,
+        message,
+        appointmentId: successfulAppointmentId
+      });
+
+      logger.info(
+        {
+          callSessionId: callSession.id,
+          bookingAttemptId: successfulAttempt.id,
+          appointmentId: successfulAppointmentId,
+          contactId: normalized.contactId
+        },
+        "Amazon Connect AI booking retry returned existing appointment before availability validation."
+      );
+
+      return {
+        outcome: "BOOKED" as const,
+        message,
+        lexResponse: {
+          fulfillmentState: "Fulfilled",
+          message,
+          messageContentType: "SSML",
+          sessionAttributes: buildKnownSessionAttributes({
+            bookingOutcome: "BOOKED",
+            aiAlternativeSlots: "[]",
+            awaitingAlternativeSelection: "false",
+            awaitingFinalBookingConfirmation: "false",
+            bookingConfirmationAsked: "false"
+          })
+        },
+        appointment,
+        bookingAttempt: successfulAttempt,
+        callSession,
+        transcript,
+        aiInteraction,
+        escalation: null,
+        alternatives: [],
+        missingFields: [],
+        salonResolutionSource: resolutionSource
+      };
+    }
+  }
+
+  const preferredStaffCandidates =
+    staffResolution.status === "matched"
+      ? staffResolution.candidates.filter((staff) => mappedStaffIds.has(staff.id))
+      : mappedStaffCandidates;
+  const allStaffCandidates = mappedStaffCandidates;
   const requestedAnyStaff = staffResolution.status === "all" && staffResolution.invalidReason === "explicit_any";
 
   let chosenStaff: { id: string; fullName: string } | null = null;
@@ -6584,7 +6836,53 @@ export const bookingFromText = async (input: BookingFromTextInput) => {
     };
   }
 
-  const staffCandidates = staffResolutionForText.candidates;
+  const mappedStaffCandidates = await getMappedActiveBookableStaffForService({
+    salonId: input.salonId,
+    serviceId: service.id
+  });
+  const mappedStaffIds = new Set(mappedStaffCandidates.map((staff) => staff.id));
+  if (
+    staffResolutionForText.status === "matched" &&
+    !mappedStaffIds.has(staffResolutionForText.matchedStaff.id)
+  ) {
+    const updated = await prisma.bookingAttempt.update({
+      where: { id: bookingAttempt.id },
+      data: {
+        status: BookingAttemptStatus.NEEDS_INPUT,
+        failureReason: `STAFF_NOT_MAPPED: ${staffResolutionForText.matchedStaff.fullName} is not assigned to ${service.name}.`
+      }
+    });
+    if (input.callSessionId) {
+      await markBookingAttemptResultOnCall(input.callSessionId, updated.status, {
+        bookingAttemptId: updated.id,
+        failureReason: updated.failureReason ?? undefined
+      });
+      await updateCallAIState(input.callSessionId, {
+        aiSummary: buildStructuredCallSummary({
+          transcriptId: input.transcriptId,
+          parsed: parsed.parsedIntent,
+          bookingAttemptId: updated.id,
+          bookingStatus: updated.status,
+          resolution: updated.failureReason ?? "Requested staff is not mapped to the selected service."
+        }),
+        routingOutcome: CallRoutingOutcome.AI_RECEPTION,
+        finalResolution: updated.failureReason ?? "Requested staff is not mapped to the selected service.",
+        language: "en"
+      });
+    }
+    return {
+      bookingAttempt: updated,
+      parsed: parsed.parsedIntent,
+      appointment: null,
+      alternatives: [],
+      escalation: null
+    };
+  }
+
+  const staffCandidates =
+    staffResolutionForText.status === "matched"
+      ? staffResolutionForText.candidates.filter((staff) => mappedStaffIds.has(staff.id))
+      : mappedStaffCandidates;
 
   if (!staffCandidates.length) {
     const updated = await prisma.bookingAttempt.update({
@@ -6842,10 +7140,24 @@ export const suggestSlotsFromAIInput = async (input: SuggestSlotsInput) => {
     throw new AppError("Salon not found.", 404, "SALON_NOT_FOUND");
   }
 
-  const staffCandidates = await getStaffCandidates({
+  const mappedStaffCandidates = await getMappedActiveBookableStaffForService({
     salonId: input.salonId,
-    requestedStaffName: input.staffName
+    serviceId: service.id
   });
+  const staffResolution: StaffPreferenceResolution = input.staffName
+    ? resolveStaffPreferenceFromCandidates(mappedStaffCandidates, input.staffName)
+    : {
+        status: "all" as const,
+        candidates: mappedStaffCandidates,
+        allStaff: mappedStaffCandidates,
+        invalidReason: "missing"
+      };
+  const staffCandidates =
+    staffResolution.status === "ambiguous"
+      ? []
+      : staffResolution.status === "all" && staffResolution.invalidReason === "no_match"
+        ? []
+        : staffResolution.candidates;
   if (!staffCandidates.length) {
     return {
       service,

@@ -66,12 +66,8 @@ export const getStaffTitleOptions = (t: Translate) => [
 ];
 
 export const getStaffTitleLabel = (
-  value: string | null | undefined,
+  _value: string | null | undefined,
   t: Translate
 ) => {
-  if (!value) {
-    return t("staff.titleUnassigned");
-  }
-  const option = getStaffTitleOptions(t).find((item) => item.value === value);
-  return option?.label ?? value;
+  return t("option.staffTitle.nailTechnician");
 };

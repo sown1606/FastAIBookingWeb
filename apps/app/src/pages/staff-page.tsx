@@ -3,7 +3,7 @@ import { apiDelete, apiGet, apiPatch, apiPost, extractErrorMessage } from "../li
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
 import { useToast } from "../components/toast";
 import { useFormDialog } from "../components/form-dialog";
-import { getStaffTitleLabel, getStaffTitleOptions } from "../lib/form-options";
+import { getStaffTitleLabel } from "../lib/form-options";
 import { formatUsPhoneInput, requiredLabel, validateOptionalUsPhone } from "../lib/phone";
 import { statusLabelKey, useI18n } from "../lib/i18n";
 import { InfoHint } from "../components/info-hint";
@@ -60,7 +60,6 @@ export const StaffPage = () => {
   const { notify } = useToast();
   const { openFormDialog, FormDialog } = useFormDialog();
   const { t } = useI18n();
-  const staffTitleOptions = getStaffTitleOptions(t);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [staff, setStaff] = useState<StaffItem[]>([]);
@@ -68,7 +67,6 @@ export const StaffPage = () => {
     fullName: "",
     email: "",
     phone: "",
-    title: DEFAULT_STAFF_TITLE,
     isBookable: true
   });
 
@@ -93,7 +91,6 @@ export const StaffPage = () => {
     const fullName = form.fullName.trim();
     const email = form.email.trim().toLowerCase();
     const phone = form.phone.trim();
-    const title = form.title.trim();
     if (fullName.length < 2 || !email || !phone) {
       notify("error", t("form.requiredAll"));
       return;
@@ -107,7 +104,7 @@ export const StaffPage = () => {
         fullName,
         email,
         phone,
-        title: title || undefined,
+        title: DEFAULT_STAFF_TITLE,
         isBookable: form.isBookable,
         createLogin: true
       });
@@ -115,7 +112,6 @@ export const StaffPage = () => {
         fullName: "",
         email: "",
         phone: "",
-        title: DEFAULT_STAFF_TITLE,
         isBookable: true
       });
       notify("success", t("staff.created"));
@@ -132,7 +128,6 @@ export const StaffPage = () => {
         { name: "fullName", label: t("staff.fullName"), required: true },
         { name: "email", label: t("common.email"), type: "email", required: true },
         { name: "phone", label: t("common.phone"), type: "tel", required: true },
-        { name: "title", label: t("staff.title"), type: "select", options: staffTitleOptions },
         {
           name: "isBookable",
           label: t("staff.isBookableField"),
@@ -148,7 +143,6 @@ export const StaffPage = () => {
         fullName: item.fullName,
         email: item.email ?? "",
         phone: formatUsPhoneInput(item.phone ?? ""),
-        title: item.title ?? "",
         isBookable: item.isBookable ? "true" : "false"
       },
       confirmLabel: t("staff.save")
@@ -159,7 +153,6 @@ export const StaffPage = () => {
     const fullName = values.fullName.trim();
     const email = values.email.trim().toLowerCase();
     const phone = values.phone.trim();
-    const title = values.title.trim();
     if (fullName.length < 2 || !email || !phone) {
       notify("error", t("form.requiredAll"));
       return;
@@ -173,7 +166,7 @@ export const StaffPage = () => {
         fullName,
         email,
         phone,
-        title: title || null,
+        title: DEFAULT_STAFF_TITLE,
         isBookable: values.isBookable === "true"
       });
       notify("success", t("staff.updated"));
@@ -296,19 +289,6 @@ export const StaffPage = () => {
               required
             />
             <small>{t("form.phoneHint")}</small>
-          </label>
-          <label className="field">
-            <span>{t("staff.title")}</span>
-            <select
-              value={form.title}
-              onChange={(event) => setForm((prev) => ({ ...prev, title: event.target.value }))}
-            >
-              {staffTitleOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
           </label>
           <label className="field checkbox-row">
             <span>

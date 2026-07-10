@@ -385,7 +385,7 @@ aiInternalRouter.post(
         outcome: result.outcome,
         lexResponse: result.lexResponse,
         appointment: result.appointment,
-        bookingAttemptId: result.bookingAttempt.id,
+        bookingAttemptId: result.bookingAttempt?.id ?? null,
         callSessionId: result.callSession?.id ?? null,
         transcriptId: result.transcript?.id ?? null,
         aiInteractionId: result.aiInteraction?.id ?? null,

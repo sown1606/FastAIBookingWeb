@@ -2,6 +2,7 @@ import { StaffStatus } from "@prisma/client";
 import { prisma } from "../../db/prisma";
 import { createAuditLog } from "../../lib/audit";
 import { AppError } from "../../lib/errors";
+import { getDefaultStaffIdsForService } from "../staff/staff-defaults";
 
 interface CreateServiceInput {
   name: string;
@@ -25,6 +26,7 @@ const activeStaffServicesInclude = (salonId: string) => ({
       staff: {
         salonId,
         status: StaffStatus.ACTIVE,
+        isBookable: true,
         deletedAt: null
       }
     },
@@ -57,6 +59,7 @@ const validateActiveStaffIds = async (salonId: string, staffIds: string[]): Prom
     where: {
       salonId,
       status: StaffStatus.ACTIVE,
+      isBookable: true,
       deletedAt: null,
       id: {
         in: uniqueStaffIds
@@ -78,7 +81,10 @@ export const createService = async (
   actorUserId: string,
   input: CreateServiceInput
 ) => {
-  const staffIds = await validateActiveStaffIds(salonId, input.staffIds ?? []);
+  const staffIds =
+    input.staffIds !== undefined && input.staffIds.length > 0
+      ? await validateActiveStaffIds(salonId, input.staffIds)
+      : undefined;
 
   return prisma.$transaction(async (tx) => {
     const service = await tx.service.create({
@@ -91,9 +97,10 @@ export const createService = async (
       }
     });
 
-    if (staffIds.length) {
+    const initialStaffIds = staffIds ?? (await getDefaultStaffIdsForService(tx, salonId));
+    if (initialStaffIds.length) {
       await tx.staffService.createMany({
-        data: staffIds.map((staffId) => ({
+        data: initialStaffIds.map((staffId) => ({
           salonId,
           serviceId: service.id,
           staffId

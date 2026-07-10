@@ -7,6 +7,7 @@ import { sendStaffInvitationEmail, sendStaffPasswordChangedEmail } from "../../l
 import { hashPassword } from "../../lib/password";
 import { requireUsPhone } from "../../utils/phone";
 import { refreshBillingUsageForSalon } from "../billing/billing.service";
+import { DEFAULT_STAFF_TITLE, getDefaultServiceIdsForStaff, normalizeStaffTitle } from "./staff-defaults";
 
 interface CreateStaffInput {
   fullName: string;
@@ -85,8 +86,6 @@ const staffWithUserAndServicesInclude = {
     }
   }
 } as const;
-
-const DEFAULT_STAFF_TITLE = "Nail Technician";
 
 const normalizeEmail = (email?: string | null): string | null => {
   if (email === undefined || email === null) {
@@ -220,7 +219,7 @@ export const createStaff = async (
   const shouldCreateLogin = input.createLogin ?? true;
   const staffIsActive = input.isActive ?? true;
   const staffIsBookable = input.isBookable ?? true;
-  const staffTitle = input.title?.trim() || DEFAULT_STAFF_TITLE;
+  const staffTitle = normalizeStaffTitle();
   const temporaryPassword = input.password ?? generateSecureToken(6);
   const passwordMode: StaffPasswordMode = input.password ? "MANUAL" : "GENERATED";
   const serviceIds = normalizeServiceIds(input.serviceIds);
@@ -250,31 +249,11 @@ export const createStaff = async (
       }
     });
 
-    if (serviceIds !== undefined) {
-      await replaceStaffServiceMapping(tx, salonId, staff.id, serviceIds);
-    } else if (staff.isBookable && staff.status === StaffStatus.ACTIVE) {
-      const activeServices = await tx.service.findMany({
-        where: {
-          salonId,
-          isActive: true,
-          deletedAt: null
-        },
-        select: {
-          id: true
-        }
-      });
-
-      if (activeServices.length) {
-        await tx.staffService.createMany({
-          data: activeServices.map((service) => ({
-            salonId,
-            staffId: staff.id,
-            serviceId: service.id
-          })),
-          skipDuplicates: true
-        });
-      }
-    }
+    const initialServiceIds =
+      serviceIds !== undefined && serviceIds.length > 0
+        ? serviceIds
+        : await getDefaultServiceIdsForStaff(tx, salonId);
+    await replaceStaffServiceMapping(tx, salonId, staff.id, initialServiceIds);
 
     if (shouldCreateLogin && normalizedEmail) {
       const passwordHash = await hashPassword(temporaryPassword);
@@ -397,7 +376,7 @@ export const updateStaff = async (
         email:
           input.email === undefined ? existing.email : normalizedEmail === null ? null : normalizedEmail,
         phone: input.phone === undefined ? existing.phone : normalizedPhone,
-        title: input.title === undefined ? existing.title : input.title ?? null,
+        title: DEFAULT_STAFF_TITLE,
         avatarUrl: input.avatarUrl === undefined ? existing.avatarUrl : normalizedAvatarUrl ?? null,
         isBookable: input.isBookable ?? existing.isBookable
       }

@@ -903,6 +903,11 @@ export const markBookingAttemptResultOnCall = async (
     return;
   }
 
+  const failureReason =
+    status === BookingAttemptStatus.SUCCESS && payload.appointmentId
+      ? null
+      : payload.failureReason ?? callSession.failureReason;
+
   await prisma.callSession.update({
     where: { id: callSessionId },
     data: {
@@ -913,7 +918,7 @@ export const markBookingAttemptResultOnCall = async (
         failureReason: payload.failureReason,
         updatedAt: new Date().toISOString()
       }),
-      failureReason: payload.failureReason ?? callSession.failureReason
+      failureReason
     }
   });
 };

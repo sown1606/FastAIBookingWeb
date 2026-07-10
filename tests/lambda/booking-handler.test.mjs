@@ -3188,6 +3188,37 @@ test("BookAppointmentIntent backend non-OK response reprompts without auto trans
   assert.doesNotMatch(response.messages[0].content, /database|stack|secret|debug/i);
 });
 
+test("BookAppointmentIntent STAFF_NOT_MAPPED response elicits staff without backend retry", async () => {
+  const handler = await loadHandler();
+  installFetchMock(() =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "FAILED",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "InProgress",
+          message: "Trang doesn't provide Pedicure. Please choose another technician, or say first available.",
+          messageContentType: "PlainText",
+          sessionAttributes: {
+            escalationReason: "STAFF_NOT_MAPPED"
+          }
+        }
+      })
+    )
+  );
+
+  const response = await handler(baseEvent());
+
+  assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "staffPreference");
+  assert.equal(response.sessionState.sessionAttributes.forceHumanEscalation, "false");
+  assert.equal(response.sessionState.sessionAttributes.transferToQueue, "false");
+  assert.equal(response.sessionState.sessionAttributes.backendFailureReason, undefined);
+  assert.equal(response.sessionState.sessionAttributes.awaitingBackendRetryConfirmation, undefined);
+  assert.equal(response.sessionState.sessionAttributes.staffMappingFailure, "true");
+  assert.match(response.messages[0].content, /Trang doesn't provide Pedicure/i);
+});
+
 test("BookAppointmentIntent backend failure after Full Set does not ask service again", async () => {
   const handler = await loadHandler();
   installFetchMock(() => ({

@@ -209,7 +209,19 @@ const createInitialState = () => {
     statusHistory: [] as any[],
     staffFindManyCalls: [] as any[],
     validationStaffIds: [] as string[],
-    staffServiceMappings: null as { salonId: string; staffId: string; serviceId: string }[] | null,
+    staffServiceMappings: [ids.trang, ids.amy, ids.kelly].flatMap((staffId) =>
+      [
+        "20000000-0000-4000-8000-000000000000",
+        ids.pedicure,
+        "20000000-0000-4000-8000-000000000003",
+        "20000000-0000-4000-8000-000000000004",
+        "20000000-0000-4000-8000-000000000005"
+      ].map((serviceId) => ({
+        salonId: ids.salonA,
+        staffId,
+        serviceId
+      }))
+    ) as { salonId: string; staffId: string; serviceId: string }[] | null,
     staffServiceChecks: [] as any[],
 	    busyStaffIds: new Set<string>(),
 	    throwOnSalonFind: null as Error | null,
@@ -381,6 +393,27 @@ const setupPrismaMock = () => {
       ) ?? null
     );
   });
+  patch(prisma.staffService as any, "findMany", async (args: any) => {
+    if (!state.staffServiceMappings) {
+      return [];
+    }
+    return state.staffServiceMappings
+      .filter(
+        (mapping) =>
+          (!args?.where?.salonId || mapping.salonId === args.where.salonId) &&
+          (!args?.where?.serviceId || mapping.serviceId === args.where.serviceId)
+      )
+      .map((mapping) => ({
+        ...mapping,
+        staff: state.staff.find((member) => member.id === mapping.staffId)
+      }))
+      .filter(
+        (mapping) =>
+          mapping.staff &&
+          mapping.staff.status === StaffStatus.ACTIVE &&
+          mapping.staff.isBookable !== false
+      );
+  });
   patch(prisma.businessHour as any, "findUnique", async () => ({
     isOpen: true,
     openTime: "08:00",
@@ -446,6 +479,22 @@ const setupPrismaMock = () => {
     }
     if (args?.where?.staffId) {
       state.validationStaffIds.push(args.where.staffId);
+    }
+    if (args?.where?.staffId && args?.where?.startTime?.lt && args?.where?.endTime?.gt) {
+      const overlapping = state.appointments.find((appointment) => {
+        const excludedId = args.where.id?.not;
+        return (
+          appointment.salonId === args.where.salonId &&
+          appointment.staffId === args.where.staffId &&
+          appointment.id !== excludedId &&
+          appointment.status !== AppointmentStatus.CANCELED &&
+          appointment.startTime < args.where.startTime.lt &&
+          appointment.endTime > args.where.endTime.gt
+        );
+      });
+      if (overlapping) {
+        return { id: overlapping.id };
+      }
     }
     if (args?.where?.staffId && state.busyStaffIds.has(args.where.staffId)) {
       return { id: "busy-appointment" };
@@ -2186,7 +2235,7 @@ test("valid Kelly staff preference books Kelly", async () => {
   assert.deepEqual(new Set(state.validationStaffIds), new Set([ids.kelly]));
 });
 
-test("staff service mapping is enforced by slot validation", async () => {
+test("explicitly unmapped staff elicits staffPreference without backend retry", async () => {
   state.staffServiceMappings = [
     {
       salonId: ids.salonA,
@@ -2198,16 +2247,19 @@ test("staff service mapping is enforced by slot validation", async () => {
   const result = await postInternalAppointment(bookingPayload({ staffPreference: "Trang" }));
 
   assert.equal(result.response.status, 200);
-  assert.notEqual(result.body.data.outcome, "BOOKED");
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitSlot");
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "staffPreference");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.lastAskedSlot, "staffPreference");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.activeDtmfMenu, "staff");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Pedicure");
+  assert.match(result.body.data.lexResponse.sessionAttributes.customerName, /Kiet/);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.customerPhone, "+17325956266");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.awaitingBackendRetryConfirmation, undefined);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.recoverableErrorReason, undefined);
+  assert.match(result.body.data.lexResponse.message, /Trang doesn't provide Pedicure/i);
   assert.equal(state.appointments.length, 0);
-  assert.ok(
-    state.staffServiceChecks.some(
-      (check) =>
-        check?.salonId === ids.salonA &&
-        check?.serviceId === ids.pedicure &&
-        check?.staffId === ids.trang
-    )
-  );
+  assert.equal(state.validationStaffIds.includes(ids.trang), false);
 });
 
 test("busy requested staff returns deduped alternatives", async () => {
@@ -2307,6 +2359,8 @@ test("successful booking creates appointment, booking attempt, call session, tra
   assert.equal(result.body.data.callSessionId, state.callSessions[0].id);
   assert.equal(result.body.data.transcriptId, state.transcripts[0].id);
   assert.equal(result.body.data.aiInteractionId, state.aiInteractionLogs[0].id);
+  assert.equal(state.callSessions[0].bookingResult.status, BookingAttemptStatus.SUCCESS);
+  assert.equal(state.callSessions[0].failureReason, null);
 });
 
 test("Amazon Connect booking fulfillment upserts one AI log row with turnHistory", async () => {
@@ -2510,6 +2564,7 @@ test("confirmed booking retry for the same Amazon Connect contact does not creat
   assert.equal(second.body.data.outcome, "BOOKED");
   assert.equal(state.appointments.length, 1);
   assert.equal(state.bookingAttempts.length, 1);
+  assert.equal(state.bookingAttempts[0].status, BookingAttemptStatus.SUCCESS);
   assert.equal(second.body.data.appointment.id, first.body.data.appointment.id);
   assert.equal(second.body.data.bookingAttemptId, first.body.data.bookingAttemptId);
 });

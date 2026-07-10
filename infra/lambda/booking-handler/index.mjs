@@ -2928,6 +2928,9 @@ function buildForceHumanEscalationAttributes(reason, extra = {}) {
 }
 
 function normalizeBackendFailureReason(code) {
+  if (code === "STAFF_NOT_MAPPED") {
+    return "STAFF_NOT_MAPPED";
+  }
   if (
     code === "backend_timeout" ||
     code === "backend_unreachable" ||
@@ -2952,6 +2955,31 @@ function buildBackendFailureEscalationResponse(event, result) {
 }
 
 function buildBackendFailureElicitResponse(event, result) {
+  if (result?.code === "STAFF_NOT_MAPPED") {
+    const knownAttributes = buildKnownBookingSessionAttributes(event);
+    const serviceName =
+      getSessionAttribute(knownAttributes, slotNames.serviceName) ||
+      knownAttributes.confirmedServiceName ||
+      "that service";
+    const staffName =
+      getSessionAttribute(knownAttributes, slotNames.staffPreference) ||
+      knownAttributes.confirmedStaffName ||
+      "That technician";
+    const message =
+      result?.message ||
+      `${staffName} doesn't provide ${serviceName}. Please choose another technician, or say first available. Press 0 for a person.`;
+    return buildElicitSlotResponse(
+      event,
+      "staffPreference",
+      {
+        ignoredPollutedSlotFields: JSON.stringify(["staffPreference"]),
+        staffMappingFailure: "true",
+        forceHumanEscalation: "false",
+        transferToQueue: "false"
+      },
+      message
+    );
+  }
   const knownAttributes = buildKnownBookingSessionAttributes(event);
   const confirmedService = getConfirmedRecognizedService(knownAttributes);
   let slotToElicit = getBookingSlotToElicit(event) || "serviceName";

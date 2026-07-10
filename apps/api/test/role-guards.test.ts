@@ -255,6 +255,36 @@ test("staff create and reset-access support manual and generated password email 
   assert.match(mailer, /export const sendStaffPasswordChangedEmail[\s\S]*Login email: \$\{input\.toEmail\}/);
 });
 
+test("salon staff title is canonical in owner UI and API", () => {
+  const staffService = readApi("modules/staff/staff.service.ts");
+  const staffDefaults = readApi("modules/staff/staff-defaults.ts");
+  const staffPage = readRepo("apps/app/src/pages/staff-page.tsx");
+  const formOptions = readRepo("apps/app/src/lib/form-options.ts");
+  const i18n = readRepo("apps/app/src/lib/i18n.tsx");
+
+  assert.match(staffDefaults, /DEFAULT_STAFF_TITLE\s*=\s*"Nail Technician"/);
+  assert.match(staffDefaults, /normalizeStaffTitle[\s\S]*DEFAULT_STAFF_TITLE/);
+  assert.match(staffService, /title:\s*staffTitle/);
+  assert.match(staffService, /title:\s*DEFAULT_STAFF_TITLE/);
+  assert.match(staffPage, /title:\s*DEFAULT_STAFF_TITLE/);
+  assert.doesNotMatch(staffPage, /getStaffTitleOptions/);
+  assert.doesNotMatch(staffPage, /name:\s*"title"[\s\S]*type:\s*"select"/);
+  assert.match(formOptions, /getStaffTitleLabel[\s\S]*option\.staffTitle\.nailTechnician/);
+  assert.match(i18n, /"option\.staffTitle\.nailTechnician":\s*"Thợ nail"/);
+  assert.match(i18n, /"option\.staffTitle\.nailTechnician":\s*"Nail Technician"/);
+});
+
+test("admin AI logs include synthetic logs by default and create-salon nav is exclusive", () => {
+  const aiLogsPage = readRepo("apps/admin/src/pages/ai-logs-page.tsx");
+  const layout = readRepo("apps/admin/src/components/layout.tsx");
+
+  assert.match(aiLogsPage, /const \[includeSynthetic,\s*setIncludeSynthetic\]\s*=\s*useState\(true\)/);
+  assert.match(aiLogsPage, /params\.set\("includeSynthetic",\s*"true"\)/);
+  assert.match(layout, /normalizedPathname\s*=\s*pathname\.replace\(/);
+  assert.match(layout, /target === "\/salons\/new"[\s\S]*normalizedPathname === "\/salons\/new"/);
+  assert.match(layout, /target === "\/salons"[\s\S]*normalizedPathname !== "\/salons\/new"/);
+});
+
 test("staff and service delete APIs are owner-only and soft-delete history safely", () => {
   const schema = readRepo("apps/api/prisma/schema.prisma");
   const staffRoutes = readApi("modules/staff/staff.routes.ts");

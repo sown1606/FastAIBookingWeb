@@ -12,6 +12,23 @@ const navItems: Array<{ to: string; labelKey: TranslationKey }> = [
   { to: "/health", labelKey: "nav.health" }
 ];
 
+const isNavItemActive = (pathname: string, target: string): boolean => {
+  const normalizedPathname = pathname.replace(/\/+$/, "") || "/";
+  if (target === "/salons/new") {
+    return normalizedPathname === "/salons/new";
+  }
+  if (target === "/salons") {
+    return (
+      normalizedPathname === "/salons" ||
+      (normalizedPathname.startsWith("/salons/") && normalizedPathname !== "/salons/new")
+    );
+  }
+  if (target === "/dashboard") {
+    return normalizedPathname === "/dashboard";
+  }
+  return normalizedPathname === target || normalizedPathname.startsWith(`${target}/`);
+};
+
 const toTitleKey = (pathname: string): TranslationKey => {
   if (pathname === "/dashboard") return "nav.dashboard";
   if (pathname.startsWith("/salons/new")) return "nav.createSalon";
@@ -52,7 +69,13 @@ export const AdminLayout = ({
         <p className="sidebar-note">{t("layout.sidebarNote")}</p>
         <nav className="nav-links">
           {navItems.map((item) => (
-            <NavLink key={item.to} to={item.to} className="nav-item">
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className={() =>
+                isNavItemActive(location.pathname, item.to) ? "nav-item active" : "nav-item"
+              }
+            >
               {t(item.labelKey)}
             </NavLink>
           ))}
