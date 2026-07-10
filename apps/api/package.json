@@ -14,6 +14,7 @@
     "smoke:prod-logins": "tsx scripts/smoke-demo-logins.ts",
     "simulate:callrail-booking": "tsx scripts/simulate-callrail-booking.ts",
     "simulate:callrail-escalation": "tsx scripts/simulate-callrail-escalation.ts",
+    "repair:ai-logs": "tsx scripts/repair-ai-interaction-logs.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",

@@ -18,6 +18,7 @@ import { DateTime } from "luxon";
 import { app } from "../src/app";
 import { env } from "../src/config/env";
 import { prisma } from "../src/db/prisma";
+import { listAIInteractionsForAdmin } from "../src/modules/ai/ai.service";
 
 type Patch = {
   target: Record<string, unknown>;
@@ -255,8 +256,17 @@ const hydrateAppointment = (appointment: any) => {
 };
 
 const setupPrismaMock = () => {
-  patch(prisma as any, "$transaction", async (callback: (tx: any) => Promise<unknown>) => callback(prisma));
+  let transactionChain = Promise.resolve();
+  patch(prisma as any, "$transaction", async (callback: (tx: any) => Promise<unknown>) => {
+    const run = transactionChain.then(() => callback(prisma));
+    transactionChain = run.then(
+      () => undefined,
+      () => undefined
+    );
+    return run;
+  });
   patch(prisma as any, "$disconnect", async () => undefined);
+  patch(prisma as any, "$executeRaw", async () => 0);
 
   patch(prisma.salon as any, "findUnique", async (args: any) => {
     if (state.throwOnSalonFind) {
@@ -644,10 +654,107 @@ const setupPrismaMock = () => {
         .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())[0] ?? null
     );
   });
+  patch(prisma.aiInteractionLog as any, "findUnique", async (args: any) => {
+    if (args?.where?.interactionKey) {
+      return (
+        state.aiInteractionLogs.find((item) => item.interactionKey === args.where.interactionKey) ??
+        null
+      );
+    }
+    if (args?.where?.id) {
+      return state.aiInteractionLogs.find((item) => item.id === args.where.id) ?? null;
+    }
+    return null;
+  });
   patch(prisma.aiInteractionLog as any, "update", async (args: any) => {
-    const log = state.aiInteractionLogs.find((item) => item.id === args.where.id);
+    const log = state.aiInteractionLogs.find((item) =>
+      args.where.id ? item.id === args.where.id : item.interactionKey === args.where.interactionKey
+    );
     Object.assign(log, args.data);
     return log;
+  });
+  const matchesAIInteractionWhere = (item: any, where: any): boolean => {
+    if (!where) {
+      return true;
+    }
+    if (where.AND) {
+      return where.AND.every((condition: any) => matchesAIInteractionWhere(item, condition));
+    }
+    if (where.OR) {
+      return where.OR.some((condition: any) => matchesAIInteractionWhere(item, condition));
+    }
+    if (where.NOT) {
+      return !where.NOT.some((condition: any) => matchesAIInteractionWhere(item, condition));
+    }
+    if (where.id && item.id !== where.id) {
+      return false;
+    }
+    if (where.salonId && item.salonId !== where.salonId) {
+      return false;
+    }
+    if (where.provider && item.provider !== where.provider) {
+      return false;
+    }
+    if (where.taskType && item.taskType !== where.taskType) {
+      return false;
+    }
+    if (where.callSessionId && item.callSessionId !== where.callSessionId) {
+      return false;
+    }
+    if (where.isSynthetic !== undefined && item.isSynthetic !== where.isSynthetic) {
+      return false;
+    }
+    const contains = (value: unknown, filter: any) =>
+      typeof value === "string" &&
+      typeof filter?.contains === "string" &&
+      value.toLowerCase().includes(filter.contains.toLowerCase());
+    if (where.requestText && !contains(item.requestText, where.requestText)) {
+      return false;
+    }
+    if (where.responseText && !contains(item.responseText, where.responseText)) {
+      return false;
+    }
+    if (where.requestPayload?.path && where.requestPayload?.string_starts_with) {
+      const value = where.requestPayload.path.reduce(
+        (current: unknown, key: string) =>
+          current && typeof current === "object" && !Array.isArray(current)
+            ? (current as Record<string, unknown>)[key]
+            : undefined,
+        item.requestPayload
+      );
+      return (
+        typeof value === "string" &&
+        value.toLowerCase().startsWith(String(where.requestPayload.string_starts_with).toLowerCase())
+      );
+    }
+    if (where.callSession?.is?.providerCallId) {
+      const session = state.callSessions.find((call) => call.id === item.callSessionId);
+      const providerCallId = session?.providerCallId ?? "";
+      const filter = where.callSession.is.providerCallId;
+      if (filter.startsWith && !providerCallId.toLowerCase().startsWith(filter.startsWith.toLowerCase())) {
+        return false;
+      }
+      if (filter.contains && !providerCallId.toLowerCase().includes(filter.contains.toLowerCase())) {
+        return false;
+      }
+    }
+    return true;
+  };
+  patch(prisma.aiInteractionLog as any, "findMany", async (args: any) => {
+    return state.aiInteractionLogs
+      .filter((item) => matchesAIInteractionWhere(item, args?.where))
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
+      .slice(args?.skip ?? 0, (args?.skip ?? 0) + (args?.take ?? state.aiInteractionLogs.length))
+      .map((item) => ({
+        ...item,
+        salon: findSalon(item.salonId),
+        bookingAttempt: state.bookingAttempts.find((attempt) => attempt.id === item.bookingAttemptId) ?? null,
+        transcript: state.transcripts.find((transcript) => transcript.id === item.transcriptId) ?? null,
+        callSession: state.callSessions.find((call) => call.id === item.callSessionId) ?? null
+      }));
+  });
+  patch(prisma.aiInteractionLog as any, "count", async (args: any) => {
+    return state.aiInteractionLogs.filter((item) => matchesAIInteractionWhere(item, args?.where)).length;
   });
 
   patch(prisma.callEscalation as any, "findUnique", async (args: any) => {
@@ -899,7 +1006,9 @@ test("known Amazon Connect caller phone skips name and phone prompts", async () 
       result.body.data.missingFields.includes("customerPhone"),
     false
   );
-  assert.match(result.body.data.lexResponse.message, /say the service, press 4 for Full Set/i);
+  assert.match(result.body.data.lexResponse.message, /1 for Pedicure/i);
+  assert.match(result.body.data.lexResponse.message, /5 for Dip Powder/i);
+  assert.match(result.body.data.lexResponse.message, /0 for a real person/i);
   assert.match(result.body.data.lexResponse.message, /Hi Kiet/i);
   assert.equal(state.appointments.length, 0);
 });
@@ -1277,10 +1386,9 @@ test("unclear service asks the canonical service list without escalation", async
   assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
   assert.equal(result.body.data.lexResponse.sessionAttributes.transferToQueue, undefined);
   assert.equal(result.body.data.lexResponse.sessionAttributes.forceHumanEscalation, undefined);
-  assert.match(
-    result.body.data.lexResponse.message,
-    /say the service, press 4 for Full Set, or press 0 for a real person/i
-  );
+  assert.match(result.body.data.lexResponse.message, /1 for Pedicure/i);
+  assert.match(result.body.data.lexResponse.message, /5 for Dip Powder/i);
+  assert.match(result.body.data.lexResponse.message, /0 for a real person/i);
   assert.equal(result.body.data.lexResponse.sessionAttributes.activeDtmfMenu, "service");
   assert.equal(state.escalations.length, 0);
   assert.equal(state.appointments.length, 0);
@@ -2078,6 +2186,104 @@ test("Amazon Connect booking fulfillment upserts one AI log row with turnHistory
   assert.equal(state.aiInteractionLogs[0].responsePayload.turnHistory[1].currentTurnTranscript, "full set");
   assert.equal(state.aiInteractionLogs[0].responsePayload.turnHistory[1].lastAskedSlotAfter, "customerName");
   assert.equal(state.aiInteractionLogs[0].responsePayload.turnHistory[2].currentTurnTranscript, "Lee");
+});
+
+test("Amazon Connect booking fulfillment dedupes concurrent retries for the same ContactId", async () => {
+  const contactId = "connect-ai-log-concurrent";
+  const payload = bookingPayload({
+    customerName: undefined,
+    customerPhone: "+84798171999",
+    serviceName: undefined,
+    requestedDate: undefined,
+    requestedTime: undefined,
+    staffPreference: undefined,
+    confirmationState: undefined,
+    amazonConnectContactId: contactId,
+    amazonConnectPhoneNumber: "+18483487681",
+    calledNumber: "+18483487681",
+    currentTurnTranscript: "full set",
+    transcript: "full set",
+    attributes: {
+      AmazonConnectContactId: contactId,
+      currentTurnTranscript: "full set",
+      lastAskedSlot: "serviceName",
+      activeDtmfMenu: "service"
+    }
+  });
+
+  await Promise.all([postInternalAppointment(payload), postInternalAppointment(payload), postInternalAppointment(payload)]);
+
+  assert.equal(state.callSessions.length, 1);
+  assert.equal(state.aiInteractionLogs.length, 1);
+  assert.match(state.aiInteractionLogs[0].interactionKey, /^AMAZON_CONNECT:amazon_connect_booking_fulfillment:/);
+  assert.equal(state.aiInteractionLogs[0].responsePayload.turnHistory.length, 1);
+  assert.equal(state.aiInteractionLogs[0].responsePayload.turnCount, 1);
+  assert.equal(state.aiInteractionLogs[0].responsePayload.turnHistory[0].currentTurnTranscript, "full set");
+  assert.equal(typeof state.aiInteractionLogs[0].responsePayload.turnHistory[0].idempotencyKey, "string");
+});
+
+test("Amazon Connect booking fulfillment creates separate AI log rows for different real ContactIds", async () => {
+  await Promise.all([
+    postInternalAppointment(
+      bookingPayload({
+        amazonConnectContactId: "connect-real-a",
+        currentTurnTranscript: "pedicure",
+        transcript: "pedicure",
+        attributes: { AmazonConnectContactId: "connect-real-a", currentTurnTranscript: "pedicure" }
+      })
+    ),
+    postInternalAppointment(
+      bookingPayload({
+        amazonConnectContactId: "connect-real-b",
+        currentTurnTranscript: "manicure",
+        transcript: "manicure",
+        serviceName: "Manicure",
+        attributes: { AmazonConnectContactId: "connect-real-b", currentTurnTranscript: "manicure" }
+      })
+    )
+  ]);
+
+  assert.equal(state.aiInteractionLogs.length, 2);
+  assert.notEqual(state.aiInteractionLogs[0].interactionKey, state.aiInteractionLogs[1].interactionKey);
+});
+
+test("Admin AI logs exclude synthetic ContactIds by default and include them when requested", async () => {
+  await postInternalAppointment(
+    bookingPayload({
+      amazonConnectContactId: "connect-real-visible",
+      currentTurnTranscript: "pedicure",
+      transcript: "pedicure",
+      attributes: {
+        AmazonConnectContactId: "connect-real-visible",
+        currentTurnTranscript: "pedicure"
+      }
+    })
+  );
+  await postInternalAppointment(
+    bookingPayload({
+      amazonConnectContactId: "codex-smoke-hidden",
+      currentTurnTranscript: "pedicure",
+      transcript: "pedicure",
+      attributes: {
+        AmazonConnectContactId: "codex-smoke-hidden",
+        currentTurnTranscript: "pedicure"
+      }
+    })
+  );
+
+  const defaultList = await listAIInteractionsForAdmin({ page: 1, limit: 50 });
+  const includedList = await listAIInteractionsForAdmin({
+    page: 1,
+    limit: 50,
+    includeSynthetic: true
+  });
+
+  assert.equal(state.aiInteractionLogs.length, 2);
+  assert.equal(state.aiInteractionLogs.filter((item) => item.isSynthetic).length, 1);
+  assert.equal(defaultList.items.length, 1);
+  assert.equal(defaultList.items[0].callSession?.providerCallId, "connect-real-visible");
+  assert.equal(includedList.items.length, 2);
+  assert.ok(includedList.items.some((item) => item.callSession?.providerCallId === "codex-smoke-hidden"));
 });
 
 test("confirmed booking retry for the same Amazon Connect contact does not create a duplicate appointment", async () => {

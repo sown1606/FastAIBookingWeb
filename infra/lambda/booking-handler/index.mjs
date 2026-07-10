@@ -181,11 +181,11 @@ const ANY_STAFF_ALIASES = [
   "first available"
 ];
 const SERVICE_DTMF_PROMPT =
-  "Hi, I can help book your appointment. You can say the service, press 4 for Full Set, or press 0 for a real person.";
+  "Hi, I can help book your appointment. Say the service name, including Other Services, or press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Full Set, 5 for Dip Powder. Press 0 for a real person.";
 const SERVICE_KEYPAD_PROMPT =
-  "I didn't catch the service. You can say Pedicure, Manicure, Gel Manicure, Full Set, Dip Powder, or Other Services. You can also press 1 through 5, or press 0 for an operator.";
+  "I didn't catch the service. Say the service name, including Other Services, or press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Full Set, 5 for Dip Powder. Press 0 for a real person.";
 const SERVICE_DTMF_SHORT_PROMPT =
-  "You can say Pedicure, Manicure, Gel Manicure, Full Set, Dip Powder, or Other Services. You can also press 1 through 5, or press 0 for an operator.";
+  "Say the service name, including Other Services, or press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Full Set, 5 for Dip Powder. Press 0 for a real person.";
 const STAFF_DTMF_PROMPT =
   "Which staff would you like, Trang, Amy, Kelly, or first available?";
 const STAFF_DTMF_SHORT_PROMPT =
@@ -2054,6 +2054,14 @@ function shouldTreatFallbackAsBooking(event, intentName) {
     return false;
   }
   const transcript = getCurrentTurnTranscript(event);
+  const previous = event.sessionState?.sessionAttributes || {};
+  const recognizedService = currentTurnRecognizedService(event);
+  if (
+    recognizedService &&
+    (previous.lastAskedSlot === "serviceName" || previous.activeDtmfMenu === "service")
+  ) {
+    return true;
+  }
   return Boolean(
     transcript &&
       (hasCurrentTurnTimePhrase(transcript) ||

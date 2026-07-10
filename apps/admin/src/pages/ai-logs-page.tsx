@@ -25,6 +25,8 @@ interface AiLogItem {
     callerPhone: string | null;
   } | null;
   bookingAttemptId?: string | null;
+  interactionKey?: string | null;
+  isSynthetic?: boolean;
   requestPayload?: unknown;
   responsePayload?: unknown;
   requestText?: string | null;
@@ -120,6 +122,7 @@ export const AiLogsPage = () => {
   const [querySalonId, setQuerySalonId] = useState("");
   const [search, setSearch] = useState("");
   const [querySearch, setQuerySearch] = useState("");
+  const [includeSynthetic, setIncludeSynthetic] = useState(false);
   const [data, setData] = useState<AiLogsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -141,6 +144,9 @@ export const AiLogsPage = () => {
       if (search.trim()) {
         params.set("q", search.trim());
       }
+      if (includeSynthetic) {
+        params.set("includeSynthetic", "true");
+      }
       const response = await apiGet<AiLogsResponse>(`/api/v1/admin/ai-logs?${params.toString()}`);
       setData(response);
     } catch (loadError) {
@@ -152,7 +158,7 @@ export const AiLogsPage = () => {
 
   useEffect(() => {
     void load();
-  }, [taskType, salonId, search]);
+  }, [taskType, salonId, search, includeSynthetic]);
 
   const onFilter = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -203,6 +209,14 @@ export const AiLogsPage = () => {
             placeholder={t("aiLogs.searchPlaceholder")}
           />
         </label>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={includeSynthetic}
+            onChange={(event) => setIncludeSynthetic(event.target.checked)}
+          />
+          <span>{t("aiLogs.includeSynthetic")}</span>
+        </label>
         <button type="submit" className="button-secondary">
           {t("aiLogs.apply")}
         </button>
@@ -240,7 +254,10 @@ export const AiLogsPage = () => {
                     <div>{item.callSession?.providerCallId ?? readContactId(item) ?? t("common.none")}</div>
                     <small className="muted">{item.callSession?.callerPhone ?? item.bookingAttemptId ?? ""}</small>
                   </td>
-                  <td>{item.taskType}</td>
+                  <td>
+                    <div>{item.taskType}</div>
+                    {item.isSynthetic ? <small className="muted">{t("aiLogs.synthetic")}</small> : null}
+                  </td>
                   <td>{item.model ? `${item.provider} / ${item.model}` : item.provider}</td>
                   <td>{item.isValid ? t("common.yes") : t("common.no")}</td>
                   <td>{item.confidence ?? t("common.none")}</td>

@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import { DateTime } from "luxon";
 import {
   AppointmentStatus,
@@ -420,7 +421,9 @@ const CUSTOMER_NAME_NOISE = new Set([
   "four"
 ]);
 const SERVICE_DTMF_PROMPT =
-  "Hi, I can help book your appointment. You can say the service, press 4 for Full Set, or press 0 for a real person.";
+  "Hi, I can help book your appointment. Say the service name, including Other Services, or press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Full Set, 5 for Dip Powder. Press 0 for a real person.";
+const SERVICE_DTMF_OPTIONS_PROMPT =
+  "Say the service name, including Other Services, or press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Full Set, 5 for Dip Powder. Press 0 for a real person.";
 const STAFF_DTMF_PROMPT =
   "Which staff would you like, Trang, Amy, Kelly, or first available?";
 
@@ -1523,6 +1526,8 @@ type CreateAIInteractionLogInput = {
   isValid: boolean;
   validationErrors?: unknown;
   confidence?: number;
+  interactionKey?: string;
+  isSynthetic?: boolean;
 };
 
 const createAIInteractionLog = async (input: CreateAIInteractionLogInput) => {
@@ -1541,6 +1546,8 @@ const createAIInteractionLog = async (input: CreateAIInteractionLogInput) => {
       validationErrors:
         input.validationErrors === undefined ? undefined : toJson(input.validationErrors),
       confidence: input.confidence,
+      interactionKey: input.interactionKey,
+      isSynthetic: input.isSynthetic ?? false,
       callSessionId: input.callSessionId,
       transcriptId: input.transcriptId,
       bookingAttemptId: input.bookingAttemptId,
@@ -1553,6 +1560,39 @@ const recordFromUnknown = (value: unknown): Record<string, unknown> =>
   value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 
 const arrayFromUnknown = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
+
+const AMAZON_CONNECT_BOOKING_TASK = "amazon_connect_booking_fulfillment";
+
+const stableHash = (value: unknown): string =>
+  createHash("sha256").update(JSON.stringify(value)).digest("hex");
+
+const readStringValue = (value: unknown): string => (typeof value === "string" ? value.trim() : "");
+
+const readAmazonConnectContactIdFromRequestPayload = (requestPayload: unknown): string => {
+  const payload = recordFromUnknown(requestPayload);
+  const attributes = recordFromUnknown(payload.attributes);
+  return (
+    readStringValue(payload.amazonConnectContactId) ||
+    readStringValue(payload.contactId) ||
+    readStringValue(attributes.AmazonConnectContactId) ||
+    readStringValue(attributes.contactId) ||
+    readStringValue(attributes.ContactId)
+  );
+};
+
+const isSyntheticAmazonConnectIdentity = (value?: string | null): boolean =>
+  Boolean(value && /^codex-/i.test(value.trim()));
+
+const buildAmazonConnectInteractionKey = (input: CreateAIInteractionLogInput): string | undefined => {
+  if (
+    input.provider !== ExternalProvider.AMAZON_CONNECT ||
+    input.taskType !== AMAZON_CONNECT_BOOKING_TASK
+  ) {
+    return undefined;
+  }
+  const identity = input.callSessionId || readAmazonConnectContactIdFromRequestPayload(input.requestPayload);
+  return identity ? `AMAZON_CONNECT:${AMAZON_CONNECT_BOOKING_TASK}:${identity}` : undefined;
+};
 
 const readSessionAttributeRecord = (value: unknown): Record<string, unknown> => recordFromUnknown(value);
 
@@ -1567,6 +1607,7 @@ const buildAmazonConnectTurnHistoryItem = (input: {
   index: number;
   createdAt: string;
   interactionInput: CreateAIInteractionLogInput;
+  interactionKey: string;
 }) => {
   const requestPayload = recordFromUnknown(input.interactionInput.requestPayload);
   const responsePayload = recordFromUnknown(input.interactionInput.responsePayload);
@@ -1593,7 +1634,7 @@ const buildAmazonConnectTurnHistoryItem = (input: {
     responsePayload.slotToElicit ??
     recordFromUnknown(recordFromUnknown(responsePayload.lexResponse).dialogAction).slotToElicit;
 
-  return {
+  const turn = {
     index: input.index,
     createdAt: input.createdAt,
     currentTurnTranscript:
@@ -1642,11 +1683,65 @@ const buildAmazonConnectTurnHistoryItem = (input: {
     forceHumanEscalation:
       sessionAttributesAfter.forceHumanEscalation ?? responsePayload.forceHumanEscalation ?? null
   };
+  return {
+    idempotencyKey: stableHash({
+      interactionKey: input.interactionKey,
+      currentTurnTranscript: turn.currentTurnTranscript,
+      intentName: turn.intentName,
+      inputMode: turn.inputMode,
+      lastAskedSlotBefore: turn.lastAskedSlotBefore,
+      activeDtmfMenuBefore: turn.activeDtmfMenuBefore,
+      slotToElicit: turn.slotToElicit,
+      serviceNameAfter: recordFromUnknown(turn.sessionAttributesAfter).serviceName,
+      confirmedServiceNameAfter: recordFromUnknown(turn.sessionAttributesAfter).confirmedServiceName,
+      requestedDateAfter: recordFromUnknown(turn.sessionAttributesAfter).requestedDate,
+      requestedTimeAfter: recordFromUnknown(turn.sessionAttributesAfter).requestedTime,
+      staffPreferenceAfter: recordFromUnknown(turn.sessionAttributesAfter).staffPreference,
+      customerNameAfter: recordFromUnknown(turn.sessionAttributesAfter).customerName,
+      responseText: turn.responseText
+    }),
+    ...turn
+  };
 };
 
 const getAmazonConnectTurnHistory = (responsePayload: unknown): unknown[] => {
   const payload = recordFromUnknown(responsePayload);
   return arrayFromUnknown(payload.turnHistory);
+};
+
+const readTurnCreatedAt = (turn: unknown): number => {
+  const value = recordFromUnknown(turn).createdAt;
+  const timestamp = typeof value === "string" ? Date.parse(value) : NaN;
+  return Number.isFinite(timestamp) ? timestamp : 0;
+};
+
+const getTurnIdempotencyKey = (turn: unknown): string => {
+  const record = recordFromUnknown(turn);
+  return readStringValue(record.idempotencyKey) || stableHash({
+    currentTurnTranscript: record.currentTurnTranscript,
+    intentName: record.intentName,
+    inputMode: record.inputMode,
+    lastAskedSlotBefore: record.lastAskedSlotBefore,
+    activeDtmfMenuBefore: record.activeDtmfMenuBefore,
+    slotToElicit: record.slotToElicit,
+    responseText: record.responseText
+  });
+};
+
+const mergeAmazonConnectTurnHistory = (turns: unknown[]): unknown[] => {
+  const byKey = new Map<string, unknown>();
+  for (const turn of turns) {
+    const key = getTurnIdempotencyKey(turn);
+    if (!byKey.has(key)) {
+      byKey.set(key, turn);
+    }
+  }
+  return Array.from(byKey.values())
+    .sort((left, right) => readTurnCreatedAt(left) - readTurnCreatedAt(right))
+    .map((turn, index) => ({
+      ...recordFromUnknown(turn),
+      index: index + 1
+    }));
 };
 
 const withAmazonConnectTurnHistory = (
@@ -1662,37 +1757,74 @@ const withAmazonConnectTurnHistory = (
 const upsertAmazonConnectBookingAIInteractionLog = async (
   input: CreateAIInteractionLogInput
 ) => {
-  const existing =
-    input.callSessionId
-      ? await prisma.aiInteractionLog.findFirst({
-          where: {
-            salonId: input.salonId,
-            provider: ExternalProvider.AMAZON_CONNECT,
-            taskType: "amazon_connect_booking_fulfillment",
-            callSessionId: input.callSessionId
-          },
-          orderBy: {
-            createdAt: "asc"
-          }
-        })
-      : null;
-  const existingHistory = existing ? getAmazonConnectTurnHistory(existing.responsePayload) : [];
-  const turn = buildAmazonConnectTurnHistoryItem({
-    index: existingHistory.length + 1,
-    createdAt: new Date().toISOString(),
-    interactionInput: input
-  });
-  const responsePayload = withAmazonConnectTurnHistory(input.responsePayload, [
-    ...existingHistory,
-    turn
-  ]);
+  const interactionKey = input.interactionKey ?? buildAmazonConnectInteractionKey(input);
+  if (!interactionKey) {
+    const turn = buildAmazonConnectTurnHistoryItem({
+      index: 1,
+      createdAt: new Date().toISOString(),
+      interactionInput: input,
+      interactionKey: `missing:${stableHash(input.requestPayload)}`
+    });
+    return createAIInteractionLog({
+      ...input,
+      responsePayload: withAmazonConnectTurnHistory(input.responsePayload, [turn]),
+      isSynthetic:
+        input.isSynthetic ??
+        isSyntheticAmazonConnectIdentity(readAmazonConnectContactIdFromRequestPayload(input.requestPayload))
+    });
+  }
 
-  if (existing) {
-    return prisma.aiInteractionLog.update({
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${interactionKey}, 0))`;
+
+    const existing = await tx.aiInteractionLog.findUnique({
       where: {
-        id: existing.id
-      },
+        interactionKey
+      }
+    });
+    const existingHistory = existing ? getAmazonConnectTurnHistory(existing.responsePayload) : [];
+    const turn = buildAmazonConnectTurnHistoryItem({
+      index: existingHistory.length + 1,
+      createdAt: new Date().toISOString(),
+      interactionInput: input,
+      interactionKey
+    });
+    const turnHistory = mergeAmazonConnectTurnHistory([...existingHistory, turn]);
+    const responsePayload = withAmazonConnectTurnHistory(input.responsePayload, turnHistory);
+    const isSynthetic =
+      input.isSynthetic ??
+      existing?.isSynthetic ??
+      isSyntheticAmazonConnectIdentity(readAmazonConnectContactIdFromRequestPayload(input.requestPayload));
+
+    if (existing) {
+      return tx.aiInteractionLog.update({
+        where: {
+          interactionKey
+        },
+        data: {
+          requestText: input.requestText,
+          requestPayload: toJson(input.requestPayload),
+          responseText: input.responseText,
+          responsePayload: toJson(responsePayload),
+          parsedOutput: toJson(input.parsedOutput),
+          isValid: input.isValid,
+          validationErrors:
+            input.validationErrors === undefined ? undefined : toJson(input.validationErrors),
+          confidence: input.confidence,
+          transcriptId: input.transcriptId,
+          bookingAttemptId: input.bookingAttemptId,
+          createdByUserId: input.actorUserId,
+          isSynthetic
+        }
+      });
+    }
+
+    return tx.aiInteractionLog.create({
       data: {
+        salonId: input.salonId,
+        provider: input.provider ?? ExternalProvider.VERTEX,
+        model: input.model,
+        taskType: input.taskType,
         requestText: input.requestText,
         requestPayload: toJson(input.requestPayload),
         responseText: input.responseText,
@@ -1702,16 +1834,14 @@ const upsertAmazonConnectBookingAIInteractionLog = async (
         validationErrors:
           input.validationErrors === undefined ? undefined : toJson(input.validationErrors),
         confidence: input.confidence,
+        interactionKey,
+        isSynthetic,
+        callSessionId: input.callSessionId,
         transcriptId: input.transcriptId,
         bookingAttemptId: input.bookingAttemptId,
         createdByUserId: input.actorUserId
       }
     });
-  }
-
-  return createAIInteractionLog({
-    ...input,
-    responsePayload
   });
 };
 
@@ -3716,7 +3846,7 @@ const buildLexMessage = (input: {
       const firstName = input.knownFields?.customerName?.split(/\s+/)[0];
       return speak(
         firstName
-          ? `Hi ${escapeSsml(firstName)}, I can help book your appointment. ${SERVICE_DTMF_PROMPT}`
+          ? `Hi ${escapeSsml(firstName)}, I can help book your appointment. ${SERVICE_DTMF_OPTIONS_PROMPT}`
           : SERVICE_DTMF_PROMPT
       );
     }
@@ -4470,7 +4600,8 @@ export const createAmazonConnectAIAppointment = async (
         parsed: inputForInteraction.parsed
       },
       isValid: inputForInteraction.isValid,
-      confidence: 1
+      confidence: 1,
+      isSynthetic: isSyntheticAmazonConnectIdentity(normalized.contactId)
     });
   };
 
@@ -6407,6 +6538,8 @@ const toAIInteractionExportItem = (interaction: {
   confidence: number | null;
   bookingAttemptId: string | null;
   callSessionId: string | null;
+  interactionKey: string | null;
+  isSynthetic: boolean;
   salonId?: string;
   salon?: { id: string; name: string } | null;
   callSession?: {
@@ -6429,6 +6562,8 @@ const toAIInteractionExportItem = (interaction: {
   confidence: interaction.confidence,
   bookingAttemptId: interaction.bookingAttemptId,
   callSessionId: interaction.callSessionId,
+  interactionKey: interaction.interactionKey,
+  isSynthetic: interaction.isSynthetic,
   salonId: interaction.salonId,
   salon: interaction.salon ?? undefined,
   callSession: interaction.callSession ?? undefined
@@ -6441,6 +6576,7 @@ interface AIInteractionFilters {
   contactId?: string;
   callerPhone?: string;
   q?: string;
+  includeSynthetic?: boolean;
 }
 
 const buildPhoneSearchValues = (value?: string): string[] => {
@@ -6483,6 +6619,47 @@ const buildAIInteractionWhere = (input: AIInteractionFilters): Prisma.AiInteract
   }
   if (input.taskType) {
     and.push({ taskType: input.taskType });
+  }
+  if (!input.includeSynthetic) {
+    and.push({
+      isSynthetic: false,
+      NOT: [
+        {
+          callSession: {
+            is: {
+              providerCallId: {
+                startsWith: "codex-",
+                mode: "insensitive"
+              }
+            }
+          }
+        },
+        {
+          requestPayload: {
+            path: ["amazonConnectContactId"],
+            string_starts_with: "codex-"
+          }
+        },
+        {
+          requestPayload: {
+            path: ["contactId"],
+            string_starts_with: "codex-"
+          }
+        },
+        {
+          requestPayload: {
+            path: ["attributes", "AmazonConnectContactId"],
+            string_starts_with: "codex-"
+          }
+        },
+        {
+          requestPayload: {
+            path: ["attributes", "contactId"],
+            string_starts_with: "codex-"
+          }
+        }
+      ]
+    });
   }
 
   const searchTerms = [input.q, input.callSessionId, input.contactId]
@@ -6901,6 +7078,7 @@ export const listAIInteractionsForAdmin = async (input: {
   contactId?: string;
   callerPhone?: string;
   q?: string;
+  includeSynthetic?: boolean;
 }) => {
   const skip = (input.page - 1) * input.limit;
   const where = buildAIInteractionWhere(input);
@@ -6942,6 +7120,7 @@ export const exportAIInteractionsForAdmin = async (input: {
   contactId?: string;
   callerPhone?: string;
   q?: string;
+  includeSynthetic?: boolean;
 } = {}) => {
   const where = buildAIInteractionWhere(input);
   const items = await prisma.aiInteractionLog.findMany({

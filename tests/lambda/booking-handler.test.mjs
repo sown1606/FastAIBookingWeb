@@ -11,6 +11,8 @@ const lexRoots = ["v7", "v8", "v10"].map((version) => ({
   root: path.join(repoRoot, `infra/aws/lex/FastAIBookingBot-${version}`)
 }));
 const connectRoot = path.join(repoRoot, "infra/aws/connect/contact-flows");
+const CANONICAL_SERVICE_PROMPT =
+  "Hi, I can help book your appointment. Say the service name, including Other Services, or press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Full Set, 5 for Dip Powder. Press 0 for a real person.";
 let importCounter = 0;
 
 const slot = (value) => ({
@@ -324,6 +326,53 @@ test("Connect AI reception Lex error branch reprompts instead of transferring", 
   assert.notEqual(errorPrompt.Transitions.NextAction, "transfer-human-escalation-flow");
 });
 
+test("service prompt is synchronized across Lambda, API, Lex, and Connect flow", () => {
+  const lambdaSource = readFileSync(lambdaPath, "utf8");
+  const apiSource = readFileSync(
+    path.join(repoRoot, "apps/api/src/modules/ai/ai.service.ts"),
+    "utf8"
+  );
+  const aiReceptionFlow = JSON.parse(
+    readFileSync(path.join(connectRoot, "ai-reception.json"), "utf8")
+  );
+  const flowActionsById = new Map(aiReceptionFlow.Actions.map((action) => [action.Identifier, action]));
+  const livePathGreeting = flowActionsById.get("3b2877ca-bc16-4019-a8e6-04200c0ded06");
+  const orphanGreeting = flowActionsById.get("ai-greeting-prompt");
+  const retryLexAction = flowActionsById.get("6fbf4310-c8c6-44a8-a8f5-1d7830974c4d");
+  const lexSlot = JSON.parse(
+    readFileSync(
+      path.join(
+        repoRoot,
+        "infra/aws/lex/FastAIBookingBot-v10/BotLocales/en_US/Intents/BookAppointmentIntent/Slots/serviceName/Slot.json"
+      ),
+      "utf8"
+    )
+  );
+
+  for (const required of [
+    "1 for Pedicure",
+    "2 for Manicure",
+    "3 for Gel Manicure",
+    "4 for Full Set",
+    "5 for Dip Powder",
+    "0 for a real person"
+  ]) {
+    assert.ok(CANONICAL_SERVICE_PROMPT.includes(required), `canonical prompt missing ${required}`);
+  }
+
+  assert.ok(lambdaSource.includes(CANONICAL_SERVICE_PROMPT));
+  assert.ok(apiSource.includes(CANONICAL_SERVICE_PROMPT));
+  assert.equal(livePathGreeting.Parameters.Text, CANONICAL_SERVICE_PROMPT);
+  assert.equal(orphanGreeting.Parameters.Text, CANONICAL_SERVICE_PROMPT);
+  assert.match(retryLexAction.Parameters.Text, /1 for Pedicure/);
+  assert.match(retryLexAction.Parameters.Text, /5 for Dip Powder/);
+  assert.match(retryLexAction.Parameters.Text, /0 for a real person/);
+  assert.equal(
+    lexSlot.valueElicitationSetting.promptSpecification.messageGroupsList[0].message.plainTextMessage.value,
+    CANONICAL_SERVICE_PROMPT
+  );
+});
+
 test("DialogCodeHook with service and time prompts staff next", async () => {
   const handler = await loadHandler({ BOOKING_HANDLER_API_TIMEOUT_MS: "2800" });
   const startedAt = Date.now();
@@ -427,8 +476,12 @@ test("DialogCodeHook no input prompts service menu and keeps known caller", asyn
   assert.equal(response.sessionState.sessionAttributes.noInputCount, "1");
   assert.equal(response.sessionState.sessionAttributes.awaitingNoInputHumanConfirmation, "false");
   assert.equal(response.sessionState.sessionAttributes.customerPhone, "+17325956266");
-  assert.match(response.messages[0].content, /say the service, press 4 for Full Set/i);
+  assert.match(response.messages[0].content, /1 for Pedicure/i);
+  assert.match(response.messages[0].content, /2 for Manicure/i);
+  assert.match(response.messages[0].content, /3 for Gel Manicure/i);
   assert.match(response.messages[0].content, /4 for Full Set/i);
+  assert.match(response.messages[0].content, /5 for Dip Powder/i);
+  assert.match(response.messages[0].content, /0 for a real person/i);
 });
 
 test("DialogCodeHook second no input uses shorter prompt without transfer", async () => {
@@ -464,7 +517,8 @@ test("DialogCodeHook second no input uses shorter prompt without transfer", asyn
   assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName");
   assert.equal(response.sessionState.sessionAttributes.noInputCount, "2");
   assert.equal(response.sessionState.sessionAttributes.transferToQueue, undefined);
-  assert.match(response.messages[0].content, /press 1 through 5/i);
+  assert.match(response.messages[0].content, /1 for Pedicure/i);
+  assert.match(response.messages[0].content, /5 for Dip Powder/i);
   assert.doesNotMatch(response.messages[0].content, /You can also press 1 for Pedicure/i);
 });
 
@@ -731,7 +785,7 @@ test("DialogCodeHook voice full set resolves Full Set and asks the next missing 
     throw new Error("fetch should not be called for local Full Set speech recovery");
   };
 
-  for (const inputTranscript of ["full set", "I want to book a full set"]) {
+  for (const inputTranscript of ["full set", "I want to book a full set", "full said", "fall set"]) {
     const response = await handler(
       baseEvent({
         invocationSource: "DialogCodeHook",
@@ -759,6 +813,59 @@ test("DialogCodeHook voice full set resolves Full Set and asks the next missing 
     assert.notEqual(response.sessionState.sessionAttributes.forceHumanEscalation, "true");
     assert.equal(response.sessionState.intent.slots.serviceName.value.interpretedValue, "Full Set");
   }
+});
+
+test("live-shaped FallbackIntent full set turn resumes BookAppointmentIntent and asks date", async () => {
+  const handler = await loadHandler();
+  globalThis.fetch = async () => {
+    throw new Error("fetch should not be called for service fallback recovery");
+  };
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "full set",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+84798171999",
+          AmazonConnectContactId: "connect-live-real-call",
+          lastAskedSlot: "serviceName",
+          activeDtmfMenu: "service",
+          activeDtmfOptionsJson: JSON.stringify({
+            "1": "Pedicure",
+            "2": "Manicure",
+            "3": "Gel Manicure",
+            "4": "Full Set",
+            "5": "Dip Powder",
+            "0": "__operator__"
+          })
+        },
+        intent: {
+          name: "FallbackIntent",
+          state: "InProgress",
+          confirmationState: "None",
+          slots: {}
+        }
+      },
+      requestAttributes: {
+        SystemEndpointAddress: "+18483487681"
+      }
+    })
+  );
+
+  assert.equal(response.sessionState.intent.name, "BookAppointmentIntent");
+  assert.equal(response.sessionState.sessionAttributes.serviceName, "Full Set");
+  assert.equal(response.sessionState.sessionAttributes.confirmedServiceName, "Full Set");
+  assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "requestedDate");
+  assert.equal(response.sessionState.sessionAttributes.lastAskedSlot, "requestedDate");
+  assert.equal(response.sessionState.sessionAttributes.activeDtmfMenu, undefined);
+  assert.equal(response.sessionState.sessionAttributes.transferToQueue, undefined);
+  assert.equal(response.sessionState.sessionAttributes.forceHumanEscalation, undefined);
+  assert.doesNotMatch(response.messages[0].content, /didn.t catch the service/i);
 });
 
 test("+84798171999 Full Set speech stays in AI booking flow", async () => {

@@ -372,7 +372,8 @@ const adminAiQuerySchema = z.object({
   callSessionId: z.string().trim().min(1).max(160).optional(),
   contactId: z.string().trim().min(1).max(160).optional(),
   callerPhone: z.string().trim().min(3).max(40).optional(),
-  q: z.string().trim().min(1).max(160).optional()
+  q: z.string().trim().min(1).max(160).optional(),
+  includeSynthetic: z.coerce.boolean().default(false)
 });
 
 const adminAiReceptionCallLogsQuerySchema = z.object({
@@ -1060,14 +1061,15 @@ adminRouter.get(
       callSessionId: true,
       contactId: true,
       callerPhone: true,
-      q: true
+      q: true,
+      includeSynthetic: true
     }),
     "query"
   ),
   asyncHandler(async (req, res) => {
     const query = req.query as unknown as Pick<
       z.infer<typeof adminAiQuerySchema>,
-      "salonId" | "taskType" | "callSessionId" | "contactId" | "callerPhone" | "q"
+      "salonId" | "taskType" | "callSessionId" | "contactId" | "callerPhone" | "q" | "includeSynthetic"
     >;
     const result = await exportAIInteractionsForAdmin(query);
     return sendSuccess(res, {

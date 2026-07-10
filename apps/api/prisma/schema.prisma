@@ -709,6 +709,8 @@ model AiInteractionLog {
   isValid          Boolean          @default(false)
   validationErrors Json?
   confidence       Float?
+  interactionKey   String?          @unique
+  isSynthetic      Boolean          @default(false)
   callSessionId    String?
   callSession      CallSession?     @relation(fields: [callSessionId], references: [id], onDelete: SetNull)
   transcriptId     String?
@@ -722,6 +724,7 @@ model AiInteractionLog {
   @@index([salonId, createdAt])
   @@index([callSessionId, createdAt])
   @@index([bookingAttemptId, createdAt])
+  @@index([isSynthetic, createdAt])
   @@map("AIInteractionLog")
 }
 
