@@ -421,10 +421,12 @@ const setupPrismaMock = () => {
   }));
 
   patch(prisma.customer as any, "findFirst", async (args: any) => {
+    const allowsCustomer = (customer: any) =>
+      args?.where?.deletedAt === null ? customer.deletedAt === null || customer.deletedAt === undefined : true;
     if (args?.where?.id) {
       return (
         state.customers.find(
-          (customer) => customer.id === args.where.id && customer.salonId === args.where.salonId
+          (customer) => customer.id === args.where.id && customer.salonId === args.where.salonId && allowsCustomer(customer)
         ) ?? null
       );
     }
@@ -433,7 +435,7 @@ const setupPrismaMock = () => {
       return (
         state.customers.find(
           (customer) =>
-            customer.salonId === args.where.salonId && phoneCandidates.includes(customer.phone)
+            customer.salonId === args.where.salonId && phoneCandidates.includes(customer.phone) && allowsCustomer(customer)
         ) ?? null
       );
     }
@@ -441,6 +443,7 @@ const setupPrismaMock = () => {
       state.customers.find(
         (customer) =>
           customer.salonId === args?.where?.salonId &&
+          allowsCustomer(customer) &&
           customer.firstName.toLowerCase().includes(String(args?.where?.firstName?.contains ?? "").toLowerCase())
       ) ?? null
     );
@@ -451,6 +454,7 @@ const setupPrismaMock = () => {
     return state.customers.filter(
       (customer) =>
         customer.salonId === args?.where?.salonId &&
+        (args?.where?.deletedAt === null ? customer.deletedAt === null || customer.deletedAt === undefined : true) &&
         (!phoneCandidates || phoneCandidates.includes(customer.phone)) &&
         (!contains || String(customer.phone).includes(contains))
     );
@@ -1322,6 +1326,12 @@ test("Full Set speech aliases resolve to the active Full Set service", async () 
     "false set",
     "fall set",
     "four set",
+    "phone set",
+    "room set",
+    "pull set",
+    "pull step",
+    "pool set",
+    "full step",
     "full said"
   ]) {
     resetMockState();
@@ -1341,6 +1351,73 @@ test("Full Set speech aliases resolve to the active Full Set service", async () 
     assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Full Set", phrase);
     assert.notEqual(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName", phrase);
   }
+});
+
+test("scoped princess ASR resolves to Full Set unless Princess is an active exact service", async () => {
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  let result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "princess",
+      requestedDate,
+      requestedTime: "3 PM",
+      staffPreference: "Trang",
+      confirmationState: undefined,
+      currentTurnTranscript: "princess",
+      transcript: "princess",
+      attributes: {
+        lastAskedSlot: "serviceName",
+        activeDtmfMenu: "service",
+        serviceAliasCorrectionRaw: "princess"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedServiceName, "Full Set");
+  assert.notEqual(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
+
+  resetMockState();
+  const princessServiceId = "20000000-0000-4000-8000-000000000099";
+  state.services.push({
+    id: princessServiceId,
+    salonId: ids.salonA,
+    name: "Princess",
+    durationMinutes: 30,
+    priceCents: 3000,
+    isActive: true,
+    createdAt: new Date("2026-01-06T00:00:00.000Z")
+  });
+  state.staffServiceMappings?.push({
+    salonId: ids.salonA,
+    staffId: ids.trang,
+    serviceId: princessServiceId
+  });
+
+  result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "princess",
+      requestedDate,
+      requestedTime: "3 PM",
+      staffPreference: "Trang",
+      confirmationState: undefined,
+      currentTurnTranscript: "princess",
+      transcript: "princess",
+      attributes: {
+        lastAskedSlot: "serviceName",
+        activeDtmfMenu: "service",
+        serviceAliasCorrectionRaw: "princess"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Princess");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedServiceName, "Princess");
+  assert.match(result.body.data.lexResponse.message, /Princess/i);
+  assert.doesNotMatch(result.body.data.lexResponse.message, /Full Set/i);
 });
 
 test("any-staff phrases resolve to an actual staff member before final confirmation", async () => {
@@ -1842,6 +1919,15 @@ test("international Amazon Connect customer persistence keeps +84 phone and does
     phone: "+17325550123",
     createdAt: new Date("2026-01-03T00:00:00.000Z")
   });
+  state.customers.push({
+    id: "customer-archived-jane",
+    salonId: ids.salonA,
+    firstName: "Archived",
+    lastName: "Unknown",
+    phone: "+84978634886",
+    deletedAt: new Date("2026-07-01T00:00:00.000Z"),
+    createdAt: new Date("2026-01-04T00:00:00.000Z")
+  });
 
   const result = await postInternalAppointment(
     bookingPayload({
@@ -1874,10 +1960,12 @@ test("international Amazon Connect customer persistence keeps +84 phone and does
 
   assert.equal(result.response.status, 201);
   assert.equal(result.body.data.outcome, "BOOKED");
-  const createdCustomer = state.customers.find((customer) => customer.phone === "+84978634886");
+  const createdCustomer = state.customers.find((customer) => customer.phone === "+84978634886" && !customer.deletedAt);
   assert.ok(createdCustomer);
   assert.equal(createdCustomer.firstName, "Jane");
+  assert.equal(createdCustomer.lastName, "");
   assert.notEqual(createdCustomer.id, "customer-existing-jane");
+  assert.notEqual(createdCustomer.id, "customer-archived-jane");
   assert.equal(state.appointments[0].customerId, createdCustomer.id);
 });
 
@@ -2451,6 +2539,157 @@ test("yes to a single alternative asks final confirmation before booking", async
   assert.equal(third.body.data.outcome, "BOOKED");
   assert.equal(state.appointments.length, 1);
   assert.equal(state.appointments[0].staffId, ids.trang);
+});
+
+test("natural final confirmations create or return one appointment for the contact", async () => {
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+
+  for (const phrase of [
+    "yes this is correct",
+    "yeah correct",
+    "correct yes yes correct yes",
+    "that's right",
+    "please book it",
+    "correct"
+  ]) {
+    resetMockState();
+    const contactId = `fef46abd-f101-475a-97d0-${phrase.replace(/\W+/g, "").slice(0, 12)}`;
+    const payload = bookingPayload({
+      serviceName: "Full Set",
+      requestedDate,
+      requestedTime: "3 PM",
+      staffPreference: "Trang",
+      confirmationState: "None",
+      amazonConnectContactId: contactId,
+      amazonConnectPhoneNumber: "+18483487681",
+      calledNumber: "+18483487681",
+      currentTurnTranscript: phrase,
+      transcript: phrase,
+      attributes: {
+        AmazonConnectContactId: contactId,
+        CustomerEndpointAddress: "+17325956266",
+        lastAskedSlot: "bookingConfirmation",
+        awaitingFinalBookingConfirmation: "true",
+        bookingConfirmationAsked: "true",
+        serviceName: "Full Set",
+        confirmedServiceName: "Full Set",
+        requestedDate,
+        requestedTime: "3 PM",
+        staffPreference: "Trang",
+        confirmedStaffName: "Trang",
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266"
+      }
+    });
+
+    const first = await postInternalAppointment(payload);
+    const second = await postInternalAppointment(payload);
+
+    assert.equal(first.response.status, 201, phrase);
+    assert.equal(second.response.status, 201, phrase);
+    assert.equal(first.body.data.outcome, "BOOKED", phrase);
+    assert.equal(second.body.data.outcome, "BOOKED", phrase);
+    assert.equal(first.body.data.appointment.id, second.body.data.appointment.id, phrase);
+    assert.equal(state.appointments.length, 1, phrase);
+    assert.equal(state.aiInteractionLogs.length, 1, phrase);
+    assert.ok(first.body.data.appointment.id, phrase);
+    assert.equal(first.body.data.lexResponse.fulfillmentState, "Fulfilled", phrase);
+    assert.equal(first.body.data.lexResponse.sessionAttributes.awaitingFinalBookingConfirmation, "false", phrase);
+    assert.doesNotMatch(first.body.data.lexResponse.message, /Is that correct/i, phrase);
+  }
+});
+
+test("denied final confirmations do not create appointments and preserve booking slots", async () => {
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+
+  for (const phrase of [
+    "no",
+    "nope",
+    "no that is wrong",
+    "that's not correct",
+    "do not book it",
+    "don't book it",
+    "cancel it",
+    "wait no"
+  ]) {
+    resetMockState();
+    const result = await postInternalAppointment(
+      bookingPayload({
+        serviceName: "Full Set",
+        requestedDate,
+        requestedTime: "3 PM",
+        staffPreference: "Trang",
+        confirmationState: "None",
+        amazonConnectContactId: `connect-denied-${phrase.replace(/\W+/g, "-")}`,
+        amazonConnectPhoneNumber: "+18483487681",
+        calledNumber: "+18483487681",
+        currentTurnTranscript: phrase,
+        transcript: phrase,
+        attributes: {
+          lastAskedSlot: "bookingConfirmation",
+          awaitingFinalBookingConfirmation: "true",
+          bookingConfirmationAsked: "true",
+          serviceName: "Full Set",
+          confirmedServiceName: "Full Set",
+          requestedDate,
+          requestedTime: "3 PM",
+          staffPreference: "Trang",
+          confirmedStaffName: "Trang",
+          customerName: "Kiet Nguyen",
+          customerPhone: "+17325956266"
+        }
+      })
+    );
+
+    assert.equal(result.response.status, 200, phrase);
+    assert.equal(result.body.data.outcome, "MISSING_INFO", phrase);
+    assert.equal(state.appointments.length, 0, phrase);
+    assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Full Set", phrase);
+    assert.equal(result.body.data.lexResponse.sessionAttributes.requestedDate, requestedDate, phrase);
+    assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "3 PM", phrase);
+    assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Trang", phrase);
+    assert.match(result.body.data.lexResponse.message, /Which detail would you like to change/i, phrase);
+  }
+});
+
+test("final confirmation change request updates only the requested time before reconfirming", async () => {
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Full Set",
+      requestedDate,
+      requestedTime: "3 PM",
+      staffPreference: "Trang",
+      confirmationState: "None",
+      amazonConnectContactId: "connect-change-final-time",
+      amazonConnectPhoneNumber: "+18483487681",
+      calledNumber: "+18483487681",
+      currentTurnTranscript: "no, make it 10 AM",
+      transcript: "no, make it 10 AM",
+      attributes: {
+        lastAskedSlot: "bookingConfirmation",
+        awaitingFinalBookingConfirmation: "true",
+        bookingConfirmationAsked: "true",
+        serviceName: "Full Set",
+        confirmedServiceName: "Full Set",
+        requestedDate,
+        requestedTime: "3 PM",
+        staffPreference: "Trang",
+        confirmedStaffName: "Trang",
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(state.appointments.length, 0);
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.requestedDate, requestedDate);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "10:00");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
 });
 
 test("successful booking creates appointment, booking attempt, call session, transcript, and AI log", async () => {

@@ -300,7 +300,7 @@ const updateBusinessHoursSchema = z
 
 const createCustomerSchema = z.object({
   firstName: z.string().min(1).max(80),
-  lastName: z.string().min(1).max(80),
+  lastName: z.string().max(80).optional(),
   email: z.string().email().optional(),
   phone: usPhoneSchema,
   notes: z.string().max(1000).optional()

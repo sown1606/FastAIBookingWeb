@@ -11,6 +11,7 @@ import { prisma } from "../../db/prisma";
 import { createAuditLog } from "../../lib/audit";
 import { AppError } from "../../lib/errors";
 import { logger } from "../../lib/logger";
+import { formatCustomerName } from "../../utils/customer-name";
 import {
   sendAppointmentCancellationEmail,
   sendAppointmentConfirmationEmail,
@@ -206,7 +207,8 @@ const ensureCustomerBelongsToSalon = async (salonId: string, customerId: string)
   const customer = await prisma.customer.findFirst({
     where: {
       id: customerId,
-      salonId
+      salonId,
+      deletedAt: null
     },
     select: {
       id: true
@@ -405,11 +407,12 @@ const updateStaffOperationalState = async (
 };
 
 const createBookingAlert = async (appointment: Awaited<ReturnType<typeof getAppointmentDetail>>) => {
+  const customerName = formatCustomerName(appointment.customer.firstName, appointment.customer.lastName) || "Customer";
   await createSalonAlert({
     salonId: appointment.salonId,
     alertType: "BOOKING_CREATED",
     title: "Lich hen moi",
-    message: `Lich hen moi cho ${appointment.customer.firstName} ${appointment.customer.lastName} luc ${appointment.startTime.toISOString()}.`,
+    message: `Lich hen moi cho ${customerName} luc ${appointment.startTime.toISOString()}.`,
     metadata: {
       appointmentId: appointment.id,
       customerPhone: appointment.customer.phone,
@@ -447,7 +450,7 @@ const buildAppointmentPushPayload = (
     appointment.startTime,
     appointment.salon.timezone
   );
-  const customerName = `${appointment.customer.firstName} ${appointment.customer.lastName}`.trim();
+  const customerName = formatCustomerName(appointment.customer.firstName, appointment.customer.lastName);
   const title =
     eventType === "created"
       ? "New appointment"

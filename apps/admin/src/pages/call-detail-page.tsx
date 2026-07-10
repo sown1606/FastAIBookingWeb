@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { apiGet, extractErrorMessage } from "../lib/api";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
+import { useToast } from "../components/toast";
+import { downloadJsonFile, safeFilenamePart, toUtcTimestampForFilename } from "../lib/download-json";
 import { formatDateTime } from "../lib/format";
 import { getStatusLabel, useI18n } from "../lib/i18n";
 
@@ -130,6 +132,7 @@ const buildAiTurnDebug = (item: CallDetail["aiInteractions"][number]) => {
 
 export const CallDetailPage = () => {
   const { t } = useI18n();
+  const { notify } = useToast();
   const { id } = useParams<{ id: string }>();
   const [call, setCall] = useState<CallDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -174,6 +177,59 @@ export const CallDetailPage = () => {
     void load();
   }, [id]);
 
+  const exportDebugJson = () => {
+    if (!call) return;
+
+    try {
+      const exportedAt = new Date().toISOString();
+      const filename = `fastaibooking-call-${safeFilenamePart(
+        call.providerCallId || call.id,
+        "unknown-contact"
+      )}-${toUtcTimestampForFilename(new Date(exportedAt))}.json`;
+
+      downloadJsonFile(filename, {
+        schemaVersion: 1,
+        exportedAt,
+        exportType: "call_debug",
+        callSession: {
+          id: call.id,
+          provider: call.provider,
+          providerCallId: call.providerCallId,
+          status: call.status,
+          routingOutcome: call.routingOutcome,
+          callerPhone: call.callerPhone,
+          dialedPhone: call.dialedPhone,
+          trackingNumber: call.trackingNumber,
+          sourceName: call.sourceName,
+          campaignName: call.campaignName,
+          startedAt: call.startedAt,
+          endedAt: call.endedAt,
+          durationSeconds: call.durationSeconds,
+          recordingUrl: call.recordingUrl,
+          transcriptSummary: call.transcriptSummary,
+          aiSummary: call.aiSummary,
+          failureReason: call.failureReason,
+          finalResolution: call.finalResolution,
+          salon: call.salon
+        },
+        events: call.events,
+        transcripts: call.transcripts,
+        bookingAttempts: call.bookingAttempts,
+        aiInteractions: call.aiInteractions,
+        turnHistories: call.aiInteractions.map((item, index) => ({
+          aiInteractionId: item.id,
+          index: index + 1,
+          ...buildAiTurnDebug(item)
+        })),
+        escalationRecords: call.callEscalations,
+        finalResolution: call.finalResolution
+      });
+      notify("success", t("calls.exported"));
+    } catch (exportError) {
+      notify("error", extractErrorMessage(exportError));
+    }
+  };
+
   if (loading) {
     return <LoadingBlock />;
   }
@@ -199,6 +255,9 @@ export const CallDetailPage = () => {
             </h2>
             <p className="muted">{t("calls.flowValue")}</p>
           </div>
+          <button type="button" className="button-secondary" onClick={exportDebugJson}>
+            {t("common.exportJson")}
+          </button>
         </div>
         <div className="metrics-grid">
           <div>

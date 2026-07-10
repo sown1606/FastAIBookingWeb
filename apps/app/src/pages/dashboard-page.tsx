@@ -5,6 +5,7 @@ import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
 import { useAuth } from "../auth/auth-context";
 import { useToast } from "../components/toast";
 import { formatDateTime } from "../lib/format";
+import { formatCustomerName } from "../lib/customer-name";
 import { statusLabelKey, useI18n } from "../lib/i18n";
 import { useUiMode } from "../lib/ui-mode";
 import { InfoHint } from "../components/info-hint";
@@ -361,7 +362,7 @@ export const DashboardPage = () => {
                   <div className="appointment-card-header">
                     <div className="appointment-card-copy">
                       <strong>
-                        {item.customer.firstName} {item.customer.lastName}
+                        {formatCustomerName(item.customer.firstName, item.customer.lastName)}
                       </strong>
                       <span className="muted">{item.service.name}</span>
                     </div>
@@ -581,7 +582,7 @@ export const DashboardPage = () => {
                     <div className="appointment-card-header">
                       <div className="appointment-card-copy">
                         <strong>
-                          {item.customer.firstName} {item.customer.lastName}
+                          {formatCustomerName(item.customer.firstName, item.customer.lastName)}
                         </strong>
                         <span className="muted">{item.service.name}</span>
                       </div>
@@ -629,7 +630,7 @@ export const DashboardPage = () => {
                     <tr key={item.id}>
                       <td>{formatDateTime(item.startTime, salonTimezone)}</td>
                       <td>
-                        {item.customer.firstName} {item.customer.lastName}
+                        {formatCustomerName(item.customer.firstName, item.customer.lastName)}
                       </td>
                       <td>{item.service.name}</td>
                       <td>{item.staff.fullName}</td>

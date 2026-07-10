@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { apiGet, extractErrorMessage } from "../lib/api";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
+import { useToast } from "../components/toast";
+import { downloadJsonFile, safeFilenamePart, toUtcTimestampForFilename } from "../lib/download-json";
 import { formatDateTime } from "../lib/format";
 import { getStatusLabel, useI18n } from "../lib/i18n";
 
@@ -84,6 +86,7 @@ const routingLabelKeyByValue = {
 
 export const AiLogDetailPage = () => {
   const { t } = useI18n();
+  const { notify } = useToast();
   const { id } = useParams<{ id: string }>();
   const [log, setLog] = useState<AiLogDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -133,6 +136,13 @@ export const AiLogDetailPage = () => {
     void load();
   }, [id]);
 
+  const selectedDebugTurn = log
+    ? [...(callDebug?.timeline ?? [])].reverse().find((item) => item.aiInteractionId === log.id)
+    : undefined;
+  const selectedTurnIndex =
+    callDebug?.timeline?.findIndex((item) => item === selectedDebugTurn) ?? -1;
+  const turnCount = callDebug?.timeline?.length ?? 0;
+
   const copyFullDebug = async () => {
     if (!id) return;
     setCopyStatus("");
@@ -142,6 +152,48 @@ export const AiLogDetailPage = () => {
       setCopyStatus(t("aiLogs.debugCopied"));
     } catch (copyError) {
       setCopyStatus(extractErrorMessage(copyError));
+    }
+  };
+
+  const exportDebugJson = () => {
+    if (!log) return;
+
+    try {
+      const contactId = callDebug?.contactIds?.[0] ?? log.callSession?.id ?? log.id;
+      const filename = `fastaibooking-ai-log-${safeFilenamePart(
+        String(contactId),
+        "unknown-contact"
+      )}-${toUtcTimestampForFilename()}.json`;
+
+      downloadJsonFile(filename, {
+        schemaVersion: 1,
+        exportedAt: new Date().toISOString(),
+        exportType: "ai_log_debug",
+        aiLog: {
+          id: log.id,
+          provider: log.provider,
+          model: log.model,
+          taskType: log.taskType,
+          requestText: log.requestText,
+          responseText: log.responseText,
+          isValid: log.isValid,
+          confidence: log.confidence,
+          createdAt: log.createdAt,
+          salon: log.salon,
+          bookingAttempt: log.bookingAttempt,
+          transcript: log.transcript
+        },
+        linkedCall: log.callSession,
+        callDebug,
+        selectedTurn: selectedDebugTurn,
+        requestPayload: log.requestPayload,
+        responsePayload: log.responsePayload,
+        parsedOutput: log.parsedOutput,
+        validationErrors: log.validationErrors
+      });
+      notify("success", t("aiLogs.exported"));
+    } catch (exportError) {
+      notify("error", extractErrorMessage(exportError));
     }
   };
 
@@ -157,12 +209,6 @@ export const AiLogDetailPage = () => {
     return <EmptyBlock message={t("aiLogs.notFound")} />;
   }
 
-  const selectedDebugTurn = [...(callDebug?.timeline ?? [])]
-    .reverse()
-    .find((item) => item.aiInteractionId === log.id);
-  const selectedTurnIndex =
-    callDebug?.timeline?.findIndex((item) => item === selectedDebugTurn) ?? -1;
-  const turnCount = callDebug?.timeline?.length ?? 0;
   const stringifyDebug = (value: unknown) => JSON.stringify(value ?? null, null, 2);
   const displayDebugValue = (value: unknown) => {
     if (value === undefined || value === null || value === "") {
@@ -176,9 +222,14 @@ export const AiLogDetailPage = () => {
       <section className="card">
         <div className="section-header">
           <h2>{t("aiLogs.detailTitle")}</h2>
-          <button type="button" className="secondary" onClick={copyFullDebug}>
-            {t("aiLogs.copyDebug")}
-          </button>
+          <div className="inline-actions">
+            <button type="button" className="button-secondary" onClick={copyFullDebug}>
+              {t("aiLogs.copyDebug")}
+            </button>
+            <button type="button" className="button-secondary" onClick={exportDebugJson}>
+              {t("common.exportJson")}
+            </button>
+          </div>
         </div>
         {copyStatus ? <p className="muted">{copyStatus}</p> : null}
         <div className="metrics-grid">

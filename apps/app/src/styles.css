@@ -2211,6 +2211,13 @@ pre {
   flex-wrap: wrap;
 }
 
+.entity-card-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .entity-card-copy {
   display: grid;
   gap: 4px;
@@ -2221,6 +2228,13 @@ pre {
 .entity-card-copy span,
 .entity-metric strong {
   overflow-wrap: anywhere;
+}
+
+.entity-metric strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .entity-metric-grid {
@@ -2236,6 +2250,12 @@ pre {
   border-radius: var(--radius-control);
   background: var(--surface-soft);
   border: 1px solid rgba(201, 154, 46, 0.14);
+}
+
+.button-secondary.danger,
+.danger-button {
+  border-color: rgba(216, 91, 91, 0.24);
+  color: var(--danger);
 }
 
 .hours-grid {
@@ -2842,7 +2862,7 @@ pre {
 
 .schedule-board {
   display: grid;
-  grid-template-columns: 78px repeat(var(--staff-count), minmax(190px, 1fr));
+  grid-template-columns: 78px repeat(var(--staff-count), minmax(220px, 1fr));
   grid-template-rows: 64px repeat(var(--slot-count), minmax(86px, auto));
   min-width: max(100%, 980px);
   position: relative;
@@ -2885,7 +2905,10 @@ pre {
 }
 
 .schedule-staff-header strong {
-  overflow-wrap: anywhere;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .schedule-time {
@@ -2911,7 +2934,7 @@ pre {
 .schedule-appointment {
   z-index: 2;
   display: grid;
-  gap: 8px;
+  gap: 7px;
   align-content: start;
   margin: 6px;
   padding: 10px;
@@ -2940,15 +2963,27 @@ pre {
 }
 
 .schedule-appointment-top {
-  display: grid;
+  display: flex;
+  align-items: center;
   gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .schedule-appointment-top .status-pill {
+  flex: 0 0 auto;
   width: fit-content;
   min-height: 26px;
   padding: 4px 8px;
   font-size: 0.72rem;
+}
+
+.schedule-appointment-top strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.78rem;
 }
 
 .schedule-appointment-copy {
@@ -2960,7 +2995,10 @@ pre {
 .schedule-appointment-copy strong,
 .schedule-appointment-copy span,
 .schedule-appointment-copy small {
-  overflow-wrap: anywhere;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .schedule-appointment-copy span,
@@ -2969,16 +3007,8 @@ pre {
   font-size: 0.82rem;
 }
 
-.schedule-appointment-actions {
-  display: grid;
-  gap: 6px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.schedule-appointment-actions .button-secondary {
-  min-height: 34px;
-  padding: 6px 8px;
-  font-size: 0.78rem;
+.schedule-mobile-list {
+  display: none;
 }
 
 .staff-quota-card {
@@ -3287,6 +3317,22 @@ pre {
     top: 0;
     z-index: 20;
   }
+
+  .schedule-board-wrap {
+    display: none;
+  }
+
+  .schedule-mobile-list {
+    display: grid;
+  }
+
+  .entity-card-actions {
+    justify-content: stretch;
+  }
+
+  .entity-card-actions .button-secondary {
+    flex: 1 1 160px;
+  }
 }
 
 @media (max-width: 430px) {
@@ -3356,7 +3402,4 @@ pre {
     width: 100%;
   }
 
-  .schedule-appointment-actions {
-    grid-template-columns: 1fr;
-  }
 }

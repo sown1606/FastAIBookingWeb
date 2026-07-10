@@ -1,3 +1,4 @@
+import { AppointmentStatus } from "@prisma/client";
 import { prisma } from "../../db/prisma";
 import { createAuditLog } from "../../lib/audit";
 import { AppError } from "../../lib/errors";
@@ -6,7 +7,7 @@ import { toOwnerAppointmentResponse } from "../appointments/appointments.service
 
 interface CreateCustomerInput {
   firstName: string;
-  lastName: string;
+  lastName?: string;
   email?: string;
   phone: string;
   notes?: string;
@@ -26,6 +27,14 @@ interface UpdateCustomerInput {
   notes?: string | null;
 }
 
+const ACTIVE_APPOINTMENT_STATUSES = [
+  AppointmentStatus.SCHEDULED,
+  AppointmentStatus.CONFIRMED,
+  AppointmentStatus.IN_PROGRESS
+];
+
+const normalizeNamePart = (value: string | null | undefined) => value?.trim() ?? "";
+
 export const createCustomer = async (
   salonId: string,
   actorUserId: string,
@@ -35,8 +44,8 @@ export const createCustomer = async (
   const customer = await prisma.customer.create({
     data: {
       salonId,
-      firstName: input.firstName,
-      lastName: input.lastName,
+      firstName: normalizeNamePart(input.firstName),
+      lastName: normalizeNamePart(input.lastName),
       email: input.email?.toLowerCase(),
       phone,
       notes: input.notes
@@ -63,7 +72,8 @@ export const updateCustomer = async (
   const existing = await prisma.customer.findFirst({
     where: {
       id: customerId,
-      salonId
+      salonId,
+      deletedAt: null
     }
   });
   if (!existing) {
@@ -76,6 +86,7 @@ export const updateCustomer = async (
     const duplicate = await prisma.customer.findFirst({
       where: {
         salonId,
+        deletedAt: null,
         phone: nextPhone,
         id: {
           not: existing.id
@@ -95,8 +106,8 @@ export const updateCustomer = async (
       id: existing.id
     },
     data: {
-      firstName: input.firstName ?? existing.firstName,
-      lastName: input.lastName ?? existing.lastName,
+      firstName: input.firstName === undefined ? existing.firstName : normalizeNamePart(input.firstName),
+      lastName: input.lastName === undefined ? existing.lastName : normalizeNamePart(input.lastName),
       email:
         input.email === undefined
           ? existing.email
@@ -128,6 +139,7 @@ export const searchCustomers = async (salonId: string, input: SearchCustomersInp
 
   const where = {
     salonId,
+    deletedAt: null,
     ...(searchTerm
       ? {
           OR: [
@@ -164,13 +176,119 @@ export const getCustomerDetail = async (salonId: string, customerId: string) => 
   const customer = await prisma.customer.findFirst({
     where: {
       id: customerId,
-      salonId
+      salonId,
+      deletedAt: null
     }
   });
   if (!customer) {
     throw new AppError("Customer not found.", 404, "CUSTOMER_NOT_FOUND");
   }
   return customer;
+};
+
+export const deleteCustomer = async (salonId: string, customerId: string, actorUserId: string) => {
+  const existing = await prisma.customer.findFirst({
+    where: {
+      id: customerId,
+      salonId,
+      deletedAt: null
+    },
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      phone: true
+    }
+  });
+
+  if (!existing) {
+    throw new AppError("Customer not found.", 404, "CUSTOMER_NOT_FOUND");
+  }
+
+  const activeFutureAppointment = await prisma.appointment.findFirst({
+    where: {
+      salonId,
+      customerId,
+      startTime: {
+        gte: new Date()
+      },
+      status: {
+        in: ACTIVE_APPOINTMENT_STATUSES
+      }
+    },
+    select: {
+      id: true,
+      startTime: true
+    }
+  });
+
+  if (activeFutureAppointment) {
+    throw new AppError(
+      "Customer has active future appointments. Cancel or reassign those appointments before deleting this customer.",
+      409,
+      "CUSTOMER_HAS_ACTIVE_APPOINTMENTS"
+    );
+  }
+
+  const appointmentCount = await prisma.appointment.count({
+    where: {
+      salonId,
+      customerId
+    }
+  });
+
+  if (appointmentCount === 0) {
+    await prisma.customer.delete({
+      where: {
+        id: existing.id
+      }
+    });
+    await createAuditLog({
+      salonId,
+      actorUserId,
+      action: "CUSTOMER_DELETED",
+      entityType: "Customer",
+      entityId: existing.id,
+      metadata: {
+        mode: "hard_delete",
+        phone: existing.phone
+      }
+    });
+    return {
+      customerId: existing.id,
+      mode: "hard_delete" as const,
+      appointmentCount
+    };
+  }
+
+  const deletedAt = new Date();
+  await prisma.customer.update({
+    where: {
+      id: existing.id
+    },
+    data: {
+      deletedAt
+    }
+  });
+  await createAuditLog({
+    salonId,
+    actorUserId,
+    action: "CUSTOMER_ARCHIVED",
+    entityType: "Customer",
+    entityId: existing.id,
+    metadata: {
+      mode: "archive",
+      appointmentCount,
+      phone: existing.phone
+    }
+  });
+
+  return {
+    customerId: existing.id,
+    mode: "archive" as const,
+    appointmentCount,
+    deletedAt
+  };
 };
 
 export const getCustomerAppointmentHistory = async (salonId: string, customerId: string) => {

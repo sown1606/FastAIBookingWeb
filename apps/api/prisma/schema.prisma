@@ -329,6 +329,7 @@ model Customer {
   email        String?
   phone        String
   notes        String?
+  deletedAt    DateTime?
   appointments Appointment[]
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
@@ -336,6 +337,7 @@ model Customer {
   @@index([salonId, lastName, firstName])
   @@index([salonId, phone])
   @@index([salonId, email])
+  @@index([salonId, deletedAt])
 }
 
 model Appointment {

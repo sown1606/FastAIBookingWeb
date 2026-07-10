@@ -1,9 +1,10 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { apiGet, apiPatch, apiPost, extractErrorMessage } from "../lib/api";
+import { apiDelete, apiGet, apiPatch, apiPost, extractErrorMessage } from "../lib/api";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
 import { useToast } from "../components/toast";
 import { formatDateTime } from "../lib/format";
+import { formatCustomerName } from "../lib/customer-name";
 import type { Pagination } from "../types";
 import { DemoAvatar } from "../components/avatar";
 import { formatCustomerPhoneInput, requiredLabel, validateOptionalCustomerPhone } from "../lib/phone";
@@ -37,6 +38,13 @@ interface CustomerHistory {
       name: string;
     };
   }>;
+}
+
+interface DeleteCustomerResponse {
+  customerId: string;
+  mode: "hard_delete" | "archive";
+  appointmentCount: number;
+  deletedAt?: string;
 }
 
 const activeStatuses = new Set(["SCHEDULED", "CONFIRMED", "IN_PROGRESS"]);
@@ -135,7 +143,7 @@ export const CustomersPage = () => {
       title: t("customers.edit"),
       fields: [
         { name: "firstName", label: t("customers.firstName"), required: true },
-        { name: "lastName", label: t("customers.lastName"), required: true },
+        { name: "lastName", label: t("customers.lastName") },
         { name: "email", label: t("common.email"), type: "email" },
         { name: "phone", label: t("common.phone"), required: true, type: "tel" },
         { name: "notes", label: t("customers.notes"), type: "textarea", rows: 3 }
@@ -168,6 +176,47 @@ export const CustomersPage = () => {
       await load();
     } catch (editError) {
       notify("error", extractErrorMessage(editError));
+    }
+  };
+
+  const deleteCustomer = async (customer: CustomerItem) => {
+    try {
+      const history = await apiGet<CustomerHistory>(`/api/v1/customers/${customer.id}/appointments`);
+      const now = Date.now();
+      const activeFuture = history.appointments.find(
+        (appointment) =>
+          activeStatuses.has(appointment.status) && new Date(appointment.startTime).getTime() >= now
+      );
+      setSelected(history);
+
+      if (activeFuture) {
+        notify("error", t("customers.deleteActiveFutureBlocked"));
+        return;
+      }
+
+      const displayName = formatCustomerName(customer.firstName, customer.lastName) || customer.phone;
+      const modeLabel = history.appointments.length
+        ? t("customers.deleteModeArchive")
+        : t("customers.deleteModeHard");
+      const confirmed = window.confirm(
+        t("customers.deleteConfirm", {
+          name: displayName,
+          phone: customer.phone,
+          mode: modeLabel
+        })
+      );
+      if (!confirmed) {
+        return;
+      }
+
+      const result = await apiDelete<DeleteCustomerResponse>(`/api/v1/customers/${customer.id}`);
+      notify("success", result.mode === "archive" ? t("customers.archived") : t("customers.deleted"));
+      if (selected?.customer.id === customer.id) {
+        setSelected(null);
+      }
+      await load();
+    } catch (deleteError) {
+      notify("error", extractErrorMessage(deleteError));
     }
   };
 
@@ -230,11 +279,10 @@ export const CustomersPage = () => {
             />
           </label>
           <label className="field">
-            <span>{requiredLabel(t("customers.lastName"))}</span>
+            <span>{t("customers.lastName")}</span>
             <input
               value={form.lastName}
               onChange={(event) => setForm((prev) => ({ ...prev, lastName: event.target.value }))}
-              required
             />
           </label>
           <label className="field">
@@ -277,41 +325,43 @@ export const CustomersPage = () => {
         </label>
         {customers?.items.length ? (
           <div className="entity-grid">
-            {customers.items.map((item) => (
+            {customers.items.map((item) => {
+              const displayName = formatCustomerName(item.firstName, item.lastName) || item.phone;
+              return (
               <article key={item.id} className="entity-card">
                 <div className="entity-card-header">
                   <div className="person-cell">
-                    <DemoAvatar name={`${item.firstName} ${item.lastName}`} variant="customer" size="sm" />
+                    <DemoAvatar name={displayName} variant="customer" size="sm" />
                     <span>
-                      <strong>
-                        {item.firstName} {item.lastName}
-                      </strong>
+                      <strong>{displayName}</strong>
                       <span className="muted">{item.email ?? t("common.none")}</span>
                     </span>
                   </div>
-                  <button type="button" className="button-secondary" onClick={() => selectCustomer(item.id)}>
-                    {t("customers.viewHistory")}
-                  </button>
-                  <button type="button" className="button-secondary" onClick={() => void editCustomer(item)}>
-                    {t("customers.edit")}
-                  </button>
                 </div>
                 <div className="entity-metric-grid">
                   <div className="entity-metric">
-                    <span className="muted">{t("customers.customerCode")}</span>
+                    <span className="muted">{t("common.phone")}</span>
                     <strong>{item.phone}</strong>
                   </div>
                   <div className="entity-metric">
                     <span className="muted">{t("common.email")}</span>
                     <strong>{item.email ?? t("common.none")}</strong>
                   </div>
-                  <div className="entity-metric">
-                    <span className="muted">{t("common.phone")}</span>
-                    <strong>{item.phone}</strong>
-                  </div>
+                </div>
+                <div className="entity-card-actions">
+                  <button type="button" className="button-secondary" onClick={() => selectCustomer(item.id)}>
+                    {t("customers.viewHistory")}
+                  </button>
+                  <button type="button" className="button-secondary" onClick={() => void editCustomer(item)}>
+                    {t("customers.edit")}
+                  </button>
+                  <button type="button" className="button-secondary danger" onClick={() => void deleteCustomer(item)}>
+                    {t("customers.delete")}
+                  </button>
                 </div>
               </article>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <EmptyBlock message={t("common.none")} />
@@ -323,7 +373,8 @@ export const CustomersPage = () => {
         {selected ? (
           <>
             <div className="summary-badges">
-              <span className="summary-badge">{t("customers.customerCode")}: {selected.customer.phone}</span>
+              <span className="summary-badge">{formatCustomerName(selected.customer.firstName, selected.customer.lastName) || selected.customer.phone}</span>
+              <span className="summary-badge">{t("common.phone")}: {selected.customer.phone}</span>
               <span className="summary-badge">{t("appointments.upcomingCount")}: {historyGroups.upcoming.length}</span>
               <span className="summary-badge">{t("appointments.completedCount")}: {historyGroups.completed.length}</span>
               <span className="summary-badge">{t("appointments.canceledNoShowCount")}: {historyGroups.canceled.length}</span>

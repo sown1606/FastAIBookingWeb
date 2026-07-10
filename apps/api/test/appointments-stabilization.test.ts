@@ -12,7 +12,13 @@ import {
   removeTechnicalAppointmentNoteLines,
   toOwnerAppointmentResponse
 } from "../src/modules/appointments/appointments.service";
-import { updateCustomer } from "../src/modules/customers/customers.service";
+import {
+  createCustomer,
+  deleteCustomer,
+  getCustomerAppointmentHistory,
+  searchCustomers,
+  updateCustomer
+} from "../src/modules/customers/customers.service";
 
 type Patch = {
   target: Record<string, unknown>;
@@ -203,6 +209,214 @@ test("customer update accepts international E.164 and rejects duplicate canonica
       }),
     /A customer with this phone already exists/
   );
+});
+
+test("customer creation stores empty last name when it is omitted", async () => {
+  let createdCustomer: any = null;
+
+  patch(prisma.customer as any, "create", async (args: any) => {
+    createdCustomer = {
+      id: customerId,
+      ...args.data
+    };
+    return createdCustomer;
+  });
+  patch(prisma.auditLog as any, "create", async (args: any) => ({ id: "audit-1", ...args.data }));
+
+  const customer = await createCustomer(salonId, actorUserId, {
+    firstName: "Kevin",
+    phone: "+12125550100"
+  });
+
+  assert.equal(customer.firstName, "Kevin");
+  assert.equal(customer.lastName, "");
+  assert.equal(createdCustomer.lastName, "");
+});
+
+const setupCustomerDeleteMocks = (input: {
+  existingSalonId?: string;
+  existingDeletedAt?: Date | null;
+  appointments?: Array<{ id: string; status: AppointmentStatus; startTime: Date }>;
+}) => {
+  const state = {
+    deleted: false,
+    archivedAt: null as Date | null,
+    auditActions: [] as any[]
+  };
+  const existingSalonId = input.existingSalonId ?? salonId;
+  const existingDeletedAt = input.existingDeletedAt ?? null;
+  const appointments = input.appointments ?? [];
+
+  patch(prisma.customer as any, "findFirst", async (args: any) => {
+    if (args.where?.id !== customerId || args.where?.salonId !== existingSalonId) {
+      return null;
+    }
+    if (args.where?.deletedAt === null && existingDeletedAt) {
+      return null;
+    }
+    return {
+      id: customerId,
+      salonId: existingSalonId,
+      firstName: "Kevin",
+      lastName: "",
+      phone: "+12125550100",
+      deletedAt: existingDeletedAt
+    };
+  });
+  patch(prisma.appointment as any, "findFirst", async (args: any) => {
+    return (
+      appointments.find(
+        (appointment) =>
+          appointment.status &&
+          args.where?.status?.in?.includes(appointment.status) &&
+          appointment.startTime >= args.where?.startTime?.gte
+      ) ?? null
+    );
+  });
+  patch(prisma.appointment as any, "count", async () => appointments.length);
+  patch(prisma.customer as any, "delete", async () => {
+    state.deleted = true;
+    return { id: customerId };
+  });
+  patch(prisma.customer as any, "update", async (args: any) => {
+    state.archivedAt = args.data.deletedAt;
+    return { id: args.where.id, deletedAt: args.data.deletedAt };
+  });
+  patch(prisma.auditLog as any, "create", async (args: any) => {
+    state.auditActions.push(args.data);
+    return { id: `audit-${state.auditActions.length}`, ...args.data };
+  });
+
+  return state;
+};
+
+test("customer delete hard-deletes customers with no appointment history", async () => {
+  const state = setupCustomerDeleteMocks({});
+
+  const result = await deleteCustomer(salonId, customerId, actorUserId);
+
+  assert.equal(result.mode, "hard_delete");
+  assert.equal(state.deleted, true);
+  assert.equal(state.archivedAt, null);
+  assert.equal(state.auditActions[0].action, "CUSTOMER_DELETED");
+});
+
+test("customer delete archives customers with historical appointments", async () => {
+  const state = setupCustomerDeleteMocks({
+    appointments: [
+      {
+        id: appointmentId,
+        status: AppointmentStatus.COMPLETED,
+        startTime: new Date("2026-01-01T15:00:00.000Z")
+      }
+    ]
+  });
+
+  const result = await deleteCustomer(salonId, customerId, actorUserId);
+
+  assert.equal(result.mode, "archive");
+  assert.ok(state.archivedAt);
+  assert.equal(state.deleted, false);
+  assert.equal(state.auditActions[0].action, "CUSTOMER_ARCHIVED");
+});
+
+test("customer delete rejects active future appointments", async () => {
+  setupCustomerDeleteMocks({
+    appointments: [
+      {
+        id: appointmentId,
+        status: AppointmentStatus.SCHEDULED,
+        startTime: new Date("2999-01-01T15:00:00.000Z")
+      }
+    ]
+  });
+
+  await assert.rejects(
+    () => deleteCustomer(salonId, customerId, actorUserId),
+    /active future appointments/
+  );
+});
+
+test("customer delete rejects cross-salon customers", async () => {
+  setupCustomerDeleteMocks({
+    existingSalonId: "99999999-9999-4999-8999-999999999999"
+  });
+
+  await assert.rejects(
+    () => deleteCustomer(salonId, customerId, actorUserId),
+    /Customer not found/
+  );
+});
+
+test("normal customer search excludes archived customers", async () => {
+  const active = {
+    id: customerId,
+    salonId,
+    firstName: "Kevin",
+    lastName: "",
+    phone: "+12125550100",
+    deletedAt: null
+  };
+  const archived = {
+    id: "77777777-7777-4777-8777-777777777777",
+    salonId,
+    firstName: "Archived",
+    lastName: "",
+    phone: "+12125550101",
+    deletedAt: new Date("2026-01-01T00:00:00.000Z")
+  };
+
+  patch(prisma.customer as any, "findMany", async (args: any) => {
+    assert.equal(args.where.deletedAt, null);
+    return [active, archived].filter((customer) => !customer.deletedAt);
+  });
+  patch(prisma.customer as any, "count", async (args: any) => {
+    assert.equal(args.where.deletedAt, null);
+    return 1;
+  });
+
+  const result = await searchCustomers(salonId, { page: 1, limit: 20 });
+
+  assert.equal(result.items.length, 1);
+  assert.equal(result.items[0].id, active.id);
+  assert.equal(result.pagination.total, 1);
+});
+
+test("archived customer appointment history remains readable", async () => {
+  patch(prisma.customer as any, "findFirst", async (args: any) => {
+    assert.equal(args.where.deletedAt, undefined);
+    return {
+      id: customerId,
+      salonId,
+      firstName: "Kevin",
+      lastName: "",
+      phone: "+12125550100",
+      deletedAt: new Date("2026-01-01T00:00:00.000Z")
+    };
+  });
+  patch(prisma.appointment as any, "findMany", async () => [
+    {
+      id: appointmentId,
+      salonId,
+      customerId,
+      staffId,
+      serviceId,
+      startTime: new Date("2026-01-01T15:00:00.000Z"),
+      endTime: new Date("2026-01-01T16:00:00.000Z"),
+      durationMinutes: 60,
+      status: AppointmentStatus.COMPLETED,
+      source: AppointmentSource.DASHBOARD,
+      notes: null,
+      canceledReason: null,
+      staff: { id: staffId, fullName: "Trang" },
+      service: { id: serviceId, name: "Full Set" }
+    }
+  ]);
+
+  const history = await getCustomerAppointmentHistory(salonId, customerId);
+
+  assert.equal(history.customer.id, customerId);
+  assert.equal(history.appointments.length, 1);
 });
 
 const appointmentForDelete = (status: AppointmentStatus) => ({

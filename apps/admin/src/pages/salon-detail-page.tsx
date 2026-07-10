@@ -10,6 +10,7 @@ import {
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
 import { useToast } from "../components/toast";
 import { formatCurrencyCents, formatDateTime } from "../lib/format";
+import { formatCustomerName } from "../lib/customer-name";
 import type { Pagination } from "../types";
 import { toDateTimeLocalValue, useFormDialog } from "../components/form-dialog";
 import {
@@ -1065,7 +1066,7 @@ export const SalonDetailPage = () => {
     }
     const values = await openFormDialog({
       title: "Hủy lịch hẹn",
-      description: `${appointment.customer.firstName} ${appointment.customer.lastName}`,
+      description: formatCustomerName(appointment.customer.firstName, appointment.customer.lastName),
       fields: [{ name: "reason", label: "Lý do hủy", type: "textarea", rows: 3 }],
       initialValues: {
         reason: "Admin hủy lịch"
@@ -1095,7 +1096,7 @@ export const SalonDetailPage = () => {
     }
     const values = await openFormDialog({
       title: "Đổi giờ lịch hẹn",
-      description: `${appointment.customer.firstName} ${appointment.customer.lastName}`,
+      description: formatCustomerName(appointment.customer.firstName, appointment.customer.lastName),
       fields: [{ name: "startTime", label: "Giờ mới", type: "datetime-local", required: true }],
       initialValues: {
         startTime: toDateTimeLocalValue(appointment.startTime)
@@ -2500,7 +2501,6 @@ export const SalonDetailPage = () => {
             <input
               value={customerForm.lastName}
               onChange={(event) => setCustomerForm((prev) => ({ ...prev, lastName: event.target.value }))}
-              required
             />
           </label>
           <label className="field">
@@ -2540,7 +2540,7 @@ export const SalonDetailPage = () => {
               {customers.map((customer) => (
                 <tr key={customer.id}>
                   <td>
-                    {customer.firstName} {customer.lastName}
+                    {formatCustomerName(customer.firstName, customer.lastName)}
                   </td>
                   <td>{customer.email ?? "-"}</td>
                   <td>{customer.phone}</td>
@@ -2566,7 +2566,7 @@ export const SalonDetailPage = () => {
               <option value="">{t("salonDetail.selectCustomer")}</option>
               {customers.map((customer) => (
                 <option key={customer.id} value={customer.id}>
-                  {customer.firstName} {customer.lastName}
+                  {formatCustomerName(customer.firstName, customer.lastName)}
                 </option>
               ))}
             </select>
@@ -2640,7 +2640,7 @@ export const SalonDetailPage = () => {
                 <tr key={item.id}>
                   <td>{formatDateTime(item.startTime)}</td>
                   <td>
-                    {item.customer.firstName} {item.customer.lastName}
+                    {formatCustomerName(item.customer.firstName, item.customer.lastName)}
                   </td>
                   <td>{item.staff.fullName}</td>
                   <td>{item.service.name}</td>

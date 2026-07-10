@@ -10,6 +10,7 @@ import { useAuth } from "../auth/auth-context";
 import { statusLabelKey, useI18n } from "../lib/i18n";
 import { useUiMode } from "../lib/ui-mode";
 import { utcToDateTimeLocalInTimeZone } from "../lib/timezone";
+import { formatCustomerName as formatCustomerDisplayName } from "../lib/customer-name";
 
 interface RuntimeResponse {
   assignedSalonCount: number;
@@ -1259,7 +1260,7 @@ export const CallCenterPage = () => {
     const appointmentTimezone = selectedSalonDetail?.timezone || FALLBACK_SALON_TIMEZONE;
     const values = await openFormDialog({
       title: t("callCenter.rescheduleTitle"),
-      description: `${appointment.customer.firstName} ${appointment.customer.lastName}`,
+      description: formatCustomerDisplayName(appointment.customer.firstName, appointment.customer.lastName),
       fields: [
         {
           name: "startTime",
@@ -1326,7 +1327,7 @@ export const CallCenterPage = () => {
   const cancel = async (appointment: AppointmentItem) => {
     const values = await openFormDialog({
       title: t("callCenter.cancelTitle"),
-      description: `${appointment.customer.firstName} ${appointment.customer.lastName}`,
+      description: formatCustomerDisplayName(appointment.customer.firstName, appointment.customer.lastName),
       fields: [{ name: "reason", label: t("callCenter.cancelReason"), type: "textarea", rows: 3 }],
       initialValues: {
         reason: t("callCenter.defaultCancelReason")
@@ -1670,7 +1671,7 @@ export const CallCenterPage = () => {
     return ACTIVE_APPOINTMENT_STATUSES.has(appointment.status) && new Date(appointment.startTime).getTime() > Date.now();
   };
   const formatCustomerName = (customer: CustomerItem) => {
-    return `${customer.firstName} ${customer.lastName}`.trim() || customer.phone || t("common.none");
+    return formatCustomerDisplayName(customer.firstName, customer.lastName) || customer.phone || t("common.none");
   };
   const staffScheduleSummaries = useMemo<StaffScheduleSummary[]>(() => {
     return contextStaff.map((member) => {
@@ -2489,7 +2490,6 @@ export const CallCenterPage = () => {
                   disabled={!hasSelectedSalon}
                   value={customerForm.lastName}
                   onChange={(event) => setCustomerForm((prev) => ({ ...prev, lastName: event.target.value }))}
-                  required
                 />
               </label>
               <label className="field">

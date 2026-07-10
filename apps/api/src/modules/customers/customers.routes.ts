@@ -8,6 +8,7 @@ import { sendSuccess } from "../../utils/response";
 import { isValidCustomerPhone } from "../../utils/phone";
 import {
   createCustomer,
+  deleteCustomer,
   getCustomerAppointmentHistory,
   getCustomerDetail,
   searchCustomers,
@@ -22,7 +23,7 @@ const customerPhoneSchema = z
 
 const createCustomerSchema = z.object({
   firstName: z.string().min(1).max(80),
-  lastName: z.string().min(1).max(80),
+  lastName: z.string().max(80).optional(),
   email: z.string().email().optional(),
   phone: customerPhoneSchema,
   notes: z.string().max(1000).optional()
@@ -30,7 +31,7 @@ const createCustomerSchema = z.object({
 
 const updateCustomerSchema = z.object({
   firstName: z.string().min(1).max(80).optional(),
-  lastName: z.string().min(1).max(80).optional(),
+  lastName: z.string().max(80).optional(),
   email: z.string().email().nullable().optional(),
   phone: customerPhoneSchema.optional(),
   notes: z.string().max(1000).nullable().optional()
@@ -111,6 +112,19 @@ customersRouter.get(
     const history = await getCustomerAppointmentHistory(req.auth!.salonId!, id);
     return sendSuccess(res, {
       data: history
+    });
+  })
+);
+
+customersRouter.delete(
+  "/:id",
+  validate(customerIdSchema, "params"),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params as z.infer<typeof customerIdSchema>;
+    const result = await deleteCustomer(req.auth!.salonId!, id, req.auth!.userId);
+    return sendSuccess(res, {
+      message: result.mode === "archive" ? "Customer archived." : "Customer deleted.",
+      data: result
     });
   })
 );

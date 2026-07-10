@@ -13,6 +13,7 @@ import { DemoAvatar } from "../components/avatar";
 import { requiredLabel } from "../lib/phone";
 import { useUiMode } from "../lib/ui-mode";
 import { dateTimeLocalToUtcIso, utcToDateTimeLocalInTimeZone } from "../lib/timezone";
+import { formatCustomerName } from "../lib/customer-name";
 
 interface AppointmentItem {
   id: string;
@@ -490,7 +491,7 @@ export const AppointmentsPage = () => {
   const cancelAppointment = async (appointment: AppointmentItem) => {
     const values = await openFormDialog({
       title: t("appointments.cancel"),
-      description: `${appointment.customer.firstName} ${appointment.customer.lastName}`,
+      description: formatCustomerName(appointment.customer.firstName, appointment.customer.lastName),
       fields: [{ name: "reason", label: t("appointments.cancel"), type: "textarea", rows: 3 }],
       initialValues: {
         reason: t("appointments.cancelReasonDefault")
@@ -515,7 +516,7 @@ export const AppointmentsPage = () => {
     const appointmentTimezone = appointment.salon?.timezone || salonTimezone;
     const values = await openFormDialog({
       title: t("appointments.reschedule"),
-      description: `${appointment.customer.firstName} ${appointment.customer.lastName} · ${formatCompactSalonDateTime(appointment.startTime, appointmentTimezone)}`,
+      description: `${formatCustomerName(appointment.customer.firstName, appointment.customer.lastName)} · ${formatCompactSalonDateTime(appointment.startTime, appointmentTimezone)}`,
       fields: [
         {
           name: "startTime",
@@ -846,7 +847,7 @@ export const AppointmentsPage = () => {
         <div className="appointment-card-header">
           <div className="appointment-card-copy">
             <strong>
-              {formatTimeOnly(item.startTime, salonTimezone)} · {item.customer.firstName} {item.customer.lastName}
+              {formatTimeOnly(item.startTime, salonTimezone)} · {formatCustomerName(item.customer.firstName, item.customer.lastName)}
             </strong>
             <span className="muted">
               {item.customer.phone ?? t("common.none")} · {item.service.name}
@@ -982,7 +983,7 @@ export const AppointmentsPage = () => {
                 <option value="">{t("appointments.selectCustomer")}</option>
                 {customers.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {item.firstName} {item.lastName}
+                    {formatCustomerName(item.firstName, item.lastName)}
                   </option>
                 ))}
               </select>
@@ -1045,7 +1046,7 @@ export const AppointmentsPage = () => {
               <p className="eyebrow">Appointment detail</p>
               <h2>
                 {selectedAppointment
-                  ? `${selectedAppointment.customer.firstName} ${selectedAppointment.customer.lastName}`
+                  ? formatCustomerName(selectedAppointment.customer.firstName, selectedAppointment.customer.lastName)
                   : t("common.loading")}
               </h2>
             </div>
@@ -1192,21 +1193,44 @@ export const AppointmentsPage = () => {
                             </div>
                             <div className="schedule-appointment-copy">
                               <strong>
-                                {item.customer.firstName} {item.customer.lastName}
+                                {formatCustomerName(item.customer.firstName, item.customer.lastName)}
                               </strong>
                               <span>{item.service.name}</span>
-                              <span>{item.staff.fullName}</span>
-                              {item.notes ? <small>{item.notes}</small> : null}
-                            </div>
-                            <div className="schedule-appointment-actions">
-                              <div className="inline-actions" onClick={(event) => event.stopPropagation()}>
-                                {renderOwnerAppointmentActions(item)}
-                              </div>
+                              <span className="schedule-staff-label">{item.staff.fullName}</span>
                             </div>
                           </article>
                         );
                       })}
                     </div>
+                  </div>
+                  <div className="schedule-mobile-list mobile-list">
+                    {items.map((item) => {
+                      const statusKey = statusLabelKey(item.status);
+                      return (
+                        <article
+                          key={`mobile-${item.id}`}
+                          className={`mobile-item${getHighlightedClass(item.id)}`}
+                          onClick={() => void selectAppointment(item.id)}
+                        >
+                          <div className="appointment-card-header">
+                            <div className="appointment-card-copy">
+                              <strong>
+                                {formatTimeOnly(item.startTime, salonTimezone)} -{" "}
+                                {formatTimeOnly(item.endTime, salonTimezone)}
+                              </strong>
+                              <span>
+                                {formatCustomerName(item.customer.firstName, item.customer.lastName)} ·{" "}
+                                {item.service.name}
+                              </span>
+                              <span className="muted">{item.staff.fullName}</span>
+                            </div>
+                            <span className={item.status === "IN_PROGRESS" ? "status-pill info" : "status-pill"}>
+                              {statusKey ? t(statusKey) : item.status}
+                            </span>
+                          </div>
+                        </article>
+                      );
+                    })}
                   </div>
                 </div>
               );
@@ -1342,7 +1366,10 @@ export const AppointmentsPage = () => {
                 <div className="appointment-card-header">
                   <div className="appointment-card-copy">
                     <strong>
-                      {currentOrNextStaffAppointment.customer.firstName} {currentOrNextStaffAppointment.customer.lastName}
+                      {formatCustomerName(
+                        currentOrNextStaffAppointment.customer.firstName,
+                        currentOrNextStaffAppointment.customer.lastName
+                      )}
                     </strong>
                     <span className="muted">{currentOrNextStaffAppointment.service.name}</span>
                   </div>
@@ -1402,7 +1429,7 @@ export const AppointmentsPage = () => {
                     <div className="appointment-card-header">
                       <div className="appointment-card-copy">
                         <strong>
-                          {formatTimeOnly(item.startTime, salonTimezone)} · {item.customer.firstName} {item.customer.lastName}
+                          {formatTimeOnly(item.startTime, salonTimezone)} · {formatCustomerName(item.customer.firstName, item.customer.lastName)}
                         </strong>
                         <span className="muted">{item.service.name}</span>
                       </div>
@@ -1448,7 +1475,7 @@ export const AppointmentsPage = () => {
                       <div className="appointment-card-header">
                         <div className="appointment-card-copy">
                           <strong>
-                            {item.customer.firstName} {item.customer.lastName}
+                            {formatCustomerName(item.customer.firstName, item.customer.lastName)}
                           </strong>
                           <span className="muted">{item.service.name}</span>
                         </div>

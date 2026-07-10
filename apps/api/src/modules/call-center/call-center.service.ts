@@ -290,7 +290,7 @@ export const createAssignedSalonCustomer = async (
   salonId: string,
   input: {
     firstName: string;
-    lastName: string;
+    lastName?: string;
     email?: string;
     phone: string;
     notes?: string;
@@ -746,6 +746,7 @@ export const getEscalationDetail = async (actor: CallCenterWorkspaceActor, escal
     ? await prisma.customer.findMany({
         where: {
           salonId: escalation.salonId,
+          deletedAt: null,
           phone: {
             contains: callerPhone.replace(/[^\d]/g, "")
           }

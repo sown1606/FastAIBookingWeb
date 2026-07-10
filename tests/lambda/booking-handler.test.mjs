@@ -6,6 +6,7 @@ import path from "node:path";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const lambdaPath = path.join(repoRoot, "infra/lambda/booking-handler/index.mjs");
+const apiAiServicePath = path.join(repoRoot, "apps/api/src/modules/ai/ai.service.ts");
 const lexRoots = ["v7", "v8", "v10"].map((version) => ({
   version,
   root: path.join(repoRoot, `infra/aws/lex/FastAIBookingBot-${version}`)
@@ -182,6 +183,40 @@ const abortableDelayedJsonResponse = (payload, delayMs, signal) =>
 
 afterEach(() => {
   delete globalThis.fetch;
+});
+
+test("production Full Set aliases are present in Lambda, API, and Lex v10 source", () => {
+  const requiredAliases = [
+    "room set",
+    "pull set",
+    "pull step",
+    "pool set",
+    "full step",
+    "full said",
+    "fall set",
+    "phone set"
+  ];
+  const lambdaSource = readFileSync(lambdaPath, "utf8");
+  const apiSource = readFileSync(apiAiServicePath, "utf8");
+  const lexSlotType = JSON.parse(
+    readFileSync(
+      path.join(
+        repoRoot,
+        "infra/aws/lex/FastAIBookingBot-v10/BotLocales/en_US/SlotTypes/NailServiceType/SlotType.json"
+      ),
+      "utf8"
+    )
+  );
+  const fullSetLexValue = lexSlotType.slotTypeValues.find(
+    (entry) => entry.sampleValue?.value === "Full Set"
+  );
+  const lexAliases = new Set(fullSetLexValue.synonyms.map((synonym) => synonym.value));
+
+  for (const alias of requiredAliases) {
+    assert.match(lambdaSource, new RegExp(`"${alias}"`), `Lambda missing ${alias}`);
+    assert.match(apiSource, new RegExp(`"${alias}"`), `API missing ${alias}`);
+    assert.equal(lexAliases.has(alias), true, `Lex v10 missing ${alias}`);
+  }
 });
 
 test("BookAppointmentIntent with complete slots posts the backend contract and maps session attributes", async () => {
@@ -700,6 +735,250 @@ test("DialogCodeHook one-shot Full Set phrase captures spoken p m before asking 
   assert.equal(response.sessionState.dialogAction.type, "ConfirmIntent");
   assert.equal(response.sessionState.sessionAttributes.requestedTime, "3 PM");
   assert.doesNotMatch(response.messages[0].content, /What time|what service|what name|Which staff/i);
+});
+
+test("DialogCodeHook recognizes production Full Set speech aliases without DTMF", async () => {
+  const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
+  const fetchCalls = installFetchMock((_url, _options, body) =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "MISSING_INFO",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "InProgress",
+          message: "Jane, just to confirm: Full Set tomorrow at 3 PM with Trang. Is that correct?",
+          messageContentType: "PlainText",
+          dialogAction: {
+            type: "ConfirmIntent"
+          },
+          sessionAttributes: {
+            awaitingFinalBookingConfirmation: "true",
+            bookingConfirmationAsked: "true",
+            customerName: body.customerName,
+            customerPhone: body.customerPhone,
+            serviceName: body.serviceName,
+            confirmedServiceName: body.serviceName,
+            requestedDate: body.requestedDate,
+            requestedTime: body.requestedTime,
+            staffPreference: body.staffPreference,
+            confirmedStaffName: body.staffPreference
+          }
+        },
+        missingFields: []
+      })
+    )
+  );
+
+  for (const inputTranscript of [
+    "full set",
+    "I want a full set",
+    "Hi, I want to book Full Set tomorrow at 3 PM with Trang.",
+    "I want to book a room set tomorrow at 3 PM with Trang.",
+    "I want to book a pull set tomorrow at 3 PM with Trang.",
+    "I want to book a pull step tomorrow at 3 PM with Trang."
+  ]) {
+    const fetchCountBefore = fetchCalls.length;
+    const response = await handler(
+      baseEvent({
+        invocationSource: "DialogCodeHook",
+        inputTranscript,
+        sessionState: {
+          ...baseEvent().sessionState,
+          sessionAttributes: {
+            salonId: "salon-explicit",
+            CalledNumber: "+18483487681",
+            CustomerEndpointAddress: "+84978634886",
+            AmazonConnectContactId: `connect-full-set-${inputTranscript.replace(/\W+/g, "-")}`,
+            customerId: "89e51525-297d-4b2a-b438-f64c4848683a",
+            customerName: "Jane",
+            recognizedCustomerName: "Jane",
+            customerNameSource: "customer",
+            customerPhone: "+84978634886",
+            lastAskedSlot: "serviceName"
+          },
+          intent: {
+            ...baseEvent().sessionState.intent,
+            name: "BookAppointmentIntent",
+            state: "InProgress",
+            confirmationState: "None",
+            slots: {
+              serviceName: slotWith({
+                originalValue: inputTranscript,
+                interpretedValue: inputTranscript,
+                resolvedValues: [inputTranscript]
+              })
+            }
+          }
+        }
+      })
+    );
+
+    if (/tomorrow/i.test(inputTranscript)) {
+      const latestFetch = fetchCalls.at(-1);
+      assert.equal(fetchCalls.length, fetchCountBefore + 1, inputTranscript);
+      assert.equal(latestFetch.body.serviceName, "Full Set", inputTranscript);
+      assert.equal(latestFetch.body.requestedDate, usEasternDate(1), inputTranscript);
+      assert.equal(latestFetch.body.requestedTime, "3 PM", inputTranscript);
+      assert.equal(latestFetch.body.staffPreference, "Trang", inputTranscript);
+      assert.equal(response.sessionState.dialogAction.type, "ConfirmIntent", inputTranscript);
+    } else {
+      assert.equal(fetchCalls.length, fetchCountBefore, inputTranscript);
+      assert.equal(response.sessionState.dialogAction.type, "ElicitSlot", inputTranscript);
+      assert.notEqual(response.sessionState.dialogAction.slotToElicit, "serviceName", inputTranscript);
+    }
+    assert.doesNotMatch(response.messages[0].content, /press 4|operator|what service/i, inputTranscript);
+    assert.equal(response.sessionState.sessionAttributes.serviceName, "Full Set", inputTranscript);
+    assert.equal(response.sessionState.sessionAttributes.confirmedServiceName, "Full Set", inputTranscript);
+  }
+});
+
+test("Fallback and empty intent service recovery recognize Full Set aliases", async () => {
+  const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
+  const fetchCalls = installFetchMock((_url, _options, body) =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "MISSING_INFO",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "InProgress",
+          message: "Jane, just to confirm: Full Set tomorrow at 3 PM with Trang. Is that correct?",
+          messageContentType: "PlainText",
+          dialogAction: {
+            type: "ConfirmIntent"
+          },
+          sessionAttributes: {
+            awaitingFinalBookingConfirmation: "true",
+            bookingConfirmationAsked: "true",
+            customerName: body.customerName,
+            customerPhone: body.customerPhone,
+            serviceName: body.serviceName,
+            confirmedServiceName: body.serviceName,
+            requestedDate: body.requestedDate,
+            requestedTime: body.requestedTime,
+            staffPreference: body.staffPreference,
+            confirmedStaffName: body.staffPreference
+          }
+        },
+        missingFields: []
+      })
+    )
+  );
+
+  for (const [intentName, inputTranscript] of [
+    ["FallbackIntent", "I want to book a pool set tomorrow at 3 PM with Trang."],
+    ["", "I want to book a full step tomorrow at 3 PM with Trang."]
+  ]) {
+    const response = await handler(
+      baseEvent({
+        invocationSource: "DialogCodeHook",
+        inputTranscript,
+        sessionState: {
+          ...baseEvent().sessionState,
+          sessionAttributes: {
+            salonId: "salon-explicit",
+            CalledNumber: "+18483487681",
+            CustomerEndpointAddress: "+84978634886",
+            AmazonConnectContactId: `connect-full-set-fallback-${intentName || "empty"}`,
+            customerName: "Jane",
+            customerPhone: "+84978634886",
+            lastAskedSlot: "serviceName"
+          },
+          intent: {
+            ...baseEvent().sessionState.intent,
+            name: intentName,
+            state: "InProgress",
+            confirmationState: "None",
+            slots: {}
+          }
+        }
+      })
+    );
+    const latestFetch = fetchCalls.at(-1);
+
+    assert.equal(latestFetch.body.intentName, "BookAppointmentIntent", inputTranscript);
+    assert.equal(latestFetch.body.serviceName, "Full Set", inputTranscript);
+    assert.equal(latestFetch.body.requestedDate, usEasternDate(1), inputTranscript);
+    assert.equal(latestFetch.body.requestedTime, "3 PM", inputTranscript);
+    assert.equal(latestFetch.body.staffPreference, "Trang", inputTranscript);
+    assert.equal(response.sessionState.dialogAction.type, "ConfirmIntent", inputTranscript);
+    assert.doesNotMatch(response.messages[0].content, /press 4|operator|what service/i, inputTranscript);
+  }
+});
+
+test("serviceName turn maps scoped princess ASR to Full Set with correction marker", async () => {
+  const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
+  const fetchCalls = installFetchMock((_url, _options, body) =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "MISSING_INFO",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "InProgress",
+          message: "Jane, just to confirm: Full Set tomorrow at 3 PM with Trang. Is that correct?",
+          messageContentType: "PlainText",
+          dialogAction: {
+            type: "ConfirmIntent"
+          },
+          sessionAttributes: {
+            awaitingFinalBookingConfirmation: "true",
+            bookingConfirmationAsked: "true",
+            customerName: body.customerName,
+            customerPhone: body.customerPhone,
+            serviceName: body.serviceName,
+            confirmedServiceName: body.serviceName,
+            requestedDate: body.requestedDate,
+            requestedTime: body.requestedTime,
+            staffPreference: body.staffPreference,
+            confirmedStaffName: body.staffPreference
+          }
+        },
+        missingFields: []
+      })
+    )
+  );
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "princess",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+84978634886",
+          AmazonConnectContactId: "connect-princess-asr",
+          customerName: "Jane",
+          customerPhone: "+84978634886",
+          requestedDate: usEasternDate(1),
+          requestedTime: "3 PM",
+          staffPreference: "Trang",
+          confirmedServiceName: "princess",
+          lastAskedSlot: "serviceName"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          name: "BookAppointmentIntent",
+          state: "InProgress",
+          confirmationState: "None",
+          slots: {
+            serviceName: slotWith({
+              originalValue: "princess",
+              interpretedValue: "princess",
+              resolvedValues: ["princess"]
+            })
+          }
+        }
+      }
+    })
+  );
+
+  assert.equal(fetchCalls.length, 1);
+  assert.equal(fetchCalls[0].body.serviceName, "Full Set");
+  assert.equal(fetchCalls[0].body.attributes.confirmedServiceName, "Full Set");
+  assert.equal(fetchCalls[0].body.attributes.serviceAliasCorrectionRaw, "princess");
+  assert.equal(response.sessionState.sessionAttributes.serviceName, "Full Set");
+  assert.equal(response.sessionState.sessionAttributes.confirmedServiceName, "Full Set");
 });
 
 test("slow booking fulfillment relies on Lex progress updates and preserves one backend call", async () => {
@@ -2630,6 +2909,195 @@ test("DialogCodeHook final confirmation yes posts confirmed booking", async () =
   assert.equal(response.sessionState.sessionAttributes.appointmentId, "appointment-final-confirmed");
   assert.equal(response.sessionState.sessionAttributes.awaitingFinalBookingConfirmation, "false");
   assert.notEqual(response.sessionState.sessionAttributes.transferToQueue, "true");
+});
+
+test("DialogCodeHook natural final confirmations post confirmed booking once", async () => {
+  const handler = await loadHandler();
+  const acceptedPhrases = [
+    "yes this is correct",
+    "yeah correct",
+    "correct yes yes correct yes",
+    "that's right",
+    "please book it",
+    "correct"
+  ];
+
+  for (const phrase of acceptedPhrases) {
+    const fetchCalls = installFetchMock((_url, _options, body) =>
+      jsonResponse(
+        successfulBackendPayload({
+          outcome: "BOOKED",
+          appointment: {
+            id: `appointment-${phrase.replace(/\W+/g, "-")}`
+          },
+          lexResponse: {
+            fulfillmentState: "Fulfilled",
+            message: "Booked.",
+            messageContentType: "PlainText",
+            dialogAction: {
+              type: "Close"
+            },
+            sessionAttributes: {
+              customerName: body.customerName,
+              customerPhone: body.customerPhone,
+              serviceName: body.serviceName,
+              requestedDate: body.requestedDate,
+              requestedTime: body.requestedTime,
+              staffPreference: body.staffPreference,
+              awaitingFinalBookingConfirmation: "false",
+              bookingConfirmationAsked: "false",
+              forceHumanEscalation: "false",
+              transferToQueue: "false"
+            }
+          }
+        })
+      )
+    );
+
+    const response = await handler(
+      baseEvent({
+        invocationSource: "DialogCodeHook",
+        inputTranscript: phrase,
+        sessionId: `fef46abd-f101-475a-97d0-${phrase.replace(/\W+/g, "").slice(0, 12)}`,
+        sessionState: {
+          ...baseEvent().sessionState,
+          sessionAttributes: {
+            salonId: "salon-explicit",
+            CalledNumber: "+18483487681",
+            CustomerEndpointAddress: "+84978634886",
+            AmazonConnectContactId: `fef46abd-f101-475a-97d0-${phrase.replace(/\W+/g, "").slice(0, 12)}`,
+            customerName: "Jane",
+            customerPhone: "+84978634886",
+            serviceName: "Full Set",
+            confirmedServiceName: "Full Set",
+            requestedDate: usEasternDate(1),
+            requestedTime: "3 PM",
+            staffPreference: "Trang",
+            staffId: "staff-trang",
+            selectedStaffId: "staff-trang",
+            confirmedStaffName: "Trang",
+            confirmedStaffId: "staff-trang",
+            awaitingFinalBookingConfirmation: "true",
+            bookingConfirmationAsked: "true",
+            lastAskedSlot: "bookingConfirmation"
+          },
+          intent: {
+            ...baseEvent().sessionState.intent,
+            confirmationState: "None",
+            slots: {
+              serviceName: slot("Full Set"),
+              requestedDate: slot("tomorrow"),
+              requestedTime: slot("3 PM"),
+              staffPreference: slot("Trang"),
+              customerName: slot("Jane"),
+              customerPhone: slot("+84978634886")
+            }
+          }
+        }
+      })
+    );
+
+    assert.equal(fetchCalls.length, 1, phrase);
+    assert.equal(fetchCalls[0].body.confirmationState, "Confirmed", phrase);
+    assert.equal(fetchCalls[0].body.currentTurnTranscript, phrase, phrase);
+    assert.equal(fetchCalls[0].body.serviceName, "Full Set", phrase);
+    assert.equal(fetchCalls[0].body.requestedDate, usEasternDate(1), phrase);
+    assert.equal(fetchCalls[0].body.requestedTime, "3 PM", phrase);
+    assert.equal(fetchCalls[0].body.staffPreference, "Trang", phrase);
+    assert.equal(response.sessionState.dialogAction.type, "Close", phrase);
+    assert.equal(response.sessionState.intent.state, "Fulfilled", phrase);
+    assert.ok(response.sessionState.sessionAttributes.appointmentId, phrase);
+    assert.doesNotMatch(response.messages[0].content, /Is that correct/i, phrase);
+  }
+});
+
+test("DialogCodeHook denied final confirmations preserve slots and ask what to change", async () => {
+  const handler = await loadHandler();
+
+  for (const phrase of ["no", "nope", "no that is wrong", "that's not correct", "do not book it", "don't book it", "cancel it", "wait no"]) {
+    const fetchCalls = installFetchMock((_url, _options, body) =>
+      jsonResponse(
+        successfulBackendPayload({
+          outcome: "MISSING_INFO",
+          appointment: null,
+          lexResponse: {
+            fulfillmentState: "InProgress",
+            message: "No problem. Which detail would you like to change?",
+            messageContentType: "PlainText",
+            dialogAction: {
+              type: "ElicitIntent"
+            },
+            sessionAttributes: {
+              customerName: body.customerName,
+              customerPhone: body.customerPhone,
+              serviceName: body.serviceName,
+              confirmedServiceName: body.serviceName,
+              requestedDate: body.requestedDate,
+              requestedTime: body.requestedTime,
+              staffPreference: body.staffPreference,
+              confirmedStaffName: body.staffPreference,
+              awaitingFinalBookingConfirmation: "false",
+              bookingConfirmationAsked: "false",
+              forceHumanEscalation: "false",
+              transferToQueue: "false"
+            }
+          }
+        })
+      )
+    );
+
+    const response = await handler(
+      baseEvent({
+        invocationSource: "DialogCodeHook",
+        inputTranscript: phrase,
+        sessionState: {
+          ...baseEvent().sessionState,
+          sessionAttributes: {
+            salonId: "salon-explicit",
+            CalledNumber: "+18483487681",
+            CustomerEndpointAddress: "+84978634886",
+            AmazonConnectContactId: `connect-final-denied-${phrase.replace(/\W+/g, "-")}`,
+            customerName: "Jane",
+            customerPhone: "+84978634886",
+            serviceName: "Full Set",
+            confirmedServiceName: "Full Set",
+            requestedDate: usEasternDate(1),
+            requestedTime: "3 PM",
+            staffPreference: "Trang",
+            staffId: "staff-trang",
+            selectedStaffId: "staff-trang",
+            confirmedStaffName: "Trang",
+            confirmedStaffId: "staff-trang",
+            awaitingFinalBookingConfirmation: "true",
+            bookingConfirmationAsked: "true",
+            lastAskedSlot: "bookingConfirmation"
+          },
+          intent: {
+            ...baseEvent().sessionState.intent,
+            confirmationState: "None",
+            slots: {
+              serviceName: slot("Full Set"),
+              requestedDate: slot("tomorrow"),
+              requestedTime: slot("3 PM"),
+              staffPreference: slot("Trang"),
+              customerName: slot("Jane"),
+              customerPhone: slot("+84978634886")
+            }
+          }
+        }
+      })
+    );
+
+    assert.equal(fetchCalls.length, 1, phrase);
+    assert.equal(fetchCalls[0].body.confirmationState, "Denied", phrase);
+    assert.equal(fetchCalls[0].body.serviceName, "Full Set", phrase);
+    assert.equal(fetchCalls[0].body.requestedTime, "3 PM", phrase);
+    assert.equal(fetchCalls[0].body.staffPreference, "Trang", phrase);
+    assert.equal(response.sessionState.sessionAttributes.serviceName, "Full Set", phrase);
+    assert.equal(response.sessionState.sessionAttributes.requestedTime, "3 PM", phrase);
+    assert.equal(response.sessionState.sessionAttributes.staffPreference, "Trang", phrase);
+    assert.match(response.messages[0].content, /Which detail would you like to change/i, phrase);
+  }
 });
 
 test("DialogCodeHook digit 4 at requestedDate does not become time or service", async () => {

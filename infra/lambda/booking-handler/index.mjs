@@ -250,6 +250,11 @@ const SERVICE_ALIAS_GROUPS = {
     "fall set",
     "four set",
     "phone set",
+    "room set",
+    "pull set",
+    "pull step",
+    "pool set",
+    "full step",
     "full said",
     "full sit",
     "full sat",
@@ -488,6 +493,44 @@ function normalizePedicureService(value) {
 function extractServiceFromTranscript(text) {
   const serviceName = normalizeServiceName(text);
   return DEMO_SERVICE_NAMES.includes(serviceName) ? serviceName : "";
+}
+
+function isPrincessFullSetAsr(value) {
+  return normalizeForMatch(value) === "princess";
+}
+
+function isServiceCollectionContext(event) {
+  const previous = event.sessionState?.sessionAttributes || {};
+  const transcript = getCurrentTurnTranscript(event);
+  return Boolean(
+    previous.lastAskedSlot === "serviceName" ||
+      previous.activeDtmfMenu === "service" ||
+      (!getConfirmedRecognizedService(previous) && isBookingLikeUtterance(transcript))
+  );
+}
+
+function getScopedServiceAliasCorrectionRaw(event) {
+  if (!isServiceCollectionContext(event)) {
+    return "";
+  }
+  const slots = event.sessionState?.intent?.slots || {};
+  const candidates = [
+    getCurrentTurnTranscript(event),
+    getSlotValue(slots, slotNames.serviceName, { preferOriginal: true })
+  ];
+  return candidates.some(isPrincessFullSetAsr) ? "princess" : "";
+}
+
+function currentTurnServiceMention(event) {
+  const transcript = getCurrentTurnTranscript(event);
+  const transcriptService = extractServiceFromTranscript(transcript);
+  if (transcriptService) {
+    return transcriptService;
+  }
+  if (getScopedServiceAliasCorrectionRaw(event)) {
+    return "Full Set";
+  }
+  return "";
 }
 
 function extractStaffFromTranscript(text, sessionAttributes = {}) {
@@ -1250,9 +1293,9 @@ function getCurrentTurnBookingDetails(event) {
 
 function currentTurnRecognizedService(event) {
   const slots = event.sessionState?.intent?.slots || {};
+  const transcriptService = currentTurnServiceMention(event) || getCurrentTurnBookingDetails(event).serviceName;
   const slotService = normalizeServiceName(getSlotValue(slots, slotNames.serviceName, { preferOriginal: true }));
-  const transcriptService = getCurrentTurnBookingDetails(event).serviceName;
-  const candidate = normalizeServiceName(slotService || transcriptService);
+  const candidate = normalizeServiceName(transcriptService || slotService);
   return DEMO_SERVICE_NAMES.includes(candidate) ? candidate : "";
 }
 
@@ -1280,7 +1323,8 @@ function analyzeLexTurnSanitization(event) {
   const currentTurnTranscript = getCurrentTurnTranscript(event);
   const timeZone = getAttribute(event, attributeNames.timezone) || DEFAULT_SALON_TIMEZONE;
   const currentTurnDetails = getCurrentTurnBookingDetails(event);
-  const recognizedService = currentTurnRecognizedService(event);
+  const recognizedService = currentTurnServiceMention(event);
+  const serviceAliasCorrectionRaw = getScopedServiceAliasCorrectionRaw(event);
   const shouldStrictlyGroundSlots = Boolean(previous.lastAskedSlot);
   const customerNameTurnOwnsTranscript =
     previous.lastAskedSlot === "customerName" &&
@@ -1335,6 +1379,24 @@ function analyzeLexTurnSanitization(event) {
         changed = true;
       }
     }
+  }
+
+  if (recognizedService && !(scopedServiceDigit && scopedServiceDigit !== "0")) {
+    const { name: serviceSlotName, slot: serviceSlot } = getSlotObject(slots, slotNames.serviceName);
+    const staleSlotValue = serviceSlot
+      ? getSlotOriginalValue(serviceSlot) || getSlotInterpretedValue(serviceSlot)
+      : "";
+    sanitizedSlots[serviceSlotName || "serviceName"] = buildLexSlot(recognizedService);
+    if (staleSlotValue && !valuesEquivalent("serviceName", staleSlotValue, recognizedService, timeZone)) {
+      ignoredPollutedSlots.push(serviceSlotName || "serviceName");
+    }
+    if (
+      previous.confirmedServiceName &&
+      !valuesEquivalent("serviceName", previous.confirmedServiceName, recognizedService, timeZone)
+    ) {
+      ignoredPollutedSlots.push("sessionAttributes.confirmedServiceName");
+    }
+    changed = true;
   }
 
   if (scopedStaffDigit && scopedStaffDigit !== "0" && dtmfRouting.accepted && dtmfRouting.route === "staff_menu") {
@@ -1537,6 +1599,8 @@ function analyzeLexTurnSanitization(event) {
     ignoredUngroundedSlots: Array.from(new Set(ignoredUngroundedSlots)),
     ignoredNoiseFields: Array.from(new Set(ignoredNoiseFields)),
     currentTurnStaffMention,
+    currentTurnServiceMention: recognizedService || "",
+    serviceAliasCorrectionRaw,
     discardedStaleStaff,
     staffSource,
     fieldsToClear: Array.from(fieldsToClear),
@@ -1567,6 +1631,17 @@ function sanitizeLexEvent(event, analysis) {
     sessionAttributes.serviceName = serviceSelection;
     sessionAttributes.confirmedServiceName = serviceSelection;
     sessionAttributes.scopedServiceDtmfInput = "true";
+  }
+  if (analysis.currentTurnServiceMention && DEMO_SERVICE_NAMES.includes(analysis.currentTurnServiceMention)) {
+    sessionAttributes.serviceName = analysis.currentTurnServiceMention;
+    sessionAttributes.confirmedServiceName = analysis.currentTurnServiceMention;
+    delete sessionAttributes.serviceFallbackCount;
+    delete sessionAttributes.invalidServiceCount;
+    delete sessionAttributes.serviceClarificationAttempts;
+    delete sessionAttributes.serviceFallbackOffered;
+  }
+  if (analysis.serviceAliasCorrectionRaw) {
+    sessionAttributes.serviceAliasCorrectionRaw = analysis.serviceAliasCorrectionRaw;
   }
   if (analysis.dtmfRouting?.accepted && analysis.dtmfRouting.route === "staff_menu") {
     sessionAttributes.staffPreference = analysis.dtmfRouting.selection;
@@ -2272,6 +2347,57 @@ function isNegativeUtterance(value) {
   return /^(?:no|nope|not now|no thanks|do not|dont|don t)$/i.test(normalizeForMatch(value));
 }
 
+const FINAL_CONFIRMATION_OUTCOME = {
+  AFFIRMED: "AFFIRMED",
+  DENIED: "DENIED",
+  CHANGE_REQUEST: "CHANGE_REQUEST",
+  UNKNOWN: "UNKNOWN"
+};
+
+function classifyFinalBookingConfirmation(value) {
+  const normalized = normalizeForMatch(value);
+  if (!normalized) {
+    return FINAL_CONFIRMATION_OUTCOME.UNKNOWN;
+  }
+
+  const hasChangeRequest =
+    /\b(?:change|make it|instead|switch|move it|can we do|could we do)\b/.test(normalized);
+  const hasNewBookingValue =
+    extractServiceFromTranscript(value) ||
+    hasCurrentTurnDatePhrase(value) ||
+    hasCurrentTurnTimePhrase(value) ||
+    extractStaffFromTranscript(value);
+  const hasExplicitNegation =
+    /\b(?:no|nope|nah|wrong|not correct|not right|do not|don t|dont|cancel it|wait no)\b/.test(normalized);
+
+  if ((hasExplicitNegation || hasChangeRequest) && hasChangeRequest && hasNewBookingValue) {
+    return FINAL_CONFIRMATION_OUTCOME.CHANGE_REQUEST;
+  }
+
+  if (hasExplicitNegation) {
+    return FINAL_CONFIRMATION_OUTCOME.DENIED;
+  }
+
+  const hasAffirmation =
+    /\b(?:yes|yeah|yep|correct|right|sure|ok|okay)\b/.test(normalized) ||
+    /\b(?:that s right|that is right|sounds good|that s fine|that is fine|go ahead|please book it|book it|confirm it)\b/.test(
+      normalized
+    );
+  if (hasAffirmation) {
+    return FINAL_CONFIRMATION_OUTCOME.AFFIRMED;
+  }
+
+  return FINAL_CONFIRMATION_OUTCOME.UNKNOWN;
+}
+
+function isFinalBookingConfirmationActive(event) {
+  const sessionAttributes = event.sessionState?.sessionAttributes || {};
+  return Boolean(
+    sessionAttributes.awaitingFinalBookingConfirmation === "true" ||
+      sessionAttributes.lastAskedSlot === "bookingConfirmation"
+  );
+}
+
 function parseAttemptCount(value) {
   const parsed = Number.parseInt(String(value || ""), 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
@@ -2570,6 +2696,8 @@ function buildKnownBookingSessionAttributes(event) {
     Boolean(recovered.requestedTime) &&
     (currentTurnHasGroundedTime ||
       (!currentTurnIsDigitNoise && hasCurrentTurnTimePhrase(recoveryTranscript)));
+  const currentService = currentTurnRecognizedService(event);
+  const serviceAliasCorrectionRaw = getScopedServiceAliasCorrectionRaw(event);
   const previousResolvedDate = resolveKnownDateValue(previousDate, timeZone);
   const knownResolvedDate = resolveKnownDateValue(knownDate, timeZone);
   const previousResolvedTime = normalizeTimePhrase(previousTime) || previousTime;
@@ -2597,7 +2725,7 @@ function buildKnownBookingSessionAttributes(event) {
       getKnownField(event, "customerPhone") ||
       recovered.customerPhone ||
       amazonConnectCustomerPhone,
-    serviceName: serviceDtmfSelection || stablePreviousService || recovered.serviceName || knownService,
+    serviceName: serviceDtmfSelection || currentService || recovered.serviceName || stablePreviousService || knownService,
     requestedDate: finalDate,
     requestedTime: finalTime,
     staffPreference:
@@ -2618,8 +2746,9 @@ function buildKnownBookingSessionAttributes(event) {
         : ""),
     confirmedServiceName:
       serviceDtmfSelection ||
-      previous.confirmedServiceName ||
+      currentService ||
       recovered.serviceName ||
+      previous.confirmedServiceName ||
       knownService,
     confirmedStaffName:
       (staffDtmfSelection && !staffDtmfSelection.invalid ? staffDtmfSelection.staffName : "") ||
@@ -2628,7 +2757,8 @@ function buildKnownBookingSessionAttributes(event) {
     confirmedStaffId:
       (staffDtmfSelection && !staffDtmfSelection.invalid ? staffDtmfSelection.staffId : "") ||
       (!currentTurnStaffMention && cleanPreviousStaffPreference ? previous.confirmedStaffId : ""),
-    initialBookingUtterance: initial
+    initialBookingUtterance: initial,
+    serviceAliasCorrectionRaw
   };
 
   const merged = {
@@ -3781,6 +3911,9 @@ async function handleLexEvent(event, analysis = {}) {
     const transferDecision = shouldTransferToHuman(event, intentName);
     const shouldEscalate = transferDecision.transfer;
     const sessionAttributes = event.sessionState?.sessionAttributes || {};
+    const finalConfirmationOutcome = isFinalBookingConfirmationActive(event)
+      ? classifyFinalBookingConfirmation(event.inputTranscript)
+      : FINAL_CONFIRMATION_OUTCOME.UNKNOWN;
     const intentConfidence = getIntentConfidence(event, intentName);
     const escalationAttributes = shouldEscalate
       ? buildForceHumanEscalationAttributes(transferDecision.reason, {
@@ -3973,8 +4106,8 @@ async function handleLexEvent(event, analysis = {}) {
 	    if (
 	      !shouldEscalate &&
 	      intentName === "BookAppointmentIntent" &&
-	      sessionAttributes.awaitingFinalBookingConfirmation === "true" &&
-	      isAffirmativeUtterance(event.inputTranscript)
+	      isFinalBookingConfirmationActive(event) &&
+	      finalConfirmationOutcome === FINAL_CONFIRMATION_OUTCOME.AFFIRMED
 	    ) {
 	      const confirmedEvent = {
 	        ...event,
@@ -4020,27 +4153,95 @@ async function handleLexEvent(event, analysis = {}) {
 	    if (
 	      !shouldEscalate &&
 	      intentName === "BookAppointmentIntent" &&
-	      sessionAttributes.awaitingFinalBookingConfirmation === "true" &&
-	      isNegativeUtterance(event.inputTranscript)
+	      isFinalBookingConfirmationActive(event) &&
+	      finalConfirmationOutcome === FINAL_CONFIRMATION_OUTCOME.DENIED
 	    ) {
-	      return buildElicitSlotResponse(
-	        {
-	          ...event,
-	          sessionState: {
-	            ...(event.sessionState || {}),
-	            sessionAttributes: {
-	              ...(event.sessionState?.sessionAttributes || {}),
-	              awaitingFinalBookingConfirmation: "false",
-	              bookingConfirmationAsked: "false"
-	            }
+	      const deniedEvent = {
+	        ...event,
+	        sessionState: {
+	          ...(event.sessionState || {}),
+	          sessionAttributes: {
+	            ...(event.sessionState?.sessionAttributes || {}),
+	            awaitingFinalBookingConfirmation: "false",
+	            bookingConfirmationAsked: "false"
+	          },
+	          intent: {
+	            ...(event.sessionState?.intent || {}),
+	            confirmationState: "Denied",
+	            state: "InProgress"
 	          }
-	        },
-	        "customerName",
-	        {
+	        }
+	      };
+	      const result = await postInternalAppointment(
+	        buildInternalPayload(deniedEvent, intentName, {
 	          awaitingFinalBookingConfirmation: "false",
 	          bookingConfirmationAsked: "false"
-	        },
-	        "No problem. What name should I put on the appointment?"
+	        }),
+	        {
+	          operationName: "booking_final_confirmation_denied",
+	          waitPrompt: WAIT_PROMPTS.availability_lookup,
+	          mechanism: "Lambda final confirmation denial DialogCodeHook"
+	        }
+	      );
+	      if (!result.ok) {
+	        console.error("Appointment API rejected final confirmation denial", result.code);
+	        return buildBackendFailureElicitResponse(deniedEvent, result);
+	      }
+	      const data = extractResultPayload(result);
+	      return buildLexResponse(
+	        deniedEvent,
+	        data.lexResponse?.message || "No problem. Which detail would you like to change?",
+	        data.lexResponse?.fulfillmentState || "InProgress",
+	        buildSessionAttributesFromResult(data),
+	        data.lexResponse
+	      );
+	    }
+
+	    if (
+	      !shouldEscalate &&
+	      intentName === "BookAppointmentIntent" &&
+	      isFinalBookingConfirmationActive(event) &&
+	      finalConfirmationOutcome === FINAL_CONFIRMATION_OUTCOME.CHANGE_REQUEST
+	    ) {
+	      const changeEvent = {
+	        ...event,
+	        sessionState: {
+	          ...(event.sessionState || {}),
+	          sessionAttributes: {
+	            ...(event.sessionState?.sessionAttributes || {}),
+	            awaitingFinalBookingConfirmation: "false",
+	            bookingConfirmationAsked: "false"
+	          },
+	          intent: {
+	            ...(event.sessionState?.intent || {}),
+	            confirmationState: "None",
+	            state: "InProgress"
+	          }
+	        }
+	      };
+	      const result = await postInternalAppointment(
+	        buildInternalPayload(changeEvent, intentName, {
+	          awaitingFinalBookingConfirmation: "false",
+	          bookingConfirmationAsked: "false",
+	          finalConfirmationChangeRequest: "true"
+	        }),
+	        {
+	          operationName: "booking_final_confirmation_change_request",
+	          waitPrompt: WAIT_PROMPTS.availability_lookup,
+	          mechanism: "Lambda final confirmation change request DialogCodeHook"
+	        }
+	      );
+	      if (!result.ok) {
+	        console.error("Appointment API rejected final confirmation change request", result.code);
+	        return buildBackendFailureElicitResponse(changeEvent, result);
+	      }
+	      const data = extractResultPayload(result);
+	      return buildLexResponse(
+	        changeEvent,
+	        data.lexResponse?.message || "No problem. Let me update that.",
+	        data.lexResponse?.fulfillmentState || "InProgress",
+	        buildSessionAttributesFromResult(data),
+	        data.lexResponse
 	      );
 	    }
 

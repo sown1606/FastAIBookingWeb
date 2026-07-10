@@ -1,6 +1,7 @@
 import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
 import nodemailer from "nodemailer";
 import { env } from "../config/env";
+import { formatCustomerName } from "../utils/customer-name";
 import { logger } from "./logger";
 
 const getEmailProvider = (): string => env.EMAIL_PROVIDER.trim().toLowerCase();
@@ -201,7 +202,7 @@ const getAppointmentServiceLabel = (appointment: {
 const getCustomerName = (appointment: {
   customer: { firstName: string; lastName: string };
 }): string => {
-  return [appointment.customer.firstName, appointment.customer.lastName].filter(Boolean).join(" ");
+  return formatCustomerName(appointment.customer.firstName, appointment.customer.lastName);
 };
 
 type AppointmentEmailInput = {

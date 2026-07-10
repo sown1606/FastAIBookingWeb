@@ -256,7 +256,7 @@ export const getSalonDetailForAdmin = async (salonId: string) => {
         isActive: true
       }
     }),
-    prisma.customer.count({ where: { salonId } }),
+    prisma.customer.count({ where: { salonId, deletedAt: null } }),
     prisma.appointment.count({ where: { salonId } }),
     refreshBillingUsageForSalon(salonId),
     prisma.integrationConfig.findMany({

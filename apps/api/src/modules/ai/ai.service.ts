@@ -14,6 +14,7 @@ import { prisma } from "../../db/prisma";
 import { createAuditLog } from "../../lib/audit";
 import { AppError } from "../../lib/errors";
 import { logger } from "../../lib/logger";
+import { formatCustomerName } from "../../utils/customer-name";
 import { normalizeCustomerPhone } from "../../utils/phone";
 import { createAppointmentFromAI, getAppointmentDetail } from "../appointments/appointments.service";
 import { getAvailableSlots, validateAppointmentSlot } from "../availability/availability.service";
@@ -257,10 +258,19 @@ const SERVICE_ALIASES: Record<string, string[]> = {
     "false set",
     "fall set",
     "four set",
+    "phone set",
+    "room set",
+    "pull set",
+    "pull step",
+    "pool set",
+    "full step",
     "full said",
+    "full sit",
     "full sat",
+    "full sell",
     "full sad",
     "full send",
+    "fo set",
     "fuel set",
     "fake nails",
     "extension nails",
@@ -584,6 +594,51 @@ const isNegative = (value?: string | null): boolean => {
   return /^(no|nope|not that|wrong)$/i.test(normalizeForMatch(value));
 };
 
+type FinalBookingConfirmationOutcome = "AFFIRMED" | "DENIED" | "CHANGE_REQUEST" | "UNKNOWN";
+
+const hasStaticServiceAliasInText = (value?: string | null): boolean => {
+  const compactText = compactForMatch(value);
+  if (!compactText) {
+    return false;
+  }
+  return Object.values(SERVICE_ALIASES)
+    .flat()
+    .some((phrase) => {
+      const compact = compactForMatch(phrase);
+      return compact.length >= 3 && compactText.includes(compact);
+    });
+};
+
+const classifyFinalBookingConfirmation = (value?: string | null): FinalBookingConfirmationOutcome => {
+  const normalized = normalizeForMatch(value);
+  if (!normalized) {
+    return "UNKNOWN";
+  }
+
+  const hasChangeRequest =
+    /\b(?:change|make it|instead|switch|move it|can we do|could we do)\b/.test(normalized);
+  const hasNewBookingValue =
+    hasStaticServiceAliasInText(value) ||
+    new RegExp(DATE_PHRASE_PATTERN, "i").test(value ?? "") ||
+    Boolean(extractTimeCandidate(value ?? ""));
+  const hasExplicitNegation =
+    /\b(?:no|nope|nah|wrong|not correct|not right|do not|don t|dont|cancel it|wait no)\b/.test(normalized);
+
+  if ((hasExplicitNegation || hasChangeRequest) && hasChangeRequest && hasNewBookingValue) {
+    return "CHANGE_REQUEST";
+  }
+  if (hasExplicitNegation) {
+    return "DENIED";
+  }
+
+  const hasAffirmation =
+    /\b(?:yes|yeah|yep|correct|right|sure|ok|okay)\b/.test(normalized) ||
+    /\b(?:that s right|that is right|sounds good|that s fine|that is fine|go ahead|please book it|book it|confirm it)\b/.test(
+      normalized
+    );
+  return hasAffirmation ? "AFFIRMED" : "UNKNOWN";
+};
+
 const readDtmfDigit = (value?: string | null): string | undefined => {
   const trimmed = (value ?? "").trim();
   if (/^(?:zero|press zero|pressed zero)$/i.test(trimmed)) {
@@ -765,15 +820,11 @@ const stripLeadingCountryCode = (value?: string | null): string => {
 };
 
 const customerDisplayName = (customer: CustomerCandidate): string => {
-  return customer.firstName.trim() || [customer.firstName, customer.lastName].filter(Boolean).join(" ").trim();
+  return customer.firstName.trim() || formatCustomerName(customer.firstName, customer.lastName);
 };
 
 const customerFullName = (customer: CustomerCandidate): string =>
-  [customer.firstName, customer.lastName]
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .join(" ")
-    .trim();
+  formatCustomerName(customer.firstName, customer.lastName);
 
 const explicitNameMatchesRecognizedCustomer = (
   customer: CustomerCandidate,
@@ -2078,6 +2129,54 @@ const resolveService = async (salonId: string, serviceName: string) => {
   return (await resolveServiceMatch(salonId, serviceName))?.service ?? null;
 };
 
+const applyGuardedPrincessServiceCorrection = async (
+  salonId: string,
+  serviceName: string | undefined,
+  attributes: Record<string, unknown>,
+  currentTurnTranscript?: string,
+  transcriptText?: string
+): Promise<string | undefined> => {
+  const correctionRaw = readStringAttribute(attributes, ["serviceAliasCorrectionRaw"]);
+  const serviceLooksLikePrincess = normalizeForMatch(serviceName) === "princess";
+  const correctionLooksLikePrincess = normalizeForMatch(correctionRaw) === "princess";
+  const transcriptLooksLikePrincess = normalizeForMatch(currentTurnTranscript) === "princess";
+  if (!serviceLooksLikePrincess && !correctionLooksLikePrincess && !transcriptLooksLikePrincess) {
+    return serviceName;
+  }
+
+  const serviceContext =
+    readStringAttribute(attributes, ["lastAskedSlot"]) === "serviceName" ||
+    readStringAttribute(attributes, ["activeDtmfMenu"]) === "service" ||
+    /\b(?:book|booking|appointment|service|nail|set)\b/i.test(
+      [currentTurnTranscript, transcriptText].filter(Boolean).join(" ")
+    );
+  if (!serviceContext) {
+    return serviceName;
+  }
+
+  const activeServices = await prisma.service.findMany({
+    where: {
+      salonId,
+      isActive: true
+    },
+    select: {
+      id: true,
+      name: true,
+      durationMinutes: true,
+      priceCents: true
+    },
+    orderBy: {
+      createdAt: "asc"
+    }
+  });
+  const exactPrincess = activeServices.find((service) => normalizeForMatch(service.name) === "princess");
+  if (exactPrincess) {
+    return exactPrincess.name;
+  }
+  const fullSet = activeServices.find((service) => normalizeForMatch(service.name) === "full set");
+  return fullSet ? getCustomerFacingServiceName(fullSet.name) : serviceName;
+};
+
 const shouldAutoAcceptServiceMatch = (
   serviceMatch: ServiceMatch,
   requestedServiceName?: string
@@ -2208,6 +2307,7 @@ const resolveCustomer = async (input: {
     const existingByName = await prisma.customer.findFirst({
       where: {
         salonId: input.salonId,
+        deletedAt: null,
         firstName: {
           contains: firstNamePart,
           mode: "insensitive"
@@ -2236,7 +2336,7 @@ const resolveCustomer = async (input: {
 
   const [firstNamePart, ...lastNameParts] = input.customerName.trim().split(/\s+/);
   const firstName = firstNamePart?.trim();
-  const lastName = lastNameParts.join(" ").trim() || "Unknown";
+  const lastName = lastNameParts.join(" ").trim();
   if (!firstName) {
     return null;
   }
@@ -2550,6 +2650,7 @@ async function findExistingCustomerByPhone(input: {
   const exactMatch = await prisma.customer.findFirst({
     where: {
       salonId: input.salonId,
+      deletedAt: null,
       phone: {
         in: lookupValues
       }
@@ -2574,6 +2675,7 @@ async function findExistingCustomerByPhone(input: {
   const possibleMatches = await prisma.customer.findMany({
     where: {
       salonId: input.salonId,
+      deletedAt: null,
       phone: {
         contains: lastFour
       }
@@ -4611,6 +4713,13 @@ export const createAmazonConnectAIAppointment = async (
   if (isClearlyInvalidServiceName(normalized.serviceName, salon.timezone)) {
     normalized.serviceName = undefined;
   }
+  normalized.serviceName = await applyGuardedPrincessServiceCorrection(
+    salon.id,
+    normalized.serviceName,
+    recordFromUnknown(normalized.attributes),
+    normalized.currentTurnTranscript,
+    normalized.transcriptText
+  );
 
   const explicitCustomerName = normalized.transcriptText
     ? extractCustomerNameFromText(normalized.transcriptText)
@@ -4741,21 +4850,39 @@ export const createAmazonConnectAIAppointment = async (
       "awaitingFinalBookingConfirmation",
       "bookingConfirmationAsked",
       "finalBookingConfirmationAsked"
-    ]) === "true";
-  if (
-    awaitingFinalBookingConfirmation &&
-    (isAffirmative(normalized.transcriptText) ||
-      isAffirmative(normalized.serviceName) ||
-      isAffirmative(normalized.requestedTime))
-  ) {
+    ]) === "true" ||
+    readStringAttribute(normalized.attributes, ["lastAskedSlot"]) === "bookingConfirmation";
+  const finalConfirmationText = normalized.currentTurnTranscript ?? normalized.transcriptText;
+  const finalConfirmationOutcome = awaitingFinalBookingConfirmation
+    ? classifyFinalBookingConfirmation(finalConfirmationText)
+    : "UNKNOWN";
+  if (awaitingFinalBookingConfirmation && finalConfirmationOutcome === "AFFIRMED") {
     normalized.confirmationState = "Confirmed";
-  } else if (
-    awaitingFinalBookingConfirmation &&
-    (isNegative(normalized.transcriptText) ||
-      isNegative(normalized.serviceName) ||
-      isNegative(normalized.requestedTime))
-  ) {
+  } else if (awaitingFinalBookingConfirmation && finalConfirmationOutcome === "DENIED") {
     normalized.confirmationState = "Denied";
+  } else if (awaitingFinalBookingConfirmation && finalConfirmationOutcome === "CHANGE_REQUEST") {
+    normalized.confirmationState = undefined;
+    const changeDateTime = finalConfirmationText
+      ? parseDateTimeText(finalConfirmationText, salon.timezone)
+      : null;
+    if (changeDateTime?.local.isValid && !changeDateTime.ambiguousTime) {
+      normalized.requestedDate = changeDateTime.local.toFormat("yyyy-MM-dd");
+      normalized.requestedTime = changeDateTime.local.toFormat("HH:mm");
+    } else if (finalConfirmationText) {
+      const changeTimeCandidate = extractTimeCandidate(finalConfirmationText);
+      const changeTime = changeTimeCandidate ? parseLocalTimeText(changeTimeCandidate) : null;
+      if (changeTime && !changeTime.ambiguous) {
+        normalized.requestedTime = `${String(changeTime.hour).padStart(2, "0")}:${String(
+          changeTime.minute
+        ).padStart(2, "0")}`;
+      }
+    }
+    if (finalConfirmationText) {
+      const changedService = await findServiceMentionInText(salon.id, finalConfirmationText);
+      if (changedService) {
+        normalized.serviceName = getCustomerFacingServiceName(changedService.service.name);
+      }
+    }
   }
 
   const selectedAlternative = selectAlternativeSlotFromText({
