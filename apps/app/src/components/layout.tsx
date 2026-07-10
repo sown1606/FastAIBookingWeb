@@ -7,11 +7,13 @@ import { useUiMode } from "../lib/ui-mode";
 import type { AuthUser } from "../types";
 
 const ownerBasicNav = [
-  { to: "/dashboard", label: "Booking" },
-  { to: "/services", label: "Services" },
-  { to: "/staff", label: "Staff" },
-  { to: "/alerts", label: "Alerts" },
-  { to: "/salon-profile", label: "Salon" }
+  { to: "/dashboard", labelKey: "nav.dashboard" },
+  { to: "/appointments", labelKey: "nav.appointments" },
+  { to: "/customers", labelKey: "nav.customers" },
+  { to: "/services", labelKey: "nav.services" },
+  { to: "/staff", labelKey: "nav.staff" },
+  { to: "/alerts", labelKey: "nav.alerts" },
+  { to: "/salon-profile", labelKey: "nav.salonProfile" }
 ];
 
 const ownerNav = [
@@ -23,9 +25,6 @@ const ownerNav = [
   { to: "/business-hours", labelKey: "nav.businessHours" },
   { to: "/availability", labelKey: "nav.availability" },
   { to: "/salon-profile", labelKey: "nav.salonProfile" },
-  { to: "/call-center", labelKey: "nav.callCenter" },
-  { to: "/calls", labelKey: "nav.calls" },
-  { to: "/ai-logs", labelKey: "nav.aiLogs" },
   { to: "/billing", labelKey: "nav.billing" },
   { to: "/messages", labelKey: "nav.messages" },
   { to: "/alerts", labelKey: "nav.alerts" }
@@ -43,6 +42,17 @@ const callCenterNav = [
 
 const isCallCenterRole = (role: AuthUser["role"]) =>
   role === "CALL_CENTER_AGENT";
+
+const normalizePathname = (pathname: string) => {
+  const clean = pathname.split(/[?#]/)[0] || "/";
+  return clean.length > 1 ? clean.replace(/\/+$/, "") : clean;
+};
+
+const isRouteActive = (pathname: string, target: string) => {
+  const current = normalizePathname(pathname);
+  const normalizedTarget = normalizePathname(target);
+  return current === normalizedTarget || current.startsWith(`${normalizedTarget}/`);
+};
 
 const resolveTitleKey = (pathname: string): TranslationKey => {
   if (pathname === "/dashboard") return "nav.dashboard";
@@ -98,8 +108,14 @@ export const AppLayout = ({
         </Link>
         <nav className="nav-links">
           {nav.map((item) => (
-            <NavLink key={item.to} to={item.to} className="nav-item">
-              {"label" in item ? item.label : t(item.labelKey as TranslationKey)}
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className={({ isActive }) =>
+                `nav-item${isActive && isRouteActive(location.pathname, item.to) ? " active" : ""}`
+              }
+            >
+              {t(item.labelKey as TranslationKey)}
             </NavLink>
           ))}
         </nav>

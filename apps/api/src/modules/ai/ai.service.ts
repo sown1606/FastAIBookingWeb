@@ -6556,14 +6556,7 @@ export const createAmazonConnectAIAppointment = async (
     customerId: customer.id,
     staffId: chosenStaff.id,
     serviceId: service.id,
-    startTime: requestedStartTime,
-    notes: [
-      "Created by Amazon Connect AI Booking.",
-      normalized.source ? `Source: ${normalized.source}` : null,
-      normalized.contactId ? `Amazon Connect contact: ${normalized.contactId}` : null
-    ]
-      .filter((value): value is string => Boolean(value))
-      .join("\n")
+    startTime: requestedStartTime
   });
 
   const bookingAttempt = await createAttempt({

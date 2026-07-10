@@ -1,5 +1,6 @@
 import { AppointmentStatus, StaffStatus } from "@prisma/client";
 import { DateTime } from "luxon";
+import { BLOCKING_APPOINTMENT_STATUSES } from "../../config/constants";
 import { prisma } from "../../db/prisma";
 import { AppError } from "../../lib/errors";
 
@@ -171,7 +172,7 @@ export const validateAppointmentSlot = async (
       staffId: input.staffId,
       id: input.excludeAppointmentId ? { not: input.excludeAppointmentId } : undefined,
       status: {
-        not: AppointmentStatus.CANCELED
+        in: BLOCKING_APPOINTMENT_STATUSES
       },
       startTime: {
         lt: endTime
@@ -289,7 +290,7 @@ export const getAvailableSlots = async (input: SlotsInput) => {
       salonId: input.salonId,
       staffId: input.staffId,
       status: {
-        not: AppointmentStatus.CANCELED
+        in: BLOCKING_APPOINTMENT_STATUSES
       },
       startTime: {
         lt: dayEndUtc

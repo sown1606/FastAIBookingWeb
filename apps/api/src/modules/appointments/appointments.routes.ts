@@ -15,8 +15,10 @@ import {
   getAppointmentDetail,
   listAppointments,
   parseAppointmentStartTime,
+  permanentlyDeleteAppointment,
   rescheduleAppointment,
   startAppointmentWork,
+  toOwnerAppointmentResponse,
   updateAppointment
 } from "./appointments.service";
 
@@ -101,7 +103,6 @@ export const appointmentsRouter = Router();
 
 const staffEditableStatuses: AppointmentStatus[] = [
   AppointmentStatus.CONFIRMED,
-  AppointmentStatus.CANCELED,
   AppointmentStatus.NO_SHOW
 ];
 
@@ -136,7 +137,10 @@ appointmentsRouter.get(
       dateTo: payload.dateTo ? new Date(payload.dateTo) : undefined
     });
     return sendSuccess(res, {
-      data: result
+      data: {
+        ...result,
+        items: result.items.map(toOwnerAppointmentResponse)
+      }
     });
   })
 );
@@ -154,14 +158,13 @@ appointmentsRouter.post(
       serviceId: payload.serviceId,
       serviceIds: payload.serviceIds,
       startTime,
-      source: payload.source,
       notes: payload.notes,
       status: payload.status
     });
     return sendSuccess(res, {
       statusCode: 201,
       message: "Appointment created.",
-      data: appointment
+      data: toOwnerAppointmentResponse(appointment)
     });
   })
 );
@@ -185,7 +188,7 @@ appointmentsRouter.post(
     return sendSuccess(res, {
       statusCode: 201,
       message: "AI appointment created.",
-      data: appointment
+      data: toOwnerAppointmentResponse(appointment)
     });
   })
 );
@@ -200,7 +203,7 @@ appointmentsRouter.get(
     }
     const appointment = await getAppointmentDetail(req.auth!.salonId!, id);
     return sendSuccess(res, {
-      data: appointment
+      data: toOwnerAppointmentResponse(appointment)
     });
   })
 );
@@ -248,13 +251,12 @@ appointmentsRouter.patch(
       serviceId: req.auth!.role === Role.SALON_OWNER ? payload.serviceId : undefined,
       serviceIds: req.auth!.role === Role.SALON_OWNER ? payload.serviceIds : undefined,
       startTime,
-      source: req.auth!.role === Role.SALON_OWNER ? payload.source : undefined,
       notes: payload.notes,
       status: payload.status
     });
     return sendSuccess(res, {
       message: "Appointment updated.",
-      data: appointment
+      data: toOwnerAppointmentResponse(appointment)
     });
   })
 );
@@ -272,7 +274,7 @@ appointmentsRouter.post(
     );
     return sendSuccess(res, {
       message: "Work started.",
-      data: appointment
+      data: toOwnerAppointmentResponse(appointment)
     });
   })
 );
@@ -293,7 +295,7 @@ appointmentsRouter.post(
     );
     return sendSuccess(res, {
       message: "Work time extended.",
-      data: appointment
+      data: toOwnerAppointmentResponse(appointment)
     });
   })
 );
@@ -314,7 +316,10 @@ appointmentsRouter.post(
     );
     return sendSuccess(res, {
       message: "Work completed.",
-      data: result
+      data: {
+        ...result,
+        appointment: toOwnerAppointmentResponse(result.appointment)
+      }
     });
   })
 );
@@ -332,7 +337,21 @@ appointmentsRouter.patch(
     const appointment = await cancelAppointment(req.auth!.salonId!, id, req.auth!.userId, payload.reason);
     return sendSuccess(res, {
       message: "Appointment canceled.",
-      data: appointment
+      data: toOwnerAppointmentResponse(appointment)
+    });
+  })
+);
+
+appointmentsRouter.delete(
+  "/:id",
+  requireRoles(Role.SALON_OWNER),
+  validate(appointmentIdSchema, "params"),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params as z.infer<typeof appointmentIdSchema>;
+    const result = await permanentlyDeleteAppointment(req.auth!.salonId!, id, req.auth!.userId);
+    return sendSuccess(res, {
+      message: "Appointment permanently deleted.",
+      data: result
     });
   })
 );
@@ -352,7 +371,7 @@ appointmentsRouter.patch(
     });
     return sendSuccess(res, {
       message: "Appointment rescheduled.",
-      data: appointment
+      data: toOwnerAppointmentResponse(appointment)
     });
   })
 );

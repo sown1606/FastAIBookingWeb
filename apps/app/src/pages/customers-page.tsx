@@ -1,12 +1,14 @@
-import { FormEvent, useEffect, useState } from "react";
-import { apiGet, apiPost, extractErrorMessage } from "../lib/api";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { apiGet, apiPatch, apiPost, extractErrorMessage } from "../lib/api";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
 import { useToast } from "../components/toast";
 import { formatDateTime } from "../lib/format";
 import type { Pagination } from "../types";
 import { DemoAvatar } from "../components/avatar";
-import { formatUsPhoneInput, requiredLabel, validateOptionalUsPhone } from "../lib/phone";
+import { formatCustomerPhoneInput, requiredLabel, validateOptionalCustomerPhone } from "../lib/phone";
 import { statusLabelKey, useI18n } from "../lib/i18n";
+import { useFormDialog } from "../components/form-dialog";
 
 interface CustomerItem {
   id: string;
@@ -14,6 +16,7 @@ interface CustomerItem {
   lastName: string;
   email: string | null;
   phone: string;
+  notes?: string | null;
 }
 
 interface CustomersResponse {
@@ -36,9 +39,20 @@ interface CustomerHistory {
   }>;
 }
 
+const activeStatuses = new Set(["SCHEDULED", "CONFIRMED", "IN_PROGRESS"]);
+const completedStatuses = new Set(["COMPLETED"]);
+const canceledStatuses = new Set(["CANCELED", "NO_SHOW"]);
+
+const localDateKey = (value: string) => {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 10);
+};
+
 export const CustomersPage = () => {
   const { notify } = useToast();
   const { t } = useI18n();
+  const navigate = useNavigate();
+  const { openFormDialog, FormDialog } = useFormDialog();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -83,7 +97,7 @@ export const CustomersPage = () => {
 
   const createCustomer = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!validateOptionalUsPhone(form.phone)) {
+    if (!validateOptionalCustomerPhone(form.phone)) {
       notify("error", t("form.phoneInvalid"));
       return;
     }
@@ -116,6 +130,63 @@ export const CustomersPage = () => {
     }
   };
 
+  const editCustomer = async (customer: CustomerItem) => {
+    const values = await openFormDialog({
+      title: t("customers.edit"),
+      fields: [
+        { name: "firstName", label: t("customers.firstName"), required: true },
+        { name: "lastName", label: t("customers.lastName"), required: true },
+        { name: "email", label: t("common.email"), type: "email" },
+        { name: "phone", label: t("common.phone"), required: true, type: "tel" },
+        { name: "notes", label: t("customers.notes"), type: "textarea", rows: 3 }
+      ],
+      initialValues: {
+        firstName: customer.firstName,
+        lastName: customer.lastName,
+        email: customer.email ?? "",
+        phone: customer.phone,
+        notes: customer.notes ?? ""
+      },
+      confirmLabel: t("common.save")
+    });
+    if (!values) {
+      return;
+    }
+    if (!validateOptionalCustomerPhone(values.phone)) {
+      notify("error", t("form.phoneInvalid"));
+      return;
+    }
+    try {
+      await apiPatch<CustomerItem, Partial<CustomerItem>>(`/api/v1/customers/${customer.id}`, {
+        firstName: values.firstName,
+        lastName: values.lastName,
+        email: values.email || null,
+        phone: values.phone,
+        notes: values.notes || null
+      });
+      notify("success", t("customers.updated"));
+      await load();
+    } catch (editError) {
+      notify("error", extractErrorMessage(editError));
+    }
+  };
+
+  const historyGroups = useMemo(() => {
+    const appointments = selected?.appointments ?? [];
+    return {
+      upcoming: appointments.filter((appointment) => activeStatuses.has(appointment.status)),
+      completed: appointments.filter((appointment) => completedStatuses.has(appointment.status)),
+      canceled: appointments.filter((appointment) => canceledStatuses.has(appointment.status))
+    };
+  }, [selected]);
+
+  const lastVisit = useMemo(() => {
+    const completed = historyGroups.completed
+      .slice()
+      .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())[0];
+    return completed?.startTime ?? null;
+  }, [historyGroups.completed]);
+
   if (loading) {
     return <LoadingBlock />;
   }
@@ -126,6 +197,7 @@ export const CustomersPage = () => {
 
   return (
     <div className="stack">
+      <FormDialog />
       <section className="card">
         <div className="section-header">
           <div>
@@ -178,9 +250,9 @@ export const CustomersPage = () => {
             <input
               type="tel"
               inputMode="tel"
-              placeholder="(212) 555-0100"
+              placeholder="+84978634886"
               value={form.phone}
-              onChange={(event) => setForm((prev) => ({ ...prev, phone: formatUsPhoneInput(event.target.value) }))}
+              onChange={(event) => setForm((prev) => ({ ...prev, phone: formatCustomerPhoneInput(event.target.value) }))}
               required
             />
             <small>{t("form.phoneHint")}</small>
@@ -220,8 +292,15 @@ export const CustomersPage = () => {
                   <button type="button" className="button-secondary" onClick={() => selectCustomer(item.id)}>
                     {t("customers.viewHistory")}
                   </button>
+                  <button type="button" className="button-secondary" onClick={() => void editCustomer(item)}>
+                    {t("customers.edit")}
+                  </button>
                 </div>
                 <div className="entity-metric-grid">
+                  <div className="entity-metric">
+                    <span className="muted">{t("customers.customerCode")}</span>
+                    <strong>{item.phone}</strong>
+                  </div>
                   <div className="entity-metric">
                     <span className="muted">{t("common.email")}</span>
                     <strong>{item.email ?? t("common.none")}</strong>
@@ -242,28 +321,45 @@ export const CustomersPage = () => {
       <section className="card">
         <h2>{t("customers.historyTitle")}</h2>
         {selected ? (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>{t("appointments.time")}</th>
-                  <th>{t("appointments.service")}</th>
-                  <th>{t("appointments.staff")}</th>
-                  <th>{t("common.status")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {selected.appointments.map((appointment) => (
-                  <tr key={appointment.id}>
-                    <td>{formatDateTime(appointment.startTime)}</td>
-                    <td>{appointment.service.name}</td>
-                    <td>{appointment.staff.fullName}</td>
-                    <td>{statusLabelKey(appointment.status) ? t(statusLabelKey(appointment.status)!) : appointment.status}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <>
+            <div className="summary-badges">
+              <span className="summary-badge">{t("customers.customerCode")}: {selected.customer.phone}</span>
+              <span className="summary-badge">{t("appointments.upcomingCount")}: {historyGroups.upcoming.length}</span>
+              <span className="summary-badge">{t("appointments.completedCount")}: {historyGroups.completed.length}</span>
+              <span className="summary-badge">{t("appointments.canceledNoShowCount")}: {historyGroups.canceled.length}</span>
+              <span className="summary-badge">{t("customers.lastVisit")}: {lastVisit ? formatDateTime(lastVisit) : t("common.none")}</span>
+            </div>
+            {[
+              [t("appointments.upcomingTitle"), historyGroups.upcoming],
+              [t("appointments.completedTab"), historyGroups.completed],
+              [t("appointments.canceledNoShowTab"), historyGroups.canceled]
+            ].map(([label, items]) => (
+              <div key={String(label)} className="day-section">
+                <h3>{String(label)}</h3>
+                {Array.isArray(items) && items.length ? (
+                  <div className="mobile-list">
+                    {items.map((appointment) => (
+                      <article
+                        key={appointment.id}
+                        className="mobile-item"
+                        onClick={() =>
+                          navigate(`/appointments?date=${localDateKey(appointment.startTime)}&appointmentId=${appointment.id}`)
+                        }
+                      >
+                        <strong>{formatDateTime(appointment.startTime)}</strong>
+                        <span>{appointment.service.name} · {appointment.staff.fullName}</span>
+                        <span className="muted">
+                          {statusLabelKey(appointment.status) ? t(statusLabelKey(appointment.status)!) : appointment.status}
+                        </span>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyBlock message={t("common.none")} />
+                )}
+              </div>
+            ))}
+          </>
         ) : (
           <EmptyBlock message={t("customers.pickForHistory")} />
         )}

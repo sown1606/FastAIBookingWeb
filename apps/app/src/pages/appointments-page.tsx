@@ -1,7 +1,7 @@
 import { Fragment, FormEvent, useEffect, useMemo, useState } from "react";
-import type { CSSProperties, MouseEvent } from "react";
+import type { CSSProperties } from "react";
 import { useSearchParams } from "react-router-dom";
-import { apiGet, apiPatch, apiPost, extractErrorMessage } from "../lib/api";
+import { apiDelete, apiGet, apiPatch, apiPost, extractErrorMessage } from "../lib/api";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
 import { useToast } from "../components/toast";
 import { useAuth } from "../auth/auth-context";
@@ -19,13 +19,14 @@ interface AppointmentItem {
   startTime: string;
   endTime: string;
   status: "SCHEDULED" | "CONFIRMED" | "IN_PROGRESS" | "COMPLETED" | "CANCELED" | "NO_SHOW";
-  source: string;
+  bookingChannel?: string;
   durationMinutes: number;
   notes: string | null;
   customer: {
     id: string;
     firstName: string;
     lastName: string;
+    phone?: string | null;
   };
   staff: {
     id: string;
@@ -213,6 +214,7 @@ const buildTimeSlots = (items: AppointmentItem[], timezone: string) => {
 };
 
 const activeAppointmentStatuses = new Set(["SCHEDULED", "CONFIRMED", "IN_PROGRESS"]);
+const terminalAppointmentStatuses = new Set(["COMPLETED", "CANCELED", "NO_SHOW"]);
 
 const nearestUsefulStaffDateKey = (items: AppointmentItem[], timezone: string) => {
   const todayKey = formatSalonDateKey(new Date(), timezone);
@@ -235,18 +237,22 @@ export const AppointmentsPage = () => {
   const { openFormDialog, FormDialog } = useFormDialog();
   const { t, locale } = useI18n();
   const { isBasicMode } = useUiMode();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [appointments, setAppointments] = useState<AppointmentItem[]>([]);
+  const [ownerUpcomingAppointments, setOwnerUpcomingAppointments] = useState<AppointmentItem[]>([]);
+  const [ownerCompletedAppointments, setOwnerCompletedAppointments] = useState<AppointmentItem[]>([]);
+  const [ownerCanceledNoShowAppointments, setOwnerCanceledNoShowAppointments] = useState<AppointmentItem[]>([]);
   const [reminders, setReminders] = useState<StaffReminder[]>([]);
   const [selectedAppointment, setSelectedAppointment] = useState<AppointmentItem | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState("");
-  const [selectedDate, setSelectedDate] = useState(() => formatSalonDateKey(new Date()));
+  const [selectedDate, setSelectedDate] = useState(() => searchParams.get("date") || formatSalonDateKey(new Date()));
   const [staffDateInitialized, setStaffDateInitialized] = useState(false);
   const [now, setNow] = useState(Date.now());
+  const [archiveView, setArchiveView] = useState<"completed" | "canceled">("completed");
 
   const [customers, setCustomers] = useState<CustomerItem[]>([]);
   const [staff, setStaff] = useState<StaffItem[]>([]);
@@ -267,15 +273,6 @@ export const AppointmentsPage = () => {
     [appointments, salonProfileTimezone]
   );
   const todayDateKey = useMemo(() => formatSalonDateKey(new Date(), salonTimezone), [salonTimezone]);
-  const appointmentStatusOptions = [
-    { value: "SCHEDULED", label: t("status.SCHEDULED") },
-    { value: "CONFIRMED", label: t("status.CONFIRMED") },
-    { value: "IN_PROGRESS", label: t("status.IN_PROGRESS") },
-    { value: "COMPLETED", label: t("status.COMPLETED") },
-    { value: "CANCELED", label: t("status.CANCELED") },
-    { value: "NO_SHOW", label: t("status.NO_SHOW") }
-  ];
-
   const fetchAppointments = async (baseParams: URLSearchParams) => {
     const items: AppointmentItem[] = [];
     let page = 1;
@@ -291,6 +288,22 @@ export const AppointmentsPage = () => {
       page += 1;
     } while (items.length < total && page <= 5);
     return items;
+  };
+
+  const fetchAppointmentsForStatuses = async (
+    baseParams: URLSearchParams,
+    statuses: AppointmentItem["status"][]
+  ) => {
+    const results = await Promise.all(
+      statuses.map((status) => {
+        const params = new URLSearchParams(baseParams);
+        params.set("status", status);
+        return fetchAppointments(params);
+      })
+    );
+    return results
+      .flat()
+      .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
   };
 
   const load = async () => {
@@ -309,7 +322,26 @@ export const AppointmentsPage = () => {
         if (statusFilter) {
           params.set("status", statusFilter);
         }
-        setAppointments(await fetchAppointments(params));
+        const nowIso = new Date().toISOString();
+        const ninetyDaysIso = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
+        const upcomingParams = new URLSearchParams({
+          limit: "100",
+          dateFrom: nowIso,
+          dateTo: ninetyDaysIso
+        });
+        const archiveParams = new URLSearchParams({
+          limit: "100"
+        });
+        const [dayAppointments, upcoming, completed, canceledNoShow] = await Promise.all([
+          fetchAppointments(params),
+          fetchAppointmentsForStatuses(upcomingParams, ["SCHEDULED", "CONFIRMED", "IN_PROGRESS"]),
+          fetchAppointmentsForStatuses(archiveParams, ["COMPLETED"]),
+          fetchAppointmentsForStatuses(archiveParams, ["CANCELED", "NO_SHOW"])
+        ]);
+        setAppointments(dayAppointments);
+        setOwnerUpcomingAppointments(upcoming);
+        setOwnerCompletedAppointments(completed);
+        setOwnerCanceledNoShowAppointments(canceledNoShow);
         setCustomers(customerResponse.items);
         setStaff(staffResponse);
         setServices(serviceResponse.filter((item) => item.isActive));
@@ -328,6 +360,9 @@ export const AppointmentsPage = () => {
           params.set("status", statusFilter);
         }
         setAppointments(await fetchAppointments(params));
+        setOwnerUpcomingAppointments([]);
+        setOwnerCompletedAppointments([]);
+        setOwnerCanceledNoShowAppointments([]);
         setCustomers([]);
         setStaff([]);
         setServices([]);
@@ -345,6 +380,13 @@ export const AppointmentsPage = () => {
   useEffect(() => {
     void load();
   }, [isOwner, selectedDate, statusFilter]);
+
+  useEffect(() => {
+    const dateParam = searchParams.get("date");
+    if (dateParam && dateParam !== selectedDate) {
+      setSelectedDate(dateParam);
+    }
+  }, [searchParams, selectedDate]);
 
   useEffect(() => {
     const interval = window.setInterval(() => setNow(Date.now()), 1000);
@@ -399,8 +441,7 @@ export const AppointmentsPage = () => {
         customerId: form.customerId,
         staffId: form.staffId,
         serviceId: form.serviceId,
-        startTimeLocal: form.startTime,
-        source: "DASHBOARD"
+        startTimeLocal: form.startTime
       });
       setForm({
         customerId: "",
@@ -416,7 +457,12 @@ export const AppointmentsPage = () => {
   };
 
   const selectAppointment = async (appointmentId: string) => {
-    const existing = appointments.find((item) => item.id === appointmentId);
+    const existing = [
+      ...appointments,
+      ...ownerUpcomingAppointments,
+      ...ownerCompletedAppointments,
+      ...ownerCanceledNoShowAppointments
+    ].find((item) => item.id === appointmentId);
     if (existing) {
       setSelectedAppointment(existing);
       return;
@@ -431,8 +477,14 @@ export const AppointmentsPage = () => {
     }
   };
 
-  const stopAppointmentAction = (event: MouseEvent<HTMLButtonElement>) => {
-    event.stopPropagation();
+  const openAppointmentDeepLink = async (appointment: AppointmentItem) => {
+    const dateKey = localDateKey(appointment.startTime, salonTimezone);
+    setSelectedDate(dateKey);
+    setSearchParams({
+      date: dateKey,
+      appointmentId: appointment.id
+    });
+    await selectAppointment(appointment.id);
   };
 
   const cancelAppointment = async (appointment: AppointmentItem) => {
@@ -492,34 +544,38 @@ export const AppointmentsPage = () => {
     }
   };
 
-  const updateStatus = async (appointment: AppointmentItem) => {
-    const values = await openFormDialog({
-      title: t("appointments.updateStatus"),
-      fields: [
-        {
-          name: "status",
-          label: t("common.status"),
-          type: "select",
-          required: true,
-          options: appointmentStatusOptions
-        }
-      ],
-      initialValues: {
-        status: appointment.status
-      },
-      confirmLabel: t("common.save")
-    });
-    if (!values?.status) {
-      return;
-    }
+  const setAppointmentStatus = async (appointment: AppointmentItem, status: "CONFIRMED" | "NO_SHOW") => {
     try {
       await apiPatch<unknown, { status: string }>(`/api/v1/appointments/${appointment.id}`, {
-        status: values.status
+        status
       });
-      notify("success", t("appointments.updateStatus"));
+      notify("success", status === "CONFIRMED" ? t("appointments.confirm") : t("appointments.markNoShow"));
       await load();
     } catch (updateError) {
       notify("error", extractErrorMessage(updateError));
+    }
+  };
+
+  const permanentlyDeleteAppointment = async (appointment: AppointmentItem) => {
+    const values = await openFormDialog({
+      title: t("appointments.deletePermanently"),
+      description: t("appointments.deletePermanentlyConfirm"),
+      fields: [],
+      initialValues: {},
+      confirmLabel: t("appointments.deletePermanently")
+    });
+    if (!values) {
+      return;
+    }
+    try {
+      await apiDelete<unknown>(`/api/v1/appointments/${appointment.id}`);
+      notify("success", t("appointments.deletedPermanently"));
+      if (selectedAppointment?.id === appointment.id) {
+        setSelectedAppointment(null);
+      }
+      await load();
+    } catch (deleteError) {
+      notify("error", extractErrorMessage(deleteError));
     }
   };
 
@@ -606,7 +662,11 @@ export const AppointmentsPage = () => {
   const activeStaffIds = useMemo(() => new Set(staff.map((member) => member.id)), [staff]);
 
   const selectedDayScheduleAppointments = useMemo(
-    () => selectedDayAppointments.filter((appointment) => activeStaffIds.has(appointment.staff.id)),
+    () =>
+      selectedDayAppointments.filter(
+        (appointment) =>
+          activeStaffIds.has(appointment.staff.id) && activeAppointmentStatuses.has(appointment.status)
+      ),
     [activeStaffIds, selectedDayAppointments]
   );
 
@@ -653,8 +713,8 @@ export const AppointmentsPage = () => {
 
   const groupedByDay = useMemo(() => {
     const byDay = new Map<string, AppointmentItem[]>();
-    const sourceAppointments = isOwner ? selectedDayScheduleAppointments : upcomingAppointments;
-    sourceAppointments.forEach((appointment) => {
+    const appointmentsForGrouping = isOwner ? selectedDayScheduleAppointments : upcomingAppointments;
+    appointmentsForGrouping.forEach((appointment) => {
       const dateKey = localDateKey(appointment.startTime, salonTimezone);
       const list = byDay.get(dateKey) ?? [];
       list.push(appointment);
@@ -662,6 +722,39 @@ export const AppointmentsPage = () => {
     });
     return [...byDay.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   }, [isOwner, salonTimezone, selectedDayScheduleAppointments, upcomingAppointments]);
+
+  const ownerUpcomingByDay = useMemo(() => {
+    const byDay = new Map<string, AppointmentItem[]>();
+    ownerUpcomingAppointments.forEach((appointment) => {
+      const dateKey = localDateKey(appointment.startTime, salonTimezone);
+      const list = byDay.get(dateKey) ?? [];
+      list.push(appointment);
+      byDay.set(dateKey, list);
+    });
+    return [...byDay.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  }, [ownerUpcomingAppointments, salonTimezone]);
+
+  const ownerCompletedByDay = useMemo(() => {
+    const byDay = new Map<string, AppointmentItem[]>();
+    ownerCompletedAppointments.forEach((appointment) => {
+      const dateKey = localDateKey(appointment.startTime, salonTimezone);
+      const list = byDay.get(dateKey) ?? [];
+      list.push(appointment);
+      byDay.set(dateKey, list);
+    });
+    return [...byDay.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+  }, [ownerCompletedAppointments, salonTimezone]);
+
+  const ownerCanceledNoShowByDay = useMemo(() => {
+    const byDay = new Map<string, AppointmentItem[]>();
+    ownerCanceledNoShowAppointments.forEach((appointment) => {
+      const dateKey = localDateKey(appointment.startTime, salonTimezone);
+      const list = byDay.get(dateKey) ?? [];
+      list.push(appointment);
+      byDay.set(dateKey, list);
+    });
+    return [...byDay.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+  }, [ownerCanceledNoShowAppointments, salonTimezone]);
 
   const scheduleStaff = useMemo(
     () => [...staff].sort((a, b) => a.fullName.localeCompare(b.fullName)),
@@ -674,9 +767,6 @@ export const AppointmentsPage = () => {
     }
     if (appointment.status === "IN_PROGRESS") {
       return "schedule-appointment active-card";
-    }
-    if (appointment.source === "AI" || appointment.source === "AMAZON_CONNECT") {
-      return "schedule-appointment ai-card";
     }
     return "schedule-appointment";
   };
@@ -703,6 +793,90 @@ export const AppointmentsPage = () => {
       ) : null}
     </>
   );
+
+  const renderOwnerAppointmentActions = (item: AppointmentItem) => (
+    <>
+      {item.status === "SCHEDULED" ? (
+        <button type="button" className="button-secondary" onClick={() => void setAppointmentStatus(item, "CONFIRMED")}>
+          {t("appointments.confirm")}
+        </button>
+      ) : null}
+      {item.status === "SCHEDULED" || item.status === "CONFIRMED" ? (
+        <button type="button" className="button-secondary" onClick={() => void startWork(item.id)}>
+          {t("appointments.startWork")}
+        </button>
+      ) : null}
+      {item.status === "IN_PROGRESS" ? (
+        <button type="button" className="button-primary" onClick={() => void finishWork(item.id)}>
+          {t("appointments.done")}
+        </button>
+      ) : null}
+      {activeAppointmentStatuses.has(item.status) ? (
+        <>
+          <button type="button" className="button-secondary" onClick={() => void rescheduleAppointment(item)}>
+            {t("appointments.reschedule")}
+          </button>
+          <button type="button" className="button-secondary" onClick={() => void cancelAppointment(item)}>
+            {t("appointments.cancel")}
+          </button>
+        </>
+      ) : null}
+      {item.status === "SCHEDULED" || item.status === "CONFIRMED" ? (
+        <button type="button" className="button-secondary" onClick={() => void setAppointmentStatus(item, "NO_SHOW")}>
+          {t("appointments.markNoShow")}
+        </button>
+      ) : null}
+      {terminalAppointmentStatuses.has(item.status) ? (
+        <button type="button" className="button-secondary danger-button" onClick={() => void permanentlyDeleteAppointment(item)}>
+          {t("appointments.deletePermanently")}
+        </button>
+      ) : null}
+    </>
+  );
+
+  const renderOwnerAppointmentCard = (item: AppointmentItem) => {
+    const statusKey = statusLabelKey(item.status);
+    return (
+      <article
+        id={`appointment-${item.id}`}
+        key={item.id}
+        className={`appointment-card${getHighlightedClass(item.id)}`}
+        onClick={() => void openAppointmentDeepLink(item)}
+      >
+        <div className="appointment-card-header">
+          <div className="appointment-card-copy">
+            <strong>
+              {formatTimeOnly(item.startTime, salonTimezone)} · {item.customer.firstName} {item.customer.lastName}
+            </strong>
+            <span className="muted">
+              {item.customer.phone ?? t("common.none")} · {item.service.name}
+            </span>
+          </div>
+          <span className={item.status === "COMPLETED" ? "status-pill success" : item.status === "IN_PROGRESS" ? "status-pill info" : item.status === "CANCELED" || item.status === "NO_SHOW" ? "status-pill warning" : "status-pill"}>
+            {statusKey ? t(statusKey) : item.status}
+          </span>
+        </div>
+        <div className="appointment-card-meta">
+          <div>
+            <span className="muted">{t("appointments.time")}</span>
+            <strong>{formatCompactSalonDateTime(item.startTime, salonTimezone)}</strong>
+          </div>
+          <div>
+            <span className="muted">{t("appointments.staff")}</span>
+            <strong>{item.staff.fullName}</strong>
+          </div>
+          <div>
+            <span className="muted">{t("appointments.service")}</span>
+            <strong>{item.service.name}</strong>
+          </div>
+        </div>
+        {item.notes ? <p className="muted">{item.notes}</p> : null}
+        <div className="inline-actions" onClick={(event) => event.stopPropagation()}>
+          {renderOwnerAppointmentActions(item)}
+        </div>
+      </article>
+    );
+  };
 
   if (loading) {
     return <LoadingBlock />;
@@ -887,7 +1061,6 @@ export const AppointmentsPage = () => {
                     ? t(statusLabelKey(selectedAppointment.status)!)
                     : selectedAppointment.status}
                 </span>
-                <span className="summary-badge">{selectedAppointment.source}</span>
               </div>
               <div className="appointment-card-meta">
                 <div>
@@ -914,15 +1087,7 @@ export const AppointmentsPage = () => {
               </div>
               {isOwner ? (
                 <div className="inline-actions">
-                  <button type="button" className="button-secondary" onClick={() => void updateStatus(selectedAppointment)}>
-                    {t("appointments.updateStatus")}
-                  </button>
-                  <button type="button" className="button-secondary" onClick={() => void rescheduleAppointment(selectedAppointment)}>
-                    {t("appointments.reschedule")}
-                  </button>
-                  <button type="button" className="button-secondary" onClick={() => void cancelAppointment(selectedAppointment)}>
-                    {t("appointments.cancel")}
-                  </button>
+                  {renderOwnerAppointmentActions(selectedAppointment)}
                 </div>
               ) : (
                 <div className="inline-actions">{renderStaffAppointmentActions(selectedAppointment)}</div>
@@ -1034,24 +1199,9 @@ export const AppointmentsPage = () => {
                               {item.notes ? <small>{item.notes}</small> : null}
                             </div>
                             <div className="schedule-appointment-actions">
-                              <button type="button" className="button-secondary" onClick={(event) => {
-                                stopAppointmentAction(event);
-                                void updateStatus(item);
-                              }}>
-                                {t("appointments.updateStatus")}
-                              </button>
-                              <button type="button" className="button-secondary" onClick={(event) => {
-                                stopAppointmentAction(event);
-                                void rescheduleAppointment(item);
-                              }}>
-                                {t("appointments.reschedule")}
-                              </button>
-                              <button type="button" className="button-secondary" onClick={(event) => {
-                                stopAppointmentAction(event);
-                                void cancelAppointment(item);
-                              }}>
-                                {t("appointments.cancel")}
-                              </button>
+                              <div className="inline-actions" onClick={(event) => event.stopPropagation()}>
+                                {renderOwnerAppointmentActions(item)}
+                              </div>
                             </div>
                           </article>
                         );
@@ -1075,6 +1225,83 @@ export const AppointmentsPage = () => {
               ) : null}
             </div>
           )}
+        </section>
+      ) : null}
+
+      {isOwner ? (
+        <section className="card">
+          <div className="section-header">
+            <div>
+              <h2>{t("appointments.upcomingTitle")}</h2>
+              <p className="muted">{t("appointments.upcomingHint")}</p>
+            </div>
+            <span className="summary-badge">{ownerUpcomingAppointments.length} {t("appointments.upcomingCount")}</span>
+          </div>
+          {ownerUpcomingByDay.length ? (
+            ownerUpcomingByDay.map(([day, items]) => (
+              <div key={day} className="day-section">
+                <h3>{formatSelectedDateLabel(day, locale)}</h3>
+                <div className="entity-grid">
+                  {items.map(renderOwnerAppointmentCard)}
+                </div>
+              </div>
+            ))
+          ) : (
+            <EmptyBlock message={t("appointments.noOwner")} />
+          )}
+        </section>
+      ) : null}
+
+      {isOwner ? (
+        <section className="card">
+          <div className="section-header">
+            <div>
+              <h2>{t("appointments.archiveTitle")}</h2>
+              <p className="muted">{t("appointments.archiveHint")}</p>
+            </div>
+          </div>
+          <div className="segmented-control" role="tablist" aria-label={t("appointments.archiveTitle")}>
+            <button
+              type="button"
+              className={archiveView === "completed" ? "button-primary" : "button-secondary"}
+              onClick={() => setArchiveView("completed")}
+            >
+              {t("appointments.completedTab")}: {ownerCompletedAppointments.length}
+            </button>
+            <button
+              type="button"
+              className={archiveView === "canceled" ? "button-primary" : "button-secondary"}
+              onClick={() => setArchiveView("canceled")}
+            >
+              {t("appointments.canceledNoShowTab")}: {ownerCanceledNoShowAppointments.length}
+            </button>
+          </div>
+          {archiveView === "completed" && ownerCompletedByDay.length ? (
+            ownerCompletedByDay.map(([day, items]) => (
+              <div key={`completed-${day}`} className="day-section">
+                <h3>{formatSelectedDateLabel(day, locale)}</h3>
+                <div className="entity-grid">
+                  {items.map(renderOwnerAppointmentCard)}
+                </div>
+              </div>
+            ))
+          ) : null}
+          {archiveView === "canceled" && ownerCanceledNoShowByDay.length ? (
+            ownerCanceledNoShowByDay.map(([day, items]) => (
+              <div key={`terminal-${day}`} className="day-section">
+                <h3>{formatSelectedDateLabel(day, locale)}</h3>
+                <div className="entity-grid">
+                  {items.map(renderOwnerAppointmentCard)}
+                </div>
+              </div>
+            ))
+          ) : null}
+          {archiveView === "completed" && !ownerCompletedByDay.length ? (
+            <EmptyBlock message={t("appointments.noArchive")} />
+          ) : null}
+          {archiveView === "canceled" && !ownerCanceledNoShowByDay.length ? (
+            <EmptyBlock message={t("appointments.noArchive")} />
+          ) : null}
         </section>
       ) : null}
 
@@ -1237,10 +1464,6 @@ export const AppointmentsPage = () => {
                         <div>
                           <span className="muted">{t("appointments.staff")}</span>
                           <strong>{item.staff.fullName}</strong>
-                        </div>
-                        <div>
-                          <span className="muted">{t("appointments.source")}</span>
-                          <strong>{item.source}</strong>
                         </div>
                       </div>
                       <div className="summary-badges">

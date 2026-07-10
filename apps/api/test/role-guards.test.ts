@@ -40,13 +40,13 @@ test("staff cannot access owner-only app pages or owner-only API actions", () =>
     "customers",
     "availability",
     "billing",
-    "calls",
-    "ai-logs",
     "messages",
     "alerts"
   ]) {
     assert.match(ownerApp, new RegExp(`path="${route}"[\\s\\S]*?RequireRole roles=\\{\\["SALON_OWNER"\\]\\}`));
   }
+  assert.match(ownerApp, /path="calls"[\s\S]*?element=\{<Navigate to="\/dashboard" replace \/>\}/);
+  assert.match(ownerApp, /path="ai-logs"[\s\S]*?element=\{<Navigate to="\/dashboard" replace \/>\}/);
   assert.match(ownerApp, /path="appointments"[\s\S]*?RequireRole roles=\{\["SALON_OWNER", "STAFF"\]\}/);
   assert.match(ownerApp, /path="my-profile"[\s\S]*?RequireRole roles=\{\["STAFF"\]\}/);
 
@@ -374,15 +374,43 @@ test("call-center agent access is limited to assigned salon workflows", () => {
   const ownerApp = readRepo("apps/app/src/App.tsx");
 
   assert.match(app, /requireRoles\(Role\.CALL_CENTER_AGENT, Role\.SALON_OWNER\)/);
-  assert.match(ownerApp, /path="call-center"[\s\S]*?RequireRole roles=\{\["SALON_OWNER", "CALL_CENTER_AGENT"\]\}/);
+  assert.match(ownerApp, /path="call-center"[\s\S]*?RequireRole roles=\{\["CALL_CENTER_AGENT"\]\}/);
   assert.match(routes, /listEscalationQueue\(\s*\{\s*userId: req\.auth!\.userId,\s*role: req\.auth!\.role,\s*salonId: req\.auth!\.salonId\s*\}/s);
   assert.match(service, /export const assertCallCenterSalonAccess/);
   assert.match(service, /salonId_agentUserId/);
   assert.match(service, /Salon is not assigned to this call center agent\./);
 });
 
-test("owner navigation exposes release pages and staff navigation exposes profile only", () => {
+test("owner navigation exposes owner pages and staff navigation exposes profile only", () => {
   const layout = readRepo("apps/app/src/components/layout.tsx");
+  const ownerBasicStart = layout.indexOf("const ownerBasicNav = [");
+  const ownerNavStart = layout.indexOf("const ownerNav = [");
+  const staffNavStart = layout.indexOf("const staffNav = [");
+  const callCenterNavStart = layout.indexOf("const callCenterNav = [");
+
+  assert.notEqual(ownerBasicStart, -1);
+  assert.notEqual(ownerNavStart, -1);
+  assert.notEqual(staffNavStart, -1);
+  assert.notEqual(callCenterNavStart, -1);
+
+  const ownerBasicNavBlock = layout.slice(ownerBasicStart, ownerNavStart);
+  const ownerNavBlock = layout.slice(ownerNavStart, staffNavStart);
+  const staffNavBlock = layout.slice(staffNavStart, callCenterNavStart);
+
+  let lastBasicRouteIndex = -1;
+  for (const route of [
+    "/dashboard",
+    "/appointments",
+    "/customers",
+    "/services",
+    "/staff",
+    "/alerts",
+    "/salon-profile"
+  ]) {
+    const routeIndex = ownerBasicNavBlock.indexOf(`to: "${route}"`);
+    assert.ok(routeIndex > lastBasicRouteIndex);
+    lastBasicRouteIndex = routeIndex;
+  }
 
   for (const route of [
     "/dashboard",
@@ -393,17 +421,16 @@ test("owner navigation exposes release pages and staff navigation exposes profil
     "/business-hours",
     "/availability",
     "/salon-profile",
-    "/call-center",
-    "/calls",
-    "/ai-logs",
     "/billing",
     "/messages",
     "/alerts"
   ]) {
-    assert.match(layout, new RegExp(`to: "${route}"`));
+    assert.match(ownerNavBlock, new RegExp(`to: "${route}"`));
   }
+  assert.doesNotMatch(ownerBasicNavBlock, /to: "\/call-center"|to: "\/calls"|to: "\/ai-logs"/);
+  assert.doesNotMatch(ownerNavBlock, /to: "\/call-center"|to: "\/calls"|to: "\/ai-logs"/);
 
-  assert.match(layout, /const staffNav = \[[\s\S]*?to: "\/my-profile"/);
+  assert.match(staffNavBlock, /to: "\/my-profile"/);
   assert.doesNotMatch(layout, new RegExp(`role === "${"OPER"}${"ATOR"}"`));
 });
 

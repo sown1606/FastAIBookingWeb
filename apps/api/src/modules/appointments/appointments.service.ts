@@ -86,9 +86,14 @@ const createAllowedStatuses = new Set<AppointmentStatus>([
 const manualUpdateAllowedStatuses = new Set<AppointmentStatus>([
   AppointmentStatus.SCHEDULED,
   AppointmentStatus.CONFIRMED,
-  AppointmentStatus.CANCELED,
   AppointmentStatus.NO_SHOW
 ]);
+
+const TECHNICAL_NOTE_LINE_PATTERNS = [
+  /^Created by Amazon Connect AI Booking\.$/i,
+  /^Source:\s*amazon_connect_ai$/i,
+  /^Amazon Connect contact:\s*.+$/i
+];
 
 const invalidAppointmentStartTime = () =>
   new AppError("Invalid appointment start time.", 400, "INVALID_START_TIME");
@@ -147,6 +152,13 @@ const assertCreateStatusAllowed = (status: AppointmentStatus): void => {
 };
 
 const assertManualUpdateStatusAllowed = (status?: AppointmentStatus): void => {
+  if (status === AppointmentStatus.CANCELED) {
+    throw new AppError(
+      "Use the dedicated cancel endpoint to cancel appointments.",
+      400,
+      "USE_CANCEL_ENDPOINT"
+    );
+  }
   if (status && !manualUpdateAllowedStatuses.has(status)) {
     throw new AppError(
       "Use the work start and confirmed done actions for this status.",
@@ -154,6 +166,40 @@ const assertManualUpdateStatusAllowed = (status?: AppointmentStatus): void => {
       "INVALID_STATUS_TRANSITION"
     );
   }
+};
+
+export const removeTechnicalAppointmentNoteLines = (notes: string | null | undefined): string | null => {
+  if (!notes) {
+    return notes ?? null;
+  }
+
+  const businessLines = notes
+    .split(/\r?\n/)
+    .filter((line) => !TECHNICAL_NOTE_LINE_PATTERNS.some((pattern) => pattern.test(line.trim())));
+  const cleaned = businessLines.join("\n").trim();
+  return cleaned || null;
+};
+
+export const toOwnerAppointmentResponse = <T extends { notes?: string | null; source?: AppointmentSource }>(
+  appointment: T
+): Omit<T, "source"> & { notes: string | null; bookingChannel?: "assistant" | "dashboard" | "manual" | "call_center" } => {
+  const { source, ...rest } = appointment;
+  const bookingChannel =
+    source === AppointmentSource.AI
+      ? "assistant"
+      : source === AppointmentSource.CALL_CENTER
+        ? "call_center"
+        : source === AppointmentSource.MANUAL
+          ? "manual"
+          : source === AppointmentSource.DASHBOARD
+            ? "dashboard"
+            : undefined;
+
+  return {
+    ...rest,
+    notes: removeTechnicalAppointmentNoteLines(appointment.notes),
+    ...(bookingChannel ? { bookingChannel } : {})
+  };
 };
 
 const ensureCustomerBelongsToSalon = async (salonId: string, customerId: string): Promise<void> => {
@@ -563,13 +609,22 @@ export const createAppointment = async (
     });
 
     await replaceAppointmentServices(tx, salonId, appointment.id, services);
-    await replaceStaffReminders(tx, {
-      salonId,
-      staffId: appointment.staffId,
-      appointmentId: appointment.id,
-      startTime: appointment.startTime,
-      endTime: appointment.endTime
-    });
+    if (terminalStatuses.has(appointment.status)) {
+      await tx.staffReminder.deleteMany({
+        where: {
+          appointmentId: appointment.id,
+          deliveredAt: null
+        }
+      });
+    } else {
+      await replaceStaffReminders(tx, {
+        salonId,
+        staffId: appointment.staffId,
+        appointmentId: appointment.id,
+        startTime: appointment.startTime,
+        endTime: appointment.endTime
+      });
+    }
     await updateStaffOperationalState(tx, {
       nextStaffId: appointment.staffId,
       appointmentId: appointment.id,
@@ -863,6 +918,13 @@ export const cancelAppointment = async (
       }
     });
 
+    await tx.staffReminder.deleteMany({
+      where: {
+        appointmentId: existing.id,
+        deliveredAt: null
+      }
+    });
+
     await tx.appointmentStatusHistory.create({
       data: {
         appointmentId: updated.id,
@@ -896,6 +958,118 @@ export const cancelAppointment = async (
   await sendAppointmentCustomerNotifications(canceledAppointment, "canceled");
   await sendAppointmentPushNotifications(canceledAppointment, "canceled", [existing.staffId]);
   return canceledAppointment;
+};
+
+export const permanentlyDeleteAppointment = async (
+  salonId: string,
+  appointmentId: string,
+  actorUserId: string
+) => {
+  const existing = await prisma.appointment.findFirst({
+    where: {
+      id: appointmentId,
+      salonId
+    },
+    include: buildAppointmentInclude()
+  });
+  if (!existing) {
+    throw new AppError("Appointment not found.", 404, "APPOINTMENT_NOT_FOUND");
+  }
+  if (!terminalStatuses.has(existing.status)) {
+    throw new AppError(
+      "Active appointments must be canceled or completed before permanent deletion.",
+      409,
+      "APPOINTMENT_NOT_TERMINAL"
+    );
+  }
+
+  const result = await prisma.$transaction(async (tx) => {
+    await tx.staff.updateMany({
+      where: {
+        id: existing.staffId,
+        activeAppointmentId: existing.id
+      },
+      data: {
+        currentWorkStatus: StaffWorkStatus.AVAILABLE,
+        activeAppointmentId: null
+      }
+    });
+
+    await tx.staffWorkSession.updateMany({
+      where: {
+        appointmentId: existing.id,
+        status: StaffWorkStatus.IN_PROGRESS
+      },
+      data: {
+        status: StaffWorkStatus.DONE,
+        endedAt: new Date()
+      }
+    });
+
+    const bookingAttemptUpdate = await tx.bookingAttempt.updateMany({
+      where: {
+        appointmentId: existing.id
+      },
+      data: {
+        appointmentId: null
+      }
+    });
+
+    await tx.staffReminder.deleteMany({
+      where: {
+        appointmentId: existing.id
+      }
+    });
+
+    await createAuditLog(
+      {
+        salonId,
+        actorUserId,
+        action: "APPOINTMENT_DELETED_PERMANENTLY",
+        entityType: "Appointment",
+        entityId: existing.id,
+        metadata: {
+          appointmentSnapshot: {
+            id: existing.id,
+            salonId: existing.salonId,
+            customerId: existing.customerId,
+            staffId: existing.staffId,
+            staffName: existing.staff.fullName,
+            serviceId: existing.serviceId,
+            serviceName: existing.service.name,
+            startTime: existing.startTime.toISOString(),
+            endTime: existing.endTime.toISOString(),
+            status: existing.status,
+            canceledReason: existing.canceledReason,
+            notes: removeTechnicalAppointmentNoteLines(existing.notes),
+            statusHistory: existing.statusHistory.map((history) => ({
+              previousStatus: history.previousStatus,
+              newStatus: history.newStatus,
+              reason: history.reason,
+              changedAt: history.changedAt.toISOString()
+            }))
+          },
+          bookingAttemptsDetached: bookingAttemptUpdate.count
+        }
+      },
+      tx
+    );
+
+    await tx.appointment.delete({
+      where: {
+        id: existing.id
+      }
+    });
+
+    return {
+      id: existing.id,
+      status: existing.status,
+      bookingAttemptsDetached: bookingAttemptUpdate.count,
+      deleted: true
+    };
+  });
+
+  return result;
 };
 
 export const rescheduleAppointment = async (

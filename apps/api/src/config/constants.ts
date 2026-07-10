@@ -8,6 +8,8 @@ export const ADMIN_ROLES: Role[] = [Role.PLATFORM_ADMIN];
 
 export const ACTIVE_STAFF_STATUS = StaffStatus.ACTIVE;
 
-export const NON_BLOCKING_APPOINTMENT_STATUSES: AppointmentStatus[] = [
-  AppointmentStatus.CANCELED
+export const BLOCKING_APPOINTMENT_STATUSES: AppointmentStatus[] = [
+  AppointmentStatus.SCHEDULED,
+  AppointmentStatus.CONFIRMED,
+  AppointmentStatus.IN_PROGRESS
 ];

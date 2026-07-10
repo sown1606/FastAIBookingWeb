@@ -5,26 +5,35 @@ import { asyncHandler } from "../../middleware/async-handler";
 import { requireRoles } from "../../middleware/auth";
 import { validate } from "../../middleware/validate";
 import { sendSuccess } from "../../utils/response";
-import { isValidUsPhone } from "../../utils/phone";
+import { isValidCustomerPhone } from "../../utils/phone";
 import {
   createCustomer,
   getCustomerAppointmentHistory,
   getCustomerDetail,
-  searchCustomers
+  searchCustomers,
+  updateCustomer
 } from "./customers.service";
 
-const usPhoneSchema = z
+const customerPhoneSchema = z
   .string()
-  .min(10)
+  .min(7)
   .max(25)
-  .refine((value) => isValidUsPhone(value), "Phone must be a valid US phone number.");
+  .refine((value) => isValidCustomerPhone(value), "Phone must be a valid phone number.");
 
 const createCustomerSchema = z.object({
   firstName: z.string().min(1).max(80),
   lastName: z.string().min(1).max(80),
   email: z.string().email().optional(),
-  phone: usPhoneSchema,
+  phone: customerPhoneSchema,
   notes: z.string().max(1000).optional()
+});
+
+const updateCustomerSchema = z.object({
+  firstName: z.string().min(1).max(80).optional(),
+  lastName: z.string().min(1).max(80).optional(),
+  email: z.string().email().nullable().optional(),
+  phone: customerPhoneSchema.optional(),
+  notes: z.string().max(1000).nullable().optional()
 });
 
 const listCustomerQuerySchema = z.object({
@@ -74,6 +83,21 @@ customersRouter.get(
     const { id } = req.params as z.infer<typeof customerIdSchema>;
     const customer = await getCustomerDetail(req.auth!.salonId!, id);
     return sendSuccess(res, {
+      data: customer
+    });
+  })
+);
+
+customersRouter.patch(
+  "/:id",
+  validate(customerIdSchema, "params"),
+  validate(updateCustomerSchema),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params as z.infer<typeof customerIdSchema>;
+    const payload = req.body as z.infer<typeof updateCustomerSchema>;
+    const customer = await updateCustomer(req.auth!.salonId!, id, req.auth!.userId, payload);
+    return sendSuccess(res, {
+      message: "Customer updated.",
       data: customer
     });
   })

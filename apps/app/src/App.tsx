@@ -16,8 +16,6 @@ import { CustomersPage } from "./pages/customers-page";
 import { AppointmentsPage } from "./pages/appointments-page";
 import { AvailabilityPage } from "./pages/availability-page";
 import { BillingPage } from "./pages/billing-page";
-import { CallsPage } from "./pages/calls-page";
-import { AiLogsPage } from "./pages/ai-logs-page";
 import { MessagesPage } from "./pages/messages-page";
 import { AlertsPage } from "./pages/alerts-page";
 import { FeedbackPage } from "./pages/feedback-page";
@@ -188,7 +186,7 @@ export const App = () => {
           <Route
             path="call-center"
             element={
-              <RequireRole roles={["SALON_OWNER", "CALL_CENTER_AGENT"]}>
+              <RequireRole roles={["CALL_CENTER_AGENT"]}>
                 <CallCenterPage />
               </RequireRole>
             }
@@ -219,19 +217,11 @@ export const App = () => {
           />
           <Route
             path="calls"
-            element={
-              <RequireRole roles={["SALON_OWNER"]}>
-                <CallsPage />
-              </RequireRole>
-            }
+            element={<Navigate to="/dashboard" replace />}
           />
           <Route
             path="ai-logs"
-            element={
-              <RequireRole roles={["SALON_OWNER"]}>
-                <AiLogsPage />
-              </RequireRole>
-            }
+            element={<Navigate to="/dashboard" replace />}
           />
         </Route>
 
