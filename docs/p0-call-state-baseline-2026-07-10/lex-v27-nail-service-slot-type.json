@@ -1,0 +1,354 @@
+{
+    "slotTypeId": "CRPHEOWTHG",
+    "slotTypeName": "NailServiceType",
+    "description": "Demo nail salon services with speech synonyms",
+    "slotTypeValues": [
+        {
+            "sampleValue": {
+                "value": "Pedicure"
+            },
+            "synonyms": [
+                {
+                    "value": "1"
+                },
+                {
+                    "value": "pedicure"
+                },
+                {
+                    "value": "bedicure"
+                },
+                {
+                    "value": "beticure"
+                },
+                {
+                    "value": "petty cure"
+                },
+                {
+                    "value": "pedi cure"
+                },
+                {
+                    "value": "peddy cure"
+                },
+                {
+                    "value": "pay di cure"
+                },
+                {
+                    "value": "pay the cure"
+                },
+                {
+                    "value": "paydy cure"
+                },
+                {
+                    "value": "ready cure"
+                },
+                {
+                    "value": "reddy cure"
+                },
+                {
+                    "value": "betty cure"
+                },
+                {
+                    "value": "berry cure"
+                },
+                {
+                    "value": "pretty cure"
+                },
+                {
+                    "value": "better cure"
+                },
+                {
+                    "value": "bettercure"
+                },
+                {
+                    "value": "eddie here"
+                },
+                {
+                    "value": "pedic care"
+                },
+                {
+                    "value": "pedi care"
+                },
+                {
+                    "value": "pedicure appointment"
+                },
+                {
+                    "value": "toe service"
+                },
+                {
+                    "value": "foot service"
+                },
+                {
+                    "value": "foot pedicure"
+                },
+                {
+                    "value": "toe pedicure"
+                }
+            ]
+        },
+        {
+            "sampleValue": {
+                "value": "Manicure"
+            },
+            "synonyms": [
+                {
+                    "value": "2"
+                },
+                {
+                    "value": "manicure"
+                },
+                {
+                    "value": "mani cure"
+                },
+                {
+                    "value": "manny cure"
+                },
+                {
+                    "value": "many cure"
+                },
+                {
+                    "value": "nanny cure"
+                },
+                {
+                    "value": "mini cure"
+                },
+                {
+                    "value": "manicure appointment"
+                },
+                {
+                    "value": "hand service"
+                },
+                {
+                    "value": "finger nail service"
+                },
+                {
+                    "value": "basic manicure"
+                },
+                {
+                    "value": "regular manicure"
+                }
+            ]
+        },
+        {
+            "sampleValue": {
+                "value": "Gel Manicure"
+            },
+            "synonyms": [
+                {
+                    "value": "3"
+                },
+                {
+                    "value": "gel manicure"
+                },
+                {
+                    "value": "gel mani"
+                },
+                {
+                    "value": "gel mani cure"
+                },
+                {
+                    "value": "gel manny cure"
+                },
+                {
+                    "value": "gel many cure"
+                },
+                {
+                    "value": "jell manicure"
+                },
+                {
+                    "value": "jail manicure"
+                },
+                {
+                    "value": "gel nail"
+                },
+                {
+                    "value": "gel nails"
+                },
+                {
+                    "value": "gel hand service"
+                },
+                {
+                    "value": "gel manicure appointment"
+                }
+            ]
+        },
+        {
+            "sampleValue": {
+                "value": "Full Set"
+            },
+            "synonyms": [
+                {
+                    "value": "4"
+                },
+                {
+                    "value": "full set"
+                },
+                {
+                    "value": "fullset"
+                },
+                {
+                    "value": "full-set"
+                },
+                {
+                    "value": "full sets"
+                },
+                {
+                    "value": "full nail set"
+                },
+                {
+                    "value": "nail full set"
+                },
+                {
+                    "value": "full nail"
+                },
+                {
+                    "value": "nail set"
+                },
+                {
+                    "value": "new set"
+                },
+                {
+                    "value": "complete set"
+                },
+                {
+                    "value": "false set"
+                },
+                {
+                    "value": "fall set"
+                },
+                {
+                    "value": "four set"
+                },
+                {
+                    "value": "phone set"
+                },
+                {
+                    "value": "room set"
+                },
+                {
+                    "value": "pull set"
+                },
+                {
+                    "value": "pull step"
+                },
+                {
+                    "value": "pool set"
+                },
+                {
+                    "value": "full step"
+                },
+                {
+                    "value": "full said"
+                },
+                {
+                    "value": "full sit"
+                },
+                {
+                    "value": "full sat"
+                },
+                {
+                    "value": "full sell"
+                },
+                {
+                    "value": "full sad"
+                },
+                {
+                    "value": "full send"
+                },
+                {
+                    "value": "fo set"
+                },
+                {
+                    "value": "fuel set"
+                },
+                {
+                    "value": "fake nails"
+                },
+                {
+                    "value": "extension nails"
+                },
+                {
+                    "value": "nail extensions"
+                },
+                {
+                    "value": "full set appointment"
+                }
+            ]
+        },
+        {
+            "sampleValue": {
+                "value": "Dip Powder"
+            },
+            "synonyms": [
+                {
+                    "value": "5"
+                },
+                {
+                    "value": "dip powder"
+                },
+                {
+                    "value": "dip"
+                },
+                {
+                    "value": "dip power"
+                },
+                {
+                    "value": "deep powder"
+                },
+                {
+                    "value": "dipping powder"
+                },
+                {
+                    "value": "de powder"
+                },
+                {
+                    "value": "dep powder"
+                },
+                {
+                    "value": "powder dip"
+                },
+                {
+                    "value": "dip nails"
+                },
+                {
+                    "value": "dip powder nails"
+                },
+                {
+                    "value": "dip powder appointment"
+                }
+            ]
+        },
+        {
+            "sampleValue": {
+                "value": "Other Services"
+            },
+            "synonyms": [
+                {
+                    "value": "other services"
+                },
+                {
+                    "value": "other service"
+                },
+                {
+                    "value": "others services"
+                },
+                {
+                    "value": "something else"
+                },
+                {
+                    "value": "different service"
+                },
+                {
+                    "value": "custom service"
+                }
+            ]
+        }
+    ],
+    "valueSelectionSetting": {
+        "resolutionStrategy": "TopResolution"
+    },
+    "botId": "KHMIXGA2US",
+    "botVersion": "27",
+    "localeId": "en_US",
+    "creationDateTime": "2026-06-02T06:05:50.597000-04:00",
+    "lastUpdatedDateTime": "2026-07-10T10:09:52.664000-04:00"
+}

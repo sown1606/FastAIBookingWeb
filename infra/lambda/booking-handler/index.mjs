@@ -2361,7 +2361,7 @@ function classifyFinalBookingConfirmation(value) {
   }
 
   const hasChangeRequest =
-    /\b(?:change|make it|instead|switch|move it|can we do|could we do)\b/.test(normalized);
+    /\b(?:change|make it|instead|switch|move it|can we do|could we do|actually)\b/.test(normalized);
   const hasNewBookingValue =
     extractServiceFromTranscript(value) ||
     hasCurrentTurnDatePhrase(value) ||
@@ -2370,7 +2370,21 @@ function classifyFinalBookingConfirmation(value) {
   const hasExplicitNegation =
     /\b(?:no|nope|nah|wrong|not correct|not right|do not|don t|dont|cancel it|wait no)\b/.test(normalized);
 
-  if ((hasExplicitNegation || hasChangeRequest) && hasChangeRequest && hasNewBookingValue) {
+  const hasAffirmation =
+    /\b(?:yes|yeah|yep|correct|right|sure|ok|okay)\b/.test(normalized) ||
+    /\b(?:that s right|that is right|sounds good|that s fine|that is fine|go ahead|please book it|book it|confirm it)\b/.test(
+      normalized
+    );
+
+  if ((hasExplicitNegation || hasChangeRequest) && hasNewBookingValue) {
+    return FINAL_CONFIRMATION_OUTCOME.CHANGE_REQUEST;
+  }
+
+  if (
+    hasNewBookingValue &&
+    hasAffirmation &&
+    /\b(?:but|actually|instead|change|make|move|switch|want|need|with|at|for)\b/.test(normalized)
+  ) {
     return FINAL_CONFIRMATION_OUTCOME.CHANGE_REQUEST;
   }
 
@@ -2378,11 +2392,6 @@ function classifyFinalBookingConfirmation(value) {
     return FINAL_CONFIRMATION_OUTCOME.DENIED;
   }
 
-  const hasAffirmation =
-    /\b(?:yes|yeah|yep|correct|right|sure|ok|okay)\b/.test(normalized) ||
-    /\b(?:that s right|that is right|sounds good|that s fine|that is fine|go ahead|please book it|book it|confirm it)\b/.test(
-      normalized
-    );
   if (hasAffirmation) {
     return FINAL_CONFIRMATION_OUTCOME.AFFIRMED;
   }
@@ -3366,6 +3375,27 @@ function buildLexResponse(event, message, state = "Fulfilled", sessionAttributes
     mergedSessionAttributes,
     dialogAction.type === "ElicitSlot" ? dialogAction.slotToElicit : ""
   );
+  if (!responseSessionAttributes.conversationComplete) {
+    if (responseSessionAttributes.transferToQueue === "true") {
+      responseSessionAttributes.conversationState = responseSessionAttributes.conversationState || "TRANSFER";
+      responseSessionAttributes.conversationOutcome = responseSessionAttributes.conversationOutcome || "NEEDS_INPUT";
+      responseSessionAttributes.conversationComplete = "false";
+    } else if (
+      responseSessionAttributes.bookingOutcome === "BOOKED" ||
+      (dialogAction.type === "Close" && nextState === "Fulfilled")
+    ) {
+      responseSessionAttributes.conversationState = responseSessionAttributes.conversationState || "COMPLETE";
+      responseSessionAttributes.conversationOutcome =
+        responseSessionAttributes.conversationOutcome ||
+        responseSessionAttributes.bookingOutcome ||
+        "CALLER_GOODBYE";
+      responseSessionAttributes.conversationComplete = "true";
+    } else {
+      responseSessionAttributes.conversationState = responseSessionAttributes.conversationState || "CONTINUE";
+      responseSessionAttributes.conversationOutcome = responseSessionAttributes.conversationOutcome || "NEEDS_INPUT";
+      responseSessionAttributes.conversationComplete = "false";
+    }
+  }
   const response = {
     sessionState: {
       sessionAttributes: responseSessionAttributes,

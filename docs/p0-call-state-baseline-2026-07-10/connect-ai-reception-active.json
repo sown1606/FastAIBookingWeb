@@ -161,12 +161,6 @@
           "y": 260
         }
       },
-      "check-conversation-complete": {
-        "position": {
-          "x": 900,
-          "y": 420
-        }
-      },
       "transfer-human-escalation-flow": {
         "position": {
           "x": 1040,
@@ -281,7 +275,7 @@
       "Identifier": "3b2877ca-bc16-4019-a8e6-04200c0ded06",
       "Type": "ConnectParticipantWithLexBot",
       "Transitions": {
-        "NextAction": "check-transfer-to-queue",
+        "NextAction": "67ada978-600a-4d39-9965-6230c52810a9",
         "Conditions": [
           {
             "NextAction": "check-transfer-to-queue",
@@ -376,37 +370,12 @@
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedTime": "1100",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference": "1100",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:customerName": "1500",
-          "conversationState": "$.Lex.SessionAttributes.conversationState",
-          "conversationOutcome": "$.Lex.SessionAttributes.conversationOutcome",
-          "conversationComplete": "$.Lex.SessionAttributes.conversationComplete",
-          "customerName": "$.Lex.SessionAttributes.customerName",
-          "customerPhone": "$.Lex.SessionAttributes.customerPhone",
-          "serviceName": "$.Lex.SessionAttributes.serviceName",
-          "confirmedServiceName": "$.Lex.SessionAttributes.confirmedServiceName",
-          "requestedDate": "$.Lex.SessionAttributes.requestedDate",
-          "requestedTime": "$.Lex.SessionAttributes.requestedTime",
-          "staffPreference": "$.Lex.SessionAttributes.staffPreference",
-          "staffId": "$.Lex.SessionAttributes.staffId",
-          "selectedStaffId": "$.Lex.SessionAttributes.selectedStaffId",
-          "confirmedStaffId": "$.Lex.SessionAttributes.confirmedStaffId",
-          "confirmedStaffName": "$.Lex.SessionAttributes.confirmedStaffName",
-          "awaitingFinalBookingConfirmation": "$.Lex.SessionAttributes.awaitingFinalBookingConfirmation",
-          "bookingConfirmationAsked": "$.Lex.SessionAttributes.bookingConfirmationAsked",
-          "confirmationFingerprint": "$.Lex.SessionAttributes.confirmationFingerprint",
-          "awaitingAlternativeSelection": "$.Lex.SessionAttributes.awaitingAlternativeSelection",
-          "aiAlternativeSlots": "$.Lex.SessionAttributes.aiAlternativeSlots",
-          "alternativeOfferId": "$.Lex.SessionAttributes.alternativeOfferId",
-          "anchorRequestedDate": "$.Lex.SessionAttributes.anchorRequestedDate",
-          "anchorRequestedTime": "$.Lex.SessionAttributes.anchorRequestedTime",
-          "anchorRequestedStaff": "$.Lex.SessionAttributes.anchorRequestedStaff",
-          "rejectedOptionKeys": "$.Lex.SessionAttributes.rejectedOptionKeys",
-          "lastAskedSlot": "$.Lex.SessionAttributes.lastAskedSlot",
           "outerRecoveryAttempt": "true"
         },
         "Text": "Sorry, I missed that. Please tell me what you need, or press 0 for a person."
       },
       "Transitions": {
-        "NextAction": "check-transfer-to-queue",
+        "NextAction": "67ada978-600a-4d39-9965-6230c52810a9",
         "Conditions": [
           {
             "NextAction": "check-transfer-to-queue",
@@ -538,7 +507,7 @@
         "ComparisonValue": "$.Lex.SessionAttributes.transferToQueue"
       },
       "Transitions": {
-        "NextAction": "check-conversation-complete",
+        "NextAction": "67ada978-600a-4d39-9965-6230c52810a9",
         "Conditions": [
           {
             "NextAction": "transfer-human-escalation-flow",
@@ -552,34 +521,7 @@
         ],
         "Errors": [
           {
-            "NextAction": "check-conversation-complete",
-            "ErrorType": "NoMatchingCondition"
-          }
-        ]
-      }
-    },
-    {
-      "Identifier": "check-conversation-complete",
-      "Type": "Compare",
-      "Parameters": {
-        "ComparisonValue": "$.Lex.SessionAttributes.conversationComplete"
-      },
-      "Transitions": {
-        "NextAction": "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d",
-        "Conditions": [
-          {
             "NextAction": "67ada978-600a-4d39-9965-6230c52810a9",
-            "Condition": {
-              "Operator": "Equals",
-              "Operands": [
-                "true"
-              ]
-            }
-          }
-        ],
-        "Errors": [
-          {
-            "NextAction": "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d",
             "ErrorType": "NoMatchingCondition"
           }
         ]

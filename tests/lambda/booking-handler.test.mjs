@@ -444,8 +444,31 @@ test("Connect AI reception has one reachable greeting and no outer service promp
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:allow-interrupt:*:*"], "true");
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:*:*"], "1300");
   assert.equal(recovery.Parameters.Text, "Sorry, I missed that. Please tell me what you need, or press 0 for a person.");
-  assert.equal(recovery.Transitions.NextAction, "67ada978-600a-4d39-9965-6230c52810a9");
+  assert.equal(recovery.Transitions.NextAction, "check-transfer-to-queue");
+  assert.equal(recovery.Parameters.LexSessionAttributes.confirmationFingerprint, "$.Lex.SessionAttributes.confirmationFingerprint");
+  assert.equal(recovery.Parameters.LexSessionAttributes.aiAlternativeSlots, "$.Lex.SessionAttributes.aiAlternativeSlots");
   assert.doesNotMatch(JSON.stringify(recovery.Parameters.LexSessionAttributes), /activeDtmfMenu|Pedicure|Full Set/i);
+});
+
+test("Connect AI reception routes only explicit complete conversations to goodbye", () => {
+  const aiReceptionFlow = JSON.parse(
+    readFileSync(path.join(connectRoot, "ai-reception.json"), "utf8")
+  );
+  const { actionsById } = collectReachableActions(aiReceptionFlow);
+  const primary = actionsById.get("3b2877ca-bc16-4019-a8e6-04200c0ded06");
+  const recovery = actionsById.get("6fbf4310-c8c6-44a8-a8f5-1d7830974c4d");
+  const transferCheck = actionsById.get("check-transfer-to-queue");
+  const completeCheck = actionsById.get("check-conversation-complete");
+
+  assert.equal(primary.Transitions.NextAction, "check-transfer-to-queue");
+  assert.equal(recovery.Transitions.NextAction, "check-transfer-to-queue");
+  assert.equal(transferCheck.Parameters.ComparisonValue, "$.Lex.SessionAttributes.transferToQueue");
+  assert.equal(transferCheck.Transitions.NextAction, "check-conversation-complete");
+  assert.equal(transferCheck.Transitions.Conditions[0].NextAction, "transfer-human-escalation-flow");
+  assert.equal(completeCheck.Parameters.ComparisonValue, "$.Lex.SessionAttributes.conversationComplete");
+  assert.equal(completeCheck.Transitions.NextAction, "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d");
+  assert.equal(completeCheck.Transitions.Conditions[0].NextAction, "67ada978-600a-4d39-9965-6230c52810a9");
+  assert.equal(primary.Transitions.Errors[0].NextAction, "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d");
 });
 
 test("booking prompts are speech-first and service menu is not the greeting", () => {

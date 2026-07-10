@@ -609,33 +609,40 @@ const hasStaticServiceAliasInText = (value?: string | null): boolean => {
     });
 };
 
-const classifyFinalBookingConfirmation = (value?: string | null): FinalBookingConfirmationOutcome => {
+const classifyFinalBookingConfirmation = (
+  value?: string | null,
+  options: { hasExplicitStaffChange?: boolean } = {}
+): FinalBookingConfirmationOutcome => {
   const normalized = normalizeForMatch(value);
   if (!normalized) {
     return "UNKNOWN";
   }
 
   const hasChangeRequest =
-    /\b(?:change|make it|instead|switch|move it|can we do|could we do)\b/.test(normalized);
+    /\b(?:change|make it|instead|switch|move it|can we do|could we do|actually)\b/.test(normalized);
   const hasNewBookingValue =
     hasStaticServiceAliasInText(value) ||
     new RegExp(DATE_PHRASE_PATTERN, "i").test(value ?? "") ||
-    Boolean(extractTimeCandidate(value ?? ""));
+    Boolean(extractTimeCandidate(value ?? "")) ||
+    Boolean(options.hasExplicitStaffChange);
   const hasExplicitNegation =
     /\b(?:no|nope|nah|wrong|not correct|not right|do not|don t|dont|cancel it|wait no)\b/.test(normalized);
+  const hasAffirmation =
+    /\b(?:yes|yeah|yep|correct|right|sure|ok|okay)\b/.test(normalized) ||
+    /\b(?:that s right|that is right|sounds good|that s fine|that is fine|go ahead|please book it|book it|confirm it)\b/.test(
+      normalized
+    );
 
-  if ((hasExplicitNegation || hasChangeRequest) && hasChangeRequest && hasNewBookingValue) {
+  if ((hasExplicitNegation || hasChangeRequest) && hasNewBookingValue) {
+    return "CHANGE_REQUEST";
+  }
+  if (hasNewBookingValue && hasAffirmation && /\b(?:but|actually|instead|change|make|move|switch|want|need|with|at|for)\b/.test(normalized)) {
     return "CHANGE_REQUEST";
   }
   if (hasExplicitNegation) {
     return "DENIED";
   }
 
-  const hasAffirmation =
-    /\b(?:yes|yeah|yep|correct|right|sure|ok|okay)\b/.test(normalized) ||
-    /\b(?:that s right|that is right|sounds good|that s fine|that is fine|go ahead|please book it|book it|confirm it)\b/.test(
-      normalized
-    );
   return hasAffirmation ? "AFFIRMED" : "UNKNOWN";
 };
 
@@ -783,6 +790,16 @@ const getStaffAliasPhrases = (staffName: string): string[] => {
     firstName,
     ...((firstName && STAFF_ALIAS_PHRASES[normalizeForMatch(firstName)]) || [])
   ].filter(Boolean);
+};
+
+const isConservativeStaffFuzzyMatch = (alias: string, requested: string): boolean => {
+  const compactAlias = compactForMatch(alias);
+  const compactRequested = compactForMatch(requested);
+  return (
+    compactAlias.length >= 5 &&
+    compactRequested.length >= 5 &&
+    levenshteinDistance(compactAlias, compactRequested) <= 1
+  );
 };
 
 const isClearlyInvalidStaffPreference = (value?: string | null): boolean => {
@@ -1188,6 +1205,43 @@ const hasGroundedTimePhrase = (value?: string | null): boolean => {
   const timeCandidate = extractTimeCandidate(value);
   const parsed = timeCandidate ? parseLocalTimeText(timeCandidate) : null;
   return Boolean(parsed && !parsed.ambiguous);
+};
+
+const extractExplicitDate = (value: string | undefined, timezone: string): string | undefined => {
+  if (!value?.trim()) {
+    return undefined;
+  }
+  const dateCandidate = getPreferredDateCandidate(value);
+  if (!dateCandidate) {
+    return undefined;
+  }
+  const parsed = parseLocalDateText(dateCandidate.text, timezone);
+  return parsed?.isValid ? parsed.toFormat("yyyy-MM-dd") : undefined;
+};
+
+const extractExplicitTime = (value: string | undefined): string | undefined => {
+  if (!value?.trim() || isDigitOnlyOrSequenceUtterance(value)) {
+    return undefined;
+  }
+  const timeCandidate = extractTimeCandidate(value);
+  const parsed = timeCandidate ? parseLocalTimeText(timeCandidate) : null;
+  if (!parsed || parsed.ambiguous) {
+    return undefined;
+  }
+  return `${String(parsed.hour).padStart(2, "0")}:${String(parsed.minute).padStart(2, "0")}`;
+};
+
+const localTimesEquivalent = (left?: string, right?: string): boolean => {
+  const leftParsed = left ? parseLocalTimeText(left) : null;
+  const rightParsed = right ? parseLocalTimeText(right) : null;
+  return Boolean(
+    leftParsed &&
+    rightParsed &&
+    !leftParsed.ambiguous &&
+    !rightParsed.ambiguous &&
+    leftParsed.hour === rightParsed.hour &&
+    leftParsed.minute === rightParsed.minute
+  );
 };
 
 const parseDateTimeText = (
@@ -2275,6 +2329,16 @@ const findStaffMentionInText = async (
     }
   }
 
+  const tokens = normalizedText.split(/\s+/).filter((token) => token.length >= 5);
+  const fuzzyMatches = staff.filter((member) =>
+    getStaffAliasPhrases(member.fullName).some((alias) =>
+      tokens.some((token) => isConservativeStaffFuzzyMatch(alias, token))
+    )
+  );
+  if (fuzzyMatches.length === 1) {
+    return fuzzyMatches[0]!.fullName;
+  }
+
   return staff.find((member) => {
     const fullName = normalizeForMatch(member.fullName);
     const firstName = normalizeForMatch(member.fullName.split(/\s+/)[0]);
@@ -2541,9 +2605,12 @@ const resolveStaffPreferenceFromCandidates = (
         ...getStaffAliasPhrases(member.fullName).map((alias) => normalizeForMatch(alias))
       ].filter(Boolean);
       const score = Math.max(...aliases.map((alias) => similarityScore(alias, requested)));
-      return { member, score };
+      const editDistanceMatch = aliases.some((alias) =>
+        isConservativeStaffFuzzyMatch(alias, requested)
+      );
+      return { member, score, editDistanceMatch };
     })
-    .filter((item) => item.score >= 0.84)
+    .filter((item) => item.editDistanceMatch || item.score >= 0.84)
     .sort((left, right) => right.score - left.score)
     .map((item) => item.member);
 
@@ -3733,6 +3800,122 @@ const formatLocalDateTimeForSpeech = (value: Date, timezone: string): string => 
   return `${date} at ${formatLocalTimeForSpeech(value, timezone)}`;
 };
 
+const mapLuxonWeekdayToBusinessHour = (weekday: number): number => weekday % 7;
+
+const formatBusinessHoursRangeForSpeech = (openTime: string, closeTime: string): string => {
+  const date = DateTime.fromObject({ year: 2026, month: 1, day: 1 });
+  const [openHour, openMinute] = openTime.split(":").map(Number);
+  const [closeHour, closeMinute] = closeTime.split(":").map(Number);
+  const open = date.set({ hour: openHour ?? 0, minute: openMinute ?? 0 });
+  const close = date.set({ hour: closeHour ?? 0, minute: closeMinute ?? 0 });
+  const format = (value: DateTime) => value.minute === 0 ? value.toFormat("h a") : value.toFormat("h:mm a");
+  return `${format(open)} to ${format(close)}`;
+};
+
+const getBusinessHoursDecision = async (input: {
+  salonId: string;
+  timezone: string;
+  startTime: Date;
+  durationMinutes: number;
+}): Promise<{
+  allowed: boolean;
+  reason?: "closed" | "outside_hours";
+  message?: string;
+  debug: Record<string, unknown>;
+}> => {
+  const localStart = DateTime.fromJSDate(input.startTime, { zone: "utc" }).setZone(input.timezone);
+  const localEnd = localStart.plus({ minutes: input.durationMinutes });
+  const dayOfWeek = mapLuxonWeekdayToBusinessHour(localStart.weekday);
+  const businessHour = await prisma.businessHour.findUnique({
+    where: {
+      salonId_dayOfWeek: {
+        salonId: input.salonId,
+        dayOfWeek
+      }
+    }
+  });
+  const baseDebug = {
+    businessHoursSource: businessHour ? "database" : "missing_row",
+    localRequestedTime: localStart.toISO(),
+    localRequestedEndTime: localEnd.toISO(),
+    dayOfWeek,
+    openTime: businessHour?.openTime ?? null,
+    closeTime: businessHour?.closeTime ?? null,
+    timezone: input.timezone
+  };
+
+  if (!businessHour?.isOpen || !businessHour.openTime || !businessHour.closeTime) {
+    return {
+      allowed: false,
+      reason: "closed",
+      message: speak(
+        `We are closed on ${escapeSsml(localStart.toFormat("cccc"))}. <break time="300ms"/> Would you like another day or a person?`
+      ),
+      debug: baseDebug
+    };
+  }
+
+  const [openHour, openMinute] = businessHour.openTime.split(":").map(Number);
+  const [closeHour, closeMinute] = businessHour.closeTime.split(":").map(Number);
+  const openLocal = localStart.set({
+    hour: openHour ?? 0,
+    minute: openMinute ?? 0,
+    second: 0,
+    millisecond: 0
+  });
+  const closeLocal = localStart.set({
+    hour: closeHour ?? 0,
+    minute: closeMinute ?? 0,
+    second: 0,
+    millisecond: 0
+  });
+
+  if (localStart < openLocal || localEnd > closeLocal) {
+    const range = formatBusinessHoursRangeForSpeech(businessHour.openTime, businessHour.closeTime);
+    return {
+      allowed: false,
+      reason: "outside_hours",
+      message: speak(
+        `We are open ${escapeSsml(localStart.toFormat("cccc"))} from ${escapeSsml(range)}, so I cannot book ${escapeSsml(formatLocalTimeForSpeech(input.startTime, input.timezone))}. <break time="300ms"/> What time during those hours works for you?`
+      ),
+      debug: {
+        ...baseDebug,
+        openLocal: openLocal.toISO(),
+        closeLocal: closeLocal.toISO()
+      }
+    };
+  }
+
+  return {
+    allowed: true,
+    debug: {
+      ...baseDebug,
+      openLocal: openLocal.toISO(),
+      closeLocal: closeLocal.toISO()
+    }
+  };
+};
+
+const buildBookingFingerprint = (input: {
+  salonId: string;
+  customerId?: string | null;
+  customerPhone?: string;
+  serviceId: string;
+  staffId: string;
+  startTime: Date;
+  durationMinutes: number;
+}): string => {
+  const material = [
+    input.salonId,
+    input.customerId || normalizePhoneForMatching(input.customerPhone) || "",
+    input.serviceId,
+    input.startTime.toISOString(),
+    input.staffId,
+    String(input.durationMinutes)
+  ].join("|");
+  return createHash("sha256").update(material).digest("hex");
+};
+
 const formatKnownDateForPrompt = (value?: string, timezone = "America/New_York"): string | undefined => {
   if (!value?.trim()) {
     return undefined;
@@ -4816,6 +4999,14 @@ export const createAmazonConnectAIAppointment = async (
       ).padStart(2, "0")}`;
     }
   }
+  const currentTurnExplicitDate = extractExplicitDate(normalized.currentTurnTranscript, salon.timezone);
+  const currentTurnExplicitTime = extractExplicitTime(normalized.currentTurnTranscript);
+  if (currentTurnExplicitDate) {
+    normalized.requestedDate = currentTurnExplicitDate;
+  }
+  if (currentTurnExplicitTime && !localTimesEquivalent(normalized.requestedTime, currentTurnExplicitTime)) {
+    normalized.requestedTime = currentTurnExplicitTime;
+  }
 
   if (!normalized.serviceName && normalized.transcriptText) {
     const serviceMention = await findServiceMentionInText(salon.id, normalized.transcriptText);
@@ -4854,7 +5045,9 @@ export const createAmazonConnectAIAppointment = async (
     readStringAttribute(normalized.attributes, ["lastAskedSlot"]) === "bookingConfirmation";
   const finalConfirmationText = normalized.currentTurnTranscript ?? normalized.transcriptText;
   const finalConfirmationOutcome = awaitingFinalBookingConfirmation
-    ? classifyFinalBookingConfirmation(finalConfirmationText)
+    ? classifyFinalBookingConfirmation(finalConfirmationText, {
+        hasExplicitStaffChange: Boolean(currentTurnStaffMention)
+      })
     : "UNKNOWN";
   if (awaitingFinalBookingConfirmation && finalConfirmationOutcome === "AFFIRMED") {
     normalized.confirmationState = "Confirmed";
@@ -4862,39 +5055,67 @@ export const createAmazonConnectAIAppointment = async (
     normalized.confirmationState = "Denied";
   } else if (awaitingFinalBookingConfirmation && finalConfirmationOutcome === "CHANGE_REQUEST") {
     normalized.confirmationState = undefined;
-    const changeDateTime = finalConfirmationText
-      ? parseDateTimeText(finalConfirmationText, salon.timezone)
-      : null;
-    if (changeDateTime?.local.isValid && !changeDateTime.ambiguousTime) {
-      normalized.requestedDate = changeDateTime.local.toFormat("yyyy-MM-dd");
-      normalized.requestedTime = changeDateTime.local.toFormat("HH:mm");
-    } else if (finalConfirmationText) {
-      const changeTimeCandidate = extractTimeCandidate(finalConfirmationText);
-      const changeTime = changeTimeCandidate ? parseLocalTimeText(changeTimeCandidate) : null;
-      if (changeTime && !changeTime.ambiguous) {
-        normalized.requestedTime = `${String(changeTime.hour).padStart(2, "0")}:${String(
-          changeTime.minute
-        ).padStart(2, "0")}`;
-      }
+    const changedDate = extractExplicitDate(finalConfirmationText, salon.timezone);
+    const changedTime = extractExplicitTime(finalConfirmationText);
+    if (changedDate) {
+      normalized.requestedDate = changedDate;
+    }
+    if (changedTime) {
+      normalized.requestedTime = changedTime;
     }
     if (finalConfirmationText) {
       const changedService = await findServiceMentionInText(salon.id, finalConfirmationText);
       if (changedService) {
         normalized.serviceName = getCustomerFacingServiceName(changedService.service.name);
       }
+      const changedStaff = currentTurnStaffMention ?? await findStaffMentionInText(salon.id, finalConfirmationText);
+      if (changedStaff) {
+        normalized.staffPreference = changedStaff;
+        normalized.staffId = undefined;
+      }
     }
   }
 
-  const selectedAlternative = selectAlternativeSlotFromText({
-    alternatives: awaitingAlternativeSelection
-      ? parseAlternativeSlotsAttribute(normalized.attributes)
-      : [],
-    transcriptText: normalized.transcriptText,
-    requestedTime: normalized.requestedTime,
-    staffPreference: normalized.staffPreference,
-    timezone: salon.timezone,
-    allowAffirmativeSingleOption: awaitingAlternativeSelection
-  });
+  const activeAlternativeSlots = awaitingAlternativeSelection
+    ? parseAlternativeSlotsAttribute(normalized.attributes)
+    : [];
+  const currentTurnText = normalized.currentTurnTranscript ?? normalized.transcriptText;
+  const currentTurnHasExplicitDate = Boolean(currentTurnExplicitDate);
+  const currentTurnHasExplicitTime = Boolean(currentTurnExplicitTime);
+  const currentTurnRejectsAlternative =
+    awaitingAlternativeSelection &&
+    !currentTurnHasExplicitDate &&
+    !currentTurnHasExplicitTime &&
+    !currentTurnStaffMention &&
+    (isNegative(currentTurnText) || /\b(?:not those|neither|none of those|no thanks)\b/.test(normalizeForMatch(currentTurnText)));
+  const currentTurnChangesAlternativeAnchor =
+    awaitingAlternativeSelection &&
+    (currentTurnHasExplicitDate || currentTurnHasExplicitTime || Boolean(currentTurnStaffMention));
+  const currentTurnRequestsAnyStaffSameTime =
+    awaitingAlternativeSelection &&
+    /\b(?:anyone|any staff|first available|whoever|for available)\b.*\b(?:same time|this time|that time|available|at)\b/.test(
+      normalizeForMatch(currentTurnText)
+    );
+
+  if (currentTurnRejectsAlternative) {
+    normalized.requestedTime = undefined;
+    normalized.staffId = undefined;
+  }
+  if (currentTurnRequestsAnyStaffSameTime) {
+    normalized.staffPreference = "Any staff";
+    normalized.staffId = undefined;
+  }
+
+  const selectedAlternative = currentTurnRejectsAlternative || currentTurnChangesAlternativeAnchor || currentTurnRequestsAnyStaffSameTime
+    ? null
+    : selectAlternativeSlotFromText({
+        alternatives: activeAlternativeSlots,
+        transcriptText: normalized.currentTurnTranscript,
+        requestedTime: currentTurnHasExplicitTime ? normalized.requestedTime : undefined,
+        staffPreference: currentTurnStaffMention ? normalized.staffPreference : undefined,
+        timezone: salon.timezone,
+        allowAffirmativeSingleOption: awaitingAlternativeSelection
+      });
   if (selectedAlternative) {
     const selectedLocalStart = DateTime.fromISO(selectedAlternative.startTime, { zone: "utc" }).setZone(
       salon.timezone
@@ -5145,6 +5366,72 @@ export const createAmazonConnectAIAppointment = async (
             responseMessage: inputForInteraction.message
           }
         : undefined;
+    const parseDiagnosticJson = (value: unknown): unknown => {
+      if (typeof value !== "string" || !value.trim()) {
+        return value;
+      }
+      try {
+        return JSON.parse(value);
+      } catch {
+        return value;
+      }
+    };
+    const responseDebugRecord = responsePayloadDebug
+      ? (responsePayloadDebug as Record<string, unknown>)
+      : undefined;
+    const responseSanitization =
+      responseDebugRecord?.sanitization &&
+      typeof responseDebugRecord.sanitization === "object" &&
+      !Array.isArray(responseDebugRecord.sanitization)
+        ? (responseDebugRecord.sanitization as Record<string, unknown>)
+        : undefined;
+    const turnStateDiagnostics = {
+      turnDirective:
+        responsePayloadBase.turnDirective ??
+        responsePayloadBase.confirmationOutcome ??
+        responsePayloadBase.errorCode ??
+        inputForInteraction.outcome,
+      currentTurnEntities: pickNormalizedAppointmentDebug(normalized),
+      groundedChanges:
+        responsePayloadBase.groundedChanges ??
+        responsePayloadBase.slotDecision ??
+        responseDebugRecord?.slotDecisions,
+      preservedFields: responsePayloadDebug?.trustedSlotsAfter,
+      clearedStaleFields: responseSanitization
+        ? {
+            ignoredUngroundedSlots: responseSanitization.ignoredUngroundedSlots,
+            ignoredPollutedSlots: responseSanitization.ignoredPollutedSlots,
+            ignoredNoiseFields: responseSanitization.ignoredNoiseFields
+          }
+        : undefined,
+      confirmationFingerprintBefore: input.attributes?.confirmationFingerprint,
+      confirmationFingerprintAfter: inferredResponseSessionAttributes.confirmationFingerprint,
+      alternativeOfferId: inferredResponseSessionAttributes.alternativeOfferId,
+      offerDisposition: responsePayloadBase.offerDisposition,
+      rejectedOptionKeys: inferredResponseSessionAttributes.rejectedOptionKeys,
+      businessHoursDecision: parseDiagnosticJson(
+        responsePayloadBase.businessHoursDecision ?? inferredResponseSessionAttributes.businessHoursDecision
+      ),
+      responseFingerprint: createHash("sha256")
+        .update(
+          JSON.stringify({
+            message: inputForInteraction.message,
+            outcome: inputForInteraction.outcome,
+            conversationState: inferredResponseSessionAttributes.conversationState,
+            conversationOutcome: inferredResponseSessionAttributes.conversationOutcome,
+            conversationComplete: inferredResponseSessionAttributes.conversationComplete,
+            lastAskedSlot: inferredResponseSessionAttributes.lastAskedSlot,
+            confirmationFingerprint: inferredResponseSessionAttributes.confirmationFingerprint,
+            alternativeOfferId: inferredResponseSessionAttributes.alternativeOfferId
+          })
+        )
+        .digest("hex"),
+      conversationStateBefore: input.attributes?.conversationState,
+      conversationStateAfter: inferredResponseSessionAttributes.conversationState,
+      conversationOutcomeAfter: inferredResponseSessionAttributes.conversationOutcome,
+      conversationCompleteBefore: input.attributes?.conversationComplete,
+      conversationCompleteAfter: inferredResponseSessionAttributes.conversationComplete
+    };
     const responsePayload = responsePayloadDebug
       ? {
           currentTurnTranscript: normalized.currentTurnTranscript ?? normalized.transcriptText,
@@ -5160,6 +5447,7 @@ export const createAmazonConnectAIAppointment = async (
           ...responsePayloadBase,
           sessionAttributes:
             responsePayloadBase.sessionAttributes ?? inferredResponseSessionAttributes,
+          turnStateDiagnostics,
           lexTurnDebug: responsePayloadDebug
         }
       : {
@@ -5169,7 +5457,8 @@ export const createAmazonConnectAIAppointment = async (
           normalizedAfter: pickNormalizedAppointmentDebug(normalized),
           ...responsePayloadBase,
           sessionAttributes:
-            responsePayloadBase.sessionAttributes ?? inferredResponseSessionAttributes
+            responsePayloadBase.sessionAttributes ?? inferredResponseSessionAttributes,
+          turnStateDiagnostics
         };
 
     return upsertAmazonConnectBookingAIInteractionLog({
@@ -5198,8 +5487,14 @@ export const createAmazonConnectAIAppointment = async (
   const buildKnownSessionAttributes = (
     extra: Record<string, string | number | null | undefined> = {}
   ): Record<string, string> => {
+    const terminalBooking = extra.bookingOutcome === "BOOKED";
+    const defaultConversationState = terminalBooking ? "COMPLETE" : "CONTINUE";
+    const defaultConversationOutcome = terminalBooking ? "BOOKED" : "NEEDS_INPUT";
     return Object.fromEntries(
       Object.entries({
+        conversationState: defaultConversationState,
+        conversationOutcome: defaultConversationOutcome,
+        conversationComplete: terminalBooking ? "true" : "false",
         customerId: recognizedCustomer?.id,
         recognizedCustomerId: recognizedCustomer?.id,
 	        recognizedCustomerName: recognizedCustomer
@@ -5236,6 +5531,9 @@ export const createAmazonConnectAIAppointment = async (
   ): Record<string, string> => {
     const canTransferToQueue = escalation?.routingOutcome === CallRoutingOutcome.QUEUED;
     return buildKnownSessionAttributes({
+      conversationState: canTransferToQueue ? "TRANSFER" : "RECOVERABLE_ERROR",
+      conversationOutcome: canTransferToQueue ? "NEEDS_INPUT" : "ERROR",
+      conversationComplete: "false",
       forceHumanEscalation: canTransferToQueue ? "true" : "false",
       transferToQueue: canTransferToQueue ? "true" : "false",
       escalationReason: reason,
@@ -6098,6 +6396,124 @@ export const createAmazonConnectAIAppointment = async (
     };
   }
 
+  const businessHoursDecision = await getBusinessHoursDecision({
+    salonId: salon.id,
+    timezone: salon.timezone,
+    startTime: requestedStartTime,
+    durationMinutes: service.durationMinutes
+  });
+  if (!businessHoursDecision.allowed) {
+    const message = businessHoursDecision.message ?? speak(
+      "That time is outside our business hours. <break time=\"300ms\"/> What other time works for you?"
+    );
+    const parsed = buildInternalParsedIntent({
+      intentType: "BOOK_APPOINTMENT",
+      customerName: normalized.customerName,
+      customerPhone: normalized.customerPhone,
+      serviceName: callerServiceName,
+      staffPreference: normalized.staffPreference,
+      requestedDateTime: requestedStartTime.toISOString(),
+      missingFields: [],
+      isReadyToBook: false
+    });
+    const lexSessionAttributes = buildKnownSessionAttributes({
+      conversationOutcome: "NO_AVAILABILITY",
+      aiAlternativeSlots: "[]",
+      awaitingAlternativeSelection: "false",
+      awaitingFinalBookingConfirmation: "false",
+      bookingConfirmationAsked: "false",
+      lastAskedSlot: "requestedTime",
+      askedSlotsCount: "1",
+      fallbackCount: "1",
+      errorCount: "1",
+      businessHoursDecision: JSON.stringify(businessHoursDecision.debug)
+    });
+    const bookingAttempt = await createAttempt({
+      status: BookingAttemptStatus.NO_AVAILABILITY,
+      requestedStartTime,
+      failureReason:
+        businessHoursDecision.reason === "closed"
+          ? "Salon is closed for the requested day."
+          : "Requested time is outside business hours.",
+      normalizedRequest: {
+        serviceId: service.id,
+        serviceName: callerServiceName,
+        staffPreference: normalized.staffPreference,
+        startTimeIso: requestedStartTime.toISOString(),
+        timezone: salon.timezone,
+        businessHoursDecision: businessHoursDecision.debug
+      },
+      alternativeSlots: []
+    });
+    const aiInteraction = await createInteraction({
+      outcome: "NO_AVAILABILITY",
+      message,
+      parsed,
+      bookingAttemptId: bookingAttempt.id,
+      responsePayload: {
+        alternatives: [],
+        businessHoursDecision: businessHoursDecision.debug,
+        sessionAttributes: lexSessionAttributes
+      },
+      isValid: true
+    });
+    await finalizeCall({
+      outcome: "NO_AVAILABILITY",
+      bookingAttemptId: bookingAttempt.id,
+      bookingStatus: bookingAttempt.status,
+      parsed,
+      message,
+      alternatives: [],
+      failureReason: bookingAttempt.failureReason ?? undefined
+    });
+
+    return {
+      outcome: "NO_AVAILABILITY" as const,
+      message,
+      lexResponse: {
+        fulfillmentState: "InProgress",
+        message,
+        messageContentType: "SSML",
+        dialogAction: {
+          type: "ElicitSlot",
+          slotToElicit: "requestedTime"
+        },
+        sessionAttributes: lexSessionAttributes
+      },
+      appointment: null,
+      bookingAttempt,
+      callSession,
+      transcript,
+      aiInteraction,
+      escalation: null,
+      alternatives: [],
+      missingFields: [],
+      salonResolutionSource: resolutionSource
+    };
+  }
+
+  const storedConfirmationFingerprint = readStringAttribute(normalized.attributes, [
+    "confirmationFingerprint",
+    "bookingConfirmationFingerprint"
+  ]);
+  if (staffResolution.status === "matched" && isConfirmationAccepted(normalized.confirmationState)) {
+    const currentConfirmationFingerprint = buildBookingFingerprint({
+      salonId: salon.id,
+      customerId: recognizedCustomer?.id,
+      customerPhone: normalized.customerPhone,
+      serviceId: service.id,
+      staffId: staffResolution.matchedStaff.id,
+      startTime: requestedStartTime,
+      durationMinutes: service.durationMinutes
+    });
+    if (
+      (awaitingFinalBookingConfirmation || storedConfirmationFingerprint) &&
+      storedConfirmationFingerprint !== currentConfirmationFingerprint
+    ) {
+      normalized.confirmationState = undefined;
+    }
+  }
+
   if (
     callSession &&
     staffResolution.status === "matched" &&
@@ -6242,6 +6658,16 @@ export const createAmazonConnectAIAppointment = async (
     normalized.staffId = chosenStaff.id;
   }
 
+  const confirmationFingerprint = buildBookingFingerprint({
+    salonId: salon.id,
+    customerId: recognizedCustomer?.id,
+    customerPhone: normalized.customerPhone,
+    serviceId: service.id,
+    staffId: chosenStaff?.id ?? normalized.staffId ?? "",
+    startTime: requestedStartTime,
+    durationMinutes: service.durationMinutes
+  });
+
   if (!chosenStaff) {
     const requestedSpecificStaff = Boolean(
       normalized.staffPreference && !isAnyStaffPreference(normalized.staffPreference)
@@ -6265,7 +6691,9 @@ export const createAmazonConnectAIAppointment = async (
             daysAhead: 7,
             maxSlots: 2
           });
-    const requestedStaffDisplayName = normalized.staffPreference
+    const requestedStaffDisplayName = requestedAnyStaff
+      ? undefined
+      : normalized.staffPreference
       ? preferredStaffCandidates[0]?.fullName ?? normalized.staffPreference
       : undefined;
     const message = buildLexMessage({
@@ -6296,17 +6724,30 @@ export const createAmazonConnectAIAppointment = async (
         serviceId: service.id,
         serviceName: normalized.serviceName,
         staffPreference: normalized.staffPreference,
+        alternativeOfferId: createHash("sha256")
+          .update(`${salon.id}|${service.id}|${requestedStartTime.toISOString()}|${normalized.staffPreference ?? "ANY"}`)
+          .digest("hex")
+          .slice(0, 16),
         startTimeIso: requestedStartTime.toISOString(),
         timezone: salon.timezone
       }
     });
+    const alternativeOfferId = createHash("sha256")
+      .update(`${salon.id}|${service.id}|${requestedStartTime.toISOString()}|${normalized.staffPreference ?? "ANY"}`)
+      .digest("hex")
+      .slice(0, 16);
     const aiInteraction = await createInteraction({
       outcome: "NO_AVAILABILITY",
       message,
       parsed,
       bookingAttemptId: bookingAttempt.id,
       responsePayload: {
-        alternatives
+        alternatives,
+        alternativeOfferId,
+        anchorRequestedDate: normalized.requestedDate,
+        anchorRequestedTime: normalized.requestedTime,
+        anchorRequestedStaff: normalized.staffPreference ?? "Any staff",
+        offerAttemptCount: 1
       },
       isValid: true
     });
@@ -6332,7 +6773,14 @@ export const createAmazonConnectAIAppointment = async (
           slotToElicit: "requestedTime"
         },
         sessionAttributes: buildKnownSessionAttributes({
+          conversationOutcome: "NO_AVAILABILITY",
           aiAlternativeSlots: JSON.stringify(alternatives.slice(0, 2)),
+          alternativeOfferId,
+          anchorRequestedDate: normalized.requestedDate,
+          anchorRequestedTime: normalized.requestedTime,
+          anchorRequestedStaff: normalized.staffPreference ?? "Any staff",
+          offerAttemptCount: "1",
+          rejectedOptionKeys: "[]",
           awaitingAlternativeSelection: "true",
           awaitingFinalBookingConfirmation: "false",
           bookingConfirmationAsked: "false",
@@ -6466,6 +6914,17 @@ export const createAmazonConnectAIAppointment = async (
         timezone: salon.timezone
       }
     });
+    const confirmationSessionAttributes = buildKnownSessionAttributes({
+      aiAlternativeSlots: "[]",
+      awaitingAlternativeSelection: "false",
+      awaitingFinalBookingConfirmation: "true",
+      bookingConfirmationAsked: "true",
+      confirmationFingerprint,
+      lastAskedSlot: "bookingConfirmation",
+      askedSlotsCount: "1",
+      fallbackCount: "1",
+      errorCount: "1"
+    });
     const aiInteraction = await createInteraction({
       outcome: "MISSING_INFO",
       message,
@@ -6476,7 +6935,9 @@ export const createAmazonConnectAIAppointment = async (
         staffId: chosenStaff.id,
         staffName: chosenStaff.fullName,
         startTimeIso: requestedStartTime.toISOString(),
-        awaitingFinalBookingConfirmation: true
+        awaitingFinalBookingConfirmation: true,
+        confirmationFingerprint,
+        sessionAttributes: confirmationSessionAttributes
       },
       isValid: true
     });
@@ -6499,16 +6960,7 @@ export const createAmazonConnectAIAppointment = async (
         dialogAction: {
           type: "ConfirmIntent"
         },
-        sessionAttributes: buildKnownSessionAttributes({
-          aiAlternativeSlots: "[]",
-          awaitingAlternativeSelection: "false",
-          awaitingFinalBookingConfirmation: "true",
-          bookingConfirmationAsked: "true",
-          lastAskedSlot: "bookingConfirmation",
-          askedSlotsCount: "1",
-          fallbackCount: "1",
-          errorCount: "1"
-        })
+        sessionAttributes: confirmationSessionAttributes
       },
       appointment: null,
       bookingAttempt,

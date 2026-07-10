@@ -1,0 +1,10 @@
+{
+    "FunctionName": "fastaibooking-booking-handler",
+    "FunctionArn": "arn:aws:lambda:us-east-1:197452633989:function:fastaibooking-booking-handler",
+    "Version": "$LATEST",
+    "LastModified": "2026-07-10T14:08:13.000+0000",
+    "CodeSha256": "1XIHrPW3q4hdurJ+0X8etiarlvGR1lcvigvV6z9xth4=",
+    "Runtime": "nodejs20.x",
+    "State": "Active",
+    "LastUpdateStatus": "Successful"
+}
