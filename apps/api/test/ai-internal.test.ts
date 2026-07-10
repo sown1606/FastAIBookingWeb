@@ -1059,9 +1059,9 @@ test("known Amazon Connect caller phone skips name and phone prompts", async () 
       result.body.data.missingFields.includes("customerPhone"),
     false
   );
-  assert.match(result.body.data.lexResponse.message, /1 for Pedicure/i);
-  assert.match(result.body.data.lexResponse.message, /5 for Dip Powder/i);
-  assert.match(result.body.data.lexResponse.message, /0 for a real person/i);
+  assert.match(result.body.data.lexResponse.message, /Sorry, what service would you like/i);
+  assert.doesNotMatch(result.body.data.lexResponse.message, /1 for Pedicure/i);
+  assert.doesNotMatch(result.body.data.lexResponse.message, /5 for Dip Powder/i);
   assert.match(result.body.data.lexResponse.message, /Hi Kiet/i);
   assert.equal(state.appointments.length, 0);
 });
@@ -1159,9 +1159,124 @@ test("Full Set phrase reaches confirmation without asking service again", async 
   assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
   assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
   assert.notEqual(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
-  assert.match(result.body.data.lexResponse.message, /Just to confirm, Full Set with Trang tomorrow at 3 PM/i);
+  assert.match(result.body.data.lexResponse.message, /just to confirm: Full Set tomorrow at 3 PM with Trang/i);
   assert.deepEqual(new Set(state.validationStaffIds), new Set([ids.trang]));
   assert.equal(state.appointments.length, 0);
+});
+
+test("current turn staff alias overrides stale staff while preserving Jane", async () => {
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  state.customers.push({
+    id: "89e51525-297d-4b2a-b438-f64c4848683a",
+    salonId: ids.salonA,
+    firstName: "Jane",
+    lastName: "",
+    phone: "+84978634886",
+    createdAt: new Date("2026-07-10T00:00:00.000Z")
+  });
+
+  const result = await postInternalAppointment(
+    bookingPayload({
+      customerName: "Jane",
+      customerPhone: "+84978634886",
+      callerPhone: "+84978634886",
+      serviceName: "Full Set",
+      requestedDate,
+      requestedTime: "3 PM",
+      staffPreference: "marvell",
+      confirmationState: undefined,
+      amazonConnectContactId: "bb0b6ac3-a5be-4c9d-abac-7297a301d7bc",
+      amazonConnectPhoneNumber: "+18483487681",
+      calledNumber: "+18483487681",
+      currentTurnTranscript: "at three p m with chang",
+      transcript: "it one pull step the marvell at three p m with chang",
+      attributes: {
+        AmazonConnectContactId: "bb0b6ac3-a5be-4c9d-abac-7297a301d7bc",
+        CustomerEndpointAddress: "+84978634886",
+        lastAskedSlot: "requestedTime",
+        serviceName: "Full Set",
+        confirmedServiceName: "Full Set",
+        requestedDate,
+        requestedTime: "3 PM",
+        staffPreference: "marvell",
+        customerName: "Jane",
+        recognizedCustomerName: "Jane",
+        customerNameSource: "customer",
+        customerId: "89e51525-297d-4b2a-b438-f64c4848683a",
+        customerPhone: "+84978634886"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.customerId, "89e51525-297d-4b2a-b438-f64c4848683a");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.customerName, "Jane");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.customerPhone, "+84978634886");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.requestedDate, requestedDate);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "3 PM");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedStaffName, "Trang");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffId, ids.trang);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.selectedStaffId, ids.trang);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedStaffId, ids.trang);
+  assert.doesNotMatch(JSON.stringify(result.body.data.lexResponse.sessionAttributes), /marvell/i);
+  assert.doesNotMatch(result.body.data.lexResponse.message, /what service|which service|staff would you like|what name/i);
+  assert.match(result.body.data.lexResponse.message, /Jane, just to confirm: Full Set tomorrow at 3 PM with Trang/i);
+  assert.equal(state.appointments.length, 0);
+});
+
+test("one-shot Full Set greeting with spoken p m captures time before confirmation", async () => {
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  state.customers.push({
+    id: "89e51525-297d-4b2a-b438-f64c4848683a",
+    salonId: ids.salonA,
+    firstName: "Jane",
+    lastName: "",
+    phone: "+84978634886",
+    createdAt: new Date("2026-07-10T00:00:00.000Z")
+  });
+
+  const transcript = "Hi, I want to book Full Set tomorrow at three p m with Trang.";
+  const result = await postInternalAppointment(
+    bookingPayload({
+      customerName: "Jane",
+      customerPhone: "+84978634886",
+      callerPhone: "+84978634886",
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      amazonConnectContactId: "codex-live-oneshot-spoken-pm",
+      amazonConnectPhoneNumber: "+18483487681",
+      calledNumber: "+18483487681",
+      currentTurnTranscript: transcript,
+      transcript,
+      attributes: {
+        AmazonConnectContactId: "codex-live-oneshot-spoken-pm",
+        CustomerEndpointAddress: "+84978634886",
+        currentTurnTranscript: transcript,
+        customerName: "Jane",
+        recognizedCustomerName: "Jane",
+        customerNameSource: "customer",
+        customerId: "89e51525-297d-4b2a-b438-f64c4848683a",
+        customerPhone: "+84978634886"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.customerName, "Jane");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.requestedDate, requestedDate);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "15:00");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
+  assert.match(result.body.data.lexResponse.message, /Jane, just to confirm: Full Set tomorrow at 3 PM with Trang/i);
+  assert.doesNotMatch(result.body.data.lexResponse.message, /What time|what service|what name|Which staff/i);
 });
 
 test("Full Set full utterance with Lee keeps service date time and staff", async () => {
@@ -1288,7 +1403,7 @@ test("transcript recovery normalizes pedicure aliases and confirms without re-as
     assert.equal(result.body.data.lexResponse.sessionAttributes.customerPhone, "7325956266");
     assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Pedicure");
     assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "17:00");
-    assert.match(result.body.data.lexResponse.message, /Just to confirm, Pedicure with Trang/i);
+    assert.match(result.body.data.lexResponse.message, /just to confirm: Pedicure .* with Trang/i);
     assert.equal(state.appointments.length, 0);
   }
 });
@@ -1319,7 +1434,7 @@ test("logged eddie here utterance matches Pedicure for known caller without over
   assert.equal(result.body.data.lexResponse.sessionAttributes.recognizedCustomerName, "Kiet");
   assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Pedicure");
   assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "19:00");
-  assert.match(result.body.data.lexResponse.message, /Pedicure with Trang/i);
+  assert.match(result.body.data.lexResponse.message, /Pedicure .* with Trang/i);
   assert.equal(state.appointments.length, 0);
 });
 
@@ -1367,7 +1482,7 @@ test("Kiet demo phrase confirms Pedicure with Trang tomorrow at 3 PM", async () 
   assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Pedicure");
   assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
   assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "15:00");
-  assert.match(result.body.data.lexResponse.message, /Just to confirm, Pedicure with Trang/i);
+  assert.match(result.body.data.lexResponse.message, /just to confirm: Pedicure .* with Trang/i);
   assert.equal(state.appointments.length, 0);
 });
 
@@ -1393,7 +1508,7 @@ test("Kiet demo phrase confirms Pedicure with Kelly tomorrow at 2 PM", async () 
   assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Kelly");
   assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedStaffName, "Kelly");
   assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "14:00");
-  assert.match(result.body.data.lexResponse.message, /Just to confirm, Pedicure with Kelly/i);
+  assert.match(result.body.data.lexResponse.message, /just to confirm: Pedicure .* with Kelly/i);
   assert.equal(state.appointments.length, 0);
 });
 
@@ -1441,7 +1556,7 @@ test("unclear service asks the canonical service list without escalation", async
   assert.equal(result.body.data.lexResponse.sessionAttributes.forceHumanEscalation, undefined);
   assert.match(result.body.data.lexResponse.message, /1 for Pedicure/i);
   assert.match(result.body.data.lexResponse.message, /5 for Dip Powder/i);
-  assert.match(result.body.data.lexResponse.message, /0 for a real person/i);
+  assert.match(result.body.data.lexResponse.message, /0 for a person/i);
   assert.equal(result.body.data.lexResponse.sessionAttributes.activeDtmfMenu, "service");
   assert.equal(state.escalations.length, 0);
   assert.equal(state.appointments.length, 0);
@@ -1532,7 +1647,7 @@ test("service DTMF 4 maps to Full Set", async () => {
   assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
   assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
   assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedServiceName, "Full Set");
-  assert.match(result.body.data.lexResponse.message, /Just to confirm, Full Set with Trang/i);
+  assert.match(result.body.data.lexResponse.message, /just to confirm: Full Set .* with Trang/i);
   assert.deepEqual(new Set(state.validationStaffIds), new Set([ids.trang]));
   assert.equal(state.appointments.length, 0);
 });
@@ -1932,7 +2047,7 @@ test("stale production full-set service row stays Full Set in phone flow", async
   assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
   assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
   assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedServiceName, "Full Set");
-  assert.match(result.body.data.lexResponse.message, /Just to confirm, Full Set with Trang/i);
+  assert.match(result.body.data.lexResponse.message, /just to confirm: Full Set .* with Trang/i);
   assert.doesNotMatch(result.body.data.lexResponse.message, new RegExp(staleFullSetName, "i"));
   assert.equal(state.bookingAttempts.at(-1)?.requestedService, "Full Set");
   assert.equal((state.bookingAttempts.at(-1)?.normalizedRequest as any)?.serviceName, "Full Set");
@@ -2067,7 +2182,7 @@ test("staff DTMF 3 maps to Kelly and does not ask staff again", async () => {
   assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Kelly");
   assert.equal(result.body.data.lexResponse.sessionAttributes.staffId, ids.kelly);
   assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedStaffName, "Kelly");
-  assert.match(result.body.data.lexResponse.message, /Pedicure with Kelly/i);
+  assert.match(result.body.data.lexResponse.message, /Pedicure .* with Kelly/i);
   assert.equal(state.appointments.length, 0);
 });
 
@@ -2167,7 +2282,7 @@ test("missing staff asks once, then first available resolves before confirmation
   assert.equal(second.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
   assert.equal(second.body.data.lexResponse.sessionAttributes.staffId, ids.trang);
   assert.match(second.body.data.lexResponse.message, /I found Trang available/i);
-  assert.match(second.body.data.lexResponse.message, /Just to confirm, Pedicure with Trang/i);
+  assert.match(second.body.data.lexResponse.message, /just to confirm: Pedicure .* with Trang/i);
   assert.equal(state.appointments.length, 0);
 });
 
@@ -2314,7 +2429,7 @@ test("yes to a single alternative asks final confirmation before booking", async
   assert.equal(second.body.data.lexResponse.sessionAttributes.awaitingAlternativeSelection, "false");
   assert.equal(second.body.data.lexResponse.sessionAttributes.awaitingFinalBookingConfirmation, "true");
   assert.equal(second.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
-  assert.match(second.body.data.lexResponse.message, /Just to confirm, Pedicure with Trang/i);
+  assert.match(second.body.data.lexResponse.message, /just to confirm: Pedicure .* with Trang/i);
   assert.equal(state.appointments.length, 0);
 
   const secondAttributes = second.body.data.lexResponse.sessionAttributes;

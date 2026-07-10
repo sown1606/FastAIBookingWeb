@@ -12,7 +12,10 @@ const lexRoots = ["v7", "v8", "v10"].map((version) => ({
 }));
 const connectRoot = path.join(repoRoot, "infra/aws/connect/contact-flows");
 const CANONICAL_SERVICE_PROMPT =
-  "Hi, I can help book your appointment. Say the service name, including Other Services, or press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Full Set, 5 for Dip Powder. Press 0 for a real person.";
+  "Hi, thanks for calling Kiet Nails. How can I help? You can say the service, day, time, and technician in one sentence. Press 0 for a person.";
+const FIRST_SERVICE_RETRY_PROMPT = "Sorry, what service would you like?";
+const SERVICE_MENU_PROMPT =
+  "I can list the services once. Press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Full Set, 5 for Dip Powder, or 0 for a person.";
 let importCounter = 0;
 
 const slot = (value) => ({
@@ -273,9 +276,9 @@ test("Lex fulfillment progress updates cover slow booking, appointment changes, 
         `${version} ${intentName} starts within 1 second`
       );
       assert.equal(
-        spec.updateResponse.frequencyInSeconds <= 3,
+        spec.updateResponse.frequencyInSeconds <= (intentName === "BookAppointmentIntent" ? 5 : 3),
         true,
-        `${version} ${intentName} repeats within 3 seconds`
+        `${version} ${intentName} progress update cadence`
       );
       assert.equal(
         spec.startResponse.messageGroups[0].message.plainTextMessage.value,
@@ -350,20 +353,67 @@ test("Connect human escalation flow speaks before queue transfer", () => {
   assert.equal(queueTransfer.Type, "TransferContactToQueue");
 });
 
-test("Connect AI reception Lex error branch reprompts instead of transferring", () => {
+const collectReachableActions = (flow) => {
+  const actionsById = new Map(flow.Actions.map((action) => [action.Identifier, action]));
+  const reachable = new Set();
+  const stack = [flow.StartAction];
+  while (stack.length) {
+    const id = stack.pop();
+    if (!id || reachable.has(id)) {
+      continue;
+    }
+    reachable.add(id);
+    const transitions = actionsById.get(id)?.Transitions || {};
+    if (transitions.NextAction) {
+      stack.push(transitions.NextAction);
+    }
+    for (const condition of transitions.Conditions || []) {
+      if (condition.NextAction) {
+        stack.push(condition.NextAction);
+      }
+    }
+    for (const error of transitions.Errors || []) {
+      if (error.NextAction) {
+        stack.push(error.NextAction);
+      }
+    }
+  }
+  return { actionsById, reachable };
+};
+
+test("Connect AI reception has one reachable greeting and no outer service prompt loop", () => {
   const aiReceptionFlow = JSON.parse(
     readFileSync(path.join(connectRoot, "ai-reception.json"), "utf8")
   );
-  const actionsById = new Map(aiReceptionFlow.Actions.map((action) => [action.Identifier, action]));
-  const errorPrompt = actionsById.get("41e3f239-5b57-4363-92fc-9d594579fa98");
+  const { actionsById, reachable } = collectReachableActions(aiReceptionFlow);
+  const reachableGreetingActions = [...reachable]
+    .map((id) => actionsById.get(id))
+    .filter((action) => action?.Parameters?.Text === CANONICAL_SERVICE_PROMPT);
 
-  assert.equal(errorPrompt.Type, "MessageParticipant");
-  assert.match(errorPrompt.Parameters.Text, /press 0 for an operator/i);
-  assert.doesNotMatch(errorPrompt.Parameters.Text, /goodbye|call back later|connect you/i);
-  assert.notEqual(errorPrompt.Transitions.NextAction, "transfer-human-escalation-flow");
+  assert.equal(reachableGreetingActions.length, 1);
+  for (const id of reachable) {
+    const action = actionsById.get(id);
+    const next = actionsById.get(action?.Transitions?.NextAction);
+    const text = action?.Parameters?.Text || "";
+    const asksQuestion = /\?|what service|which service|are you still there|tell me the appointment/i.test(text);
+    assert.ok(
+      !(action?.Type === "MessageParticipant" && asksQuestion && next?.Type === "ConnectParticipantWithLexBot"),
+      `${id} asks outside an input-collecting Lex turn`
+    );
+  }
+
+  const primary = actionsById.get("3b2877ca-bc16-4019-a8e6-04200c0ded06");
+  const recovery = actionsById.get("6fbf4310-c8c6-44a8-a8f5-1d7830974c4d");
+  assert.equal(primary.Parameters.Text, CANONICAL_SERVICE_PROMPT);
+  assert.doesNotMatch(primary.Parameters.Text, /press 1 for Pedicure/i);
+  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:allow-interrupt:*:*"], "true");
+  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:*:*"], "1300");
+  assert.equal(recovery.Parameters.Text, "Sorry, I missed that. Please tell me what you need, or press 0 for a person.");
+  assert.equal(recovery.Transitions.NextAction, "67ada978-600a-4d39-9965-6230c52810a9");
+  assert.doesNotMatch(JSON.stringify(recovery.Parameters.LexSessionAttributes), /activeDtmfMenu|Pedicure|Full Set/i);
 });
 
-test("service prompt is synchronized across Lambda, API, Lex, and Connect flow", () => {
+test("booking prompts are speech-first and service menu is not the greeting", () => {
   const lambdaSource = readFileSync(lambdaPath, "utf8");
   const apiSource = readFileSync(
     path.join(repoRoot, "apps/api/src/modules/ai/ai.service.ts"),
@@ -374,8 +424,6 @@ test("service prompt is synchronized across Lambda, API, Lex, and Connect flow",
   );
   const flowActionsById = new Map(aiReceptionFlow.Actions.map((action) => [action.Identifier, action]));
   const livePathGreeting = flowActionsById.get("3b2877ca-bc16-4019-a8e6-04200c0ded06");
-  const orphanGreeting = flowActionsById.get("ai-greeting-prompt");
-  const retryLexAction = flowActionsById.get("6fbf4310-c8c6-44a8-a8f5-1d7830974c4d");
   const lexSlot = JSON.parse(
     readFileSync(
       path.join(
@@ -386,28 +434,50 @@ test("service prompt is synchronized across Lambda, API, Lex, and Connect flow",
     )
   );
 
-  for (const required of [
-    "1 for Pedicure",
-    "2 for Manicure",
-    "3 for Gel Manicure",
-    "4 for Full Set",
-    "5 for Dip Powder",
-    "0 for a real person"
-  ]) {
-    assert.ok(CANONICAL_SERVICE_PROMPT.includes(required), `canonical prompt missing ${required}`);
-  }
-
   assert.ok(lambdaSource.includes(CANONICAL_SERVICE_PROMPT));
+  assert.ok(lambdaSource.includes(SERVICE_MENU_PROMPT));
   assert.ok(apiSource.includes(CANONICAL_SERVICE_PROMPT));
+  assert.ok(apiSource.includes(SERVICE_MENU_PROMPT));
   assert.equal(livePathGreeting.Parameters.Text, CANONICAL_SERVICE_PROMPT);
-  assert.equal(orphanGreeting.Parameters.Text, CANONICAL_SERVICE_PROMPT);
-  assert.match(retryLexAction.Parameters.Text, /1 for Pedicure/);
-  assert.match(retryLexAction.Parameters.Text, /5 for Dip Powder/);
-  assert.match(retryLexAction.Parameters.Text, /0 for a real person/);
   assert.equal(
     lexSlot.valueElicitationSetting.promptSpecification.messageGroupsList[0].message.plainTextMessage.value,
-    CANONICAL_SERVICE_PROMPT
+    FIRST_SERVICE_RETRY_PROMPT
   );
+  assert.doesNotMatch(CANONICAL_SERVICE_PROMPT, /press 1 for Pedicure/i);
+  assert.doesNotMatch(FIRST_SERVICE_RETRY_PROMPT, /press 1 for Pedicure/i);
+});
+
+test("Lex booking slot prompt attempts allow interrupt and use phone-friendly audio windows", () => {
+  const slotRoot = path.join(
+    repoRoot,
+    "infra/aws/lex/FastAIBookingBot-v10/BotLocales/en_US/Intents/BookAppointmentIntent/Slots"
+  );
+  const expected = {
+    serviceName: { startMin: 7000, endMin: 1200, endMax: 1500, maxMin: 20000 },
+    requestedDate: { startMin: 6000, endMin: 1000, endMax: 1200, maxMin: 15000 },
+    requestedTime: { startMin: 6000, endMin: 1000, endMax: 1200, maxMin: 15000 },
+    staffPreference: { startMin: 6000, endMin: 1000, endMax: 1200, maxMin: 15000 },
+    customerName: { startMin: 7000, endMin: 1500, endMax: 1500, maxMin: 15000 },
+    customerPhone: { startMin: 7000, endMin: 1500, endMax: 1500, maxMin: 15000 }
+  };
+
+  for (const [slotName, range] of Object.entries(expected)) {
+    const slot = JSON.parse(readFileSync(path.join(slotRoot, slotName, "Slot.json"), "utf8"));
+    const prompt = slot.valueElicitationSetting.promptSpecification;
+    assert.equal(prompt.allowInterrupt, true, `${slotName} prompt allowInterrupt`);
+    for (const [attemptName, attempt] of Object.entries(prompt.promptAttemptsSpecification)) {
+      const audio = attempt.audioAndDTMFInputSpecification.audioSpecification;
+      assert.equal(attempt.allowInterrupt, true, `${slotName}.${attemptName} allowInterrupt`);
+      assert.ok(
+        attempt.audioAndDTMFInputSpecification.startTimeoutMs >= range.startMin,
+        `${slotName}.${attemptName} start timeout`
+      );
+      assert.ok(audio.endTimeoutMs >= range.endMin && audio.endTimeoutMs <= range.endMax, `${slotName}.${attemptName} end timeout`);
+      assert.ok(audio.maxLengthMs >= range.maxMin, `${slotName}.${attemptName} max length`);
+    }
+    const failureAction = slot.valueElicitationSetting.slotCaptureSetting?.failureNextStep?.dialogAction?.type;
+    assert.notEqual(failureAction, "StartIntent", `${slotName} must not jump to FallbackIntent on slot failure`);
+  }
 });
 
 test("DialogCodeHook with service and time prompts staff next", async () => {
@@ -446,6 +516,190 @@ test("DialogCodeHook with service and time prompts staff next", async () => {
   assert.equal(response.sessionState.dialogAction.slotToElicit, "staffPreference");
   assert.equal(response.sessionState.sessionAttributes.serviceName, "Pedicure");
   assert.equal(response.sessionState.sessionAttributes.requestedTime, "3 PM");
+});
+
+test("Fulfillment current staff alias overrides stale marvell while preserving Jane", async () => {
+  const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
+  const fetchCalls = installFetchMock((_url, _options, body) =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "MISSING_INFO",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "InProgress",
+          message: "Jane, just to confirm: Full Set tomorrow at 3 PM with Trang. Is that correct?",
+          messageContentType: "PlainText",
+          dialogAction: {
+            type: "ConfirmIntent"
+          },
+          sessionAttributes: {
+            customerId: "89e51525-297d-4b2a-b438-f64c4848683a",
+            customerName: "Jane",
+            customerPhone: "+84978634886",
+            serviceName: "Full Set",
+            confirmedServiceName: "Full Set",
+            requestedDate: usEasternDate(1),
+            requestedTime: "3 PM",
+            staffPreference: "Trang",
+            confirmedStaffName: "Trang",
+            staffId: "staff-trang",
+            selectedStaffId: "staff-trang",
+            confirmedStaffId: "staff-trang",
+            awaitingFinalBookingConfirmation: "true",
+            bookingConfirmationAsked: "true",
+            lastAskedSlot: "bookingConfirmation",
+            discardedStaleStaff: body.attributes.discardedStaleStaff,
+            staffSource: body.attributes.staffSource
+          }
+        },
+        missingFields: []
+      })
+    )
+  );
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "FulfillmentCodeHook",
+      inputTranscript: "at three p m with chang",
+      sessionId: "bb0b6ac3-a5be-4c9d-abac-7297a301d7bc",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CallerId: "+84978634886",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+84978634886",
+          AmazonConnectContactId: "bb0b6ac3-a5be-4c9d-abac-7297a301d7bc",
+          customerId: "89e51525-297d-4b2a-b438-f64c4848683a",
+          customerName: "Jane",
+          recognizedCustomerName: "Jane",
+          customerNameSource: "customer",
+          customerPhone: "+84978634886",
+          serviceName: "Full Set",
+          confirmedServiceName: "Full Set",
+          requestedDate: usEasternDate(1),
+          lastAskedSlot: "requestedTime",
+          slotToElicit: "requestedTime",
+          staffPreference: "marvell",
+          initialBookingUtterance: "it one pull step the marvell"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          confirmationState: "None",
+          slots: {
+            customerName: null,
+            customerPhone: slot("+84978634886"),
+            serviceName: slotWith({
+              originalValue: "full set",
+              interpretedValue: "Full Set",
+              resolvedValues: ["Full Set"]
+            }),
+            requestedDate: slot(usEasternDate(1)),
+            requestedTime: slotWith({
+              originalValue: "three p m",
+              interpretedValue: "15:00",
+              resolvedValues: ["15:00"]
+            }),
+            staffPreference: slot("marvell")
+          }
+        }
+      }
+    })
+  );
+
+  assert.equal(fetchCalls.length, 1);
+  assert.equal(fetchCalls[0].body.currentTurnTranscript, "at three p m with chang");
+  assert.equal(fetchCalls[0].body.requestedTime, "3 PM");
+  assert.equal(fetchCalls[0].body.staffPreference, "Trang");
+  assert.equal(fetchCalls[0].body.customerName, "Jane");
+  assert.equal(fetchCalls[0].body.customerPhone, "+84978634886");
+  assert.equal(fetchCalls[0].body.attributes.confirmedStaffName, "Trang");
+  assert.equal(fetchCalls[0].body.attributes.discardedStaleStaff, "marvell");
+  assert.equal(fetchCalls[0].body.attributes.staffSource, "current_turn_alias");
+  assert.equal(
+    fetchCalls[0].body.attributes.lexTurnDebug.sanitization.currentTurnStaffMention,
+    "Trang"
+  );
+  assert.equal(fetchCalls[0].body.attributes.lexTurnDebug.sanitization.discardedStaleStaff, "marvell");
+  assert.notEqual(fetchCalls[0].body.attributes.staffPreference, "marvell");
+  assert.notEqual(fetchCalls[0].body.attributes.confirmedStaffName, "marvell");
+  assert.equal(response.sessionState.dialogAction.type, "ConfirmIntent");
+  assert.equal(response.sessionState.sessionAttributes.staffPreference, "Trang");
+  assert.equal(response.sessionState.sessionAttributes.confirmedStaffName, "Trang");
+  assert.equal(response.sessionState.sessionAttributes.customerName, "Jane");
+  assert.doesNotMatch(response.messages[0].content, /what service|which service|staff would you like|what name/i);
+});
+
+test("DialogCodeHook one-shot Full Set phrase captures spoken p m before asking confirmation", async () => {
+  const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
+  const fetchCalls = installFetchMock(() =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "MISSING_INFO",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "InProgress",
+          message: "Jane, just to confirm: Full Set tomorrow at 3 PM with Trang. Is that correct?",
+          messageContentType: "PlainText",
+          dialogAction: {
+            type: "ConfirmIntent"
+          },
+          sessionAttributes: {
+            awaitingFinalBookingConfirmation: "true",
+            bookingConfirmationAsked: "true",
+            customerName: "Jane",
+            customerPhone: "+84978634886",
+            serviceName: "Full Set",
+            confirmedServiceName: "Full Set",
+            requestedDate: usEasternDate(1),
+            requestedTime: "3 PM",
+            staffPreference: "Trang",
+            confirmedStaffName: "Trang"
+          }
+        },
+        missingFields: []
+      })
+    )
+  );
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "Hi, I want to book Full Set tomorrow at three p m with Trang.",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+84978634886",
+          AmazonConnectContactId: "connect-live-oneshot-spoken-pm",
+          customerId: "89e51525-297d-4b2a-b438-f64c4848683a",
+          customerName: "Jane",
+          recognizedCustomerName: "Jane",
+          customerNameSource: "customer",
+          customerPhone: "+84978634886"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          state: "InProgress",
+          confirmationState: "None",
+          slots: {
+            serviceName: slot("Full Set")
+          }
+        }
+      }
+    })
+  );
+
+  assert.equal(fetchCalls.length, 1);
+  assert.equal(fetchCalls[0].body.serviceName, "Full Set");
+  assert.equal(fetchCalls[0].body.requestedDate, usEasternDate(1));
+  assert.equal(fetchCalls[0].body.requestedTime, "3 PM");
+  assert.equal(fetchCalls[0].body.staffPreference, "Trang");
+  assert.equal(fetchCalls[0].body.customerName, "Jane");
+  assert.equal(response.sessionState.dialogAction.type, "ConfirmIntent");
+  assert.equal(response.sessionState.sessionAttributes.requestedTime, "3 PM");
+  assert.doesNotMatch(response.messages[0].content, /What time|what service|what name|Which staff/i);
 });
 
 test("slow booking fulfillment relies on Lex progress updates and preserves one backend call", async () => {
@@ -513,12 +767,12 @@ test("DialogCodeHook no input prompts service menu and keeps known caller", asyn
   assert.equal(response.sessionState.sessionAttributes.noInputCount, "1");
   assert.equal(response.sessionState.sessionAttributes.awaitingNoInputHumanConfirmation, "false");
   assert.equal(response.sessionState.sessionAttributes.customerPhone, "+17325956266");
-  assert.match(response.messages[0].content, /1 for Pedicure/i);
-  assert.match(response.messages[0].content, /2 for Manicure/i);
-  assert.match(response.messages[0].content, /3 for Gel Manicure/i);
-  assert.match(response.messages[0].content, /4 for Full Set/i);
-  assert.match(response.messages[0].content, /5 for Dip Powder/i);
-  assert.match(response.messages[0].content, /0 for a real person/i);
+  assert.match(response.messages[0].content, /Sorry, what service would you like/i);
+  assert.doesNotMatch(response.messages[0].content, /1 for Pedicure/i);
+  assert.doesNotMatch(response.messages[0].content, /2 for Manicure/i);
+  assert.doesNotMatch(response.messages[0].content, /3 for Gel Manicure/i);
+  assert.doesNotMatch(response.messages[0].content, /4 for Full Set/i);
+  assert.doesNotMatch(response.messages[0].content, /5 for Dip Powder/i);
 });
 
 test("DialogCodeHook second no input uses shorter prompt without transfer", async () => {

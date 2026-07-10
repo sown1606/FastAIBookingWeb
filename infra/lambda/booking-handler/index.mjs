@@ -187,11 +187,11 @@ const ANY_STAFF_ALIASES = [
   "first available"
 ];
 const SERVICE_DTMF_PROMPT =
-  "Hi, I can help book your appointment. Say the service name, including Other Services, or press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Full Set, 5 for Dip Powder. Press 0 for a real person.";
+  "Hi, thanks for calling Kiet Nails. How can I help? You can say the service, day, time, and technician in one sentence. Press 0 for a person.";
 const SERVICE_KEYPAD_PROMPT =
-  "I didn't catch the service. Say the service name, including Other Services, or press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Full Set, 5 for Dip Powder. Press 0 for a real person.";
+  "Sorry, what service would you like?";
 const SERVICE_DTMF_SHORT_PROMPT =
-  "Say the service name, including Other Services, or press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Full Set, 5 for Dip Powder. Press 0 for a real person.";
+  "I can list the services once. Press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Full Set, 5 for Dip Powder, or 0 for a person.";
 const STAFF_DTMF_PROMPT =
   "Which staff would you like, Trang, Amy, Kelly, or first available?";
 const STAFF_DTMF_SHORT_PROMPT =
@@ -300,7 +300,7 @@ const SLOT_ELICIT_PROMPTS = {
   serviceName: [
     SERVICE_DTMF_PROMPT,
     SERVICE_KEYPAD_PROMPT,
-    SERVICE_KEYPAD_PROMPT
+    SERVICE_DTMF_SHORT_PROMPT
   ],
   staffPreference: [
     STAFF_DTMF_PROMPT,
@@ -1173,6 +1173,43 @@ function isKnownStaffPreference(value, sessionAttributes = {}) {
   });
 }
 
+function isExactKnownStaffPreference(value, sessionAttributes = {}) {
+  const normalized = normalizeForMatch(value);
+  if (!normalized || normalizeForMatch(value) === "any staff") {
+    return normalized === "any staff";
+  }
+  for (const [staffName, aliases] of Object.entries(STAFF_ALIAS_GROUPS)) {
+    const canonical = normalizeForMatch(staffName);
+    if (normalized === canonical || aliases.some((alias) => normalized === normalizeForMatch(alias))) {
+      return true;
+    }
+  }
+  return Object.values(getStaffDtmfOptions(sessionAttributes)).some((staffName) => {
+    const fullName = normalizeForMatch(staffName);
+    const firstName = normalizeForMatch(String(staffName).split(/\s+/)[0]);
+    return normalized === fullName || normalized === firstName;
+  });
+}
+
+function previousStaffHasValidatedIdentity(sessionAttributes = {}) {
+  return Boolean(
+    sessionAttributes.staffId ||
+      sessionAttributes.selectedStaffId ||
+      sessionAttributes.confirmedStaffId
+  );
+}
+
+function getAuthoritativePreviousStaffPreference(value, sessionAttributes = {}) {
+  const raw = String(value || "").trim();
+  if (!raw || isInvalidStaffPreferenceNoise(raw, sessionAttributes)) {
+    return "";
+  }
+  if (previousStaffHasValidatedIdentity(sessionAttributes) || isExactKnownStaffPreference(raw, sessionAttributes)) {
+    return raw;
+  }
+  return "";
+}
+
 function isInvalidStaffPreferenceNoise(value, sessionAttributes = {}) {
   const raw = String(value || "").trim();
   if (!raw) {
@@ -1245,9 +1282,23 @@ function analyzeLexTurnSanitization(event) {
   const currentTurnDetails = getCurrentTurnBookingDetails(event);
   const recognizedService = currentTurnRecognizedService(event);
   const shouldStrictlyGroundSlots = Boolean(previous.lastAskedSlot);
+  const customerNameTurnOwnsTranscript =
+    previous.lastAskedSlot === "customerName" &&
+    !(dtmfRouting.accepted && dtmfRouting.route === "staff_menu");
+  const currentTurnStaffMention = customerNameTurnOwnsTranscript
+    ? ""
+    : extractStaffFromTranscript(currentTurnTranscript, previous);
+  const previousStaffPreferenceForAnalysis =
+    getSessionAttribute(previous, slotNames.staffPreference) || previous.confirmedStaffName;
+  const authoritativePreviousStaffPreference = getAuthoritativePreviousStaffPreference(
+    previousStaffPreferenceForAnalysis,
+    previous
+  );
   let clearedStaleRequestedTime = false;
   let preservedConfirmedService = false;
   let replacementInputTranscript = "";
+  let discardedStaleStaff = "";
+  let staffSource = "";
   let changed = false;
 
   if (
@@ -1290,6 +1341,7 @@ function analyzeLexTurnSanitization(event) {
     const { name: staffSlotName } = getSlotObject(slots, slotNames.staffPreference);
     sanitizedSlots[staffSlotName || "staffPreference"] = buildLexSlot(dtmfRouting.selection);
     replacementInputTranscript = dtmfRouting.selection;
+    staffSource = "current_turn_dtmf";
     changed = true;
     for (const [fieldName, names] of Object.entries(slotNames)) {
       if (fieldName === "staffPreference") {
@@ -1306,6 +1358,30 @@ function analyzeLexTurnSanitization(event) {
         changed = true;
       }
     }
+  }
+
+  if (currentTurnStaffMention && !(dtmfRouting.accepted && dtmfRouting.route === "staff_menu")) {
+    const { name: staffSlotName, slot: staffSlot } = getSlotObject(slots, slotNames.staffPreference);
+    const staleSlotValue = staffSlot
+      ? getSlotOriginalValue(staffSlot) || getSlotInterpretedValue(staffSlot)
+      : "";
+    sanitizedSlots[staffSlotName || "staffPreference"] = buildLexSlot(currentTurnStaffMention);
+    staffSource = normalizeForMatch(currentTurnStaffMention) === "any staff"
+      ? "current_turn_any_staff"
+      : "current_turn_alias";
+    if (staleSlotValue && !valuesEquivalent("staffPreference", staleSlotValue, currentTurnStaffMention, timeZone)) {
+      ignoredPollutedSlots.push(staffSlotName || "staffPreference");
+      discardedStaleStaff = staleSlotValue;
+    }
+    if (
+      previousStaffPreferenceForAnalysis &&
+      !valuesEquivalent("staffPreference", previousStaffPreferenceForAnalysis, currentTurnStaffMention, timeZone)
+    ) {
+      fieldsToClear.add("staffPreference");
+      ignoredPollutedSlots.push("sessionAttributes.staffPreference");
+      discardedStaleStaff = discardedStaleStaff || previousStaffPreferenceForAnalysis;
+    }
+    changed = true;
   }
 
   for (const [fieldName, names] of Object.entries(slotNames)) {
@@ -1441,11 +1517,14 @@ function analyzeLexTurnSanitization(event) {
     changed = true;
   }
 
-  const previousStaffPreference =
-    getSessionAttribute(previous, slotNames.staffPreference) || previous.confirmedStaffName;
-  if (isInvalidStaffPreferenceNoise(previousStaffPreference, previous)) {
+  if (
+    previousStaffPreferenceForAnalysis &&
+    !authoritativePreviousStaffPreference &&
+    !currentTurnStaffMention
+  ) {
     fieldsToClear.add("staffPreference");
     ignoredPollutedSlots.push("sessionAttributes.staffPreference");
+    discardedStaleStaff = discardedStaleStaff || previousStaffPreferenceForAnalysis;
     changed = true;
   }
 
@@ -1457,6 +1536,9 @@ function analyzeLexTurnSanitization(event) {
     ignoredPollutedSlots: Array.from(new Set(ignoredPollutedSlots)),
     ignoredUngroundedSlots: Array.from(new Set(ignoredUngroundedSlots)),
     ignoredNoiseFields: Array.from(new Set(ignoredNoiseFields)),
+    currentTurnStaffMention,
+    discardedStaleStaff,
+    staffSource,
     fieldsToClear: Array.from(fieldsToClear),
     sanitizedSlots,
     clearedStaleRequestedTime,
@@ -1474,6 +1556,9 @@ function sanitizeLexEvent(event, analysis) {
       lexTurnDebug
     };
   }
+  const currentTurnStaffWins =
+    analysis.currentTurnStaffMention &&
+    !(analysis.dtmfRouting?.accepted && analysis.dtmfRouting.route === "staff_menu");
   const sessionAttributes = {
     ...(event.sessionState?.sessionAttributes || {})
   };
@@ -1510,7 +1595,28 @@ function sanitizeLexEvent(event, analysis) {
     }
   }
   if (analysis.fieldsToClear?.length) {
-    sessionAttributes.ignoredPollutedSlotFields = JSON.stringify(analysis.fieldsToClear);
+    const fieldsToKeepCleared = analysis.fieldsToClear.filter(
+      (fieldName) => !(currentTurnStaffWins && fieldName === "staffPreference")
+    );
+    if (fieldsToKeepCleared.length) {
+      sessionAttributes.ignoredPollutedSlotFields = JSON.stringify(fieldsToKeepCleared);
+    } else {
+      delete sessionAttributes.ignoredPollutedSlotFields;
+    }
+  }
+  if (currentTurnStaffWins) {
+    sessionAttributes.staffPreference = analysis.currentTurnStaffMention;
+    sessionAttributes.confirmedStaffName = analysis.currentTurnStaffMention;
+    sessionAttributes.staffSource = analysis.staffSource || "current_turn_alias";
+    delete sessionAttributes.invalidStaffPreferenceIgnored;
+    if (analysis.discardedStaleStaff) {
+      sessionAttributes.discardedStaleStaff = analysis.discardedStaleStaff;
+    }
+    if (normalizeForMatch(analysis.currentTurnStaffMention) === "any staff") {
+      delete sessionAttributes.staffId;
+      delete sessionAttributes.selectedStaffId;
+      delete sessionAttributes.confirmedStaffId;
+    }
   }
   if (analysis.ignoredUngroundedSlots?.length) {
     sessionAttributes.ignoredUngroundedSlots = JSON.stringify(analysis.ignoredUngroundedSlots);
@@ -1761,16 +1867,18 @@ function resolveKnownDateValue(value, timeZone = DEFAULT_SALON_TIMEZONE) {
 }
 
 function extractTimeCandidate(value) {
-  const segment = String(value || "")
+  const source = String(value || "")
     .replace(/\b([ap])\s*\.?\s*m\.?\b/gi, "$1m")
-    .replace(/^\s*(?:at|around|about|for|by)\s+/i, "")
+    .trim();
+  const searchable = source.replace(/^\s*(?:at|around|about|for|by)\s+/i, "");
+  const segment = searchable
     .split(/[,.!?;]/)[0]
     ?.trim();
-  if (!segment) {
+  if (!searchable) {
     return "";
   }
 
-  const explicitMatch = segment.match(
+  const explicitMatch = searchable.match(
     new RegExp(
       `\\b(?:${SPOKEN_HOUR_PATTERN}|\\d{1,2})(?::\\d{2})?\\s*(?:a\\.?m\\.?|p\\.?m\\.?)\\b`,
       "i"
@@ -1780,7 +1888,7 @@ function extractTimeCandidate(value) {
     return explicitMatch[0];
   }
 
-  const markedBareMatch = segment.match(
+  const markedBareMatch = searchable.match(
     new RegExp(
       `\\b(?:at|around|about|for|by)\\s+((?:${SPOKEN_HOUR_PATTERN}|\\d{1,2})(?::\\d{2})?)\\b`,
       "i"
@@ -1788,6 +1896,10 @@ function extractTimeCandidate(value) {
   );
   if (markedBareMatch?.[1]) {
     return markedBareMatch[1];
+  }
+
+  if (!segment) {
+    return "";
   }
 
   const leadingBareMatch = segment.match(
@@ -2429,11 +2541,23 @@ function buildKnownBookingSessionAttributes(event) {
     (previous.customerNameSource === "phone_lookup" ? previous.customerName : "");
   const previousStaffPreference =
     getSessionAttribute(previous, slotNames.staffPreference) || previous.confirmedStaffName;
-  const cleanPreviousStaffPreference = sanitizeStaffPreferenceValue(previousStaffPreference, previous);
+  const cleanPreviousStaffPreference = getAuthoritativePreviousStaffPreference(
+    previousStaffPreference,
+    previous
+  );
   const knownStaffPreference = sanitizeStaffPreferenceValue(
     getKnownField(event, "staffPreference"),
     previous
   );
+  const customerNameTurnOwnsTranscript =
+    previous.lastAskedSlot === "customerName" &&
+    !(staffDtmfSelection && !staffDtmfSelection.invalid);
+  const currentTurnStaffMention = customerNameTurnOwnsTranscript
+    ? ""
+    : extractStaffFromTranscript(event.inputTranscript, previous);
+  const transcriptStaffMention = customerNameTurnOwnsTranscript
+    ? ""
+    : extractStaffFromTranscript(transcript, previous);
   const currentTurnIsDigitNoise =
     dtmfDiagnostics.isBareDigitUtterance || dtmfDiagnostics.isMultiDigitOrDigitSequence;
   const currentTurnHasGroundedDate = hasCurrentTurnDatePhrase(event.inputTranscript);
@@ -2478,17 +2602,20 @@ function buildKnownBookingSessionAttributes(event) {
     requestedTime: finalTime,
     staffPreference:
       (staffDtmfSelection && !staffDtmfSelection.invalid ? staffDtmfSelection.staffName : "") ||
+      currentTurnStaffMention ||
+      transcriptStaffMention ||
       cleanPreviousStaffPreference ||
-      extractStaffFromTranscript(transcript, previous) ||
       knownStaffPreference,
     staffId:
       (staffDtmfSelection && !staffDtmfSelection.invalid ? staffDtmfSelection.staffId : "") ||
-      previous.staffId ||
-      previous.selectedStaffId,
+      (!currentTurnStaffMention && cleanPreviousStaffPreference
+        ? previous.staffId || previous.selectedStaffId
+        : ""),
     selectedStaffId:
       (staffDtmfSelection && !staffDtmfSelection.invalid ? staffDtmfSelection.staffId : "") ||
-      previous.selectedStaffId ||
-      previous.staffId,
+      (!currentTurnStaffMention && cleanPreviousStaffPreference
+        ? previous.selectedStaffId || previous.staffId
+        : ""),
     confirmedServiceName:
       serviceDtmfSelection ||
       previous.confirmedServiceName ||
@@ -2496,10 +2623,11 @@ function buildKnownBookingSessionAttributes(event) {
       knownService,
     confirmedStaffName:
       (staffDtmfSelection && !staffDtmfSelection.invalid ? staffDtmfSelection.staffName : "") ||
+      currentTurnStaffMention ||
       previous.confirmedStaffName,
     confirmedStaffId:
       (staffDtmfSelection && !staffDtmfSelection.invalid ? staffDtmfSelection.staffId : "") ||
-      previous.confirmedStaffId,
+      (!currentTurnStaffMention && cleanPreviousStaffPreference ? previous.confirmedStaffId : ""),
     initialBookingUtterance: initial
   };
 
@@ -2694,6 +2822,9 @@ function buildElicitSlotResponse(event, slotName, extraAttributes = {}, messageO
 function getNoInputPrompt(slotName, noInputCount, event) {
   if (slotName === "customerName" && noInputCount >= 1) {
     return "Sorry, could you spell your first name, one letter at a time?";
+  }
+  if (slotName === "serviceName" && noInputCount <= 1) {
+    return SERVICE_KEYPAD_PROMPT;
   }
   if (noInputCount <= 1) {
     return getElicitPrompt(event, slotName, 1);
@@ -3566,7 +3697,10 @@ function buildLexTurnDebug(event, analysis = {}) {
       ignoredPollutedSlots: analysis.ignoredPollutedSlots || [],
       ignoredUngroundedSlots: analysis.ignoredUngroundedSlots || [],
       ignoredNoiseFields: analysis.ignoredNoiseFields || [],
-      preservedConfirmedService: Boolean(analysis.preservedConfirmedService)
+      preservedConfirmedService: Boolean(analysis.preservedConfirmedService),
+      currentTurnStaffMention: analysis.currentTurnStaffMention || null,
+      discardedStaleStaff: analysis.discardedStaleStaff || null,
+      staffSource: analysis.staffSource || null
     },
     trustedSlotsAfter: collectTrustedBookingSlots(knownAfterSanitization)
   };
@@ -3601,7 +3735,10 @@ function logStructuredLexTurn(event, response, analysis = {}) {
       ignoredPollutedSlots: analysis.ignoredPollutedSlots || [],
       ignoredUngroundedSlots: analysis.ignoredUngroundedSlots || [],
       ignoredNoiseFields: analysis.ignoredNoiseFields || [],
-      preservedConfirmedService: Boolean(analysis.preservedConfirmedService)
+      preservedConfirmedService: Boolean(analysis.preservedConfirmedService),
+      currentTurnStaffMention: analysis.currentTurnStaffMention || null,
+      discardedStaleStaff: analysis.discardedStaleStaff || null,
+      staffSource: analysis.staffSource || null
     },
     trustedSlotsBefore: collectTrustedBookingSlots(sessionAttributesBefore),
     trustedSlotsAfter: collectTrustedBookingSlots(sessionAttributesAfter),
@@ -3960,7 +4097,21 @@ async function handleLexEvent(event, analysis = {}) {
     }
 
     if (event.invocationSource === "DialogCodeHook" && !shouldEscalate) {
-      return buildDelegateResponse(event);
+      const intentState = event.sessionState?.intent?.state || "";
+      const confirmationState = event.sessionState?.intent?.confirmationState || "";
+      const bookingReadyForFulfillment =
+        intentName === "BookAppointmentIntent" &&
+        (intentState === "ReadyForFulfillment" || confirmationState === "Confirmed");
+      if (intentName !== "BookAppointmentIntent" || bookingReadyForFulfillment) {
+        return buildDelegateResponse(event);
+      }
+    }
+
+    if (event.invocationSource === "DialogCodeHook" && !shouldEscalate) {
+      const slotToElicit = getBookingSlotToElicit(event);
+      if (slotToElicit) {
+        return buildDelegateResponse(event);
+      }
     }
 
     if (shouldEscalate) {

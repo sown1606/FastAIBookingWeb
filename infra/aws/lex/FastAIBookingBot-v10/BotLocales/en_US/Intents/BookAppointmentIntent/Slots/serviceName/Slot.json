@@ -1,1 +1,167 @@
-{"name":"serviceName","identifier":"GHZKSCLGQP","description":null,"slotTypeName":"NailServiceType","obfuscationSetting":null,"valueElicitationSetting":{"slotCaptureSetting":{"codeHook":null,"captureResponse":null,"captureNextStep":{"sessionAttributes":null,"intent":{"name":null,"slots":null},"dialogAction":{"type":"ElicitSlot","slotToElicit":"customerName","suppressNextMessage":null,"intentsInScope":null}},"captureConditional":null,"failureResponse":null,"failureNextStep":{"sessionAttributes":null,"intent":{"name":"FallbackIntent","slots":null},"dialogAction":{"type":"StartIntent","slotToElicit":null,"suppressNextMessage":null,"intentsInScope":null}},"failureConditional":null,"elicitationCodeHook":{"enableCodeHookInvocation":true,"invocationLabel":null}},"slotConstraint":"Required","promptSpecification":{"messageGroupsList":[{"message":{"ssmlMessage":null,"customPayload":null,"plainTextMessage":{"value":"Hi, I can help book your appointment. Say the service name, including Other Services, or press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Full Set, 5 for Dip Powder. Press 0 for a real person."},"imageResponseCard":null},"variations":null}],"maxRetries":2,"allowInterrupt":true,"messageSelectionStrategy":"Random","promptAttemptsSpecification":{"Retry2":{"textInputSpecification":{"startTimeoutMs":30000},"allowedInputTypes":{"allowAudioInput":true,"allowDTMFInput":true},"audioAndDTMFInputSpecification":{"startTimeoutMs":3000,"audioSpecification":{"endTimeoutMs":500,"maxLengthMs":12000},"dtmfSpecification":{"maxLength":1,"endTimeoutMs":800,"deletionCharacter":"*","endCharacter":"#"}},"allowInterrupt":true},"Initial":{"textInputSpecification":{"startTimeoutMs":30000},"allowedInputTypes":{"allowAudioInput":true,"allowDTMFInput":true},"audioAndDTMFInputSpecification":{"startTimeoutMs":3000,"audioSpecification":{"endTimeoutMs":500,"maxLengthMs":12000},"dtmfSpecification":{"maxLength":1,"endTimeoutMs":800,"deletionCharacter":"*","endCharacter":"#"}},"allowInterrupt":true},"Retry1":{"textInputSpecification":{"startTimeoutMs":30000},"allowedInputTypes":{"allowAudioInput":true,"allowDTMFInput":true},"audioAndDTMFInputSpecification":{"startTimeoutMs":3000,"audioSpecification":{"endTimeoutMs":500,"maxLengthMs":12000},"dtmfSpecification":{"maxLength":1,"endTimeoutMs":800,"deletionCharacter":"*","endCharacter":"#"}},"allowInterrupt":true}}},"defaultValueSpecification":null,"sampleUtterances":null,"waitAndContinueSpecification":null},"multipleValuesSetting":null}
+{
+  "name": "serviceName",
+  "identifier": "GHZKSCLGQP",
+  "description": null,
+  "slotTypeName": "NailServiceType",
+  "obfuscationSetting": null,
+  "valueElicitationSetting": {
+    "slotCaptureSetting": {
+      "codeHook": {
+        "enableCodeHookInvocation": true,
+        "active": true,
+        "invocationLabel": null,
+        "postCodeHookSpecification": {
+          "successResponse": null,
+          "successNextStep": {
+            "sessionAttributes": null,
+            "intent": {
+              "name": null,
+              "slots": null
+            },
+            "dialogAction": {
+              "type": "ElicitIntent",
+              "slotToElicit": null,
+              "suppressNextMessage": null,
+              "intentsInScope": null
+            }
+          },
+          "successConditional": null,
+          "failureResponse": null,
+          "failureNextStep": {
+            "sessionAttributes": null,
+            "intent": {
+              "name": null,
+              "slots": null
+            },
+            "dialogAction": {
+              "type": "ElicitIntent",
+              "slotToElicit": null,
+              "suppressNextMessage": null,
+              "intentsInScope": null
+            }
+          },
+          "failureConditional": null,
+          "timeoutResponse": null,
+          "timeoutNextStep": {
+            "sessionAttributes": null,
+            "intent": {
+              "name": null,
+              "slots": null
+            },
+            "dialogAction": {
+              "type": "ElicitIntent",
+              "slotToElicit": null,
+              "suppressNextMessage": null,
+              "intentsInScope": null
+            }
+          },
+          "timeoutConditional": null
+        }
+      },
+      "captureResponse": null,
+      "captureNextStep": null,
+      "captureConditional": null,
+      "failureResponse": null,
+      "failureNextStep": null,
+      "failureConditional": null,
+      "elicitationCodeHook": {
+        "enableCodeHookInvocation": true,
+        "invocationLabel": null
+      }
+    },
+    "slotConstraint": "Required",
+    "promptSpecification": {
+      "messageGroupsList": [
+        {
+          "message": {
+            "ssmlMessage": null,
+            "customPayload": null,
+            "plainTextMessage": {
+              "value": "Sorry, what service would you like?"
+            },
+            "imageResponseCard": null
+          },
+          "variations": null
+        }
+      ],
+      "maxRetries": 2,
+      "allowInterrupt": true,
+      "messageSelectionStrategy": "Random",
+      "promptAttemptsSpecification": {
+        "Retry2": {
+          "textInputSpecification": {
+            "startTimeoutMs": 30000
+          },
+          "allowedInputTypes": {
+            "allowAudioInput": true,
+            "allowDTMFInput": true
+          },
+          "audioAndDTMFInputSpecification": {
+            "startTimeoutMs": 7000,
+            "audioSpecification": {
+              "endTimeoutMs": 1300,
+              "maxLengthMs": 20000
+            },
+            "dtmfSpecification": {
+              "maxLength": 1,
+              "endTimeoutMs": 800,
+              "deletionCharacter": "*",
+              "endCharacter": "#"
+            }
+          },
+          "allowInterrupt": true
+        },
+        "Initial": {
+          "textInputSpecification": {
+            "startTimeoutMs": 30000
+          },
+          "allowedInputTypes": {
+            "allowAudioInput": true,
+            "allowDTMFInput": true
+          },
+          "audioAndDTMFInputSpecification": {
+            "startTimeoutMs": 7000,
+            "audioSpecification": {
+              "endTimeoutMs": 1300,
+              "maxLengthMs": 20000
+            },
+            "dtmfSpecification": {
+              "maxLength": 1,
+              "endTimeoutMs": 800,
+              "deletionCharacter": "*",
+              "endCharacter": "#"
+            }
+          },
+          "allowInterrupt": true
+        },
+        "Retry1": {
+          "textInputSpecification": {
+            "startTimeoutMs": 30000
+          },
+          "allowedInputTypes": {
+            "allowAudioInput": true,
+            "allowDTMFInput": true
+          },
+          "audioAndDTMFInputSpecification": {
+            "startTimeoutMs": 7000,
+            "audioSpecification": {
+              "endTimeoutMs": 1300,
+              "maxLengthMs": 20000
+            },
+            "dtmfSpecification": {
+              "maxLength": 1,
+              "endTimeoutMs": 800,
+              "deletionCharacter": "*",
+              "endCharacter": "#"
+            }
+          },
+          "allowInterrupt": true
+        }
+      }
+    },
+    "defaultValueSpecification": null,
+    "sampleUtterances": null,
+    "waitAndContinueSpecification": null
+  },
+  "multipleValuesSetting": null
+}

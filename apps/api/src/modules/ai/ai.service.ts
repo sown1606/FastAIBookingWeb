@@ -428,9 +428,10 @@ const CUSTOMER_NAME_NOISE = new Set([
   "timed out"
 ]);
 const SERVICE_DTMF_PROMPT =
-  "Hi, I can help book your appointment. Say the service name, including Other Services, or press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Full Set, 5 for Dip Powder. Press 0 for a real person.";
+  "Hi, thanks for calling Kiet Nails. How can I help? You can say the service, day, time, and technician in one sentence. Press 0 for a person.";
 const SERVICE_DTMF_OPTIONS_PROMPT =
-  "Say the service name, including Other Services, or press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Full Set, 5 for Dip Powder. Press 0 for a real person.";
+  "I can list the services once. Press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Full Set, 5 for Dip Powder, or 0 for a person.";
+const SERVICE_FIRST_RETRY_PROMPT = "Sorry, what service would you like?";
 const STAFF_DTMF_PROMPT =
   "Which staff would you like, Trang, Amy, Kelly, or first available?";
 
@@ -1056,16 +1057,18 @@ const parseLocalTimeText = (value: string): { hour: number; minute: number; ambi
 };
 
 const extractTimeCandidate = (value: string): string | undefined => {
-  const segment = value
+  const source = value
     .replace(/\b([ap])\s*\.?\s*m\.?\b/gi, "$1m")
-    .replace(/^\s*(?:at|around|about|for|by)\s+/i, "")
+    .trim();
+  const searchable = source.replace(/^\s*(?:at|around|about|for|by)\s+/i, "");
+  const segment = searchable
     .split(/[,.!?;]/)[0]
     ?.trim();
-  if (!segment) {
+  if (!searchable) {
     return undefined;
   }
 
-  const explicitMatch = segment.match(
+  const explicitMatch = searchable.match(
     new RegExp(
       `\\b(?:${SPOKEN_HOUR_PATTERN}|\\d{1,2})(?::\\d{2})?\\s*(?:a\\.?m\\.?|p\\.?m\\.?)\\b`,
       "i"
@@ -1075,7 +1078,7 @@ const extractTimeCandidate = (value: string): string | undefined => {
     return explicitMatch[0];
   }
 
-  const markedBareMatch = segment.match(
+  const markedBareMatch = searchable.match(
     new RegExp(
       `\\b(?:at|around|about|for|by)\\s+((?:${SPOKEN_HOUR_PATTERN}|\\d{1,2})(?::\\d{2})?)\\b`,
       "i"
@@ -1083,6 +1086,10 @@ const extractTimeCandidate = (value: string): string | undefined => {
   );
   if (markedBareMatch?.[1]) {
     return markedBareMatch[1];
+  }
+
+  if (!segment) {
+    return undefined;
   }
 
   const leadingBareMatch = segment.match(
@@ -3830,6 +3837,7 @@ const buildBookingConfirmationMessage = (input: {
   appointmentStartTime: Date;
   salonTimezone: string;
   staffName: string;
+  customerName?: string;
   requestedAnyStaff?: boolean;
   customerNameFallbackNotice?: string;
 }): string => {
@@ -3844,8 +3852,9 @@ const buildBookingConfirmationMessage = (input: {
   const fallbackNotice = input.customerNameFallbackNotice
     ? `${escapeSsml(input.customerNameFallbackNotice)} <break time="300ms"/> `
     : "";
+  const customerPrefix = input.customerName ? `${escapeSsml(input.customerName)}, ` : "";
   return speak(
-    `${fallbackNotice}${selectedStaffPrefix}Just to confirm, ${escapeSsml(service)} with ${escapeSsml(input.staffName)} ${escapeSsml(appointmentTime)}. <break time="300ms"/> Is that correct?`
+    `${fallbackNotice}${selectedStaffPrefix}${customerPrefix}just to confirm: ${escapeSsml(service)} ${escapeSsml(appointmentTime)} with ${escapeSsml(input.staffName)}. <break time="300ms"/> Is that correct?`
   );
 };
 
@@ -3941,10 +3950,11 @@ const buildLexMessage = (input: {
     }
     if (input.missingFields?.includes("serviceName")) {
       const firstName = input.knownFields?.customerName?.split(/\s+/)[0];
+      const servicePrompt = isRetry ? SERVICE_DTMF_OPTIONS_PROMPT : SERVICE_FIRST_RETRY_PROMPT;
       return speak(
-        firstName
-          ? `Hi ${escapeSsml(firstName)}, I can help book your appointment. ${SERVICE_DTMF_OPTIONS_PROMPT}`
-          : SERVICE_DTMF_PROMPT
+        firstName && !isRetry
+          ? `Hi ${escapeSsml(firstName)}, I can help book your appointment. ${servicePrompt}`
+          : servicePrompt
       );
     }
     if (input.missingFields?.includes("preferredDateTime")) {
@@ -4032,7 +4042,16 @@ const getElicitSlotForMissingFields = (
   const previousCount = parseAttemptCount(
     readStringAttribute(normalized.attributes, ["askedSlotsCount", "fallbackCount", "errorCount"])
   );
-  const attemptCount = lastAskedSlot === slotToElicit ? previousCount + 1 : 1;
+  const serviceClarificationCount =
+    slotToElicit === "serviceName"
+      ? parseAttemptCount(readStringAttribute(normalized.attributes, ["serviceClarificationAttempts"]))
+      : 0;
+  const attemptCount =
+    slotToElicit === "serviceName" && serviceClarificationCount > 0
+      ? serviceClarificationCount
+      : lastAskedSlot === slotToElicit
+        ? previousCount + 1
+        : 1;
   const promptMissingFields =
     slotToElicit === "requestedDate" || slotToElicit === "requestedTime"
       ? ["preferredDateTime"]
@@ -4065,7 +4084,7 @@ const buildServiceClarificationMessage = (input: {
 }): string => {
   const options = formatNameList(getServicePromptNames(input.availableServiceNames));
   return options
-    ? speak(SERVICE_DTMF_PROMPT)
+    ? speak(input.attempts >= 1 ? SERVICE_DTMF_OPTIONS_PROMPT : SERVICE_FIRST_RETRY_PROMPT)
     : speak(
         `I heard ${escapeSsml(input.heardServiceName)}. <break time="300ms"/> Which service would you like?`
       );
@@ -4696,7 +4715,22 @@ export const createAmazonConnectAIAppointment = async (
     }
   }
 
-  if (!normalized.staffPreference && normalized.transcriptText) {
+  const customerNameTurnOwnsTranscript =
+    readStringAttribute(normalized.attributes, ["lastAskedSlot"]) === "customerName" &&
+    readStringAttribute(normalized.attributes, ["activeDtmfMenu"]) !== "staff";
+  const currentTurnStaffMention = normalized.currentTurnTranscript && !customerNameTurnOwnsTranscript
+    ? await findStaffMentionInText(salon.id, normalized.currentTurnTranscript)
+    : undefined;
+  if (currentTurnStaffMention) {
+    const previousStaffPreference = normalized.staffPreference;
+    normalized.staffPreference = currentTurnStaffMention;
+    if (
+      previousStaffPreference &&
+      normalizeForMatch(previousStaffPreference) !== normalizeForMatch(currentTurnStaffMention)
+    ) {
+      normalized.staffId = undefined;
+    }
+  } else if (!normalized.staffPreference && normalized.transcriptText) {
     normalized.staffPreference = await findStaffMentionInText(salon.id, normalized.transcriptText);
   }
 
@@ -6274,6 +6308,7 @@ export const createAmazonConnectAIAppointment = async (
 	      appointmentStartTime: requestedStartTime,
 	      salonTimezone: salon.timezone,
 	      staffName: chosenStaff.fullName,
+	      customerName: normalized.customerName,
 	      requestedAnyStaff,
 	      customerNameFallbackNotice:
 	        customerNameSourceOverride === "phone_fallback" && normalized.customerName
