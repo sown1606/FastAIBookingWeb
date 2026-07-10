@@ -1,7 +1,7 @@
 import { prisma } from "../../db/prisma";
 import { createAuditLog } from "../../lib/audit";
 import { AppError } from "../../lib/errors";
-import { requireUsPhone } from "../../utils/phone";
+import { requireCustomerPhone } from "../../utils/phone";
 
 interface CreateCustomerInput {
   firstName: string;
@@ -28,7 +28,7 @@ export const createCustomer = async (
       firstName: input.firstName,
       lastName: input.lastName,
       email: input.email?.toLowerCase(),
-      phone: requireUsPhone(input.phone, "Customer phone"),
+      phone: requireCustomerPhone(input.phone, "Customer phone"),
       notes: input.notes
     }
   });

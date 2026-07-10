@@ -16,10 +16,11 @@ import {
   suggestSlotsRequestSchema
 } from "./ai.schemas";
 import {
-  bookingFromText,
-  bookingFromTranscript,
-  createAmazonConnectAIAppointment,
-  exportAIInteractions,
+	  bookingFromText,
+	  bookingFromTranscript,
+	  createAmazonConnectAIAppointment,
+	  createAmazonConnectAIRecoverableFailure,
+	  exportAIInteractions,
   getAIInteractionById,
   listAIInteractions,
   parseBookingText,
@@ -98,38 +99,134 @@ const tokensMatch = (actual: string, expected: string): boolean => {
   );
 };
 
-const RECOVERABLE_AI_ERROR_MESSAGE =
-  "Please wait a moment while I check our services. I'm having trouble checking that right now. You can press 0 to speak with an operator, or I can take a callback request.";
+const readPayloadAttribute = (
+  payload: z.infer<typeof createAIAppointmentSchema>,
+  name: string
+): string | undefined => {
+  const value = payload.attributes?.[name];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+};
 
-const safeRecoverableResponse = (reason: "backend_error" | "backend_timeout") => ({
-  outcome: "MISSING_INFO" as const,
-  message: RECOVERABLE_AI_ERROR_MESSAGE,
-  data: {
-    outcome: "MISSING_INFO",
-    lexResponse: {
-      fulfillmentState: "InProgress",
-      message: RECOVERABLE_AI_ERROR_MESSAGE,
-      messageContentType: "PlainText",
-      dialogAction: {
-        type: "ElicitIntent"
-      },
-      sessionAttributes: {
-        forceHumanEscalation: "false",
-        transferToQueue: "false",
-        recoverableErrorReason: reason
-      }
-    },
-    appointment: null,
-    bookingAttemptId: null,
-    callSessionId: null,
-    transcriptId: null,
-    aiInteractionId: null,
+const firstString = (...values: Array<unknown>): string | undefined => {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return undefined;
+};
+
+const primitiveStringAttributes = (attributes: Record<string, unknown> | undefined): Record<string, string> =>
+  Object.fromEntries(
+    Object.entries(attributes ?? {})
+      .filter(([, value]) => ["string", "number", "boolean"].includes(typeof value))
+      .map(([key, value]) => [key, String(value)])
+      .filter(([, value]) => value.trim() !== "")
+  );
+
+const fallbackSlotForPayload = (payload: z.infer<typeof createAIAppointmentSchema>): string | undefined => {
+  if (!firstString(payload.serviceName, payload.service, readPayloadAttribute(payload, "serviceName"))) {
+    return "serviceName";
+  }
+  if (!firstString(payload.requestedDate, readPayloadAttribute(payload, "requestedDate"))) {
+    return "requestedDate";
+  }
+  if (!firstString(payload.requestedTime, readPayloadAttribute(payload, "requestedTime"))) {
+    return "requestedTime";
+  }
+  if (!firstString(payload.staffPreference, readPayloadAttribute(payload, "staffPreference"))) {
+    return "staffPreference";
+  }
+  if (!firstString(payload.customerName, payload.customer?.name, readPayloadAttribute(payload, "customerName"))) {
+    return "customerName";
+  }
+  if (!firstString(payload.customerPhone, payload.callerPhone, payload.customer?.phone, readPayloadAttribute(payload, "customerPhone"))) {
+    return "customerPhone";
+  }
+  return undefined;
+};
+
+const safeRecoverableResponse = (
+  reason: "backend_error" | "backend_timeout",
+  payload: z.infer<typeof createAIAppointmentSchema>
+) => {
+  const slotToElicit = fallbackSlotForPayload(payload);
+  const preservedLastAskedSlot = slotToElicit ?? firstString(readPayloadAttribute(payload, "lastAskedSlot")) ?? "customerName";
+  const serviceName = firstString(payload.serviceName, payload.service, readPayloadAttribute(payload, "serviceName"));
+  const requestedDate = firstString(payload.requestedDate, readPayloadAttribute(payload, "requestedDate"));
+  const requestedTime = firstString(payload.requestedTime, readPayloadAttribute(payload, "requestedTime"));
+  const staffPreference = firstString(payload.staffPreference, readPayloadAttribute(payload, "staffPreference"));
+  const customerName = firstString(payload.customerName, payload.customer?.name, readPayloadAttribute(payload, "customerName"));
+  const appointmentSummary = [serviceName, requestedDate, requestedTime ? `at ${requestedTime}` : undefined]
+    .filter(Boolean)
+    .join(" ");
+  const staffSummary = staffPreference ? ` with ${staffPreference}` : "";
+  const nameSummary = customerName ? ` under ${customerName}` : "";
+  const sessionAttributes = Object.fromEntries(
+    Object.entries({
+      ...primitiveStringAttributes(payload.attributes as Record<string, unknown> | undefined),
+      customerName,
+      customerPhone: firstString(
+        payload.customerPhone,
+        payload.callerPhone,
+        payload.customer?.phone,
+        readPayloadAttribute(payload, "customerPhone")
+      ),
+      serviceName,
+      requestedDate,
+      requestedTime,
+      staffPreference,
+      callSessionId: payload.callSessionId,
+      amazonConnectContactId: firstString(
+        payload.amazonConnectContactId,
+        payload.contactId,
+        readPayloadAttribute(payload, "AmazonConnectContactId")
+      ),
+      lastAskedSlot: preservedLastAskedSlot,
+      forceHumanEscalation: "false",
+      transferToQueue: "false",
+      recoverableErrorReason: reason
+    }).filter(([, value]) => value !== undefined && value !== null && String(value).trim() !== "")
+  );
+  const message =
+    slotToElicit === undefined
+      ? `I'm sorry, I couldn't save the appointment just yet. I still have ${appointmentSummary}${staffSummary}${nameSummary}. Would you like me to try once more? You can press 0 to speak with an operator.`
+      : slotToElicit === "customerName"
+      ? "I'm sorry, I couldn't save the appointment just yet. What name should I put on the appointment?"
+      : "I'm sorry, I couldn't save the appointment just yet. Please repeat that detail so I can keep the booking moving.";
+  const dialogAction =
+    slotToElicit === undefined
+      ? {
+          type: "ConfirmIntent"
+        }
+      : {
+          type: "ElicitSlot",
+          slotToElicit
+        };
+  return {
+		  outcome: "MISSING_INFO" as const,
+		  message,
+	  data: {
+	    outcome: "MISSING_INFO",
+	    lexResponse: {
+	      fulfillmentState: "InProgress",
+		      message,
+		      messageContentType: "PlainText",
+		      dialogAction,
+		      sessionAttributes
+		    },
+	    appointment: null,
+	    bookingAttemptId: null,
+	    callSessionId: payload.callSessionId ?? null,
+	    transcriptId: null,
+	    aiInteractionId: null,
     escalationId: null,
-    missingFields: [],
+	    missingFields: slotToElicit ? [slotToElicit] : [],
     alternatives: [],
     salonResolutionSource: null
-  }
-});
+	  }
+	};
+};
 
 const classifyInternalAIError = (error: unknown): "backend_error" | "backend_timeout" => {
   if (
@@ -218,13 +315,50 @@ aiInternalRouter.post(
       );
     };
     let result: Awaited<ReturnType<typeof createAmazonConnectAIAppointment>>;
-    try {
-      result = await createAmazonConnectAIAppointment(payload);
-    } catch (error) {
-      const reason = classifyInternalAIError(error);
-      logWaitCoverage({
-        success: false,
-        outcome: "MISSING_INFO",
+	    try {
+	      result = await createAmazonConnectAIAppointment(payload);
+	    } catch (error) {
+	      const reason = classifyInternalAIError(error);
+	      try {
+	        const recoveryResult = await createAmazonConnectAIRecoverableFailure(payload, {
+	          reason,
+	          error
+	        });
+	        logWaitCoverage({
+	          success: false,
+	          outcome: recoveryResult.outcome,
+	          reason
+	        });
+	        return sendSuccess(res, {
+	          statusCode: 200,
+	          message: recoveryResult.message,
+	          data: {
+	            outcome: recoveryResult.outcome,
+	            lexResponse: recoveryResult.lexResponse,
+	            appointment: recoveryResult.appointment,
+	            bookingAttemptId: recoveryResult.bookingAttempt.id,
+	            callSessionId: recoveryResult.callSession?.id ?? null,
+		            transcriptId: null,
+		            aiInteractionId: recoveryResult.aiInteraction?.id ?? null,
+		            escalationId: null,
+	            missingFields: recoveryResult.missingFields,
+	            alternatives: recoveryResult.alternatives,
+	            salonResolutionSource: recoveryResult.salonResolutionSource
+	          }
+	        });
+	      } catch (recoveryError) {
+	        logger.error(
+	          {
+	            requestId: req.requestId,
+	            reason,
+	            errorName: recoveryError instanceof Error ? recoveryError.name : typeof recoveryError
+	          },
+	          "Internal AI recoverable failure logging failed. Returning preserved caller-safe prompt."
+	        );
+	      }
+	      logWaitCoverage({
+	        success: false,
+	        outcome: "MISSING_INFO",
         reason
       });
       logger.error(
@@ -234,12 +368,12 @@ aiInternalRouter.post(
           errorName: error instanceof Error ? error.name : typeof error
         },
         "Internal AI appointment flow failed. Returning recoverable caller-safe prompt."
-      );
-      return sendSuccess(res, {
-        statusCode: 200,
-        ...safeRecoverableResponse(reason)
-      });
-    }
+	      );
+	      return sendSuccess(res, {
+	        statusCode: 200,
+	        ...safeRecoverableResponse(reason, payload)
+	      });
+	    }
     logWaitCoverage({
       success: true,
       outcome: result.outcome

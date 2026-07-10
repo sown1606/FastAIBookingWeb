@@ -291,6 +291,43 @@ test("Lex fulfillment progress updates cover slow booking, appointment changes, 
   }
 });
 
+test("Lex customerName failure path invokes the booking dialog hook instead of FallbackIntent", () => {
+  for (const { version, root } of lexRoots) {
+    const slotExport = JSON.parse(
+      readFileSync(
+        path.join(
+          root,
+          "BotLocales/en_US/Intents/BookAppointmentIntent/Slots/customerName/Slot.json"
+        ),
+        "utf8"
+      )
+    );
+    const failureNextStep =
+      slotExport.valueElicitationSetting?.slotCaptureSetting?.failureNextStep;
+
+    assert.equal(
+      failureNextStep?.dialogAction?.type,
+      "InvokeDialogCodeHook",
+      `${version} customerName failure stays in booking dialog`
+    );
+    assert.notEqual(
+      failureNextStep?.intent?.name,
+      "FallbackIntent",
+      `${version} customerName failure must not start fallback intent`
+    );
+    assert.equal(
+      failureNextStep?.sessionAttributes?.lastAskedSlot,
+      "customerName",
+      `${version} customerName failure preserves active slot`
+    );
+    assert.equal(
+      slotExport.valueElicitationSetting?.slotCaptureSetting?.codeHook?.active,
+      true,
+      `${version} customerName failure dialog hook is active`
+    );
+  }
+});
+
 test("Connect human escalation flow speaks before queue transfer", () => {
   const humanEscalationFlow = JSON.parse(
     readFileSync(path.join(connectRoot, "human-escalation.json"), "utf8")
@@ -1942,6 +1979,403 @@ test("Repeat service while asking customerName keeps context and does not reset"
     assert.equal(call.body.attributes.lastAskedSlot, "customerName");
     assert.equal(call.body.attributes.ignoredNoiseFields, JSON.stringify(["customerName"]));
   }
+});
+
+test("Fulfillment accepts international caller Jane at customerName stage", async () => {
+  const handler = await loadHandler();
+  const tomorrow = usEasternDate(1);
+  const fetchCalls = installFetchMock((url, options, body) =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "MISSING_INFO",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "InProgress",
+          message:
+            "Thanks, Jane. Just to confirm, Full Set tomorrow at 3 PM with the first available technician. Is that correct?",
+          messageContentType: "PlainText",
+          dialogAction: {
+            type: "ConfirmIntent"
+          },
+          sessionAttributes: {
+            customerName: body.customerName,
+            customerPhone: body.customerPhone,
+            serviceName: body.serviceName,
+            confirmedServiceName: body.serviceName,
+            requestedDate: body.requestedDate,
+            requestedTime: body.requestedTime,
+            staffPreference: body.staffPreference,
+            forceHumanEscalation: "false",
+            transferToQueue: "false"
+          }
+        }
+      })
+    )
+  );
+
+  const response = await handler(
+    baseEvent({
+      inputTranscript: "Jane",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+84978634886",
+          AmazonConnectContactId: "7a82c651-5091-4f32-84f0-bf37d004317c",
+          lastAskedSlot: "customerName",
+          serviceName: "Full Set",
+          confirmedServiceName: "Full Set",
+          requestedDate: tomorrow,
+          requestedTime: "3 PM",
+          staffPreference: "Any staff",
+          confirmedStaffName: "Any staff",
+          customerPhone: "+84978634886"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          state: "ReadyForFulfillment",
+          confirmationState: "None",
+          slots: {
+            serviceName: slot("Full Set"),
+            requestedDate: slot("tomorrow"),
+            requestedTime: slotWith({
+              originalValue: "three p m",
+              interpretedValue: "3 PM"
+            }),
+            staffPreference: slot("Any staff"),
+            customerName: slot("Jane")
+          }
+        }
+      },
+      requestAttributes: {
+        SystemEndpointAddress: "+18483487681"
+      }
+    })
+  );
+
+  assert.equal(fetchCalls.length, 1);
+  assert.equal(fetchCalls[0].body.customerName, "Jane");
+  assert.equal(fetchCalls[0].body.customerPhone, "+84978634886");
+  assert.equal(fetchCalls[0].body.calledNumber, "+18483487681");
+  assert.equal(
+    fetchCalls[0].body.amazonConnectContactId,
+    "7a82c651-5091-4f32-84f0-bf37d004317c"
+  );
+  assert.equal(fetchCalls[0].body.serviceName, "Full Set");
+  assert.equal(fetchCalls[0].body.requestedDate, tomorrow);
+  assert.equal(fetchCalls[0].body.requestedTime, "3 PM");
+  assert.equal(fetchCalls[0].body.staffPreference, "Any staff");
+  assert.equal(fetchCalls[0].body.currentTurnTranscript, "Jane");
+  assert.equal(response.sessionState.dialogAction.type, "ConfirmIntent");
+  assert.notEqual(response.sessionState.dialogAction.type, "ElicitIntent");
+  assert.notEqual(response.sessionState.dialogAction.slotToElicit, "serviceName");
+  assert.equal(response.sessionState.sessionAttributes.customerName, "Jane");
+  assert.equal(response.sessionState.sessionAttributes.customerPhone, "+84978634886");
+  assert.equal(response.sessionState.sessionAttributes.serviceName, "Full Set");
+  assert.equal(response.sessionState.sessionAttributes.requestedDate, tomorrow);
+  assert.equal(response.sessionState.sessionAttributes.requestedTime, "3 PM");
+  assert.equal(response.sessionState.sessionAttributes.staffPreference, "Any staff");
+  assert.notEqual(response.sessionState.sessionAttributes.transferToQueue, "true");
+  assert.notEqual(response.sessionState.sessionAttributes.forceHumanEscalation, "true");
+  assert.doesNotMatch(response.messages[0].content, /trouble|checking our services/i);
+});
+
+test("DialogCodeHook customer names colliding with staff names remain customerName", async () => {
+  const handler = await loadHandler();
+  globalThis.fetch = async () => {
+    throw new Error("fetch should not be called while delegating accepted customer names");
+  };
+
+  for (const name of ["Amy", "Kelly", "Trang", "Jane"]) {
+    const response = await handler(
+      baseEvent({
+        invocationSource: "DialogCodeHook",
+        inputTranscript: name,
+        sessionState: {
+          ...baseEvent().sessionState,
+          sessionAttributes: {
+            salonId: "salon-explicit",
+            CalledNumber: "+18483487681",
+            CustomerEndpointAddress: "+84978634886",
+            AmazonConnectContactId: `connect-customer-name-${name.toLowerCase()}`,
+            lastAskedSlot: "customerName",
+            serviceName: "Full Set",
+            confirmedServiceName: "Full Set",
+            requestedDate: usEasternDate(1),
+            requestedTime: "3 PM",
+            staffPreference: "Trang",
+            confirmedStaffName: "Trang",
+            customerPhone: "+84978634886",
+            ...dynamicStaffAttributes()
+          },
+          intent: {
+            ...baseEvent().sessionState.intent,
+            slots: {
+              serviceName: slot("Full Set"),
+              requestedDate: slot("tomorrow"),
+              requestedTime: slot("3 PM"),
+              staffPreference: slot("Trang"),
+              customerName: slot(name)
+            }
+          }
+        }
+      })
+    );
+
+    assert.equal(response.sessionState.dialogAction.type, "Delegate");
+    assert.equal(response.sessionState.sessionAttributes.customerName, name);
+    assert.equal(response.sessionState.intent.slots.customerName.value.interpretedValue, name);
+    assert.equal(response.sessionState.sessionAttributes.staffPreference, "Trang");
+    assert.equal(response.sessionState.intent.slots.staffPreference.value.interpretedValue, "Trang");
+    assert.notEqual(response.sessionState.sessionAttributes.transferToQueue, "true");
+    assert.notEqual(response.sessionState.sessionAttributes.forceHumanEscalation, "true");
+  }
+});
+
+test("Fulfillment collapses spoken spelling for customerName", async () => {
+  const handler = await loadHandler();
+  const fetchCalls = installFetchMock((url, options, body) =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "MISSING_INFO",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "InProgress",
+          message: `Thanks, ${body.customerName}. Just to confirm.`,
+          messageContentType: "PlainText",
+          dialogAction: {
+            type: "ConfirmIntent"
+          },
+          sessionAttributes: {
+            customerName: body.customerName,
+            customerPhone: body.customerPhone,
+            serviceName: body.serviceName,
+            requestedDate: body.requestedDate,
+            requestedTime: body.requestedTime,
+            staffPreference: body.staffPreference,
+            forceHumanEscalation: "false",
+            transferToQueue: "false"
+          }
+        }
+      })
+    )
+  );
+
+  for (const [spokenName, expectedName] of [
+    ["J A N E", "Jane"],
+    ["K I E T", "Kiet"]
+  ]) {
+    const response = await handler(
+      baseEvent({
+        inputTranscript: spokenName,
+        sessionState: {
+          ...baseEvent().sessionState,
+          sessionAttributes: {
+            salonId: "salon-explicit",
+            CalledNumber: "+18483487681",
+            CustomerEndpointAddress: "+84978634886",
+            AmazonConnectContactId: `connect-spelled-${expectedName.toLowerCase()}`,
+            lastAskedSlot: "customerName",
+            serviceName: "Full Set",
+            confirmedServiceName: "Full Set",
+            requestedDate: usEasternDate(1),
+            requestedTime: "3 PM",
+            staffPreference: "Any staff",
+            customerPhone: "+84978634886"
+          },
+          intent: {
+            ...baseEvent().sessionState.intent,
+            confirmationState: "None",
+            slots: {
+              serviceName: slot("Full Set"),
+              requestedDate: slot("tomorrow"),
+              requestedTime: slot("3 PM"),
+              staffPreference: slot("Any staff"),
+              customerName: slot(spokenName)
+            }
+          }
+        }
+      })
+    );
+
+    assert.equal(response.sessionState.dialogAction.type, "ConfirmIntent");
+    assert.equal(response.sessionState.sessionAttributes.customerName, expectedName);
+  }
+
+  assert.equal(fetchCalls.length, 2);
+  assert.equal(fetchCalls[0].body.customerName, "Jane");
+  assert.equal(fetchCalls[1].body.customerName, "Kiet");
+});
+
+test("Repeated no-input customerName uses temporary phone fallback and continues", async () => {
+  const handler = await loadHandler();
+  const fetchCalls = installFetchMock((url, options, body) =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "MISSING_INFO",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "InProgress",
+          message:
+            "I couldn't clearly hear the name, so I'll use Guest ending in 4886 for now. Just to confirm, Full Set tomorrow at 3 PM with the first available technician. Is that correct?",
+          messageContentType: "PlainText",
+          dialogAction: {
+            type: "ConfirmIntent"
+          },
+          sessionAttributes: {
+            customerName: body.customerName,
+            customerNameSource: "phone_fallback",
+            customerNameNeedsReview: "true",
+            customerPhone: body.customerPhone,
+            serviceName: body.serviceName,
+            requestedDate: body.requestedDate,
+            requestedTime: body.requestedTime,
+            staffPreference: body.staffPreference,
+            forceHumanEscalation: "false",
+            transferToQueue: "false"
+          }
+        }
+      })
+    )
+  );
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "no input",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+84978634886",
+          AmazonConnectContactId: "connect-customer-name-no-input-fallback",
+          lastAskedSlot: "customerName",
+          noInputCount: "1",
+          serviceName: "Full Set",
+          confirmedServiceName: "Full Set",
+          requestedDate: usEasternDate(1),
+          requestedTime: "3 PM",
+          staffPreference: "Any staff",
+          customerPhone: "+84978634886"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          slots: {
+            serviceName: slot("Full Set"),
+            requestedDate: slot("tomorrow"),
+            requestedTime: slot("3 PM"),
+            staffPreference: slot("Any staff")
+          }
+        }
+      }
+    })
+  );
+
+  assert.equal(fetchCalls.length, 1);
+  assert.equal(fetchCalls[0].body.customerName, "Guest 4886");
+  assert.equal(fetchCalls[0].body.customerPhone, "+84978634886");
+  assert.equal(fetchCalls[0].body.attributes.customerNameSource, "phone_fallback");
+  assert.equal(fetchCalls[0].body.attributes.customerNameNeedsReview, "true");
+  assert.equal(fetchCalls[0].body.currentTurnTranscript, "no input");
+  assert.equal(response.sessionState.dialogAction.type, "ConfirmIntent");
+  assert.equal(response.sessionState.sessionAttributes.customerName, "Guest 4886");
+  assert.equal(response.sessionState.sessionAttributes.customerNameSource, "phone_fallback");
+  assert.equal(response.sessionState.sessionAttributes.customerNameNeedsReview, "true");
+  assert.match(response.messages[0].content, /Guest ending in 4886/i);
+  assert.notEqual(response.sessionState.sessionAttributes.transferToQueue, "true");
+  assert.notEqual(response.sessionState.sessionAttributes.forceHumanEscalation, "true");
+});
+
+test("DialogCodeHook final confirmation yes posts confirmed booking", async () => {
+  const handler = await loadHandler();
+  const fetchCalls = installFetchMock((url, options, body) =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "BOOKED",
+        appointment: {
+          id: "appointment-final-confirmed"
+        },
+        lexResponse: {
+          fulfillmentState: "Fulfilled",
+          message: "Booked.",
+          messageContentType: "PlainText",
+          dialogAction: {
+            type: "Close"
+          },
+          sessionAttributes: {
+            customerName: body.customerName,
+            customerPhone: body.customerPhone,
+            serviceName: body.serviceName,
+            requestedDate: body.requestedDate,
+            requestedTime: body.requestedTime,
+            staffPreference: body.staffPreference,
+            awaitingFinalBookingConfirmation: "false",
+            bookingConfirmationAsked: "false",
+            forceHumanEscalation: "false",
+            transferToQueue: "false"
+          }
+        }
+      })
+    )
+  );
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "yes",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+84978634886",
+          AmazonConnectContactId: "connect-final-confirmation-84",
+          customerName: "Jane",
+          customerPhone: "+84978634886",
+          serviceName: "Full Set",
+          confirmedServiceName: "Full Set",
+          requestedDate: usEasternDate(1),
+          requestedTime: "3 PM",
+          staffPreference: "Kelly",
+          staffId: "staff-kelly",
+          selectedStaffId: "staff-kelly",
+          confirmedStaffName: "Kelly",
+          confirmedStaffId: "staff-kelly",
+          awaitingFinalBookingConfirmation: "true",
+          bookingConfirmationAsked: "true",
+          lastAskedSlot: "bookingConfirmation"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          confirmationState: "None",
+          slots: {
+            serviceName: slot("Full Set"),
+            requestedDate: slot("tomorrow"),
+            requestedTime: slot("3 PM"),
+            staffPreference: slot("Kelly"),
+            customerName: slot("Jane"),
+            customerPhone: slot("+84978634886")
+          }
+        }
+      }
+    })
+  );
+
+  assert.equal(fetchCalls.length, 1);
+  assert.equal(fetchCalls[0].body.confirmationState, "Confirmed");
+  assert.equal(fetchCalls[0].body.customerName, "Jane");
+  assert.equal(fetchCalls[0].body.customerPhone, "+84978634886");
+  assert.equal(fetchCalls[0].body.serviceName, "Full Set");
+  assert.equal(fetchCalls[0].body.requestedTime, "3 PM");
+  assert.equal(fetchCalls[0].body.staffPreference, "Kelly");
+  assert.equal(response.sessionState.dialogAction.type, "Close");
+  assert.equal(response.sessionState.intent.state, "Fulfilled");
+  assert.equal(response.sessionState.sessionAttributes.bookingOutcome, "BOOKED");
+  assert.equal(response.sessionState.sessionAttributes.appointmentId, "appointment-final-confirmed");
+  assert.equal(response.sessionState.sessionAttributes.awaitingFinalBookingConfirmation, "false");
+  assert.notEqual(response.sessionState.sessionAttributes.transferToQueue, "true");
 });
 
 test("DialogCodeHook digit 4 at requestedDate does not become time or service", async () => {

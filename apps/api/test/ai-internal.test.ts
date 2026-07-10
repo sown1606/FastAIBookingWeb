@@ -211,10 +211,11 @@ const createInitialState = () => {
     validationStaffIds: [] as string[],
     staffServiceMappings: null as { salonId: string; staffId: string; serviceId: string }[] | null,
     staffServiceChecks: [] as any[],
-    busyStaffIds: new Set<string>(),
-    throwOnSalonFind: null as Error | null
-  };
-};
+	    busyStaffIds: new Set<string>(),
+	    throwOnSalonFind: null as Error | null,
+	    throwOnCustomerCreate: null as Error | null
+	  };
+	};
 
 let state = createInitialState();
 
@@ -421,8 +422,11 @@ const setupPrismaMock = () => {
         (!contains || String(customer.phone).includes(contains))
     );
   });
-  patch(prisma.customer as any, "create", async (args: any) => {
-    const customer = {
+	  patch(prisma.customer as any, "create", async (args: any) => {
+	    if (state.throwOnCustomerCreate) {
+	      throw state.throwOnCustomerCreate;
+	    }
+	    const customer = {
       id: newId("customer", state.customers),
       ...args.data,
       createdAt: new Date()
@@ -1616,8 +1620,203 @@ test("unclear customer name digit noise asks caller to spell", async () => {
   assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitSlot");
   assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "customerName");
   assert.equal(result.body.data.lexResponse.sessionAttributes.customerName, undefined);
-  assert.match(result.body.data.lexResponse.message, /could you spell the name/i);
+  assert.match(result.body.data.lexResponse.message, /could you spell your first name/i);
   assert.equal(state.appointments.length, 0);
+});
+
+test("international caller provides Jane while customerName is the active slot", async () => {
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  const result = await postInternalAppointment(
+    bookingPayload({
+      customerName: "Jane",
+      customerPhone: "+84978634886",
+      callerPhone: "+84978634886",
+      serviceName: "Full Set",
+      requestedDate,
+      requestedTime: "3 PM",
+      staffPreference: "Any staff",
+      confirmationState: undefined,
+      amazonConnectContactId: "7a82c651-5091-4f32-84f0-bf37d004317c",
+      amazonConnectPhoneNumber: "+18483487681",
+      calledNumber: "+18483487681",
+      currentTurnTranscript: "Jane",
+      transcript: "Jane",
+      attributes: {
+        AmazonConnectContactId: "7a82c651-5091-4f32-84f0-bf37d004317c",
+        CustomerEndpointAddress: "+84978634886",
+        lastAskedSlot: "customerName",
+        serviceName: "Full Set",
+        confirmedServiceName: "Full Set",
+        requestedDate,
+        requestedTime: "3 PM",
+        staffPreference: "Any staff",
+        customerPhone: "+84978634886"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.notEqual(result.body.data.lexResponse.dialogAction.type, "ElicitIntent");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.customerName, "Jane");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.customerPhone, "+84978634886");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.requestedDate, requestedDate);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "3 PM");
+  assert.notEqual(result.body.data.lexResponse.sessionAttributes.transferToQueue, "true");
+  assert.doesNotMatch(result.body.data.lexResponse.message, /trouble checking/i);
+});
+
+test("international Amazon Connect customer persistence keeps +84 phone and does not name-match unrelated Jane", async () => {
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  state.customers.push({
+    id: "customer-existing-jane",
+    salonId: ids.salonA,
+    firstName: "Jane",
+    lastName: "Existing",
+    phone: "+17325550123",
+    createdAt: new Date("2026-01-03T00:00:00.000Z")
+  });
+
+  const result = await postInternalAppointment(
+    bookingPayload({
+      customerName: "Jane",
+      customerPhone: "+84978634886",
+      callerPhone: "+84978634886",
+      serviceName: "Full Set",
+      requestedDate,
+      requestedTime: "3 PM",
+      staffPreference: "Trang",
+      confirmationState: "Confirmed",
+      amazonConnectContactId: "connect-international-persist",
+      amazonConnectPhoneNumber: "+18483487681",
+      calledNumber: "+18483487681",
+      currentTurnTranscript: "yes",
+      transcript: "yes",
+      attributes: {
+        AmazonConnectContactId: "connect-international-persist",
+        CustomerEndpointAddress: "+84978634886",
+        lastAskedSlot: "bookingConfirmation",
+        serviceName: "Full Set",
+        requestedDate,
+        requestedTime: "3 PM",
+        staffPreference: "Trang",
+        customerName: "Jane",
+        customerPhone: "+84978634886"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 201);
+  assert.equal(result.body.data.outcome, "BOOKED");
+  const createdCustomer = state.customers.find((customer) => customer.phone === "+84978634886");
+  assert.ok(createdCustomer);
+  assert.equal(createdCustomer.firstName, "Jane");
+  assert.notEqual(createdCustomer.id, "customer-existing-jane");
+  assert.equal(state.appointments[0].customerId, createdCustomer.id);
+});
+
+test("customer names colliding with staff names are accepted while asking customerName", async () => {
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  for (const name of ["Amy", "Kelly", "Trang", "Jane"]) {
+    resetMockState();
+    const result = await postInternalAppointment(
+      bookingPayload({
+        customerName: name,
+        customerPhone: `+18483480${String(name.length).padStart(3, "0")}`,
+        serviceName: "Full Set",
+        requestedDate,
+        requestedTime: "3 PM",
+        staffPreference: "Trang",
+        confirmationState: undefined,
+        currentTurnTranscript: name,
+        transcript: name,
+        attributes: {
+          lastAskedSlot: "customerName",
+          serviceName: "Full Set",
+          requestedDate,
+          requestedTime: "3 PM",
+          staffPreference: "Trang",
+          customerPhone: `+18483480${String(name.length).padStart(3, "0")}`
+        }
+      })
+    );
+
+    assert.equal(result.response.status, 200, name);
+    assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent", name);
+    assert.equal(result.body.data.lexResponse.sessionAttributes.customerName, name);
+    assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
+  }
+});
+
+test("spoken spelling is collapsed for customerName answers", async () => {
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  for (const [spoken, expected] of [
+    ["J A N E", "Jane"],
+    ["K I E T", "Kiet"]
+  ] as const) {
+    resetMockState();
+    const result = await postInternalAppointment(
+      bookingPayload({
+        customerName: undefined,
+        customerPhone: "+18483481234",
+        serviceName: "Full Set",
+        requestedDate,
+        requestedTime: "3 PM",
+        staffPreference: "Trang",
+        confirmationState: undefined,
+        currentTurnTranscript: spoken,
+        transcript: spoken,
+        attributes: {
+          lastAskedSlot: "customerName",
+          serviceName: "Full Set",
+          requestedDate,
+          requestedTime: "3 PM",
+          staffPreference: "Trang",
+          customerPhone: "+18483481234"
+        }
+      })
+    );
+
+    assert.equal(result.response.status, 200, spoken);
+    assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent", spoken);
+    assert.equal(result.body.data.lexResponse.sessionAttributes.customerName, expected);
+  }
+});
+
+test("repeated unclear customerName uses temporary phone fallback and continues", async () => {
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  const result = await postInternalAppointment(
+    bookingPayload({
+      customerName: "two three",
+      customerPhone: "+84978634886",
+      serviceName: "Full Set",
+      requestedDate,
+      requestedTime: "3 PM",
+      staffPreference: "Trang",
+      confirmationState: undefined,
+      currentTurnTranscript: "two three",
+      transcript: "two three",
+      attributes: {
+        lastAskedSlot: "customerName",
+        askedSlotsCount: "2",
+        serviceName: "Full Set",
+        requestedDate,
+        requestedTime: "3 PM",
+        staffPreference: "Trang",
+        customerPhone: "+84978634886"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.customerName, "Guest 4886");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.customerNameSource, "phone_fallback");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.customerNameNeedsReview, "true");
+  assert.match(result.body.data.lexResponse.message, /Guest ending in 4886/i);
+  assert.notEqual(result.body.data.lexResponse.sessionAttributes.transferToQueue, "true");
 });
 
 test("repeat service while asking customer name keeps context in AI log response", async () => {
@@ -2248,24 +2447,26 @@ test("Amazon Connect booking fulfillment creates separate AI log rows for differ
 });
 
 test("Admin AI logs exclude synthetic ContactIds by default and include them when requested", async () => {
+  const realContactId = "7a82c651-5091-4f32-84f0-bf37d004317c";
+  const syntheticContactId = "codex-name-smoke-test";
   await postInternalAppointment(
     bookingPayload({
-      amazonConnectContactId: "connect-real-visible",
+      amazonConnectContactId: realContactId,
       currentTurnTranscript: "pedicure",
       transcript: "pedicure",
       attributes: {
-        AmazonConnectContactId: "connect-real-visible",
+        AmazonConnectContactId: realContactId,
         currentTurnTranscript: "pedicure"
       }
     })
   );
   await postInternalAppointment(
     bookingPayload({
-      amazonConnectContactId: "codex-smoke-hidden",
+      amazonConnectContactId: syntheticContactId,
       currentTurnTranscript: "pedicure",
       transcript: "pedicure",
       attributes: {
-        AmazonConnectContactId: "codex-smoke-hidden",
+        AmazonConnectContactId: syntheticContactId,
         currentTurnTranscript: "pedicure"
       }
     })
@@ -2280,10 +2481,15 @@ test("Admin AI logs exclude synthetic ContactIds by default and include them whe
 
   assert.equal(state.aiInteractionLogs.length, 2);
   assert.equal(state.aiInteractionLogs.filter((item) => item.isSynthetic).length, 1);
+  assert.equal(
+    state.aiInteractionLogs.find((item) => item.requestPayload.amazonConnectContactId === realContactId)
+      ?.isSynthetic,
+    false
+  );
   assert.equal(defaultList.items.length, 1);
-  assert.equal(defaultList.items[0].callSession?.providerCallId, "connect-real-visible");
+  assert.equal(defaultList.items[0].callSession?.providerCallId, realContactId);
   assert.equal(includedList.items.length, 2);
-  assert.ok(includedList.items.some((item) => item.callSession?.providerCallId === "codex-smoke-hidden"));
+  assert.ok(includedList.items.some((item) => item.callSession?.providerCallId === syntheticContactId));
 });
 
 test("confirmed booking retry for the same Amazon Connect contact does not create a duplicate appointment", async () => {
@@ -2413,7 +2619,11 @@ test("backend errors and timeouts return safe Lex reprompts without auto transfe
   assert.equal(result.body.data.lexResponse.sessionAttributes.forceHumanEscalation, "false");
   assert.equal(result.body.data.lexResponse.sessionAttributes.transferToQueue, "false");
   assert.equal(result.body.data.lexResponse.sessionAttributes.recoverableErrorReason, "backend_timeout");
-  assert.match(result.body.data.lexResponse.message, /press 0 to speak with an operator/i);
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitSlot");
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "staffPreference");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Pedicure");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.customerName, "Kiet Nguyen");
+  assert.match(result.body.data.lexResponse.message, /couldn't save the appointment/i);
   assert.doesNotMatch(result.body.data.lexResponse.message, /database|query|timed out/i);
 
   resetMockState();
@@ -2424,5 +2634,84 @@ test("backend errors and timeouts return safe Lex reprompts without auto transfe
   assert.equal(result.body.data.lexResponse.sessionAttributes.transferToQueue, "false");
   assert.equal(result.body.data.lexResponse.sessionAttributes.forceHumanEscalation, "false");
   assert.equal(result.body.data.lexResponse.sessionAttributes.recoverableErrorReason, "backend_error");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitSlot");
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "staffPreference");
   assert.doesNotMatch(result.body.data.lexResponse.message, /database|host detail/i);
+});
+
+test("recoverable backend error preserves slots and appends invalid turn to existing AI log", async () => {
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  const contactId = "connect-recoverable-customer-create";
+  const first = await postInternalAppointment(
+    bookingPayload({
+      customerName: undefined,
+      customerPhone: "+84978634886",
+      serviceName: "Full Set",
+      requestedDate,
+      requestedTime: "3 PM",
+      staffPreference: "Trang",
+      confirmationState: undefined,
+      amazonConnectContactId: contactId,
+      amazonConnectPhoneNumber: "+18483487681",
+      calledNumber: "+18483487681",
+      currentTurnTranscript: "full set",
+      transcript: "full set",
+      attributes: {
+        AmazonConnectContactId: contactId,
+        currentTurnTranscript: "full set",
+        serviceName: "Full Set",
+        requestedDate,
+        requestedTime: "3 PM",
+        staffPreference: "Trang",
+        customerPhone: "+84978634886"
+      }
+    })
+  );
+  assert.equal(first.body.data.lexResponse.dialogAction.slotToElicit, "customerName");
+  assert.equal(state.aiInteractionLogs.length, 1);
+
+  state.throwOnCustomerCreate = Object.assign(new Error("Customer phone must be a valid US phone number."), {
+    name: "INVALID_US_PHONE"
+  });
+  const second = await postInternalAppointment(
+    bookingPayload({
+      customerName: "Jane",
+      customerPhone: "+84978634886",
+      serviceName: "Full Set",
+      requestedDate,
+      requestedTime: "3 PM",
+      staffPreference: "Trang",
+      confirmationState: "Confirmed",
+      amazonConnectContactId: contactId,
+      amazonConnectPhoneNumber: "+18483487681",
+      calledNumber: "+18483487681",
+      currentTurnTranscript: "Jane",
+      transcript: "Jane",
+      attributes: {
+        ...first.body.data.lexResponse.sessionAttributes,
+        AmazonConnectContactId: contactId,
+        lastAskedSlot: "customerName",
+        currentTurnTranscript: "Jane",
+        customerName: "Jane"
+      }
+    })
+  );
+
+  assert.equal(second.response.status, 200);
+  assert.equal(second.body.data.outcome, "MISSING_INFO");
+  assert.notEqual(second.body.data.lexResponse.dialogAction.type, "ElicitIntent");
+  assert.equal(second.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
+  assert.equal(second.body.data.lexResponse.sessionAttributes.requestedDate, requestedDate);
+  assert.equal(second.body.data.lexResponse.sessionAttributes.requestedTime, "3 PM");
+  assert.equal(second.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
+  assert.equal(second.body.data.lexResponse.sessionAttributes.customerName, "Jane");
+  assert.equal(second.body.data.lexResponse.sessionAttributes.customerPhone, "+84978634886");
+  assert.match(second.body.data.lexResponse.message, /couldn't save the appointment/i);
+  assert.equal(state.aiInteractionLogs.length, 1);
+  const turnHistory = state.aiInteractionLogs[0].responsePayload.turnHistory;
+  assert.equal(turnHistory.length, 2);
+  assert.equal(turnHistory[1].currentTurnTranscript, "Jane");
+  assert.equal(turnHistory[1].errorCode, "INVALID_US_PHONE");
+  assert.equal(turnHistory[1].lastAskedSlotBefore, "customerName");
+  assert.equal(state.aiInteractionLogs[0].isValid, false);
 });

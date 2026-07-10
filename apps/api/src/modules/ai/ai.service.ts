@@ -14,6 +14,7 @@ import { prisma } from "../../db/prisma";
 import { createAuditLog } from "../../lib/audit";
 import { AppError } from "../../lib/errors";
 import { logger } from "../../lib/logger";
+import { normalizeCustomerPhone } from "../../utils/phone";
 import { createAppointmentFromAI, getAppointmentDetail } from "../appointments/appointments.service";
 import { getAvailableSlots, validateAppointmentSlot } from "../availability/availability.service";
 import { createOrUpdateCallEscalation } from "../call-center/call-center.service";
@@ -418,7 +419,13 @@ const CUSTOMER_NAME_NOISE = new Set([
   "today",
   "operator",
   "zero",
-  "four"
+  "four",
+  "no input",
+  "noinput",
+  "silence",
+  "silent",
+  "timeout",
+  "timed out"
 ]);
 const SERVICE_DTMF_PROMPT =
   "Hi, I can help book your appointment. Say the service name, including Other Services, or press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Full Set, 5 for Dip Powder. Press 0 for a real person.";
@@ -439,6 +446,27 @@ const normalizeForMatch = (value?: string | null): string => {
 };
 
 const compactForMatch = (value?: string | null): string => normalizeForMatch(value).replace(/\s/g, "");
+
+const CUSTOMER_NAME_PATTERN = /^\p{L}[\p{L}' -]{0,80}$/u;
+
+const toCustomerNameCase = (value: string): string =>
+  value
+    .toLocaleLowerCase("en-US")
+    .replace(/(^|[\s'-])\p{L}/gu, (match) => match.toLocaleUpperCase("en-US"));
+
+const collapseSpokenNameSpelling = (value?: string | null): string => {
+  const raw = value?.trim() ?? "";
+  if (!raw) {
+    return "";
+  }
+
+  const tokens = raw.split(/\s+/).filter(Boolean);
+  if (tokens.length >= 3 && tokens.every((token) => /^\p{L}$/u.test(token))) {
+    return toCustomerNameCase(tokens.join(""));
+  }
+
+  return raw.replace(/\s+/g, " ");
+};
 
 const getCustomerFacingServiceName = (serviceName?: string | null): string | undefined => {
   const trimmed = serviceName?.trim();
@@ -489,9 +517,9 @@ const findConfiguredServiceNameInText = (
 
 const extractCustomerNameFromText = (text?: string): string | undefined => {
   const match = text?.match(
-    /(?:my name is|name is|this is|i am|i'm)\s+([a-zA-Z][a-zA-Z'-]*(?:\s+[a-zA-Z][a-zA-Z'-]*){0,4})(?=\s*(?:[,.!?;]|$|and\s+(?:my\s+)?phone|(?:my\s+)?phone\s+(?:number\s+)?(?:is|should|to)))/i
+    /(?:my name is|name is|this is|i am|i'm)\s+(\p{L}[\p{L}'-]*(?:\s+\p{L}[\p{L}'-]*){0,4})(?=\s*(?:[,.!?;]|$|and\s+(?:my\s+)?phone|(?:my\s+)?phone\s+(?:number\s+)?(?:is|should|to)))/iu
   );
-  const name = match?.[1]?.trim();
+  const name = collapseSpokenNameSpelling(match?.[1]);
   return isAcceptableCustomerName(name) ? name : undefined;
 };
 
@@ -655,7 +683,8 @@ const isAcceptableCustomerName = (value?: string | null): value is string => {
   if (!raw || isInvalidCustomerNameNoise(raw) || readDtmfDigit(raw)) {
     return false;
   }
-  if (!/^[a-z][a-z' -]{0,80}$/i.test(raw) || normalized.split(" ").length > 4) {
+  const candidate = collapseSpokenNameSpelling(raw);
+  if (!CUSTOMER_NAME_PATTERN.test(candidate) || normalized.split(" ").length > 4) {
     return false;
   }
   return true;
@@ -663,6 +692,7 @@ const isAcceptableCustomerName = (value?: string | null): value is string => {
 
 const extractBareCustomerNameAnswer = (value?: string | null): string | undefined => {
   const raw = value?.trim();
+  const candidate = collapseSpokenNameSpelling(raw);
   const normalized = normalizeForMatch(raw);
   if (
     !raw ||
@@ -674,10 +704,10 @@ const extractBareCustomerNameAnswer = (value?: string | null): string | undefine
   ) {
     return undefined;
   }
-  if (!/^[a-z][a-z' -]{0,80}$/i.test(raw) || normalized.split(" ").length > 4) {
+  if (!CUSTOMER_NAME_PATTERN.test(candidate) || normalizeForMatch(candidate).split(" ").length > 4) {
     return undefined;
   }
-  return raw.replace(/\s+/g, " ");
+  return candidate;
 };
 
 const isReusableCallerName = (value?: string | null): value is string => {
@@ -735,6 +765,27 @@ const stripLeadingCountryCode = (value?: string | null): string => {
 
 const customerDisplayName = (customer: CustomerCandidate): string => {
   return customer.firstName.trim() || [customer.firstName, customer.lastName].filter(Boolean).join(" ").trim();
+};
+
+const customerFullName = (customer: CustomerCandidate): string =>
+  [customer.firstName, customer.lastName]
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+
+const explicitNameMatchesRecognizedCustomer = (
+  customer: CustomerCandidate,
+  explicitName?: string
+): boolean => {
+  const normalizedExplicit = normalizeForMatch(explicitName);
+  if (!normalizedExplicit) {
+    return false;
+  }
+  return [customerFullName(customer), customerDisplayName(customer)]
+    .map((name) => normalizeForMatch(name))
+    .filter(Boolean)
+    .some((name) => name === normalizedExplicit);
 };
 
 const readStringAttribute = (
@@ -1676,9 +1727,13 @@ const buildAmazonConnectTurnHistoryItem = (input: {
     ignoredNoiseFields:
       sanitization.ignoredNoiseFields ?? responsePayload.ignoredNoiseFields ?? [],
     slotToElicit: slotToElicit ?? null,
-    missingFields: responsePayload.missingFields ?? null,
-    promptMissingFields: responsePayload.promptMissingFields ?? null,
-    transferToQueue:
+	    missingFields: responsePayload.missingFields ?? null,
+	    promptMissingFields: responsePayload.promptMissingFields ?? null,
+	    errorCode: responsePayload.errorCode ?? responseDebug.errorCode ?? null,
+	    callerSafeResponseText:
+	      responsePayload.callerSafeResponseText ?? responseDebug.responseMessage ?? null,
+	    isValid: input.interactionInput.isValid,
+	    transferToQueue:
       sessionAttributesAfter.transferToQueue ?? responsePayload.transferToQueue ?? null,
     forceHumanEscalation:
       sessionAttributesAfter.forceHumanEscalation ?? responsePayload.forceHumanEscalation ?? null
@@ -2128,18 +2183,18 @@ const resolveCustomer = async (input: {
   customerPhone?: string;
   createCustomerIfMissing: boolean;
 }) => {
-  const normalizedPhone = normalizePhoneForMatching(input.customerPhone);
+  const normalizedPhone = normalizeCustomerPhone(input.customerPhone);
   if (normalizedPhone) {
     const existingByPhone = await findExistingCustomerByPhone({
       salonId: input.salonId,
-      customerPhone: input.customerPhone
+      customerPhone: normalizedPhone
     });
     if (existingByPhone) {
       return existingByPhone;
     }
   }
 
-  if (input.customerName) {
+  if (!normalizedPhone && input.customerName) {
     const [firstNamePart, ...lastNameParts] = input.customerName.trim().split(/\s+/);
     const lastNamePart = lastNameParts.join(" ").trim();
 
@@ -3738,6 +3793,7 @@ const buildBookingConfirmationMessage = (input: {
   salonTimezone: string;
   staffName: string;
   requestedAnyStaff?: boolean;
+  customerNameFallbackNotice?: string;
 }): string => {
   const service = input.serviceName;
   const appointmentTime = formatFinalConfirmationDateTimeForSpeech(
@@ -3747,8 +3803,11 @@ const buildBookingConfirmationMessage = (input: {
   const selectedStaffPrefix = input.requestedAnyStaff
     ? `I found ${escapeSsml(input.staffName)} available. <break time="300ms"/> `
     : "";
+  const fallbackNotice = input.customerNameFallbackNotice
+    ? `${escapeSsml(input.customerNameFallbackNotice)} <break time="300ms"/> `
+    : "";
   return speak(
-    `${selectedStaffPrefix}Just to confirm, ${escapeSsml(service)} with ${escapeSsml(input.staffName)} ${escapeSsml(appointmentTime)}. <break time="300ms"/> Is that correct?`
+    `${fallbackNotice}${selectedStaffPrefix}Just to confirm, ${escapeSsml(service)} with ${escapeSsml(input.staffName)} ${escapeSsml(appointmentTime)}. <break time="300ms"/> Is that correct?`
   );
 };
 
@@ -3827,10 +3886,10 @@ const buildLexMessage = (input: {
         }
       );
       return speak(
-        isRetry && input.repeatedKnownFieldWhileAskingName && summary
-          ? `I already have ${escapeSsml(summary)}. <break time="300ms"/> What name should I put on the appointment?`
-          : isRetry
-          ? "Sorry, could you spell the name for me?"
+	        isRetry && input.repeatedKnownFieldWhileAskingName && summary
+	          ? `I already have ${escapeSsml(summary)}. <break time="300ms"/> What name should I put on the appointment?`
+	          : isRetry
+	          ? "Sorry, could you spell your first name, one letter at a time?"
           : summary
             ? `Got it: ${escapeSsml(summary)}. <break time="300ms"/> What name should I put on the appointment?`
             : "What name should I put on the appointment?"
@@ -4111,11 +4170,315 @@ const selectAlternativeSlotFromText = (input: {
   return staffMatch ?? null;
 };
 
+const getSafeErrorCode = (error: unknown): string =>
+  error instanceof AppError
+    ? error.code
+    : error instanceof Error && error.name
+      ? error.name
+      : "UNKNOWN_ERROR";
+
+const buildTrustedSlotSnapshot = (attributes: Record<string, unknown> = {}): Record<string, unknown> =>
+  Object.fromEntries(
+    bookingDebugFields
+      .map((field) => [field, attributes[field]])
+      .filter(([, value]) => value !== undefined && value !== null && String(value).trim() !== "")
+  );
+
+const buildRecoverableSaveFailureMessage = (
+  normalized: ReturnType<typeof normalizeAmazonConnectAppointmentInput>,
+  timezone: string
+): string => {
+  const date = formatKnownDateForPrompt(normalized.requestedDate, timezone);
+  const time = formatKnownTimeForPrompt(normalized.requestedTime);
+  const service = normalized.serviceName ?? "the appointment";
+  const staff = normalized.staffPreference
+    ? isAnyStaffPreference(normalized.staffPreference)
+      ? "the first available technician"
+      : normalized.staffPreference
+    : "the first available technician";
+  const appointmentTime = [date, time ? `at ${time}` : ""].filter(Boolean).join(" ");
+  const underName = normalized.customerName ? ` under ${normalized.customerName}` : "";
+  return speak(
+    `I'm sorry, I couldn't save the appointment just yet. I still have ${escapeSsml(service)} ${escapeSsml(appointmentTime)} with ${escapeSsml(staff)}${escapeSsml(underName)}. Would you like me to try once more?`
+  );
+};
+
+export const createAmazonConnectAIRecoverableFailure = async (
+  input: CreateAmazonConnectAIAppointmentInput,
+  options: {
+    reason: "backend_error" | "backend_timeout";
+    error: unknown;
+  }
+) => {
+  const normalized = normalizeAmazonConnectAppointmentInput(input);
+  const { salon, resolutionSource } = await resolveAmazonConnectSalon({
+    salonId: input.salonId,
+    amazonConnectPhoneNumber: normalized.amazonConnectPhoneNumber,
+    calledNumber: normalized.calledNumber
+  });
+  const actorUserId = await resolveActionActorUserId(salon.id);
+  const callSession = await upsertAmazonConnectCallSession({
+    salonId: salon.id,
+    contactId: normalized.contactId,
+    customerPhone: normalized.customerPhone,
+    amazonConnectPhoneNumber: normalized.amazonConnectPhoneNumber,
+    calledNumber: normalized.calledNumber,
+    finalResolution: "Amazon Connect AI booking hit a recoverable backend error."
+  });
+  const activeBookingAttempt = callSession
+    ? await prisma.bookingAttempt.findFirst({
+        where: {
+          callSessionId: callSession.id,
+          status: BookingAttemptStatus.NEEDS_INPUT
+        },
+        orderBy: {
+          createdAt: "desc"
+        }
+      })
+    : null;
+  const activeNormalizedRequest =
+    activeBookingAttempt?.normalizedRequest &&
+    typeof activeBookingAttempt.normalizedRequest === "object" &&
+    !Array.isArray(activeBookingAttempt.normalizedRequest)
+      ? (activeBookingAttempt.normalizedRequest as Record<string, unknown>)
+      : {};
+
+  normalized.customerName ??=
+    asTrimmedString(activeBookingAttempt?.customerName ?? undefined) ??
+    readStringAttribute(activeNormalizedRequest, ["customerName"]);
+  normalized.customerPhone ??=
+    asTrimmedString(activeBookingAttempt?.customerPhone ?? undefined) ??
+    readStringAttribute(activeNormalizedRequest, ["customerPhone"]);
+  normalized.serviceName ??=
+    getCustomerFacingServiceName(activeBookingAttempt?.requestedService ?? undefined) ??
+    getCustomerFacingServiceName(
+      readStringAttribute(activeNormalizedRequest, ["serviceName", "suggestedServiceName"])
+    );
+  normalized.staffPreference ??=
+    asTrimmedString(activeBookingAttempt?.requestedStaff ?? undefined) ??
+    readStringAttribute(activeNormalizedRequest, ["staffPreference", "staffName"]);
+  normalized.requestedDate ??=
+    readStringAttribute(activeNormalizedRequest, [
+      "requestedDate",
+      "preferredDateTime",
+      "requestedDateTimeText",
+      "startTimeIso"
+    ]) ?? asTrimmedString(activeBookingAttempt?.requestedDateTimeText ?? undefined);
+  normalized.requestedTime ??= readStringAttribute(activeNormalizedRequest, ["requestedTime"]);
+  normalized.staffId ??= readStringAttribute(activeNormalizedRequest, ["staffId", "selectedStaffId"]);
+
+  const missingFields = new Set<string>();
+  if (!normalized.customerName) {
+    missingFields.add("customerName");
+  }
+  if (!normalized.customerPhone) {
+    missingFields.add("customerPhone");
+  }
+  if (!normalized.serviceName) {
+    missingFields.add("serviceName");
+  }
+  if (!normalized.requestedDate || (!normalized.requestedTime && !hasTimeComponent(normalized.requestedDate))) {
+    missingFields.add("preferredDateTime");
+  }
+  if (!normalized.staffPreference && !normalized.staffId) {
+    missingFields.add("staffPreference");
+  }
+
+  const errorCode = getSafeErrorCode(options.error);
+  const requestAttributes = recordFromUnknown(input.attributes);
+  const baseSessionAttributes = Object.fromEntries(
+    Object.entries({
+      customerName: normalized.customerName,
+      customerPhone: normalized.customerPhone,
+      serviceName: normalized.serviceName,
+      requestedDate: normalized.requestedDate,
+      requestedTime: normalized.requestedTime,
+      staffPreference: normalized.staffPreference,
+      staffId: normalized.staffId,
+      selectedStaffId: normalized.staffId,
+      confirmedServiceName: normalized.serviceName,
+      confirmedStaffName: normalized.staffPreference,
+      callSessionId: callSession?.id,
+      amazonConnectContactId: normalized.contactId,
+      recoverableErrorReason: options.reason,
+      recoverableErrorCode: errorCode,
+      forceHumanEscalation: "false",
+      transferToQueue: "false"
+    }).filter(([, value]) => value !== undefined && value !== null && String(value).trim() !== "")
+  ) as Record<string, string>;
+
+  let message: string;
+  let dialogAction: { type: string; slotToElicit?: string };
+  let promptMissingFields: string[] = [];
+  if (missingFields.size > 0) {
+    const elicitDecision = getElicitSlotForMissingFields(missingFields, normalized);
+    promptMissingFields = elicitDecision.promptMissingFields;
+    Object.assign(baseSessionAttributes, elicitDecision.sessionAttributes);
+    message = buildLexMessage({
+      outcome: "MISSING_INFO",
+      missingFields: elicitDecision.promptMissingFields,
+      knownFields: normalized,
+      salonTimezone: salon.timezone,
+      attemptCount: elicitDecision.attemptCount
+    });
+    dialogAction = {
+      type: "ElicitSlot",
+      slotToElicit: elicitDecision.slotToElicit
+    };
+  } else {
+    message = buildRecoverableSaveFailureMessage(normalized, salon.timezone);
+    Object.assign(baseSessionAttributes, {
+      awaitingBackendRetryConfirmation: "true",
+      lastAskedSlot: readStringAttribute(normalized.attributes, ["lastAskedSlot"]) ?? "bookingConfirmation"
+    });
+    dialogAction = {
+      type: "ConfirmIntent"
+    };
+  }
+
+  const bookingAttemptData = {
+    salonId: salon.id,
+    callSessionId: callSession?.id,
+    status: BookingAttemptStatus.NEEDS_INPUT,
+    source: normalized.source,
+    customerName: normalized.customerName,
+    customerPhone:
+      normalizeCustomerPhone(normalized.customerPhone) ?? normalizePhoneForMatching(normalized.customerPhone),
+    requestedService: normalized.serviceName,
+    requestedStaff: normalized.staffPreference,
+    requestedDateTimeText: [normalized.requestedDate, normalized.requestedTime]
+      .filter((value): value is string => Boolean(value))
+      .join(" "),
+    normalizedRequest: toJson({
+      salonId: salon.id,
+      salonResolutionSource: resolutionSource,
+      customerName: normalized.customerName,
+      customerPhone: normalized.customerPhone,
+      serviceName: normalized.serviceName,
+      requestedDate: normalized.requestedDate,
+      requestedTime: normalized.requestedTime,
+      staffPreference: normalized.staffPreference,
+      staffId: normalized.staffId,
+      selectedStaffId: normalized.staffId,
+      recoverableErrorReason: options.reason,
+      recoverableErrorCode: errorCode
+    }),
+    failureReason: `Recoverable backend error: ${errorCode}`,
+    rawInput: toJson({
+      ...input,
+      authorization: undefined,
+      normalizedProvider: normalized.provider
+    }),
+    createdByUserId: actorUserId
+  };
+  const bookingAttempt = activeBookingAttempt
+    ? await prisma.bookingAttempt.update({
+        where: {
+          id: activeBookingAttempt.id
+        },
+        data: bookingAttemptData
+      })
+    : await prisma.bookingAttempt.create({
+        data: bookingAttemptData
+      });
+
+  if (callSession) {
+    await markBookingAttemptResultOnCall(callSession.id, bookingAttempt.status, {
+      bookingAttemptId: bookingAttempt.id,
+      failureReason: bookingAttempt.failureReason ?? undefined
+    });
+  }
+
+  const lexResponse = {
+    fulfillmentState: "InProgress",
+    message,
+    messageContentType: message.trim().startsWith("<speak>") ? "SSML" : "PlainText",
+    dialogAction,
+    sessionAttributes: baseSessionAttributes
+  };
+  const parsed = buildInternalParsedIntent({
+    intentType: "BOOK_APPOINTMENT",
+    customerName: normalized.customerName,
+    customerPhone: normalized.customerPhone,
+    serviceName: normalized.serviceName,
+    staffPreference: normalized.staffPreference,
+    requestedDateTime: normalized.requestedDate,
+    missingFields: Array.from(missingFields.values()),
+    isReadyToBook: false
+  });
+  const responsePayload = {
+    currentTurnTranscript: normalized.currentTurnTranscript ?? normalized.transcriptText,
+    aggregatedBookingTranscript: normalized.aggregatedBookingTranscript ?? normalized.transcriptText,
+    missingFields: Array.from(missingFields.values()),
+    promptMissingFields,
+    errorCode,
+    recoverableErrorReason: options.reason,
+    callerSafeResponseText: message,
+    lexResponse,
+    sessionAttributes: baseSessionAttributes,
+    lexTurnDebug: {
+      ...recordFromUnknown(requestAttributes.lexTurnDebug),
+      currentTurnTranscript: normalized.currentTurnTranscript ?? normalized.transcriptText,
+      lastAskedSlotBefore: readStringAttribute(requestAttributes, ["lastAskedSlot"]) ?? null,
+      lastAskedSlotAfter: baseSessionAttributes.lastAskedSlot ?? null,
+      sessionAttributesBefore: requestAttributes,
+      sessionAttributesAfter: baseSessionAttributes,
+      trustedSlotsBefore: buildTrustedSlotSnapshot(requestAttributes),
+      trustedSlotsAfter: buildTrustedSlotSnapshot(baseSessionAttributes),
+      errorCode,
+      recoverableErrorReason: options.reason,
+      responseMessage: message,
+      slotToElicit: dialogAction.slotToElicit
+    }
+  };
+  const aiInteraction = await upsertAmazonConnectBookingAIInteractionLog({
+    salonId: salon.id,
+    actorUserId,
+    callSessionId: callSession?.id,
+    bookingAttemptId: bookingAttempt.id,
+    provider: ExternalProvider.AMAZON_CONNECT,
+    model: env.AMAZON_LEX_BOT_ID ?? "amazon-lex",
+    taskType: AMAZON_CONNECT_BOOKING_TASK,
+    requestText: normalized.aggregatedBookingTranscript ?? normalized.transcriptText ?? "",
+    requestPayload: input,
+    responseText: message,
+    responsePayload,
+    parsedOutput: {
+      outcome: "MISSING_INFO",
+      parsed
+    },
+    isValid: false,
+    validationErrors: {
+      code: errorCode,
+      reason: options.reason
+    },
+    confidence: 0,
+    isSynthetic: isSyntheticAmazonConnectIdentity(normalized.contactId)
+  });
+
+  return {
+    outcome: "MISSING_INFO" as const,
+    message,
+    lexResponse,
+    appointment: null,
+    bookingAttempt,
+    callSession,
+    transcript: null,
+    aiInteraction,
+    escalation: null,
+    alternatives: [],
+    missingFields: Array.from(missingFields.values()),
+    salonResolutionSource: resolutionSource
+  };
+};
+
 export const createAmazonConnectAIAppointment = async (
   input: CreateAmazonConnectAIAppointmentInput
 ) => {
   const normalized = normalizeAmazonConnectAppointmentInput(input);
   const normalizedBeforeDebug = pickNormalizedAppointmentDebug(normalized);
+  let customerNameSourceOverride = readStringAttribute(normalized.attributes, ["customerNameSource"]);
+  let customerNameNeedsReview = readStringAttribute(normalized.attributes, ["customerNameNeedsReview"]) === "true";
   const { salon, resolutionSource } = await resolveAmazonConnectSalon({
     salonId: input.salonId,
     amazonConnectPhoneNumber: normalized.amazonConnectPhoneNumber,
@@ -4207,6 +4570,9 @@ export const createAmazonConnectAIAppointment = async (
     }
     normalized.customerPhone ??= extractCustomerPhoneFromText(normalized.transcriptText);
   }
+  if (normalized.customerName) {
+    normalized.customerName = collapseSpokenNameSpelling(normalized.customerName);
+  }
   if (normalized.customerName && !isAcceptableCustomerName(normalized.customerName)) {
     normalized.customerName = undefined;
   }
@@ -4217,10 +4583,15 @@ export const createAmazonConnectAIAppointment = async (
         customerPhone: normalized.customerPhone
       })
     : null;
-  if (recognizedCustomer && !explicitCustomerName && !bareCustomerName) {
-    normalized.customerName = customerDisplayName(recognizedCustomer);
-    normalized.customerPhone = normalizePhoneForMatching(normalized.customerPhone) ?? recognizedCustomer.phone;
-  }
+	  if (recognizedCustomer) {
+	    normalized.customerName =
+	      explicitNameMatchesRecognizedCustomer(recognizedCustomer, explicitCustomerName) && explicitCustomerName
+	        ? explicitCustomerName
+	        : customerDisplayName(recognizedCustomer);
+	    normalized.customerPhone = normalizePhoneForMatching(normalized.customerPhone) ?? recognizedCustomer.phone;
+	    customerNameSourceOverride = undefined;
+	    customerNameNeedsReview = false;
+	  }
   const knownCallerMemory =
     !recognizedCustomer && normalized.customerPhone && !explicitCustomerName && !bareCustomerName
       ? await findKnownCallerMemoryByPhone({
@@ -4234,6 +4605,22 @@ export const createAmazonConnectAIAppointment = async (
       normalizePhoneForMatching(normalized.customerPhone) ??
       knownCallerMemory.customerPhone ??
       normalized.customerPhone;
+  }
+  const lastAskedSlotForName = readStringAttribute(normalized.attributes, ["lastAskedSlot"]) === "customerName";
+  const previousNameAttempts = parseAttemptCount(
+    readStringAttribute(normalized.attributes, ["askedSlotsCount", "fallbackCount", "errorCount"])
+  );
+  if (
+    lastAskedSlotForName &&
+    !recognizedCustomer &&
+    !normalized.customerName &&
+    previousNameAttempts >= 2 &&
+    !getHumanEscalationReason(normalized)
+  ) {
+    const lastFourDigits = (normalized.customerPhone ?? "").replace(/\D/g, "").slice(-4);
+    normalized.customerName = `Guest${lastFourDigits ? ` ${lastFourDigits}` : ""}`;
+    customerNameSourceOverride = "phone_fallback";
+    customerNameNeedsReview = true;
   }
 
   const transcript =
@@ -4370,9 +4757,11 @@ export const createAmazonConnectAIAppointment = async (
       transcriptId: transcript?.id,
       appointmentId: inputForAttempt.appointmentId,
       status: inputForAttempt.status,
-      source: normalized.source,
-      customerName: normalized.customerName,
-      customerPhone: normalizePhoneForMatching(normalized.customerPhone),
+	      source: normalized.source,
+	      customerName: normalized.customerName,
+	      customerPhone:
+	        normalizeCustomerPhone(normalized.customerPhone) ??
+	        normalizePhoneForMatching(normalized.customerPhone),
       requestedService: normalized.serviceName,
       requestedStaff: normalized.staffPreference,
       requestedDateTimeText:
@@ -4380,10 +4769,12 @@ export const createAmazonConnectAIAppointment = async (
       normalizedRequest: toJson({
         salonId: salon.id,
         salonResolutionSource: resolutionSource,
-        customerId: recognizedCustomer?.id,
-        customerName: normalized.customerName,
-        customerPhone: normalized.customerPhone,
-        serviceName: normalized.serviceName,
+	        customerId: recognizedCustomer?.id,
+	        customerName: normalized.customerName,
+	        customerPhone: normalized.customerPhone,
+	        customerNameSource: customerNameSourceOverride,
+	        customerNameNeedsReview: customerNameNeedsReview || undefined,
+	        serviceName: normalized.serviceName,
         requestedDate: normalized.requestedDate,
         requestedTime: normalized.requestedTime,
         staffPreference: normalized.staffPreference,
@@ -4612,13 +5003,14 @@ export const createAmazonConnectAIAppointment = async (
       Object.entries({
         customerId: recognizedCustomer?.id,
         recognizedCustomerId: recognizedCustomer?.id,
-        recognizedCustomerName: recognizedCustomer
-          ? customerDisplayName(recognizedCustomer)
-          : knownCallerMemory?.customerName,
-        customerNameSource: recognizedCustomer
-          ? "customer"
-          : knownCallerMemory?.source,
-        customerName: normalized.customerName,
+	        recognizedCustomerName: recognizedCustomer
+	          ? customerDisplayName(recognizedCustomer)
+	          : knownCallerMemory?.customerName,
+	        customerNameSource: recognizedCustomer
+	          ? "customer"
+	          : customerNameSourceOverride ?? knownCallerMemory?.source,
+	        customerNameNeedsReview: customerNameNeedsReview ? "true" : undefined,
+	        customerName: normalized.customerName,
         customerPhone: normalized.customerPhone,
         serviceName: normalized.serviceName,
         requestedDate: normalized.requestedDate,
@@ -5624,14 +6016,18 @@ export const createAmazonConnectAIAppointment = async (
     };
   }
 
-  if (!isConfirmationAccepted(normalized.confirmationState)) {
-    const message = buildBookingConfirmationMessage({
-      serviceName: callerServiceName,
-      appointmentStartTime: requestedStartTime,
-      salonTimezone: salon.timezone,
-      staffName: chosenStaff.fullName,
-      requestedAnyStaff
-    });
+	  if (!isConfirmationAccepted(normalized.confirmationState)) {
+	    const message = buildBookingConfirmationMessage({
+	      serviceName: callerServiceName,
+	      appointmentStartTime: requestedStartTime,
+	      salonTimezone: salon.timezone,
+	      staffName: chosenStaff.fullName,
+	      requestedAnyStaff,
+	      customerNameFallbackNotice:
+	        customerNameSourceOverride === "phone_fallback" && normalized.customerName
+	          ? `I couldn't clearly hear the name, so I'll use Guest ending in ${normalized.customerName.replace(/\D/g, "").slice(-4)} for now.`
+	          : undefined
+	    });
     const parsed = buildInternalParsedIntent({
       intentType: "BOOK_APPOINTMENT",
       customerName: normalized.customerName,

@@ -164,7 +164,13 @@ const CUSTOMER_NAME_NOISE = new Set([
   "today",
   "operator",
   "zero",
-  "four"
+  "four",
+  "no input",
+  "noinput",
+  "silence",
+  "silent",
+  "timeout",
+  "timed out"
 ]);
 const STAFF_ALIAS_GROUPS = {
   Trang: ["trang", "chang", "train", "trangg"],
@@ -313,8 +319,8 @@ const SLOT_ELICIT_PROMPTS = {
   ],
   customerName: [
     "What name should I put on the appointment?",
-    "Sorry, could you spell the name for me?",
-    "Sorry, could you spell the name for me?"
+    "Sorry, could you spell your first name, one letter at a time?",
+    "Sorry, could you spell your first name, one letter at a time?"
   ],
   customerPhone: [
     "What phone number should I use for the appointment?",
@@ -394,6 +400,28 @@ function normalizeForMatch(value) {
 
 function compactForMatch(value) {
   return normalizeForMatch(value).replace(/\s/g, "");
+}
+
+function toCustomerNameCase(value) {
+  return String(value || "")
+    .toLocaleLowerCase("en-US")
+    .replace(/(^|[\s'-])\p{L}/gu, (match) => match.toLocaleUpperCase("en-US"));
+}
+
+function collapseSpokenNameSpelling(value) {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return "";
+  }
+  const tokens = raw.split(/\s+/).filter(Boolean);
+  if (tokens.length >= 3 && tokens.every((token) => /^\p{L}$/u.test(token))) {
+    return toCustomerNameCase(tokens.join(""));
+  }
+  return raw.replace(/\s+/g, " ");
+}
+
+function isCustomerNameShape(value) {
+  return /^\p{L}[\p{L}' -]{0,80}$/u.test(String(value || ""));
 }
 
 function normalizeSpokenNumbers(value) {
@@ -641,10 +669,9 @@ function isInvalidCustomerNameNoise(value) {
   return Boolean(
     normalized &&
       (CUSTOMER_NAME_NOISE.has(normalized) ||
-        isDigitOnlyOrSequenceUtterance(value) ||
-        extractServiceFromTranscript(value) ||
-        extractStaffFromTranscript(value) ||
-        getPreferredDateCandidate(value) ||
+	        isDigitOnlyOrSequenceUtterance(value) ||
+	        extractServiceFromTranscript(value) ||
+	        getPreferredDateCandidate(value) ||
         normalizeTimePhrase(extractTimeCandidate(value)) ||
         /(?:phone|number|appointment|book|service|tomorrow|today|morning|afternoon|evening|night|zero|one|two|three|four|five|six|seven|eight|nine|ten)\b/i.test(
           String(value || "")
@@ -653,12 +680,12 @@ function isInvalidCustomerNameNoise(value) {
 }
 
 function isAcceptableCustomerName(value) {
-  const raw = String(value || "").trim();
+  const raw = collapseSpokenNameSpelling(value);
   const normalized = normalizeForMatch(raw);
   if (!raw || isInvalidCustomerNameNoise(raw) || readDtmfDigit(raw)) {
     return false;
   }
-  if (!/^[a-z][a-z' -]{0,80}$/i.test(raw) || normalized.split(" ").length > 4) {
+  if (!isCustomerNameShape(raw) || normalized.split(" ").length > 4) {
     return false;
   }
   return true;
@@ -1551,32 +1578,32 @@ function buildInvalidStaffDtmfResponse(event) {
 
 function extractCustomerNameFromText(text) {
   const match = String(text || "").match(
-    /(?:my name is|name is|this is|i am|i'm)\s+([a-zA-Z][a-zA-Z'-]*(?:\s+[a-zA-Z][a-zA-Z'-]*){0,4})(?=\s*(?:[,.!?;]|$|and\s+(?:my\s+)?phone|(?:my\s+)?phone\s+(?:number\s+)?(?:is|should|to)))/i
+    /(?:my name is|name is|this is|i am|i'm)\s+(\p{L}[\p{L}'-]*(?:\s+\p{L}[\p{L}'-]*){0,4})(?=\s*(?:[,.!?;]|$|and\s+(?:my\s+)?phone|(?:my\s+)?phone\s+(?:number\s+)?(?:is|should|to)))/iu
   );
-  const name = match?.[1]?.trim() || "";
+  const name = collapseSpokenNameSpelling(match?.[1]);
   return isAcceptableCustomerName(name) ? name : "";
 }
 
 function extractBareCustomerNameAnswer(text) {
   const raw = String(text || "").trim();
-  const normalized = normalizeForMatch(raw);
+  const candidate = collapseSpokenNameSpelling(raw);
+  const normalized = normalizeForMatch(candidate);
   if (
     !raw ||
     readDtmfDigit(raw) ||
     isInvalidCustomerNameNoise(raw) ||
     isExplicitHumanRequestText(raw) ||
     extractServiceFromTranscript(raw) ||
-    extractStaffFromTranscript(raw) ||
     getPreferredDateCandidate(raw) ||
     normalizeTimePhrase(extractTimeCandidate(raw)) ||
     /(?:phone|number|appointment|book|service|tomorrow|today|morning|afternoon|evening|night|zero|one|two|three|four|five|six|seven|eight|nine|ten)\b/i.test(raw)
   ) {
     return "";
   }
-  if (!/^[a-z][a-z' -]{0,80}$/i.test(raw) || normalized.split(" ").length > 4) {
+  if (!isCustomerNameShape(candidate) || normalized.split(" ").length > 4) {
     return "";
   }
-  return raw.replace(/\s+/g, " ");
+  return candidate;
 }
 
 function extractCustomerPhoneFromText(text) {
@@ -2265,7 +2292,7 @@ function buildCustomerNamePrompt(event, options = {}) {
     forPhrase: options.already
   });
   if (options.retry && !options.already) {
-    return "Sorry, could you spell the name for me?";
+    return "Sorry, could you spell your first name, one letter at a time?";
   }
   if (options.already && summary) {
     return `I already have ${summary}. What name should I put on the appointment?`;
@@ -2432,15 +2459,15 @@ function buildKnownBookingSessionAttributes(event) {
       previousResolvedTime ||
       knownResolvedTime;
   const known = {
-    recognizedCustomerName: previous.recognizedCustomerName,
+	    recognizedCustomerName: previous.recognizedCustomerName,
     customerNameSource:
       previous.customerNameSource === "phone_lookup"
         ? "phone_lookup"
         : previous.customerNameSource,
-    customerName:
-      explicitCustomerName ||
-      protectedCustomerName ||
-      getKnownField(event, "customerName"),
+	    customerName:
+	      protectedCustomerName ||
+	      explicitCustomerName ||
+	      getKnownField(event, "customerName"),
     customerPhone:
       amazonConnectCustomerPhone ||
       getKnownField(event, "customerPhone") ||
@@ -2665,6 +2692,9 @@ function buildElicitSlotResponse(event, slotName, extraAttributes = {}, messageO
 	}
 
 function getNoInputPrompt(slotName, noInputCount, event) {
+  if (slotName === "customerName" && noInputCount >= 1) {
+    return "Sorry, could you spell your first name, one letter at a time?";
+  }
   if (noInputCount <= 1) {
     return getElicitPrompt(event, slotName, 1);
   }
@@ -2749,6 +2779,90 @@ function buildNoInputResponse(event, slotName) {
       awaitingNoInputHumanConfirmation: "false"
     },
     getNoInputPrompt(slotName, noInputCount, event)
+  );
+}
+
+function getTemporaryCustomerName(event) {
+  const phone =
+    getKnownField(event, "customerPhone") ||
+    getAttribute(event, attributeNames.customerNumber);
+  const lastFour = String(phone || "").replace(/\D/g, "").slice(-4);
+  return lastFour ? `Guest ${lastFour}` : "Guest";
+}
+
+function hasTrustedCustomerName(event) {
+  const known = buildKnownBookingSessionAttributes(event);
+  return Boolean(
+    known.recognizedCustomerName ||
+      known.customerNameSource === "phone_lookup" ||
+      known.customerNameSource === "customer" ||
+      (known.customerName && isAcceptableCustomerName(known.customerName))
+  );
+}
+
+async function continueWithTemporaryCustomerName(event, intentName, analysis = {}) {
+  const temporaryName = getTemporaryCustomerName(event);
+  const slots = mergeKnownSlots(event);
+  const slotNameToSet =
+    slotNames.customerName.find((name) => Object.prototype.hasOwnProperty.call(slots, name)) ||
+    slotNames.customerName[0];
+  slots[slotNameToSet] = buildLexSlot(temporaryName);
+  const sessionAttributes = applyActiveDtmfMenuAttributes(
+    {
+      ...buildKnownBookingSessionAttributes(event),
+      customerName: temporaryName,
+      customerNameSource: "phone_fallback",
+      customerNameNeedsReview: "true",
+      lastAskedSlot: "customerName",
+      slotToElicit: "customerName",
+      fallbackCount: "2",
+      askedSlotsCount: "2",
+      errorCount: "2"
+    },
+    ""
+  );
+  const eventWithFallbackName = {
+    ...event,
+    sessionState: {
+      ...(event.sessionState || {}),
+      sessionAttributes,
+      intent: {
+        ...(event.sessionState?.intent || {}),
+        slots
+      }
+    },
+    lexTurnDebug: {
+      ...(event.lexTurnDebug || {}),
+      sanitization: {
+        ...((event.lexTurnDebug || {}).sanitization || {}),
+        ignoredNoiseFields: analysis.ignoredNoiseFields || ["customerName"]
+      }
+    }
+  };
+  const result = await postInternalAppointment(
+    buildInternalPayload(eventWithFallbackName, intentName, {
+      customerNameSource: "phone_fallback",
+      customerNameNeedsReview: "true",
+      ignoredNoiseFields: JSON.stringify(analysis.ignoredNoiseFields || ["customerName"])
+    }),
+    {
+      operationName: "booking_customer_name_fallback",
+      waitPrompt: WAIT_PROMPTS.customer_lookup,
+      mechanism: "Lambda temporary customer name fallback"
+    }
+  );
+  if (!result.ok) {
+    console.error("Appointment API rejected temporary customer name fallback", result.code);
+    return buildBackendFailureElicitResponse(eventWithFallbackName, result);
+  }
+  const data = extractResultPayload(result);
+  return buildLexResponse(
+    eventWithFallbackName,
+    data.lexResponse?.message ||
+      `I couldn't clearly hear the name, so I'll use ${temporaryName} for now.`,
+    data.lexResponse?.fulfillmentState || "InProgress",
+    buildSessionAttributesFromResult(data),
+    data.lexResponse
   );
 }
 
@@ -3517,6 +3631,9 @@ async function handleLexEvent(event, analysis = {}) {
       const previousNameAttempts = parseAttemptCount(
         sessionAttributes.askedSlotsCount || sessionAttributes.fallbackCount || sessionAttributes.errorCount
       );
+      if (previousNameAttempts >= 2 && !hasTrustedCustomerName(event)) {
+        return await continueWithTemporaryCustomerName(event, intentName, analysis);
+      }
       const response = buildElicitSlotResponse(
         event,
         "customerName",
@@ -3665,11 +3782,11 @@ async function handleLexEvent(event, analysis = {}) {
       );
     }
 
-    if (
-      !shouldEscalate &&
-      sessionAttributes.awaitingExistingAppointmentHumanConfirmation === "true" &&
-      isNegativeUtterance(event.inputTranscript)
-    ) {
+	    if (
+	      !shouldEscalate &&
+	      sessionAttributes.awaitingExistingAppointmentHumanConfirmation === "true" &&
+	      isNegativeUtterance(event.inputTranscript)
+	    ) {
       return buildLexResponse(
         event,
         "No problem. How can I help you today?",
@@ -3685,11 +3802,96 @@ async function handleLexEvent(event, analysis = {}) {
           },
           messageContentType: "PlainText"
         }
-      );
-    }
+	      );
+	    }
 
-    if (event.invocationSource === "DialogCodeHook" && !shouldEscalate && isNoInputEvent(event)) {
-      const slotToElicit = getBookingSlotToElicit(event);
+	    if (
+	      !shouldEscalate &&
+	      intentName === "BookAppointmentIntent" &&
+	      sessionAttributes.awaitingFinalBookingConfirmation === "true" &&
+	      isAffirmativeUtterance(event.inputTranscript)
+	    ) {
+	      const confirmedEvent = {
+	        ...event,
+	        sessionState: {
+	          ...(event.sessionState || {}),
+	          sessionAttributes: {
+	            ...(event.sessionState?.sessionAttributes || {}),
+	            awaitingFinalBookingConfirmation: "false",
+	            bookingConfirmationAsked: "false"
+	          },
+	          intent: {
+	            ...(event.sessionState?.intent || {}),
+	            confirmationState: "Confirmed",
+	            state: "ReadyForFulfillment"
+	          }
+	        }
+	      };
+	      const result = await postInternalAppointment(
+	        buildInternalPayload(confirmedEvent, intentName, {
+	          awaitingFinalBookingConfirmation: "false",
+	          bookingConfirmationAsked: "false"
+	        }),
+	        {
+	          operationName: "booking_final_confirmation",
+	          waitPrompt: `${WAIT_PROMPTS.availability_lookup} ${WAIT_PROMPTS.appointment_creation}`,
+	          mechanism: "Lambda final confirmation DialogCodeHook"
+	        }
+	      );
+	      if (!result.ok) {
+	        console.error("Appointment API rejected final confirmation", result.code);
+	        return buildBackendFailureElicitResponse(confirmedEvent, result);
+	      }
+	      const data = extractResultPayload(result);
+	      return buildLexResponse(
+	        confirmedEvent,
+	        data.lexResponse?.message || "Your appointment is booked.",
+	        data.lexResponse?.fulfillmentState || "Fulfilled",
+	        buildSessionAttributesFromResult(data),
+	        data.lexResponse
+	      );
+	    }
+
+	    if (
+	      !shouldEscalate &&
+	      intentName === "BookAppointmentIntent" &&
+	      sessionAttributes.awaitingFinalBookingConfirmation === "true" &&
+	      isNegativeUtterance(event.inputTranscript)
+	    ) {
+	      return buildElicitSlotResponse(
+	        {
+	          ...event,
+	          sessionState: {
+	            ...(event.sessionState || {}),
+	            sessionAttributes: {
+	              ...(event.sessionState?.sessionAttributes || {}),
+	              awaitingFinalBookingConfirmation: "false",
+	              bookingConfirmationAsked: "false"
+	            }
+	          }
+	        },
+	        "customerName",
+	        {
+	          awaitingFinalBookingConfirmation: "false",
+	          bookingConfirmationAsked: "false"
+	        },
+	        "No problem. What name should I put on the appointment?"
+	      );
+	    }
+
+	    if (event.invocationSource === "DialogCodeHook" && !shouldEscalate && isNoInputEvent(event)) {
+	      const slotToElicit = getBookingSlotToElicit(event);
+      const noInputCount = parseAttemptCount(sessionAttributes.noInputCount) + 1;
+      if (
+        slotToElicit === "customerName" &&
+        noInputCount >= 2 &&
+        !hasTrustedCustomerName(event)
+      ) {
+        return await continueWithTemporaryCustomerName(event, intentName, {
+          ...analysis,
+          ignoredNoiseFields: ["customerName"]
+        });
+      }
       if (slotToElicit) {
         return buildNoInputResponse(event, slotToElicit);
       }
