@@ -48,8 +48,8 @@ interface UpdateAppointmentInput {
 }
 
 interface ListAppointmentsInput {
-  page: number;
-  limit: number;
+  page?: number;
+  limit?: number;
   staffId?: string;
   customerId?: string;
   status?: AppointmentStatus;
@@ -777,7 +777,15 @@ export const getAppointmentCreatedPushTestPayload = async (
 };
 
 export const listAppointments = async (salonId: string, input: ListAppointmentsInput) => {
-  const skip = (input.page - 1) * input.limit;
+  const shouldPaginate = input.page !== undefined || input.limit !== undefined;
+  const page = input.page ?? 1;
+  const limit = input.limit ?? 20;
+  const paginationArgs: { skip?: number; take?: number } = shouldPaginate
+    ? {
+        skip: (page - 1) * limit,
+        take: limit
+      }
+    : {};
   const where = {
     salonId,
     ...(input.staffId ? { staffId: input.staffId } : {}),
@@ -800,8 +808,7 @@ export const listAppointments = async (salonId: string, input: ListAppointmentsI
       orderBy: {
         startTime: "asc"
       },
-      skip,
-      take: input.limit
+      ...paginationArgs
     }),
     prisma.appointment.count({ where })
   ]);
@@ -809,8 +816,8 @@ export const listAppointments = async (salonId: string, input: ListAppointmentsI
   return {
     items,
     pagination: {
-      page: input.page,
-      limit: input.limit,
+      page: shouldPaginate ? page : 1,
+      limit: shouldPaginate ? limit : items.length,
       total
     }
   };

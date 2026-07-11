@@ -107,7 +107,8 @@ test("owner workspace routes keep salon data scoped to the authenticated salon",
   assert.match(app, /app\.use\(authenticate, requireRoles\(Role\.SALON_OWNER, Role\.STAFF\), requireSalonAccess\)/);
   assert.match(ownerRoutes, /assertOwnerSalonAccess\(req\.auth\?\.salonId, salonId\)/);
   assert.match(salonRoutes, /getSalonProfile\(req\.auth!\.salonId!\)/);
-  assert.match(appointmentsRoutes, /listAppointments\(req\.auth!\.salonId!,/);
+  assert.match(appointmentsRoutes, /listAppointments\(\s*req\.auth!\.salonId!,/);
+  assert.match(appointmentsRoutes, /buildListAppointmentsInput\(payload,\s*\{\s*role: req\.auth!\.role,\s*staffId: req\.auth!\.staffId/s);
   assert.match(callsRoutes, /listCalls\(req\.auth!\.salonId!, query\)/);
 });
 

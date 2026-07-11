@@ -2,14 +2,17 @@ import assert from "node:assert/strict";
 import { after, beforeEach, test } from "node:test";
 import {
   AppointmentSource,
-  AppointmentStatus
+  AppointmentStatus,
+  Role
 } from "@prisma/client";
 import { DateTime } from "luxon";
 import { BLOCKING_APPOINTMENT_STATUSES } from "../src/config/constants";
 import { prisma } from "../src/db/prisma";
 import { validateAppointmentSlot } from "../src/modules/availability/availability.service";
+import { buildListAppointmentsInput } from "../src/modules/appointments/appointments.routes";
 import {
   formatAppointmentAlertDateTime,
+  listAppointments,
   permanentlyDeleteAppointment,
   removeTechnicalAppointmentNoteLines,
   summarizeAppointments,
@@ -213,6 +216,124 @@ test("appointment summary returns zero operational count for canceled-only day",
   assert.equal(summary.operationalCount, 0);
   assert.equal(summary.canceledCount, 14);
   assert.equal(summary.completedCount, 0);
+});
+
+test("list appointments without filters returns all visible appointments without Prisma pagination", async () => {
+  const mockedAppointments = [
+    { id: "appointment-1", salonId, startTime: new Date("2026-07-11T14:00:00.000Z") },
+    { id: "appointment-2", salonId, startTime: new Date("2026-07-11T15:00:00.000Z") },
+    { id: "appointment-3", salonId, startTime: new Date("2026-07-11T16:00:00.000Z") }
+  ];
+  let capturedFindManyArgs: any = null;
+
+  patch(prisma.appointment as any, "findMany", async (args: any) => {
+    capturedFindManyArgs = args;
+    return mockedAppointments;
+  });
+  patch(prisma.appointment as any, "count", async () => mockedAppointments.length);
+
+  const result = await listAppointments(salonId, {});
+
+  assert.equal(Object.prototype.hasOwnProperty.call(capturedFindManyArgs, "skip"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(capturedFindManyArgs, "take"), false);
+  assert.equal(capturedFindManyArgs.where.salonId, salonId);
+  assert.deepEqual(result.items, mockedAppointments);
+  assert.equal(result.pagination.total, result.items.length);
+  assert.equal(result.pagination.page, 1);
+  assert.equal(result.pagination.limit, result.items.length);
+});
+
+test("list appointments explicit pagination remains supported", async () => {
+  let capturedFindManyArgs: any = null;
+
+  patch(prisma.appointment as any, "findMany", async (args: any) => {
+    capturedFindManyArgs = args;
+    return [];
+  });
+  patch(prisma.appointment as any, "count", async () => 42);
+
+  const result = await listAppointments(salonId, {
+    page: 2,
+    limit: 20
+  });
+
+  assert.equal(capturedFindManyArgs.skip, 20);
+  assert.equal(capturedFindManyArgs.take, 20);
+  assert.equal(result.pagination.page, 2);
+  assert.equal(result.pagination.limit, 20);
+  assert.equal(result.pagination.total, 42);
+});
+
+test("list appointments keeps staff customer status and date filters intact", async () => {
+  const dateFrom = new Date("2026-07-11T04:00:00.000Z");
+  const dateTo = new Date("2026-07-12T03:59:00.000Z");
+  let capturedFindManyArgs: any = null;
+
+  patch(prisma.appointment as any, "findMany", async (args: any) => {
+    capturedFindManyArgs = args;
+    return [];
+  });
+  patch(prisma.appointment as any, "count", async () => 0);
+
+  await listAppointments(salonId, {
+    staffId,
+    customerId,
+    status: AppointmentStatus.CONFIRMED,
+    dateFrom,
+    dateTo
+  });
+
+  assert.equal(capturedFindManyArgs.where.salonId, salonId);
+  assert.equal(capturedFindManyArgs.where.staffId, staffId);
+  assert.equal(capturedFindManyArgs.where.customerId, customerId);
+  assert.equal(capturedFindManyArgs.where.status, AppointmentStatus.CONFIRMED);
+  assert.equal(capturedFindManyArgs.where.startTime.gte, dateFrom);
+  assert.equal(capturedFindManyArgs.where.startTime.lte, dateTo);
+});
+
+test("appointment route pagination decision follows client filters and pagination only", () => {
+  assert.equal(Object.prototype.hasOwnProperty.call(
+    buildListAppointmentsInput({}, { role: Role.SALON_OWNER }),
+    "page"
+  ), false);
+  assert.deepEqual(buildListAppointmentsInput({ page: 1 }, { role: Role.SALON_OWNER }), {
+    page: 1,
+    limit: 20,
+    staffId: undefined,
+    customerId: undefined,
+    status: undefined,
+    dateFrom: undefined,
+    dateTo: undefined
+  });
+  assert.deepEqual(buildListAppointmentsInput({ limit: 50 }, { role: Role.SALON_OWNER }), {
+    page: 1,
+    limit: 50,
+    staffId: undefined,
+    customerId: undefined,
+    status: undefined,
+    dateFrom: undefined,
+    dateTo: undefined
+  });
+  assert.deepEqual(
+    buildListAppointmentsInput(
+      { status: AppointmentStatus.CONFIRMED },
+      { role: Role.SALON_OWNER }
+    ),
+    {
+      page: 1,
+      limit: 20,
+      staffId: undefined,
+      customerId: undefined,
+      status: AppointmentStatus.CONFIRMED,
+      dateFrom: undefined,
+      dateTo: undefined
+    }
+  );
+
+  const staffInput = buildListAppointmentsInput({}, { role: Role.STAFF, staffId });
+  assert.equal(Object.prototype.hasOwnProperty.call(staffInput, "page"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(staffInput, "limit"), false);
+  assert.equal(staffInput.staffId, staffId);
 });
 
 test("appointment summary accepts salon-timezone day ranges across midnight and DST", async () => {

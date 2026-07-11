@@ -577,7 +577,25 @@
     },
     {
       "method": "GET",
-      "path": "/api/v1/appointments?page=1&limit=100",
+      "path": "/api/v1/appointments",
+      "authRequired": true,
+      "roles": [
+        "SALON_OWNER",
+        "STAFF"
+      ],
+      "responseSample": {
+        "items": [],
+        "pagination": {
+          "page": 1,
+          "limit": 0,
+          "total": 0
+        }
+      },
+      "note": "Returns all appointments visible to the authenticated user when no query parameters are provided. Staff only sees assigned appointments."
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/appointments?page=1&limit=20",
       "authRequired": true,
       "roles": [
         "SALON_OWNER",
@@ -587,7 +605,7 @@
         "items": [],
         "total": 0
       },
-      "note": "Staff only sees assigned appointments."
+      "note": "Paginated appointment list. Staff only sees assigned appointments."
     },
     {
       "method": "POST",

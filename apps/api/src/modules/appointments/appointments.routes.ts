@@ -91,14 +91,49 @@ const doneWorkSchema = z.object({
 });
 
 const listAppointmentsQuerySchema = z.object({
-  page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().positive().max(100).default(20),
+  page: z.coerce.number().int().positive().optional(),
+  limit: z.coerce.number().int().positive().max(100).optional(),
   staffId: z.string().uuid().optional(),
   customerId: z.string().uuid().optional(),
   status: z.nativeEnum(AppointmentStatus).optional(),
   dateFrom: z.string().datetime({ offset: true }).optional(),
   dateTo: z.string().datetime({ offset: true }).optional()
 });
+
+type ListAppointmentsQuery = z.infer<typeof listAppointmentsQuerySchema>;
+
+export const buildListAppointmentsInput = (
+  payload: ListAppointmentsQuery,
+  auth: {
+    role: Role;
+    staffId?: string | null;
+  }
+) => {
+  const hasClientFilters =
+    payload.staffId !== undefined ||
+    payload.customerId !== undefined ||
+    payload.status !== undefined ||
+    payload.dateFrom !== undefined ||
+    payload.dateTo !== undefined;
+  const hasClientPagination =
+    payload.page !== undefined ||
+    payload.limit !== undefined;
+  const shouldPaginate = hasClientFilters || hasClientPagination;
+
+  return {
+    ...(shouldPaginate
+      ? {
+          page: payload.page ?? 1,
+          limit: payload.limit ?? 20
+        }
+      : {}),
+    staffId: auth.role === Role.STAFF ? auth.staffId ?? undefined : payload.staffId,
+    customerId: auth.role === Role.STAFF ? undefined : payload.customerId,
+    status: payload.status,
+    dateFrom: payload.dateFrom ? new Date(payload.dateFrom) : undefined,
+    dateTo: payload.dateTo ? new Date(payload.dateTo) : undefined
+  };
+};
 
 const appointmentSummaryQuerySchema = z.object({
   staffId: z.string().uuid().optional(),
@@ -134,16 +169,13 @@ appointmentsRouter.get(
   validate(listAppointmentsQuerySchema, "query"),
   asyncHandler(async (req, res) => {
     const payload = req.query as unknown as z.infer<typeof listAppointmentsQuerySchema>;
-    const restrictedStaffId = req.auth!.role === Role.STAFF ? req.auth!.staffId ?? undefined : undefined;
-    const result = await listAppointments(req.auth!.salonId!, {
-      page: payload.page,
-      limit: payload.limit,
-      staffId: restrictedStaffId ?? payload.staffId,
-      customerId: req.auth!.role === Role.STAFF ? undefined : payload.customerId,
-      status: payload.status,
-      dateFrom: payload.dateFrom ? new Date(payload.dateFrom) : undefined,
-      dateTo: payload.dateTo ? new Date(payload.dateTo) : undefined
-    });
+    const result = await listAppointments(
+      req.auth!.salonId!,
+      buildListAppointmentsInput(payload, {
+        role: req.auth!.role,
+        staffId: req.auth!.staffId
+      })
+    );
     return sendSuccess(res, {
       data: {
         ...result,

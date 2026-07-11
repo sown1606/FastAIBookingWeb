@@ -72,7 +72,8 @@ After login, store `data.accessToken` and `data.refreshToken`.
 
 Dashboard/bootstrap data used by web:
 
-- `GET /api/v1/appointments?page=1&limit=20`
+- `GET /api/v1/appointments` - returns all appointments visible to the authenticated user when no query parameters are provided.
+- `GET /api/v1/appointments?page=1&limit=20` - returns a paginated appointment page.
 - `GET /api/v1/billing/usage?historyLimit=3`
 - `GET /api/v1/staff?includeInactive=false`
 - `GET /api/v1/services`
@@ -239,7 +240,8 @@ Customers:
 
 Appointments:
 
-- `GET /api/v1/appointments?page=1&limit=100`
+- `GET /api/v1/appointments`
+- `GET /api/v1/appointments?page=1&limit=20`
 - `GET /api/v1/appointments/:id`
 - `POST /api/v1/appointments`
 - `PATCH /api/v1/appointments/:id`
@@ -248,6 +250,8 @@ Appointments:
 - `POST /api/v1/appointments/:id/start`
 - `POST /api/v1/appointments/:id/extend`
 - `POST /api/v1/appointments/:id/done`
+
+`GET /api/v1/appointments` returns all appointments visible to the authenticated user when no query parameters are provided. Add filters or explicit pagination to use paginated results; for example, `GET /api/v1/appointments?page=1&limit=20`.
 
 Create appointment:
 
@@ -340,6 +344,8 @@ Staff appointments:
 - `POST /api/v1/appointments/:id/start`
 - `POST /api/v1/appointments/:id/extend`
 - `POST /api/v1/appointments/:id/done`
+
+Without query parameters, staff appointment list returns all appointments assigned to the authenticated staff user.
 - `GET /api/v1/availability/slots`
 - `POST /api/v1/availability/validate`
 
