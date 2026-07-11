@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import {
+  apiDelete,
   apiGet,
   apiPatch,
   apiPost,
@@ -37,7 +38,7 @@ interface SalonSettings {
   aiGreetingPrompt: string | null;
   callerLanguage: string;
   callLogVisibility: "OWNER_ONLY" | "OWNER_AND_STAFF" | "OWNER_STAFF_OPERATOR";
-  notificationRecipients: string[];
+  notificationRecipients: string[] | null;
   callCenterRoutingNumber: string | null;
   callCenterRoutingNote: string | null;
   routingSummary: {
@@ -97,17 +98,17 @@ interface SalonDetail {
   integrationStatuses: {
     callRail: {
       configured: boolean;
-      missing: string[];
+      missing: string[] | null;
       activeConfigCount: number;
     };
     vertex: {
       configured: boolean;
-      missing: string[];
+      missing: string[] | null;
       activeConfigCount: number;
     };
     amazonConnect: {
       configured: boolean;
-      missing: string[];
+      missing: string[] | null;
       activeConfigCount: number;
     };
   };
@@ -309,7 +310,7 @@ interface CallRailHealthStatus {
   provider: "amazon_connect" | "callrail";
   status: string;
   configured: boolean;
-  missing: string[];
+  missing: string[] | null;
   webhookEndpoint: string;
   webhookConfigured: boolean;
   webhookVerificationEnabled: boolean;
@@ -335,6 +336,26 @@ interface CallRailHealthStatus {
   lastReceivedWebhookAt: string | null;
   lastWebhookReceivedAt: string | null;
   lastMappedCallAt: string | null;
+}
+
+interface SalonDeletePreview {
+  salonId: string;
+  salonName: string;
+  status: string;
+  counts: Record<string, number>;
+  activeCallCount: number;
+  inProgressAppointmentCount: number;
+  configuredProviders: string[];
+  warnings: string[];
+}
+
+interface SalonDeleteResponse {
+  salonId: string;
+  deleted: true;
+  deletedAt: string;
+  deletedUserCount: number;
+  counts: Record<string, number>;
+  externalCleanupRequired: string[];
 }
 
 const integrationProviderOptions: Array<IntegrationConfig["provider"]> = [
@@ -378,8 +399,13 @@ const createDefaultHours = (): BusinessHour[] => [
   { dayOfWeek: 6, isOpen: true, openTime: "09:00", closeTime: "16:00" }
 ];
 
+const ensureArray = <T,>(value: T[] | null | undefined): T[] => (Array.isArray(value) ? value : []);
+
+const joinList = (value: string[] | null | undefined): string => ensureArray(value).join(", ");
+
 export const SalonDetailPage = () => {
   const { salonId } = useParams<{ salonId: string }>();
+  const navigate = useNavigate();
   const { notify } = useToast();
   const { openFormDialog, FormDialog } = useFormDialog();
   const { t } = useI18n();
@@ -489,6 +515,7 @@ export const SalonDetailPage = () => {
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
   const [savingIntegrations, setSavingIntegrations] = useState(false);
+  const [deletingSalon, setDeletingSalon] = useState(false);
   const [savingAssignments, setSavingAssignments] = useState(false);
 
   const [creatingStaff, setCreatingStaff] = useState(false);
@@ -608,7 +635,7 @@ export const SalonDetailPage = () => {
         aiGreetingPrompt: salonDetail.settings?.aiGreetingPrompt ?? "",
         callerLanguage: salonDetail.settings?.callerLanguage ?? "en",
         callLogVisibility: salonDetail.settings?.callLogVisibility ?? "OWNER_STAFF_OPERATOR",
-        notificationRecipientsText: salonDetail.settings?.notificationRecipients.join("\n") ?? "",
+        notificationRecipientsText: ensureArray(salonDetail.settings?.notificationRecipients).join("\n"),
         callCenterRoutingNumber: formatUsPhoneInput(salonDetail.settings?.callCenterRoutingNumber ?? ""),
         callCenterRoutingNote: salonDetail.settings?.callCenterRoutingNote ?? ""
       });
@@ -1160,6 +1187,83 @@ export const SalonDetailPage = () => {
     }
   };
 
+  const confirmPermanentSalonDelete = async () => {
+    if (!salonId) {
+      return;
+    }
+    try {
+      const preview = await apiGet<SalonDeletePreview>(`/api/v1/admin/salons/${salonId}/delete-preview`);
+      const countSummary = Object.entries(preview.counts)
+        .map(([key, value]) => `${key}: ${value}`)
+        .join(" · ");
+      const activeSummary = `${t("salonDetail.activeCalls")}: ${preview.activeCallCount} · ${t("salonDetail.inProgressAppointments")}: ${preview.inProgressAppointmentCount}`;
+      const warnings = ensureArray(preview.warnings).join(" ");
+      const externalCleanup = ensureArray(preview.configuredProviders).length
+        ? `${t("salonDetail.externalCleanup")}: ${joinList(preview.configuredProviders)}.`
+        : "";
+      const values = await openFormDialog({
+        title: t("salonDetail.confirmPermanentDelete"),
+        description: [
+          preview.salonName,
+          t("salonDetail.permanentDeleteWarning"),
+          t("salonDetail.permanentDeleteLoginWarning"),
+          activeSummary,
+          countSummary,
+          externalCleanup,
+          warnings
+        ].filter(Boolean).join(" "),
+        fields: [
+          {
+            name: "confirmationName",
+            label: t("salonDetail.confirmSalonName"),
+            required: true,
+            placeholder: preview.salonName
+          }
+        ],
+        initialValues: {
+          confirmationName: ""
+        },
+        confirmLabel: t("salonDetail.permanentDeleteSalon")
+      });
+      if (!values) {
+        return;
+      }
+      if (values.confirmationName.trim() !== preview.salonName) {
+        notify("error", t("salonDetail.confirmSalonName"));
+        return;
+      }
+      await permanentlyDeleteSalon(values.confirmationName);
+    } catch (previewError) {
+      notify("error", extractErrorMessage(previewError));
+    }
+  };
+
+  const permanentlyDeleteSalon = async (confirmationName: string) => {
+    if (!salonId) {
+      return;
+    }
+    setDeletingSalon(true);
+    try {
+      const result = await apiDelete<SalonDeleteResponse>(`/api/v1/admin/salons/${salonId}`, {
+        data: {
+          confirmPermanentDelete: true,
+          confirmationName
+        }
+      });
+      notify(
+        "success",
+        t("salonDetail.permanentDeleteSuccess", {
+          userCount: String(result.deletedUserCount)
+        })
+      );
+      navigate("/salons");
+    } catch (deleteError) {
+      notify("error", extractErrorMessage(deleteError));
+    } finally {
+      setDeletingSalon(false);
+    }
+  };
+
   if (loading) {
     return <LoadingBlock />;
   }
@@ -1560,8 +1664,8 @@ export const SalonDetailPage = () => {
               </span>
               <small>
                 {t("salonDetail.activeConfigCount")}: {salon.integrationStatuses.amazonConnect.activeConfigCount}
-                {salon.integrationStatuses.amazonConnect.missing.length
-                  ? ` · ${t("dashboard.integrationMissing", { items: salon.integrationStatuses.amazonConnect.missing.join(", ") })}`
+                {ensureArray(salon.integrationStatuses.amazonConnect.missing).length
+                  ? ` · ${t("dashboard.integrationMissing", { items: joinList(salon.integrationStatuses.amazonConnect.missing) })}`
                   : ""}
               </small>
             </article>
@@ -1776,8 +1880,8 @@ export const SalonDetailPage = () => {
             </div>
           </div>
           <p className="muted">
-            {callRailHealth?.missing?.length
-              ? t("dashboard.integrationMissing", { items: callRailHealth.missing.join(", ") })
+            {ensureArray(callRailHealth?.missing).length
+              ? t("dashboard.integrationMissing", { items: joinList(callRailHealth?.missing) })
               : t("salonDetail.noMissingCallRailConfig")}
           </p>
         </article>
@@ -2748,6 +2852,27 @@ export const SalonDetailPage = () => {
         ) : (
           <EmptyBlock message={t("salonDetail.billingUnavailable")} />
         )}
+      </section>
+
+      <section className="card danger-zone">
+        <div className="section-header">
+          <div>
+            <h3>{t("salonDetail.dangerZoneTitle")}</h3>
+            <p className="muted">{t("salonDetail.dangerZoneHint")}</p>
+          </div>
+          <button
+            type="button"
+            className="button-secondary danger"
+            disabled={deletingSalon}
+            onClick={() => void confirmPermanentSalonDelete()}
+          >
+            {deletingSalon ? t("common.saving") : t("salonDetail.permanentDeleteSalon")}
+          </button>
+        </div>
+        <div className="simple-callout danger-callout">
+          <strong>{t("salonDetail.permanentDeleteWarning")}</strong>
+          <p>{t("salonDetail.permanentDeleteLoginWarning")}</p>
+        </div>
       </section>
     </div>
   );

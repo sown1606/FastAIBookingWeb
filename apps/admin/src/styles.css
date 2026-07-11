@@ -521,6 +521,11 @@ p {
   transform: translateY(-1px);
 }
 
+.button-secondary.danger {
+  border-color: rgba(216, 91, 91, 0.32);
+  color: var(--danger);
+}
+
 .button-primary:disabled,
 .button-secondary:disabled {
   opacity: 0.65;
@@ -671,6 +676,15 @@ tbody tr:last-child td {
 .simple-callout p {
   color: var(--muted);
   overflow-wrap: anywhere;
+}
+
+.danger-zone {
+  border-color: rgba(216, 91, 91, 0.34);
+}
+
+.danger-callout {
+  border-color: rgba(216, 91, 91, 0.28);
+  background: #fff7f6;
 }
 
 .compact-list {

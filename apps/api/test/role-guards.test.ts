@@ -451,6 +451,9 @@ test("platform admin routes require PLATFORM_ADMIN and admin dashboard guard enf
   const adminGuard = readRepo("apps/admin/src/components/guards.tsx");
 
   assert.match(adminRoutes, /adminRouter\.use\(authenticate, requireRoles\(Role\.PLATFORM_ADMIN\)\)/);
+  assert.match(adminRoutes, /confirmPermanentDelete:\s*z\.literal\(true\)/);
+  assert.match(adminRoutes, /adminRouter\.get\(\s*"\/salons\/:id\/delete-preview"/s);
+  assert.match(adminRoutes, /adminRouter\.delete\(\s*"\/salons\/:id"/s);
   assert.match(adminGuard, /session\.user\.role !== "PLATFORM_ADMIN"/);
 });
 

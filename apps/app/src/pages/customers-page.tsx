@@ -42,10 +42,25 @@ interface CustomerHistory {
 
 interface DeleteCustomerResponse {
   customerId: string;
-  mode: "hard_delete" | "privacy_delete";
+  mode: "permanent_delete";
+  deletedCustomerIds: string[];
+  deletedCustomerCount: number;
   appointmentCount: number;
   canceledAppointmentCount: number;
-  deletedAt?: string;
+  reassignedAppointmentCount: number;
+  deletedCallSessionCount: number;
+  deletedBookingAttemptCount: number;
+}
+
+interface DeleteCustomerPreview {
+  customerId: string;
+  matchedCustomerIds: string[];
+  matchedCustomerCount: number;
+  appointmentCount: number;
+  activeAppointmentCount: number;
+  callSessionCount: number;
+  bookingAttemptCount: number;
+  warning: string;
 }
 
 const activeStatuses = new Set(["SCHEDULED", "CONFIRMED", "IN_PROGRESS"]);
@@ -59,7 +74,7 @@ const localDateKey = (value: string) => {
 
 export const CustomersPage = () => {
   const { notify } = useToast();
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const navigate = useNavigate();
   const { openFormDialog, FormDialog } = useFormDialog();
   const [loading, setLoading] = useState(true);
@@ -182,29 +197,52 @@ export const CustomersPage = () => {
 
   const deleteCustomer = async (customer: CustomerItem) => {
     try {
+      const preview = await apiGet<DeleteCustomerPreview>(`/api/v1/customers/${customer.id}/delete-preview`);
       const history = await apiGet<CustomerHistory>(`/api/v1/customers/${customer.id}/appointments`);
       setSelected(history);
 
       const displayName = formatCustomerName(customer.firstName, customer.lastName) || customer.phone;
-      const activeCount = history.appointments.filter((appointment) => activeStatuses.has(appointment.status)).length;
-      const modeLabel = history.appointments.length
-        ? t("customers.deleteModePrivacy")
-        : t("customers.deleteModeHard");
-      const confirmed = window.confirm(
-        t("customers.deleteConfirm", {
+      const activeCount = preview.activeAppointmentCount ??
+        history.appointments.filter((appointment) => activeStatuses.has(appointment.status)).length;
+      const confirmToken = locale === "vi" ? "XÓA VĨNH VIỄN" : "DELETE";
+      const values = await openFormDialog({
+        title: t("customers.confirmDelete"),
+        description: t("customers.deleteConfirm", {
           name: displayName,
           phone: customer.phone,
-          mode: modeLabel,
-          activeCount: String(activeCount)
-        })
-      );
-      if (!confirmed) {
+          profileCount: String(preview.matchedCustomerCount),
+          appointmentCount: String(preview.appointmentCount),
+          activeCount: String(activeCount),
+          callSessionCount: String(preview.callSessionCount),
+          bookingAttemptCount: String(preview.bookingAttemptCount),
+          token: confirmToken
+        }),
+        fields: [
+          {
+            name: "confirmation",
+            label: t("customers.confirmTokenLabel"),
+            required: true,
+            placeholder: confirmToken
+          }
+        ],
+        initialValues: {
+          confirmation: ""
+        },
+        confirmLabel: t("customers.delete")
+      });
+      if (!values || values.confirmation.trim() !== confirmToken) {
         return;
       }
 
-      await apiDelete<DeleteCustomerResponse>(`/api/v1/customers/${customer.id}`);
-      notify("success", t("customers.deleted"));
-      if (selected?.customer.id === customer.id) {
+      const result = await apiDelete<DeleteCustomerResponse>(`/api/v1/customers/${customer.id}`);
+      notify(
+        "success",
+        t("customers.deleted", {
+          profileCount: String(result.deletedCustomerCount),
+          activeCount: String(result.canceledAppointmentCount)
+        })
+      );
+      if (selected && result.deletedCustomerIds.includes(selected.customer.id)) {
         setSelected(null);
       }
       await load();

@@ -2586,23 +2586,27 @@ function buildCustomerNamePrompt(event, options = {}) {
   const summary = buildKnownBookingPromptSummary(event, {
     forPhrase: options.already
   });
-  if (options.retry && !options.already) {
+  if (options.spell && !options.already) {
     return "Sorry, could you spell your first name, one letter at a time?";
   }
+  if (options.retry && !options.already) {
+    return "Sorry, I didn't catch your name. Could you say your first name slowly?";
+  }
   if (options.already && summary) {
-    return `I already have ${summary}. What name should I put on the appointment?`;
+    return `I already have ${summary}. May I have your name, please?`;
   }
   if (summary) {
-    return `Got it: ${summary}. What name should I put on the appointment?`;
+    return `I have your ${summary}. May I have your name, please?`;
   }
-  return "What name should I put on the appointment?";
+  return "I'd be happy to help. May I have your name, please?";
 }
 
 function getServiceAwareElicitPrompt(event, slotName, attemptCount) {
   const prompt = getElicitPrompt(event, slotName, attemptCount);
   if (slotName === "customerName") {
     return buildCustomerNamePrompt(event, {
-      retry: attemptCount > 1
+      retry: attemptCount > 1,
+      spell: attemptCount > 2
     });
   }
   if (slotName !== "staffPreference") {
@@ -2917,6 +2921,15 @@ function mergeKnownSlots(event) {
 
 function getBookingSlotToElicit(event) {
   const sessionAttributes = buildKnownBookingSessionAttributes(event);
+  const customerName = getSessionAttribute(sessionAttributes, slotNames.customerName);
+  const hasRecognizedCustomerName =
+    Boolean(sessionAttributes.recognizedCustomerName) ||
+    sessionAttributes.customerNameSource === "customer" ||
+    sessionAttributes.customerNameSource === "phone_lookup";
+  if (!customerName && !hasRecognizedCustomerName) {
+    return "customerName";
+  }
+
   const serviceName = getSessionAttribute(sessionAttributes, slotNames.serviceName);
   if (!serviceName) {
     return "serviceName";
@@ -2947,7 +2960,6 @@ function getBookingSlotToElicit(event) {
     return "staffPreference";
   }
 
-  const customerName = getSessionAttribute(sessionAttributes, slotNames.customerName);
   if (!customerName) {
     return "customerName";
   }
@@ -3025,8 +3037,11 @@ function buildElicitSlotResponse(event, slotName, extraAttributes = {}, messageO
 	}
 
 function getNoInputPrompt(slotName, noInputCount, event) {
-  if (slotName === "customerName" && noInputCount >= 1) {
+  if (slotName === "customerName" && noInputCount >= 2) {
     return "Sorry, could you spell your first name, one letter at a time?";
+  }
+  if (slotName === "customerName") {
+    return "Sorry, I didn't catch your name. Could you say your first name slowly?";
   }
   if (slotName === "serviceName" && noInputCount <= 1) {
     return SERVICE_KEYPAD_PROMPT;

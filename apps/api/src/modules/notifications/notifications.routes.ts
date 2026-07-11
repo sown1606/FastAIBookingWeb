@@ -10,6 +10,7 @@ import { sendSuccess } from "../../utils/response";
 import { getAppointmentCreatedPushTestPayload } from "../appointments/appointments.service";
 import {
   countUserPushTokens,
+  deleteUserNotification,
   getSalonNotificationDebug,
   getUnreadUserNotificationCount,
   getUserNotificationDebug,
@@ -332,6 +333,27 @@ notificationsRouter.post(
     return sendSuccess(res, {
       message: "Notification marked as read.",
       data: notification
+    });
+  })
+);
+
+notificationsRouter.delete(
+  "/:id",
+  validate(notificationIdSchema, "params"),
+  asyncHandler(async (req, res) => {
+    assertPushRoleSupported(req.auth!.role);
+    const { id } = req.params as z.infer<typeof notificationIdSchema>;
+    const result = await deleteUserNotification(req.auth!.userId, id);
+    if (result.count === 0) {
+      throw new AppError("Notification not found.", 404, "NOTIFICATION_NOT_FOUND");
+    }
+
+    return sendSuccess(res, {
+      message: "Notification deleted.",
+      data: {
+        deleted: true,
+        id
+      }
     });
   })
 );

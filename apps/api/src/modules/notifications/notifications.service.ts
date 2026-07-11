@@ -636,6 +636,18 @@ export const markUserNotificationRead = async (
   });
 };
 
+export const deleteUserNotification = async (
+  userId: string,
+  notificationId: string
+) => {
+  return prisma.userNotification.deleteMany({
+    where: {
+      id: notificationId,
+      userId
+    }
+  });
+};
+
 export const markAllUserNotificationsRead = async (userId: string) => {
   return prisma.userNotification.updateMany({
     where: {

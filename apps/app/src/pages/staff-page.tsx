@@ -10,6 +10,7 @@ import { InfoHint } from "../components/info-hint";
 import { DemoAvatar } from "../components/avatar";
 
 const DEFAULT_STAFF_TITLE = "Nail Technician";
+const DEFAULT_STAFF_PASSWORD = "123456";
 
 interface StaffItem {
   id: string;
@@ -67,6 +68,7 @@ export const StaffPage = () => {
     fullName: "",
     email: "",
     phone: "",
+    password: DEFAULT_STAFF_PASSWORD,
     isBookable: true
   });
 
@@ -95,6 +97,10 @@ export const StaffPage = () => {
       notify("error", t("form.requiredAll"));
       return;
     }
+    if (form.password.length < 6) {
+      notify("error", t("staff.defaultPasswordHint"));
+      return;
+    }
     if (!validateOptionalUsPhone(phone)) {
       notify("error", t("form.phoneInvalid"));
       return;
@@ -106,12 +112,14 @@ export const StaffPage = () => {
         phone,
         title: DEFAULT_STAFF_TITLE,
         isBookable: form.isBookable,
-        createLogin: true
+        createLogin: true,
+        password: form.password
       });
       setForm({
         fullName: "",
         email: "",
         phone: "",
+        password: DEFAULT_STAFF_PASSWORD,
         isBookable: true
       });
       notify("success", t("staff.created"));
@@ -230,7 +238,14 @@ export const StaffPage = () => {
   };
 
   const deleteStaffMember = async (item: StaffItem) => {
-    if (!window.confirm(t("staff.deleteConfirm"))) {
+    const values = await openFormDialog({
+      title: t("staff.confirmDelete"),
+      description: `${item.fullName}. ${t("staff.deleteConfirm")}`,
+      fields: [],
+      initialValues: {},
+      confirmLabel: t("staff.deleteAction")
+    });
+    if (!values) {
       return;
     }
     try {
@@ -289,6 +304,17 @@ export const StaffPage = () => {
               required
             />
             <small>{t("form.phoneHint")}</small>
+          </label>
+          <label className="field">
+            <span>{requiredLabel(t("staff.password"))}</span>
+            <input
+              type="text"
+              value={form.password}
+              onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
+              required
+              minLength={6}
+            />
+            <small>{t("staff.defaultPasswordHint")}</small>
           </label>
           <label className="field checkbox-row">
             <span>

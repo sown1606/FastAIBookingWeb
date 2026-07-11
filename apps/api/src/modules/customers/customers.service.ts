@@ -1,11 +1,11 @@
-import { AppointmentStatus } from "@prisma/client";
+import { AppointmentStatus, Prisma } from "@prisma/client";
 import { prisma } from "../../db/prisma";
 import { createAuditLog } from "../../lib/audit";
 import { AppError } from "../../lib/errors";
-import { requireCustomerPhone } from "../../utils/phone";
+import { normalizeCustomerPhone, requireCustomerPhone } from "../../utils/phone";
+import { normalizePhoneForMatching } from "../calls/providers/callrail.provider";
 import {
   cancelAppointmentInTransaction,
-  sendCanceledAppointmentNotifications,
   toOwnerAppointmentResponse
 } from "../appointments/appointments.service";
 
@@ -31,14 +31,242 @@ interface UpdateCustomerInput {
   notes?: string | null;
 }
 
-const ACTIVE_APPOINTMENT_STATUSES = [
+const ACTIVE_APPOINTMENT_STATUSES: AppointmentStatus[] = [
   AppointmentStatus.SCHEDULED,
   AppointmentStatus.CONFIRMED,
   AppointmentStatus.IN_PROGRESS
 ];
-const CUSTOMER_PRIVACY_DELETE_REASON = "Customer data deleted by salon owner";
+const CUSTOMER_PERMANENT_DELETE_REASON = "Customer data permanently deleted by salon owner";
+const ANONYMOUS_CUSTOMER_PHONE = "anonymous-customer";
 
 const normalizeNamePart = (value: string | null | undefined) => value?.trim() ?? "";
+
+const normalizePhoneDigits = (value: string | null | undefined) => value?.replace(/\D/g, "") ?? "";
+
+const buildPhoneLookupValues = (phone: string | null | undefined): string[] => {
+  const trimmed = phone?.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  const values = new Set<string>();
+  const normalizedCustomerPhone = normalizeCustomerPhone(trimmed);
+  const normalizedForMatching = normalizePhoneForMatching(trimmed);
+  const digits = normalizePhoneDigits(trimmed);
+
+  [trimmed, normalizedCustomerPhone, normalizedForMatching, digits].forEach((value) => {
+    if (value) {
+      values.add(value);
+    }
+  });
+  if (digits) {
+    values.add(`+${digits}`);
+    if (digits.startsWith("1") && digits.length === 11) {
+      values.add(digits.slice(1));
+      values.add(`+${digits.slice(1)}`);
+    }
+  }
+  if (normalizedCustomerPhone) {
+    const normalizedDigits = normalizePhoneDigits(normalizedCustomerPhone);
+    values.add(normalizedDigits);
+    if (normalizedDigits.startsWith("1") && normalizedDigits.length === 11) {
+      values.add(normalizedDigits.slice(1));
+    }
+  }
+
+  return Array.from(values).filter(Boolean);
+};
+
+const jsonPathEqualsAny = <T>(fieldName: keyof T, path: string[], values: string[]) => {
+  return values.map((value) => ({
+    [fieldName]: {
+      path,
+      equals: value
+    }
+  })) as T[];
+};
+
+const getCustomerDeleteTargets = async (
+  salonId: string,
+  customerId: string,
+  executor: Pick<typeof prisma, "customer">
+) => {
+  const selectedCustomer = await executor.customer.findFirst({
+    where: {
+      id: customerId,
+      salonId,
+      deletedAt: null
+    },
+    select: {
+      id: true,
+      phone: true
+    }
+  });
+
+  if (!selectedCustomer) {
+    throw new AppError("Customer not found.", 404, "CUSTOMER_NOT_FOUND");
+  }
+
+  const normalizedPhone = normalizeCustomerPhone(selectedCustomer.phone);
+  if (!normalizedPhone) {
+    return {
+      selectedCustomer,
+      phoneLookupValues: [],
+      matchedCustomers: [selectedCustomer]
+    };
+  }
+
+  const phoneLookupValues = buildPhoneLookupValues(selectedCustomer.phone);
+  const matchedCustomers = await executor.customer.findMany({
+    where: {
+      salonId,
+      deletedAt: null,
+      phone: {
+        in: phoneLookupValues
+      }
+    },
+    select: {
+      id: true,
+      phone: true
+    },
+    orderBy: {
+      createdAt: "asc"
+    }
+  });
+
+  return {
+    selectedCustomer,
+    phoneLookupValues,
+    matchedCustomers: matchedCustomers.length ? matchedCustomers : [selectedCustomer]
+  };
+};
+
+const getOrCreateAnonymousCustomer = async (
+  tx: Prisma.TransactionClient,
+  salonId: string
+) => {
+  const existing = await tx.customer.findFirst({
+    where: {
+      salonId,
+      deletedAt: {
+        not: null
+      },
+      phone: ANONYMOUS_CUSTOMER_PHONE
+    },
+    select: {
+      id: true
+    }
+  });
+  if (existing) {
+    return existing;
+  }
+
+  return tx.customer.create({
+    data: {
+      salonId,
+      firstName: "Anonymous",
+      lastName: "Customer",
+      email: null,
+      phone: ANONYMOUS_CUSTOMER_PHONE,
+      notes: null,
+      deletedAt: new Date()
+    },
+    select: {
+      id: true
+    }
+  });
+};
+
+export const getCustomerDeletePreview = async (salonId: string, customerId: string) => {
+  const { selectedCustomer, phoneLookupValues, matchedCustomers } = await getCustomerDeleteTargets(
+    salonId,
+    customerId,
+    prisma
+  );
+  const matchedCustomerIds = matchedCustomers.map((customer) => customer.id);
+  const appointments = await prisma.appointment.findMany({
+    where: {
+      salonId,
+      customerId: {
+        in: matchedCustomerIds
+      }
+    },
+    select: {
+      id: true,
+      status: true
+    }
+  });
+  const appointmentIds = appointments.map((appointment) => appointment.id);
+  const callSessions = phoneLookupValues.length
+    ? await prisma.callSession.findMany({
+        where: {
+          salonId,
+          callerPhone: {
+            in: phoneLookupValues
+          }
+        },
+        select: {
+          id: true
+        }
+      })
+    : [];
+  const callSessionIds = callSessions.map((callSession) => callSession.id);
+  const bookingAttemptWhere: Prisma.BookingAttemptWhereInput[] = [
+    ...(phoneLookupValues.length
+      ? [
+          {
+            customerPhone: {
+              in: phoneLookupValues
+            }
+          }
+        ]
+      : []),
+    ...(appointmentIds.length
+      ? [
+          {
+            appointmentId: {
+              in: appointmentIds
+            }
+          }
+        ]
+      : []),
+    ...(callSessionIds.length
+      ? [
+          {
+            callSessionId: {
+              in: callSessionIds
+            }
+          }
+        ]
+      : []),
+    ...matchedCustomerIds.flatMap((id) =>
+      jsonPathEqualsAny<Prisma.BookingAttemptWhereInput>("normalizedRequest", ["customerId"], [id])
+    )
+  ];
+
+  const bookingAttemptCount = bookingAttemptWhere.length
+    ? await prisma.bookingAttempt.count({
+        where: {
+          salonId,
+          OR: bookingAttemptWhere
+        }
+      })
+    : 0;
+
+  return {
+    customerId: selectedCustomer.id,
+    matchedCustomerIds,
+    matchedCustomerCount: matchedCustomerIds.length,
+    appointmentCount: appointments.length,
+    activeAppointmentCount: appointments.filter((appointment) =>
+      ACTIVE_APPOINTMENT_STATUSES.includes(appointment.status)
+    ).length,
+    callSessionCount: callSessionIds.length,
+    bookingAttemptCount,
+    warning:
+      "Permanent deletion removes customer profiles, cancels active appointments, reassigns appointment history to an anonymous placeholder, and removes related call/debug history."
+  };
+};
 
 export const createCustomer = async (
   salonId: string,
@@ -192,35 +420,18 @@ export const getCustomerDetail = async (salonId: string, customerId: string) => 
 };
 
 export const deleteCustomer = async (salonId: string, customerId: string, actorUserId: string) => {
-  const existing = await prisma.customer.findFirst({
-    where: {
-      id: customerId,
+  return prisma.$transaction(async (tx) => {
+    const { phoneLookupValues, matchedCustomers } = await getCustomerDeleteTargets(
       salonId,
-      deletedAt: null
-    },
-    select: {
-      id: true,
-      salonId: true
-    }
-  });
-
-  if (!existing) {
-    throw new AppError("Customer not found.", 404, "CUSTOMER_NOT_FOUND");
-  }
-
-  const [appointmentCount, activeAppointments] = await Promise.all([
-    prisma.appointment.count({
+      customerId,
+      tx
+    );
+    const targetCustomerIds = matchedCustomers.map((customer) => customer.id);
+    const appointments = await tx.appointment.findMany({
       where: {
         salonId,
-        customerId
-      }
-    }),
-    prisma.appointment.findMany({
-      where: {
-        salonId,
-        customerId,
-        status: {
-          in: ACTIVE_APPOINTMENT_STATUSES
+        customerId: {
+          in: targetCustomerIds
         }
       },
       select: {
@@ -228,69 +439,249 @@ export const deleteCustomer = async (salonId: string, customerId: string, actorU
         staffId: true,
         status: true
       }
-    })
-  ]);
-
-  if (appointmentCount === 0) {
-    const result = await prisma.$transaction(async (tx) => {
-      await tx.customer.delete({
-        where: {
-          id: existing.id
-        }
-      });
-      await createAuditLog(
-        {
-          salonId,
-          actorUserId,
-          action: "CUSTOMER_DELETED",
-          entityType: "Customer",
-          entityId: existing.id,
-          metadata: {
-            mode: "hard_delete",
-            customerId: existing.id,
-            appointmentCount: 0,
-            canceledAppointmentCount: 0
-          }
-        },
-        tx
-      );
-      return {
-        customerId: existing.id,
-        mode: "hard_delete" as const,
-        appointmentCount: 0,
-        canceledAppointmentCount: 0
-      };
     });
-    return result;
-  }
+    const appointmentIds = appointments.map((appointment) => appointment.id);
+    const activeAppointments = appointments.filter((appointment) =>
+      ACTIVE_APPOINTMENT_STATUSES.includes(appointment.status)
+    );
 
-  const deletedAt = new Date();
-  const privacyPhone = `deleted-customer-${existing.id}`;
-  const result = await prisma.$transaction(async (tx) => {
-    const canceledAppointments = [];
     for (const appointment of activeAppointments) {
-      canceledAppointments.push(
-        await cancelAppointmentInTransaction(tx, {
-          salonId,
-          appointmentId: appointment.id,
-          actorUserId,
-          reason: CUSTOMER_PRIVACY_DELETE_REASON,
-          existing: appointment
-        })
-      );
+      await cancelAppointmentInTransaction(tx, {
+        salonId,
+        appointmentId: appointment.id,
+        actorUserId,
+        reason: CUSTOMER_PERMANENT_DELETE_REASON,
+        existing: appointment
+      });
     }
 
-    await tx.customer.update({
+    const anonymousCustomer =
+      appointments.length > 0 ? await getOrCreateAnonymousCustomer(tx, salonId) : null;
+    const reassignedAppointmentUpdate = anonymousCustomer
+      ? await tx.appointment.updateMany({
+          where: {
+            salonId,
+            customerId: {
+              in: targetCustomerIds
+            }
+          },
+          data: {
+            customerId: anonymousCustomer.id,
+            notes: null
+          }
+        })
+      : { count: 0 };
+
+    if (appointmentIds.length) {
+      await tx.customerFeedback.updateMany({
+        where: {
+          salonId,
+          appointmentId: {
+            in: appointmentIds
+          }
+        },
+        data: {
+          customerPhone: ANONYMOUS_CUSTOMER_PHONE
+        }
+      });
+    }
+
+    const callSessions = phoneLookupValues.length
+      ? await tx.callSession.findMany({
+          where: {
+            salonId,
+            callerPhone: {
+              in: phoneLookupValues
+            }
+          },
+          select: {
+            id: true
+          }
+        })
+      : [];
+    const callSessionIds = callSessions.map((callSession) => callSession.id);
+
+    const bookingAttemptWhere: Prisma.BookingAttemptWhereInput[] = [
+      ...(phoneLookupValues.length
+        ? [
+            {
+              customerPhone: {
+                in: phoneLookupValues
+              }
+            }
+          ]
+        : []),
+      ...(appointmentIds.length
+        ? [
+            {
+              appointmentId: {
+                in: appointmentIds
+              }
+            }
+          ]
+        : []),
+      ...(callSessionIds.length
+        ? [
+            {
+              callSessionId: {
+                in: callSessionIds
+              }
+            }
+          ]
+        : []),
+      ...targetCustomerIds.flatMap((id) =>
+        jsonPathEqualsAny<Prisma.BookingAttemptWhereInput>("normalizedRequest", ["customerId"], [id])
+      )
+    ];
+    const targetBookingAttempts = bookingAttemptWhere.length
+      ? await tx.bookingAttempt.findMany({
+          where: {
+            salonId,
+            OR: bookingAttemptWhere
+          },
+          select: {
+            id: true,
+            callSessionId: true,
+            transcriptId: true
+          }
+        })
+      : [];
+    const bookingAttemptIds = targetBookingAttempts.map((attempt) => attempt.id);
+    const targetCallSessionIds = Array.from(
+      new Set([
+        ...callSessionIds,
+        ...targetBookingAttempts
+          .map((attempt) => attempt.callSessionId)
+          .filter((id): id is string => Boolean(id))
+      ])
+    );
+    const transcriptIds = Array.from(
+      new Set(
+        targetBookingAttempts
+          .map((attempt) => attempt.transcriptId)
+          .filter((id): id is string => Boolean(id))
+      )
+    );
+
+    const aiInteractionWhere: Prisma.AiInteractionLogWhereInput[] = [
+      ...(bookingAttemptIds.length
+        ? [
+            {
+              bookingAttemptId: {
+                in: bookingAttemptIds
+              }
+            }
+          ]
+        : []),
+      ...(targetCallSessionIds.length
+        ? [
+            {
+              callSessionId: {
+                in: targetCallSessionIds
+              }
+            }
+          ]
+        : []),
+      ...(transcriptIds.length
+        ? [
+            {
+              transcriptId: {
+                in: transcriptIds
+              }
+            }
+          ]
+        : [])
+    ];
+    const deletedAiInteraction = aiInteractionWhere.length
+      ? await tx.aiInteractionLog.deleteMany({
+          where: {
+            salonId,
+            OR: aiInteractionWhere
+          }
+        })
+      : { count: 0 };
+
+    const deletedBookingAttempt = bookingAttemptIds.length
+      ? await tx.bookingAttempt.deleteMany({
+          where: {
+            salonId,
+            id: {
+              in: bookingAttemptIds
+            }
+          }
+        })
+      : { count: 0 };
+
+    if (transcriptIds.length) {
+      await tx.callTranscript.deleteMany({
+        where: {
+          salonId,
+          id: {
+            in: transcriptIds
+          }
+        }
+      });
+    }
+
+    const deletedCallSession = targetCallSessionIds.length
+      ? await tx.callSession.deleteMany({
+          where: {
+            id: {
+              in: targetCallSessionIds
+            },
+            salonId
+          }
+        })
+      : { count: 0 };
+
+    const alertWhere: Prisma.AlertWhereInput[] = [
+      ...(appointmentIds.length
+        ? appointmentIds.flatMap((id) =>
+            jsonPathEqualsAny<Prisma.AlertWhereInput>("metadata", ["appointmentId"], [id])
+          )
+        : []),
+      ...(phoneLookupValues.length
+        ? phoneLookupValues.flatMap((phone) =>
+            jsonPathEqualsAny<Prisma.AlertWhereInput>("metadata", ["customerPhone"], [phone])
+          )
+        : [])
+    ];
+    const deletedAlert = alertWhere.length
+      ? await tx.alert.deleteMany({
+          where: {
+            salonId,
+            OR: alertWhere
+          }
+        })
+      : { count: 0 };
+
+    const userNotificationWhere: Prisma.UserNotificationWhereInput[] = [
+      ...(appointmentIds.length
+        ? appointmentIds.flatMap((id) =>
+            jsonPathEqualsAny<Prisma.UserNotificationWhereInput>("data", ["appointmentId"], [id])
+          )
+        : []),
+      ...(phoneLookupValues.length
+        ? phoneLookupValues.flatMap((phone) =>
+            jsonPathEqualsAny<Prisma.UserNotificationWhereInput>("data", ["customerPhone"], [phone])
+          )
+        : [])
+    ];
+    if (userNotificationWhere.length) {
+      await tx.userNotification.deleteMany({
+        where: {
+          salonId,
+          OR: userNotificationWhere
+        }
+      });
+    }
+
+    await tx.customer.deleteMany({
       where: {
-        id: existing.id
-      },
-      data: {
-        firstName: "Deleted",
-        lastName: "Customer",
-        email: null,
-        phone: privacyPhone,
-        notes: null,
-        deletedAt
+        salonId,
+        id: {
+          in: targetCustomerIds
+        }
       }
     });
 
@@ -298,45 +689,38 @@ export const deleteCustomer = async (salonId: string, customerId: string, actorU
       {
         salonId,
         actorUserId,
-        action: "CUSTOMER_PRIVACY_DELETED",
+        action: "CUSTOMER_PERMANENTLY_DELETED",
         entityType: "Customer",
-        entityId: existing.id,
+        entityId: customerId,
         metadata: {
-          mode: "privacy_delete",
-          customerId: existing.id,
-          appointmentCount,
-          canceledAppointmentCount: canceledAppointments.length
+          mode: "permanent_delete",
+          selectedCustomerId: customerId,
+          deletedCustomerIds: targetCustomerIds,
+          matchedCustomerCount: targetCustomerIds.length,
+          appointmentCount: appointments.length,
+          canceledAppointmentCount: activeAppointments.length,
+          reassignedAppointmentCount: reassignedAppointmentUpdate.count,
+          deletedCallSessionCount: deletedCallSession.count,
+          deletedBookingAttemptCount: deletedBookingAttempt.count,
+          deletedAiInteractionCount: deletedAiInteraction.count,
+          deletedAlertCount: deletedAlert.count
         }
       },
       tx
     );
 
     return {
-      customerId: existing.id,
-      mode: "privacy_delete" as const,
-      appointmentCount,
-      canceledAppointmentCount: canceledAppointments.length,
-      deletedAt,
-      canceledAppointments: canceledAppointments.map((appointment) => ({
-        appointment,
-        affectedStaffIds: [appointment.staffId]
-      }))
+      customerId,
+      mode: "permanent_delete" as const,
+      deletedCustomerIds: targetCustomerIds,
+      deletedCustomerCount: targetCustomerIds.length,
+      appointmentCount: appointments.length,
+      canceledAppointmentCount: activeAppointments.length,
+      reassignedAppointmentCount: reassignedAppointmentUpdate.count,
+      deletedCallSessionCount: deletedCallSession.count,
+      deletedBookingAttemptCount: deletedBookingAttempt.count
     };
   });
-
-  await Promise.all(
-    result.canceledAppointments.map((item) =>
-      sendCanceledAppointmentNotifications(item.appointment, item.affectedStaffIds)
-    )
-  );
-
-  return {
-    customerId: result.customerId,
-    mode: result.mode,
-    appointmentCount: result.appointmentCount,
-    canceledAppointmentCount: result.canceledAppointmentCount,
-    deletedAt: result.deletedAt
-  };
 };
 
 export const getCustomerAppointmentHistory = async (salonId: string, customerId: string) => {

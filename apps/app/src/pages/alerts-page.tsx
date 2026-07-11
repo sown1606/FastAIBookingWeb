@@ -12,6 +12,16 @@ interface AlertItem {
   title: string;
   message: string;
   priority: string;
+  metadata?: {
+    appointmentId?: string;
+    customerName?: string;
+    serviceName?: string;
+    staffName?: string;
+    appointmentStartTime?: string;
+    appointmentEndTime?: string;
+    timezone?: string;
+    source?: string;
+  } | null;
   readAt: string | null;
   createdAt: string;
 }
@@ -54,6 +64,34 @@ export const AlertsPage = () => {
     }
   };
 
+  const buildAlertView = (alert: AlertItem) => {
+    if (alert.alertType !== "BOOKING_CREATED") {
+      return {
+        title: alert.title,
+        label: alert.alertType,
+        message: alert.message,
+        appointmentTime: null as string | null
+      };
+    }
+
+    const legacyIso = alert.message.match(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z/)?.[0];
+    const startTime = alert.metadata?.appointmentStartTime ?? legacyIso;
+    const timezone = alert.metadata?.timezone ?? "America/New_York";
+    const appointmentTime = startTime ? formatDateTime(startTime, timezone) : null;
+    const pieces = [
+      alert.metadata?.customerName,
+      alert.metadata?.serviceName,
+      alert.metadata?.staffName ? `${t("common.staff")}: ${alert.metadata.staffName}` : null
+    ].filter((item): item is string => Boolean(item));
+
+    return {
+      title: t("alerts.typeBookingCreated"),
+      label: t("alerts.typeBookingCreated"),
+      message: pieces.length ? pieces.join(" · ") : alert.message.replace(legacyIso ?? "", appointmentTime ?? "").trim(),
+      appointmentTime
+    };
+  };
+
   if (loading) {
     return <LoadingBlock />;
   }
@@ -72,20 +110,29 @@ export const AlertsPage = () => {
       </div>
       {alerts.length ? (
         <div className="mobile-list">
-          {alerts.map((alert) => (
-            <article key={alert.id} className={`mobile-item ${alert.priority === "URGENT" ? "urgent" : ""}`}>
-              <strong>{alert.title}</strong>
-              <span>{alert.message}</span>
-              <small>
-                {alert.alertType} - {formatDateTime(alert.createdAt)}
-              </small>
-              {!alert.readAt ? (
-                <button type="button" className="button-secondary" onClick={() => markRead(alert.id)}>
-                  {t("alerts.read")}
-                </button>
-              ) : null}
-            </article>
-          ))}
+          {alerts.map((alert) => {
+            const view = buildAlertView(alert);
+            return (
+              <article key={alert.id} className={`mobile-item alert-item ${alert.priority === "URGENT" ? "urgent" : ""}`}>
+                <div className="section-header compact">
+                  <div>
+                    <strong>{view.title}</strong>
+                    <small className="muted">{view.label}</small>
+                  </div>
+                  {alert.readAt ? (
+                    <span className="status-pill">{t("alerts.readBadge")}</span>
+                  ) : (
+                    <button type="button" className="button-secondary compact-button" onClick={() => markRead(alert.id)}>
+                      {t("alerts.read")}
+                    </button>
+                  )}
+                </div>
+                <span>{view.message}</span>
+                {view.appointmentTime ? <strong className="alert-time">{view.appointmentTime}</strong> : null}
+                <small className="muted">{formatDateTime(alert.createdAt, alert.metadata?.timezone ?? "America/New_York")}</small>
+              </article>
+            );
+          })}
         </div>
       ) : (
         <EmptyBlock message={t("alerts.empty")} />

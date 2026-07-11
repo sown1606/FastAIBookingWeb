@@ -65,11 +65,13 @@ import {
   createCallCenterAgentForAdmin,
   getAdminOverviewMetrics,
   getOwnerDetailForAdmin,
+  getSalonDeletePreviewForAdmin,
   getSalonDetailForAdmin,
   listCallCenterAgentsForAdmin,
   listSalonCallCenterAssignmentsForAdmin,
   listSalonIntegrationsForAdmin,
   listSalonsForAdmin,
+  permanentlyDeleteSalonForAdmin,
   replaceSalonCallCenterAssignmentsForAdmin,
   replaceSalonIntegrationsForAdmin,
   setSalonStatusForAdmin,
@@ -186,6 +188,11 @@ const salonSettingsSchema = z.object({
 
 const salonStatusSchema = z.object({
   status: z.nativeEnum(SalonStatus)
+});
+
+const deleteSalonSchema = z.object({
+  confirmPermanentDelete: z.literal(true),
+  confirmationName: z.string().min(1).max(160)
 });
 
 const integrationConfigSchema = z.object({
@@ -486,6 +493,33 @@ adminRouter.post(
       statusCode: 201,
       message: "Salon created.",
       data: salon
+    });
+  })
+);
+
+adminRouter.get(
+  "/salons/:id/delete-preview",
+  validate(idSchema, "params"),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params as z.infer<typeof idSchema>;
+    const preview = await getSalonDeletePreviewForAdmin(id);
+    return sendSuccess(res, {
+      data: preview
+    });
+  })
+);
+
+adminRouter.delete(
+  "/salons/:id",
+  validate(idSchema, "params"),
+  validate(deleteSalonSchema),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params as z.infer<typeof idSchema>;
+    const payload = req.body as z.infer<typeof deleteSalonSchema>;
+    const result = await permanentlyDeleteSalonForAdmin(id, req.auth!.userId, payload);
+    return sendSuccess(res, {
+      message: "Salon permanently deleted.",
+      data: result
     });
   })
 );

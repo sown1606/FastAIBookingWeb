@@ -318,6 +318,10 @@ const setupPrismaMock = () => {
     }
     return salon;
   });
+  patch(prisma.salonSetting as any, "findUnique", async (args: any) => ({
+    salonId: args?.where?.salonId,
+    locale: "en-US"
+  }));
 
   patch(prisma.integrationConfig as any, "findFirst", async (args: any) => {
     const values = args?.where?.configValue?.in ?? [];
@@ -1074,14 +1078,13 @@ test("known Amazon Connect caller phone skips name and phone prompts", async () 
       result.body.data.missingFields.includes("customerPhone"),
     false
   );
-  assert.match(result.body.data.lexResponse.message, /Sorry, what service would you like/i);
+  assert.match(result.body.data.lexResponse.message, /Welcome back, Kiet\. How may I help you today/i);
   assert.doesNotMatch(result.body.data.lexResponse.message, /1 for Pedicure/i);
   assert.doesNotMatch(result.body.data.lexResponse.message, /5 for Dip Powder/i);
-  assert.match(result.body.data.lexResponse.message, /Hi Kiet/i);
   assert.equal(state.appointments.length, 0);
 });
 
-test("AI caller memory reuses +84 caller name from latest booking attempt", async () => {
+test("AI caller memory does not reuse names from historical booking attempts", async () => {
   const first = await postInternalAppointment(
     bookingPayload({
       customerName: "Thuyet",
@@ -1133,11 +1136,12 @@ test("AI caller memory reuses +84 caller name from latest booking attempt", asyn
   );
 
   assert.equal(second.response.status, 200);
-  assert.equal(second.body.data.lexResponse.sessionAttributes.customerName, "Thuyet");
+  assert.equal(second.body.data.lexResponse.sessionAttributes.customerName, undefined);
   assert.equal(second.body.data.lexResponse.sessionAttributes.customerPhone, "+84798171999");
-  assert.equal(second.body.data.lexResponse.sessionAttributes.customerNameSource, "booking_attempt");
-  assert.equal(second.body.data.missingFields.includes("customerName"), false);
+  assert.equal(second.body.data.lexResponse.sessionAttributes.customerNameSource, undefined);
+  assert.equal(second.body.data.missingFields.includes("customerName"), true);
   assert.equal(second.body.data.missingFields.includes("customerPhone"), false);
+  assert.match(second.body.data.lexResponse.message, /May I have your name/i);
   assert.notEqual(second.body.data.lexResponse.sessionAttributes.transferToQueue, "true");
 });
 
@@ -1152,7 +1156,7 @@ test("missing booking fields return a Lex needs-input response instead of crashi
   assert.equal(result.body.data.outcome, "MISSING_INFO");
   assert.equal(result.body.data.lexResponse.fulfillmentState, "InProgress");
   assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitSlot");
-  assert.match(result.body.data.lexResponse.message, /best name|phone number|What day|service/i);
+  assert.match(result.body.data.lexResponse.message, /May I have your name/i);
 });
 
 test("Full Set phrase reaches confirmation without asking service again", async () => {
@@ -1872,7 +1876,7 @@ test("unclear customer name digit noise asks caller to spell", async () => {
   assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitSlot");
   assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "customerName");
   assert.equal(result.body.data.lexResponse.sessionAttributes.customerName, undefined);
-  assert.match(result.body.data.lexResponse.message, /could you spell your first name/i);
+  assert.match(result.body.data.lexResponse.message, /Could you say your first name slowly/i);
   assert.equal(state.appointments.length, 0);
 });
 
@@ -2110,7 +2114,7 @@ test("repeat service while asking customer name keeps context in AI log response
   assert.equal(result.body.data.outcome, "MISSING_INFO");
   assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "customerName");
   assert.match(result.body.data.lexResponse.message, /I already have Full Set for/i);
-  assert.match(result.body.data.lexResponse.message, /What name should I put on the appointment/i);
+  assert.match(result.body.data.lexResponse.message, /May I have your name/i);
   assert.doesNotMatch(result.body.data.lexResponse.message, /could you spell the name/i);
   assert.equal(state.aiInteractionLogs[0].responsePayload.turnHistory[0].lastAskedSlotAfter, "customerName");
   assert.match(

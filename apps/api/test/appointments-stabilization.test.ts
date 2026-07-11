@@ -8,6 +8,7 @@ import { BLOCKING_APPOINTMENT_STATUSES } from "../src/config/constants";
 import { prisma } from "../src/db/prisma";
 import { validateAppointmentSlot } from "../src/modules/availability/availability.service";
 import {
+  formatAppointmentAlertDateTime,
   permanentlyDeleteAppointment,
   removeTechnicalAppointmentNoteLines,
   toOwnerAppointmentResponse
@@ -15,6 +16,7 @@ import {
 import {
   createCustomer,
   deleteCustomer,
+  getCustomerDeletePreview,
   getCustomerAppointmentHistory,
   searchCustomers,
   updateCustomer
@@ -156,6 +158,23 @@ test("owner appointment DTO strips provider source and exact technical note line
   assert.equal(publicAppointment.bookingChannel, "assistant");
 });
 
+test("booking alert date formatter uses salon timezone and locale", () => {
+  const utcStart = new Date("2026-07-15T18:00:00.000Z");
+
+  assert.equal(
+    formatAppointmentAlertDateTime(utcStart, "America/New_York", "vi-VN"),
+    "14:00, 15/07/2026"
+  );
+  assert.equal(
+    formatAppointmentAlertDateTime(utcStart, "America/New_York", "en-US"),
+    "Jul 15, 2026 at 2:00 PM"
+  );
+  assert.equal(
+    formatAppointmentAlertDateTime(new Date("2026-03-08T07:30:00.000Z"), "America/New_York", "en-US"),
+    "Mar 8, 2026 at 3:30 AM"
+  );
+});
+
 test("customer update accepts international E.164 and rejects duplicate canonical phones", async () => {
   const customers = [
     {
@@ -237,20 +256,50 @@ const setupCustomerDeleteMocks = (input: {
   existingSalonId?: string;
   existingDeletedAt?: Date | null;
   appointments?: Array<{ id: string; status: AppointmentStatus; startTime: Date }>;
+  extraCustomers?: Array<{ id: string; salonId?: string; phone: string }>;
+  callSessions?: Array<{ id: string; callerPhone: string }>;
+  bookingAttempts?: Array<{ id: string; customerPhone?: string | null; appointmentId?: string | null; callSessionId?: string | null; transcriptId?: string | null }>;
+  alertCount?: number;
+  userNotificationCount?: number;
   failOnCustomerUpdate?: boolean;
 }) => {
+  const anonymousCustomerId = "99999999-9999-4999-8999-999999999999";
+  const selectedCustomer = {
+    id: customerId,
+    salonId: input.existingSalonId ?? salonId,
+    firstName: "Kevin",
+    lastName: "Nguyen",
+    email: "kevin@example.test",
+    phone: "+12125550100",
+    notes: "VIP",
+    deletedAt: input.existingDeletedAt ?? null
+  };
   const state = {
-    deleted: false,
-    customer: {
-      id: customerId,
-      salonId: input.existingSalonId ?? salonId,
-      firstName: "Kevin",
-      lastName: "Nguyen",
-      email: "kevin@example.test",
-      phone: "+12125550100",
-      notes: "VIP",
-      deletedAt: input.existingDeletedAt ?? null
+    customer: selectedCustomer,
+    customers: [
+      selectedCustomer,
+      ...(input.extraCustomers ?? []).map((customer) => ({
+        id: customer.id,
+        salonId: customer.salonId ?? salonId,
+        firstName: "Duplicate",
+        lastName: "Profile",
+        email: null,
+        phone: customer.phone,
+        notes: null,
+        deletedAt: null
+      }))
+    ],
+    anonymousCustomer: null as null | {
+      id: string;
+      salonId: string;
+      firstName: string;
+      lastName: string;
+      email: null;
+      phone: string;
+      notes: null;
+      deletedAt: Date;
     },
+    deletedCustomerIds: [] as string[],
     appointments: (input.appointments ?? []).map((appointment) => ({
       ...appointment,
       salonId,
@@ -281,7 +330,14 @@ const setupCustomerDeleteMocks = (input: {
     auditActions: [] as any[],
     remindersDeleted: 0,
     workSessionsClosed: 0,
-    staffReleased: 0
+    staffReleased: 0,
+    customerFeedbackScrubbed: 0,
+    callSessions: input.callSessions ?? [],
+    bookingAttempts: input.bookingAttempts ?? [],
+    aiInteractionsDeleted: 0,
+    transcriptsDeleted: 0,
+    alertsDeleted: 0,
+    userNotificationsDeleted: 0
   };
 
   patch(prisma as any, "$transaction", async (callback: (tx: any) => Promise<unknown>) => {
@@ -299,27 +355,80 @@ const setupCustomerDeleteMocks = (input: {
         customer: {
           ...snapshot.customer,
           deletedAt: snapshot.customer.deletedAt ? new Date(snapshot.customer.deletedAt) : null
-        }
+        },
+        customers: snapshot.customers.map((customer: any) => ({
+          ...customer,
+          deletedAt: customer.deletedAt ? new Date(customer.deletedAt) : null
+        })),
+        anonymousCustomer: snapshot.anonymousCustomer
+          ? {
+              ...snapshot.anonymousCustomer,
+              deletedAt: new Date(snapshot.anonymousCustomer.deletedAt)
+            }
+          : null
       });
       throw error;
     }
   });
 
   patch(prisma.customer as any, "findFirst", async (args: any) => {
-    if (args.where?.id !== customerId || args.where?.salonId !== state.customer.salonId) {
+    if (args.where?.phone === "anonymous-customer") {
+      if (args.where?.salonId !== salonId) {
+        return null;
+      }
+      return state.anonymousCustomer;
+    }
+
+    const customer = state.customers.find(
+      (item) =>
+        item.id === args.where?.id &&
+        item.salonId === args.where?.salonId &&
+        !state.deletedCustomerIds.includes(item.id)
+    );
+    if (!customer) {
       return null;
     }
-    if (args.where?.deletedAt === null && state.customer.deletedAt) {
+    if (args.where?.deletedAt === null && customer.deletedAt) {
       return null;
     }
-    return state.customer;
+    return customer;
+  });
+  patch(prisma.customer as any, "findMany", async (args: any) => {
+    const phones = args.where?.phone?.in as string[] | undefined;
+    return state.customers
+      .filter(
+        (customer) =>
+          customer.salonId === args.where?.salonId &&
+          !state.deletedCustomerIds.includes(customer.id) &&
+          (!args.where?.deletedAt || customer.deletedAt === null) &&
+          (!phones || phones.includes(customer.phone))
+      )
+      .map((customer) => ({
+        id: customer.id,
+        phone: customer.phone
+      }));
+  });
+  patch(prisma.customer as any, "create", async (args: any) => {
+    state.anonymousCustomer = {
+      id: anonymousCustomerId,
+      salonId: args.data.salonId,
+      firstName: args.data.firstName,
+      lastName: args.data.lastName,
+      email: null,
+      phone: args.data.phone,
+      notes: null,
+      deletedAt: args.data.deletedAt
+    };
+    return { id: anonymousCustomerId };
   });
   patch(prisma.appointment as any, "findMany", async (args: any) => {
+    const customerWhere = args.where?.customerId;
+    const customerIds = customerWhere?.in ?? (customerWhere ? [customerWhere] : []);
     return state.appointments
       .filter(
         (appointment) =>
           appointment.salonId === args.where?.salonId &&
-          appointment.customerId === args.where?.customerId &&
+          (!customerIds.length || customerIds.includes(appointment.customerId)) &&
           (!args.where?.status?.in || args.where.status.in.includes(appointment.status))
       )
       .map((appointment) => ({
@@ -339,6 +448,23 @@ const setupCustomerDeleteMocks = (input: {
     assert.ok(appointment);
     Object.assign(appointment, args.data);
     return appointment;
+  });
+  patch(prisma.appointment as any, "updateMany", async (args: any) => {
+    if (input.failOnCustomerUpdate) {
+      throw new Error("customer update failed");
+    }
+    const customerIds = args.where?.customerId?.in as string[] | undefined;
+    let count = 0;
+    for (const appointment of state.appointments) {
+      if (
+        appointment.salonId === args.where?.salonId &&
+        (!customerIds || customerIds.includes(appointment.customerId))
+      ) {
+        Object.assign(appointment, args.data);
+        count += 1;
+      }
+    }
+    return { count };
   });
   patch(prisma.appointment as any, "findUniqueOrThrow", async (args: any) => {
     const appointment = state.appointments.find((item) => item.id === args.where.id);
@@ -372,16 +498,62 @@ const setupCustomerDeleteMocks = (input: {
     state.statusHistory.push(args.data);
     return args.data;
   });
-  patch(prisma.customer as any, "delete", async () => {
-    state.deleted = true;
-    return { id: customerId };
+  patch(prisma.customerFeedback as any, "updateMany", async () => {
+    state.customerFeedbackScrubbed += 1;
+    return { count: 1 };
   });
-  patch(prisma.customer as any, "update", async (args: any) => {
-    if (input.failOnCustomerUpdate) {
-      throw new Error("customer update failed");
+  patch(prisma.callSession as any, "findMany", async (args: any) => {
+    const phones = args.where?.callerPhone?.in as string[] | undefined;
+    return state.callSessions
+      .filter((session) => args.where?.salonId === salonId && (!phones || phones.includes(session.callerPhone)))
+      .map((session) => ({ id: session.id }));
+  });
+  patch(prisma.bookingAttempt as any, "count", async () => state.bookingAttempts.length);
+  patch(prisma.bookingAttempt as any, "findMany", async () =>
+    state.bookingAttempts.map((attempt) => ({
+      id: attempt.id,
+      callSessionId: attempt.callSessionId ?? null,
+      transcriptId: attempt.transcriptId ?? null
+    }))
+  );
+  patch(prisma.aiInteractionLog as any, "deleteMany", async () => {
+    const count = state.bookingAttempts.length + state.callSessions.length;
+    state.aiInteractionsDeleted += count;
+    return { count };
+  });
+  patch(prisma.bookingAttempt as any, "deleteMany", async (args: any) => {
+    const ids = args.where?.id?.in as string[] | undefined;
+    const before = state.bookingAttempts.length;
+    state.bookingAttempts = state.bookingAttempts.filter((attempt) => !ids?.includes(attempt.id));
+    return { count: before - state.bookingAttempts.length };
+  });
+  patch(prisma.callTranscript as any, "deleteMany", async (args: any) => {
+    const ids = args.where?.id?.in as string[] | undefined;
+    state.transcriptsDeleted += ids?.length ?? 0;
+    return { count: ids?.length ?? 0 };
+  });
+  patch(prisma.callSession as any, "deleteMany", async (args: any) => {
+    const ids = args.where?.id?.in as string[] | undefined;
+    const before = state.callSessions.length;
+    state.callSessions = state.callSessions.filter((session) => !ids?.includes(session.id));
+    return { count: before - state.callSessions.length };
+  });
+  patch(prisma.alert as any, "deleteMany", async () => {
+    const count = input.alertCount ?? 0;
+    state.alertsDeleted += count;
+    return { count };
+  });
+  patch(prisma.userNotification as any, "deleteMany", async () => {
+    const count = input.userNotificationCount ?? 0;
+    state.userNotificationsDeleted += count;
+    return { count };
+  });
+  patch(prisma.customer as any, "deleteMany", async (args: any) => {
+    const ids = args.where?.id?.in as string[] | undefined;
+    if (ids) {
+      state.deletedCustomerIds.push(...ids);
     }
-    Object.assign(state.customer, args.data);
-    return state.customer;
+    return { count: ids?.length ?? 0 };
   });
   patch(prisma.auditLog as any, "create", async (args: any) => {
     state.auditActions.push(args.data);
@@ -396,20 +568,28 @@ test("customer delete hard-deletes customers with no appointment history", async
 
   const result = await deleteCustomer(salonId, customerId, actorUserId);
 
-  assert.equal(result.mode, "hard_delete");
+  assert.equal(result.mode, "permanent_delete");
   assert.equal(result.appointmentCount, 0);
   assert.equal(result.canceledAppointmentCount, 0);
-  assert.equal(state.deleted, true);
-  assert.equal(state.auditActions[0].action, "CUSTOMER_DELETED");
+  assert.deepEqual(result.deletedCustomerIds, [customerId]);
+  assert.deepEqual(state.deletedCustomerIds, [customerId]);
+  assert.equal(state.auditActions[0].action, "CUSTOMER_PERMANENTLY_DELETED");
   assert.deepEqual(state.auditActions[0].metadata, {
-    mode: "hard_delete",
-    customerId,
+    mode: "permanent_delete",
+    selectedCustomerId: customerId,
+    deletedCustomerIds: [customerId],
+    matchedCustomerCount: 1,
     appointmentCount: 0,
-    canceledAppointmentCount: 0
+    canceledAppointmentCount: 0,
+    reassignedAppointmentCount: 0,
+    deletedCallSessionCount: 0,
+    deletedBookingAttemptCount: 0,
+    deletedAiInteractionCount: 0,
+    deletedAlertCount: 0
   });
 });
 
-test("customer delete privacy-deletes customers with active appointments", async () => {
+test("customer delete permanently deletes customers with active appointments", async () => {
   const state = setupCustomerDeleteMocks({
     appointments: [
       {
@@ -432,35 +612,43 @@ test("customer delete privacy-deletes customers with active appointments", async
 
   const result = await deleteCustomer(salonId, customerId, actorUserId);
 
-  assert.equal(result.mode, "privacy_delete");
+  assert.equal(result.mode, "permanent_delete");
   assert.equal(result.appointmentCount, 3);
   assert.equal(result.canceledAppointmentCount, 2);
-  assert.equal(state.deleted, false);
+  assert.equal(result.reassignedAppointmentCount, 3);
+  assert.deepEqual(state.deletedCustomerIds, [customerId]);
   assert.equal(state.appointments[0].status, AppointmentStatus.CANCELED);
   assert.equal(state.appointments[1].status, AppointmentStatus.CANCELED);
   assert.equal(state.appointments[2].status, AppointmentStatus.COMPLETED);
+  assert.equal(state.appointments[0].customerId, state.anonymousCustomer?.id);
+  assert.equal(state.appointments[1].customerId, state.anonymousCustomer?.id);
+  assert.equal(state.appointments[2].customerId, state.anonymousCustomer?.id);
+  assert.equal(state.appointments[0].notes, null);
   assert.equal(state.statusHistory.length, 2);
-  assert.equal(state.statusHistory[0].reason, "Customer data deleted by salon owner");
+  assert.equal(state.statusHistory[0].reason, "Customer data permanently deleted by salon owner");
   assert.equal(state.remindersDeleted, 2);
   assert.equal(state.workSessionsClosed, 2);
   assert.equal(state.staffReleased, 2);
-  assert.equal(state.customer.firstName, "Deleted");
-  assert.equal(state.customer.lastName, "Customer");
-  assert.equal(state.customer.email, null);
-  assert.equal(state.customer.notes, null);
-  assert.equal(state.customer.phone, `deleted-customer-${customerId}`);
-  assert.ok(state.customer.deletedAt);
-  assert.equal(state.auditActions.at(-1).action, "CUSTOMER_PRIVACY_DELETED");
+  assert.equal(state.anonymousCustomer?.phone, "anonymous-customer");
+  assert.ok(state.anonymousCustomer?.deletedAt);
+  assert.equal(state.auditActions.at(-1).action, "CUSTOMER_PERMANENTLY_DELETED");
   assert.deepEqual(state.auditActions.at(-1).metadata, {
-    mode: "privacy_delete",
-    customerId,
+    mode: "permanent_delete",
+    selectedCustomerId: customerId,
+    deletedCustomerIds: [customerId],
+    matchedCustomerCount: 1,
     appointmentCount: 3,
-    canceledAppointmentCount: 2
+    canceledAppointmentCount: 2,
+    reassignedAppointmentCount: 3,
+    deletedCallSessionCount: 0,
+    deletedBookingAttemptCount: 0,
+    deletedAiInteractionCount: 0,
+    deletedAlertCount: 0
   });
   assert.doesNotMatch(JSON.stringify(state.auditActions.at(-1).metadata), /12125550100|Kevin|kevin@example/i);
 });
 
-test("customer delete rolls back when anonymization fails", async () => {
+test("customer delete rolls back when reassignment fails", async () => {
   const state = setupCustomerDeleteMocks({
     failOnCustomerUpdate: true,
     appointments: [
@@ -476,8 +664,58 @@ test("customer delete rolls back when anonymization fails", async () => {
   assert.equal(state.appointments[0].status, AppointmentStatus.SCHEDULED);
   assert.equal(state.customer.phone, "+12125550100");
   assert.equal(state.customer.deletedAt, null);
+  assert.equal(state.deletedCustomerIds.length, 0);
+  assert.equal(state.anonymousCustomer, null);
   assert.equal(state.statusHistory.length, 0);
   assert.equal(state.auditActions.length, 0);
+});
+
+test("customer delete preview includes duplicate profiles in the same salon only", async () => {
+  setupCustomerDeleteMocks({
+    extraCustomers: [
+      {
+        id: "66666666-6666-4666-8666-666666666666",
+        phone: "2125550100"
+      },
+      {
+        id: "77777777-7777-4777-8777-777777777777",
+        salonId: "99999999-9999-4999-8999-999999999999",
+        phone: "+12125550100"
+      }
+    ],
+    appointments: [
+      {
+        id: appointmentId,
+        status: AppointmentStatus.SCHEDULED,
+        startTime: new Date("2999-01-01T15:00:00.000Z")
+      }
+    ],
+    callSessions: [
+      {
+        id: "call-1",
+        callerPhone: "+12125550100"
+      }
+    ],
+    bookingAttempts: [
+      {
+        id: "attempt-1",
+        customerPhone: "+12125550100",
+        callSessionId: "call-1"
+      }
+    ]
+  });
+
+  const preview = await getCustomerDeletePreview(salonId, customerId);
+
+  assert.equal(preview.matchedCustomerCount, 2);
+  assert.deepEqual(preview.matchedCustomerIds.sort(), [
+    "66666666-6666-4666-8666-666666666666",
+    customerId
+  ].sort());
+  assert.equal(preview.appointmentCount, 1);
+  assert.equal(preview.activeAppointmentCount, 1);
+  assert.equal(preview.callSessionCount, 1);
+  assert.equal(preview.bookingAttemptCount, 1);
 });
 
 test("customer delete rejects cross-salon customers", async () => {
@@ -489,6 +727,20 @@ test("customer delete rejects cross-salon customers", async () => {
     () => deleteCustomer(salonId, customerId, actorUserId),
     /Customer not found/
   );
+});
+
+test("customer delete is not side-effectful on the second call", async () => {
+  const state = setupCustomerDeleteMocks({});
+
+  await deleteCustomer(salonId, customerId, actorUserId);
+  const auditCount = state.auditActions.length;
+
+  await assert.rejects(
+    () => deleteCustomer(salonId, customerId, actorUserId),
+    /Customer not found/
+  );
+  assert.equal(state.auditActions.length, auditCount);
+  assert.deepEqual(state.deletedCustomerIds, [customerId]);
 });
 
 test("normal customer search excludes archived customers", async () => {

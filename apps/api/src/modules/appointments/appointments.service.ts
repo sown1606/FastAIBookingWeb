@@ -406,16 +406,55 @@ const updateStaffOperationalState = async (
   });
 };
 
+export const formatAppointmentAlertDateTime = (
+  startTime: Date,
+  timezone: string,
+  locale = "vi-VN"
+): string => {
+  const local = DateTime.fromJSDate(startTime).setZone(timezone).setLocale(locale);
+  if (!local.isValid) {
+    return "";
+  }
+  return locale.toLowerCase().startsWith("en")
+    ? local.toFormat("LLL d, yyyy 'at' h:mm a")
+    : local.toFormat("HH:mm, dd/LL/yyyy");
+};
+
 const createBookingAlert = async (appointment: Awaited<ReturnType<typeof getAppointmentDetail>>) => {
   const customerName = formatCustomerName(appointment.customer.firstName, appointment.customer.lastName) || "Customer";
+  const serviceName = getNotificationServiceLabel(appointment);
+  const staffName = appointment.staff.fullName;
+  const locale =
+    (
+      await prisma.salonSetting.findUnique({
+        where: {
+          salonId: appointment.salonId
+        },
+        select: {
+          locale: true
+        }
+      })
+    )?.locale ?? "vi-VN";
+  const appointmentTime = formatAppointmentAlertDateTime(
+    appointment.startTime,
+    appointment.salon.timezone,
+    locale
+  );
   await createSalonAlert({
     salonId: appointment.salonId,
     alertType: "BOOKING_CREATED",
-    title: "Lich hen moi",
-    message: `Lich hen moi cho ${customerName} luc ${appointment.startTime.toISOString()}.`,
+    title: locale.toLowerCase().startsWith("en") ? "New appointment" : "Lich hen moi",
+    message: locale.toLowerCase().startsWith("en")
+      ? `New appointment for ${customerName} at ${appointmentTime}.`
+      : `Lich hen moi cho ${customerName} luc ${appointmentTime}.`,
     metadata: {
       appointmentId: appointment.id,
-      customerPhone: appointment.customer.phone,
+      customerName,
+      serviceName,
+      staffName,
+      appointmentStartTime: appointment.startTime.toISOString(),
+      appointmentEndTime: appointment.endTime.toISOString(),
+      timezone: appointment.salon.timezone,
       source: appointment.source
     },
     sendSms: false

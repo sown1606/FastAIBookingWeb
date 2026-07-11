@@ -183,7 +183,14 @@ export const ServicesPage = () => {
   };
 
   const deleteService = async (item: ServiceItem) => {
-    if (!window.confirm(t("services.deleteConfirm"))) {
+    const values = await openFormDialog({
+      title: t("services.confirmDelete"),
+      description: `${item.name}. ${t("services.deleteConfirm")}`,
+      fields: [],
+      initialValues: {},
+      confirmLabel: t("services.deleteAction")
+    });
+    if (!values) {
       return;
     }
     try {

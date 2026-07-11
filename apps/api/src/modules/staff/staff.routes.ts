@@ -58,7 +58,7 @@ const createStaffSchema = z
     isActive: z.boolean().optional(),
     isBookable: z.boolean().optional(),
     createLogin: z.boolean().optional(),
-    password: z.string().min(8).max(128).optional(),
+    password: z.string().min(6).max(128).optional(),
     serviceIds: z.array(z.string().uuid()).optional()
   })
   .superRefine((value, context) => {

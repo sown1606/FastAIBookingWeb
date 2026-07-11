@@ -3340,32 +3340,10 @@ const asTrimmedString = (value?: unknown): string | undefined => {
   return trimmed && trimmed.length > 0 ? trimmed : undefined;
 };
 
-const readNestedString = (value: unknown, paths: string[][]): string | undefined => {
-  for (const path of paths) {
-    let cursor = value;
-    for (const key of path) {
-      if (!cursor || typeof cursor !== "object" || Array.isArray(cursor) || !(key in cursor)) {
-        cursor = undefined;
-        break;
-      }
-      cursor = (cursor as Record<string, unknown>)[key];
-    }
-    if (typeof cursor === "string" && cursor.trim()) {
-      return cursor.trim();
-    }
-  }
-  return undefined;
-};
-
 const findKnownCallerMemoryByPhone = async (input: {
   salonId: string;
   customerPhone?: string | null;
 }): Promise<{ customerName: string; customerPhone?: string; source: string } | null> => {
-  const lookupValues = buildPhoneLookupValues(input.customerPhone);
-  if (!lookupValues.length) {
-    return null;
-  }
-
   const existingCustomer = await findExistingCustomerByPhone(input);
   if (existingCustomer) {
     const existingCustomerName = customerDisplayName(existingCustomer);
@@ -3374,69 +3352,6 @@ const findKnownCallerMemoryByPhone = async (input: {
         customerName: existingCustomerName,
         customerPhone: existingCustomer.phone,
         source: "customer"
-      };
-    }
-  }
-
-  const latestAttempts = await prisma.bookingAttempt.findMany({
-    where: {
-      salonId: input.salonId,
-      customerPhone: {
-        in: lookupValues
-      },
-      customerName: {
-        not: null
-      }
-    },
-    select: {
-      customerName: true,
-      customerPhone: true
-    },
-    orderBy: {
-      createdAt: "desc"
-    },
-    take: 20
-  });
-  const latestAttempt = latestAttempts.find((attempt) => isReusableCallerName(attempt.customerName));
-  if (latestAttempt?.customerName?.trim()) {
-    return {
-      customerName: latestAttempt.customerName.trim(),
-      customerPhone: latestAttempt.customerPhone ?? undefined,
-      source: "booking_attempt"
-    };
-  }
-
-  const recentCalls = await prisma.callSession.findMany({
-    where: {
-      salonId: input.salonId,
-      callerPhone: {
-        in: lookupValues
-      }
-    },
-    select: {
-      callerPhone: true,
-      aiSummary: true,
-      bookingResult: true
-    },
-    orderBy: {
-      createdAt: "desc"
-    },
-    take: 25
-  });
-  for (const call of recentCalls) {
-    const customerName = readNestedString(call.aiSummary, [
-      ["customer", "name"],
-      ["parsed", "customer", "name"],
-      ["normalizedRequest", "customerName"]
-    ]) ?? readNestedString(call.bookingResult, [
-      ["customer", "name"],
-      ["normalizedRequest", "customerName"]
-    ]);
-    if (isReusableCallerName(customerName)) {
-      return {
-        customerName,
-        customerPhone: call.callerPhone ?? input.customerPhone ?? undefined,
-        source: "call_session"
       };
     }
   }
@@ -4275,13 +4190,15 @@ const buildLexMessage = (input: {
         }
       );
       return speak(
-	        isRetry && input.repeatedKnownFieldWhileAskingName && summary
-	          ? `I already have ${escapeSsml(summary)}. <break time="300ms"/> What name should I put on the appointment?`
-	          : isRetry
-	          ? "Sorry, could you spell your first name, one letter at a time?"
+        input.repeatedKnownFieldWhileAskingName && summary
+          ? `I already have ${escapeSsml(summary)}. <break time="300ms"/> May I have your name, please?`
+          : (input.attemptCount ?? 1) >= 3
+          ? "Could you spell your first name, one letter at a time?"
+          : isRetry
+          ? "Sorry, I didn't catch your name. Could you say your first name slowly?"
           : summary
-            ? `Got it: ${escapeSsml(summary)}. <break time="300ms"/> What name should I put on the appointment?`
-            : "What name should I put on the appointment?"
+            ? `I have your ${escapeSsml(summary)}. <break time="300ms"/> May I have your name, please?`
+            : "I'd be happy to help. May I have your name, please?"
       );
     }
     if (input.missingFields?.includes("customerPhone")) {
@@ -4295,7 +4212,7 @@ const buildLexMessage = (input: {
       const servicePrompt = isRetry ? SERVICE_DTMF_OPTIONS_PROMPT : SERVICE_FIRST_RETRY_PROMPT;
       return speak(
         firstName && !isRetry
-          ? `Hi ${escapeSsml(firstName)}, I can help book your appointment. ${servicePrompt}`
+          ? `Welcome back, ${escapeSsml(firstName)}. How may I help you today?`
           : servicePrompt
       );
     }
@@ -4368,14 +4285,14 @@ const getElicitSlotForMissingFields = (
   sessionAttributes: Record<string, string>;
 } => {
   let slotToElicit = "serviceName";
-  if (missingFields.has("serviceName")) {
+  if (missingFields.has("customerName")) {
+    slotToElicit = "customerName";
+  } else if (missingFields.has("serviceName")) {
     slotToElicit = "serviceName";
   } else if (missingFields.has("preferredDateTime")) {
     slotToElicit = normalized.requestedDate ? "requestedTime" : "requestedDate";
   } else if (missingFields.has("staffPreference")) {
     slotToElicit = "staffPreference";
-  } else if (missingFields.has("customerName")) {
-    slotToElicit = "customerName";
   } else if (missingFields.has("customerPhone")) {
     slotToElicit = "customerPhone";
   }

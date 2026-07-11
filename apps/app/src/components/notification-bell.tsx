@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { apiGet, apiPost, extractErrorMessage } from "../lib/api";
+import { apiDelete, apiGet, apiPost, extractErrorMessage } from "../lib/api";
 import { formatDateTime } from "../lib/format";
 import { useI18n } from "../lib/i18n";
 import { useToast } from "./toast";
@@ -114,6 +114,9 @@ export const NotificationBell = () => {
 
   const markRead = async (notification: UserNotification) => {
     try {
+      if (notification.readAt) {
+        return;
+      }
       await apiPost<UserNotification, Record<string, never>>(
         `/api/v1/notifications/${notification.id}/read`,
         {}
@@ -126,6 +129,17 @@ export const NotificationBell = () => {
         )
       );
       await loadUnreadCount();
+    } catch (error) {
+      notify("error", extractErrorMessage(error));
+    }
+  };
+
+  const deleteNotification = async (notification: UserNotification) => {
+    try {
+      await apiDelete<{ deleted: true; id: string }>(`/api/v1/notifications/${notification.id}`);
+      setItems((prev) => prev.filter((item) => item.id !== notification.id));
+      await loadUnreadCount();
+      notify("success", t("notifications.deleted"));
     } catch (error) {
       notify("error", extractErrorMessage(error));
     }
@@ -193,18 +207,32 @@ export const NotificationBell = () => {
           ) : items.length ? (
             <div className="notification-list">
               {items.map((item) => (
-                <button
-                  type="button"
+                <article
                   key={item.id}
                   className={item.readAt ? "notification-item" : "notification-item unread"}
-                  onClick={() => void openNotification(item)}
                 >
-                  <span>
-                    <strong>{item.title}</strong>
-                    <small>{formatDateTime(item.createdAt)}</small>
-                  </span>
-                  <span>{item.body}</span>
-                </button>
+                  <button
+                    type="button"
+                    className="notification-item-main"
+                    onClick={() => void openNotification(item)}
+                  >
+                    <span>
+                      <strong>{item.title}</strong>
+                      <small>{formatDateTime(item.createdAt)}</small>
+                    </span>
+                    <span>{item.body}</span>
+                  </button>
+                  <div className="notification-item-actions">
+                    {!item.readAt ? (
+                      <button type="button" className="button-secondary" onClick={() => void markRead(item)}>
+                        {t("notifications.markRead")}
+                      </button>
+                    ) : null}
+                    <button type="button" className="button-secondary danger" onClick={() => void deleteNotification(item)}>
+                      {t("notifications.delete")}
+                    </button>
+                  </div>
+                </article>
               ))}
             </div>
           ) : (

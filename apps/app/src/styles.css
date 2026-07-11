@@ -290,6 +290,19 @@ textarea:focus-visible {
   cursor: pointer;
 }
 
+.notification-item-main {
+  width: 100%;
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
 .notification-item:hover {
   border-color: var(--primary);
 }
@@ -300,7 +313,7 @@ textarea:focus-visible {
   box-shadow: inset 3px 0 0 var(--danger);
 }
 
-.notification-item > span:first-child {
+.notification-item-main > span:first-child {
   display: flex;
   justify-content: space-between;
   gap: 10px;
@@ -310,8 +323,21 @@ textarea:focus-visible {
 }
 
 .notification-item strong,
-.notification-item span {
+.notification-item span,
+.notification-item-main {
   overflow-wrap: anywhere;
+}
+
+.notification-item-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.notification-item-actions .button-secondary {
+  min-height: 32px;
+  padding: 6px 10px;
 }
 
 .notification-item small {
@@ -2372,6 +2398,18 @@ pre {
   border: 1px solid rgba(201, 154, 46, 0.14);
 }
 
+.appointments-page {
+  align-items: start;
+}
+
+.appointments-create-card,
+.appointments-detail-card,
+.appointments-archive-card,
+.appointments-schedule-card,
+.appointments-upcoming-card {
+  min-width: 0;
+}
+
 .date-navigation {
   display: flex;
   align-items: end;
@@ -2413,6 +2451,19 @@ pre {
 .mobile-item.urgent {
   border-color: #e08a82;
   background: #fff7f6;
+}
+
+.mobile-item.alert-item {
+  gap: 8px;
+}
+
+.section-header.compact {
+  align-items: start;
+  gap: 10px;
+}
+
+.alert-time {
+  color: var(--primary-strong);
 }
 
 .timer-pill {
@@ -3171,6 +3222,36 @@ pre {
 
   .dashboard-hero-copy h2 {
     font-size: 2.15rem;
+  }
+}
+
+@media (min-width: 1100px) {
+  .owner-appointments-page {
+    grid-template-columns: minmax(0, 1.45fr) minmax(340px, 0.85fr);
+    gap: 16px;
+  }
+
+  .owner-appointments-page .appointments-toolbar-card {
+    grid-column: 1 / -1;
+  }
+
+  .owner-appointments-page .appointments-schedule-card,
+  .owner-appointments-page .appointments-upcoming-card {
+    grid-column: 1;
+  }
+
+  .owner-appointments-page .appointments-create-card,
+  .owner-appointments-page .appointments-detail-card,
+  .owner-appointments-page .appointments-archive-card {
+    grid-column: 2;
+  }
+
+  .owner-appointments-page .appointments-create-card .form-grid.two-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .owner-appointments-page .appointments-archive-card .entity-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

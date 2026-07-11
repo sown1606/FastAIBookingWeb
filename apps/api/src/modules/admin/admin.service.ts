@@ -1,4 +1,5 @@
 import {
+  AppointmentStatus,
   CallEscalationStatus,
   CallSessionStatus,
   CallRoutingOutcome,
@@ -102,6 +103,11 @@ interface CreateCallCenterAgentInput {
   email: string;
   phone: string;
   password?: string;
+}
+
+interface DeleteSalonInput {
+  confirmPermanentDelete: boolean;
+  confirmationName: string;
 }
 
 const normalizeOptionalPhone = (
@@ -373,6 +379,345 @@ export const getSalonDetailForAdmin = async (salonId: string) => {
     recentEscalations,
     recentCallFailures
   };
+};
+
+const collectSalonDeleteCounts = async (
+  salonId: string,
+  executor: Prisma.TransactionClient | typeof prisma = prisma
+) => {
+  const owners = await executor.user.count({
+    where: { role: Role.SALON_OWNER, ownedSalon: { id: salonId } }
+  });
+  const staffUsers = await executor.user.count({
+    where: {
+      role: Role.STAFF,
+      OR: [{ salonId }, { staffProfile: { salonId } }]
+    }
+  });
+  const staff = await executor.staff.count({ where: { salonId } });
+  const services = await executor.service.count({ where: { salonId } });
+  const customers = await executor.customer.count({ where: { salonId } });
+  const appointments = await executor.appointment.count({ where: { salonId } });
+  const callSessions = await executor.callSession.count({ where: { salonId } });
+  const bookingAttempts = await executor.bookingAttempt.count({ where: { salonId } });
+  const aiInteractions = await executor.aiInteractionLog.count({ where: { salonId } });
+  const alerts = await executor.alert.count({ where: { salonId } });
+  const integrations = await executor.integrationConfig.count({ where: { salonId } });
+
+  return {
+    owners,
+    staffUsers,
+    staff,
+    services,
+    customers,
+    appointments,
+    callSessions,
+    bookingAttempts,
+    aiInteractions,
+    alerts,
+    integrations
+  };
+};
+
+const collectSalonConfiguredProviders = async (
+  salonId: string,
+  executor: Prisma.TransactionClient | typeof prisma = prisma
+): Promise<string[]> => {
+  const integrations = await executor.integrationConfig.findMany({
+    where: {
+      salonId,
+      isActive: true
+    },
+    select: {
+      provider: true
+    },
+    distinct: ["provider"]
+  });
+  const aiReceptionSetup = await executor.salonAiReceptionSetup.findUnique({
+    where: {
+      salonId
+    },
+    select: {
+      provider: true
+    }
+  });
+  return Array.from(
+    new Set([
+      ...integrations.map((item) => item.provider),
+      ...(aiReceptionSetup?.provider ? [aiReceptionSetup.provider] : [])
+    ])
+  );
+};
+
+const buildExternalCleanupWarnings = (providers: string[]): string[] => {
+  return providers.map((provider) => {
+    if (provider === ExternalProvider.AMAZON_CONNECT) {
+      return "AMAZON_CONNECT forwarding, phone number, Lex/Connect routing, and queue resources require manual external cleanup.";
+    }
+    if (provider === ExternalProvider.CALLRAIL) {
+      return "CALLRAIL tracking numbers and call flows require manual external cleanup.";
+    }
+    return `${provider} external resources require manual cleanup if configured outside the database.`;
+  });
+};
+
+export const getSalonDeletePreviewForAdmin = async (salonId: string) => {
+  const salon = await prisma.salon.findUnique({
+    where: { id: salonId },
+    select: {
+      id: true,
+      name: true,
+      status: true
+    }
+  });
+  if (!salon) {
+    throw new AppError("Salon not found.", 404, "SALON_NOT_FOUND");
+  }
+
+  const [counts, activeCallCount, inProgressAppointmentCount, configuredProviders] =
+    await Promise.all([
+      collectSalonDeleteCounts(salonId),
+      prisma.callSession.count({
+        where: {
+          salonId,
+          status: CallSessionStatus.IN_PROGRESS
+        }
+      }),
+      prisma.appointment.count({
+        where: {
+          salonId,
+          status: AppointmentStatus.IN_PROGRESS
+        }
+      }),
+      collectSalonConfiguredProviders(salonId)
+    ]);
+  const warnings = [
+    "Permanent salon deletion removes salon data and owner/staff logins.",
+    ...buildExternalCleanupWarnings(configuredProviders)
+  ];
+  if (activeCallCount > 0) {
+    warnings.push("Active calls must finish before deletion.");
+  }
+  if (inProgressAppointmentCount > 0) {
+    warnings.push("In-progress appointments must finish or be stopped before deletion.");
+  }
+
+  return {
+    salonId: salon.id,
+    salonName: salon.name,
+    status: salon.status,
+    counts,
+    activeCallCount,
+    inProgressAppointmentCount,
+    configuredProviders,
+    warnings
+  };
+};
+
+const assertSalonDeleteUsersAreSafe = (input: {
+  salonId: string;
+  owner: {
+    id: string;
+    role: Role;
+    salonId: string | null;
+  };
+  staffUsers: Array<{
+    id: string;
+    role: Role;
+    salonId: string | null;
+    staffProfile: {
+      salonId: string;
+    } | null;
+  }>;
+  unexpectedSalonUsers: Array<{
+    id: string;
+    role: Role;
+  }>;
+}) => {
+  if (input.owner.role !== Role.SALON_OWNER) {
+    throw new AppError("Salon owner account has an unexpected role.", 409, "SALON_DELETE_UNSAFE_OWNER_ROLE");
+  }
+  if (input.unexpectedSalonUsers.length) {
+    throw new AppError(
+      "Salon has unexpected non-owner/non-staff user links.",
+      409,
+      "SALON_DELETE_UNSAFE_USER_LINKS"
+    );
+  }
+  const unsafeStaffUser = input.staffUsers.find(
+    (user) =>
+      user.role !== Role.STAFF ||
+      (user.salonId !== null && user.salonId !== input.salonId) ||
+      (user.staffProfile !== null && user.staffProfile.salonId !== input.salonId)
+  );
+  if (unsafeStaffUser) {
+    throw new AppError(
+      "Salon staff account has an unsafe cross-salon link.",
+      409,
+      "SALON_DELETE_UNSAFE_STAFF_LINK"
+    );
+  }
+};
+
+export const permanentlyDeleteSalonForAdmin = async (
+  salonId: string,
+  actorUserId: string,
+  input: DeleteSalonInput
+) => {
+  if (!input.confirmPermanentDelete) {
+    throw new AppError("Permanent delete confirmation is required.", 400, "CONFIRMATION_REQUIRED");
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const salon = await tx.salon.findUnique({
+      where: { id: salonId },
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        owner: {
+          select: {
+            id: true,
+            role: true,
+            salonId: true
+          }
+        }
+      }
+    });
+    if (!salon) {
+      throw new AppError("Salon not found.", 404, "SALON_NOT_FOUND");
+    }
+    if (input.confirmationName.trim() !== salon.name) {
+      throw new AppError("Salon name confirmation does not match.", 400, "SALON_CONFIRMATION_MISMATCH");
+    }
+
+    const activeCallCount = await tx.callSession.count({
+      where: {
+        salonId,
+        status: CallSessionStatus.IN_PROGRESS
+      }
+    });
+    const inProgressAppointmentCount = await tx.appointment.count({
+      where: {
+        salonId,
+        status: AppointmentStatus.IN_PROGRESS
+      }
+    });
+    const counts = await collectSalonDeleteCounts(salonId, tx);
+    const configuredProviders = await collectSalonConfiguredProviders(salonId, tx);
+    if (activeCallCount > 0) {
+      throw new AppError("Salon has active calls.", 409, "SALON_HAS_ACTIVE_CALLS");
+    }
+    if (inProgressAppointmentCount > 0) {
+      throw new AppError(
+        "Salon has in-progress appointments.",
+        409,
+        "SALON_HAS_IN_PROGRESS_APPOINTMENTS"
+      );
+    }
+
+    const staffUsers = await tx.user.findMany({
+      where: {
+        role: Role.STAFF,
+        OR: [{ salonId }, { staffProfile: { salonId } }]
+      },
+      select: {
+        id: true,
+        role: true,
+        salonId: true,
+        staffProfile: {
+          select: {
+            salonId: true
+          }
+        }
+      }
+    });
+    const unexpectedSalonUsers = await tx.user.findMany({
+      where: {
+        salonId,
+        role: {
+          notIn: [Role.SALON_OWNER, Role.STAFF]
+        }
+      },
+      select: {
+        id: true,
+        role: true
+      }
+    });
+    assertSalonDeleteUsersAreSafe({
+      salonId,
+      owner: salon.owner,
+      staffUsers,
+      unexpectedSalonUsers
+    });
+    const userIdsToDelete = Array.from(
+      new Set([salon.owner.id, ...staffUsers.map((user) => user.id)])
+    );
+
+    await tx.callSession.deleteMany({
+      where: {
+        salonId
+      }
+    });
+    await tx.auditLog.deleteMany({
+      where: {
+        salonId
+      }
+    });
+    await tx.salon.delete({
+      where: {
+        id: salonId
+      }
+    });
+
+    if (userIdsToDelete.length) {
+      await tx.refreshToken.deleteMany({
+        where: {
+          userId: {
+            in: userIdsToDelete
+          }
+        }
+      });
+      await tx.user.deleteMany({
+        where: {
+          id: {
+            in: userIdsToDelete
+          },
+          role: {
+            in: [Role.SALON_OWNER, Role.STAFF]
+          }
+        }
+      });
+    }
+
+    const externalCleanupRequired = buildExternalCleanupWarnings(configuredProviders);
+    const deletedAt = new Date();
+    await createAuditLog(
+      {
+        salonId: null,
+        actorUserId,
+        action: "SALON_PERMANENTLY_DELETED",
+        entityType: "Salon",
+        entityId: salonId,
+        metadata: {
+          counts,
+          configuredProviders,
+          deletedUserCount: userIdsToDelete.length,
+          externalCleanupRequired
+        }
+      },
+      tx
+    );
+
+    return {
+      salonId,
+      deleted: true,
+      deletedAt: deletedAt.toISOString(),
+      deletedUserCount: userIdsToDelete.length,
+      counts,
+      externalCleanupRequired
+    };
+  });
 };
 
 export const getOwnerDetailForAdmin = async (ownerId: string) => {

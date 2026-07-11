@@ -10,6 +10,7 @@ import {
   createCustomer,
   deleteCustomer,
   getCustomerAppointmentHistory,
+  getCustomerDeletePreview,
   getCustomerDetail,
   searchCustomers,
   updateCustomer
@@ -73,6 +74,18 @@ customersRouter.get(
     const result = await searchCustomers(req.auth!.salonId!, payload);
     return sendSuccess(res, {
       data: result
+    });
+  })
+);
+
+customersRouter.get(
+  "/:id/delete-preview",
+  validate(customerIdSchema, "params"),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params as z.infer<typeof customerIdSchema>;
+    const preview = await getCustomerDeletePreview(req.auth!.salonId!, id);
+    return sendSuccess(res, {
+      data: preview
     });
   })
 );

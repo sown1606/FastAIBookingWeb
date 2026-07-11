@@ -888,9 +888,9 @@ export const AppointmentsPage = () => {
   }
 
   return (
-    <div className="stack">
+    <div className={isOwner ? "stack appointments-page owner-appointments-page" : "stack appointments-page"}>
       <FormDialog />
-      <section className="card">
+      <section className="card appointments-toolbar-card">
         <div className="section-header">
           <div>
             <h2>{isOwner ? t("appointments.titleOwner") : t("appointments.titleStaff")}</h2>
@@ -970,7 +970,10 @@ export const AppointmentsPage = () => {
       </section>
 
       {isOwner ? (
-        <section id="create-appointment" className={isBasicMode ? "card basic-secondary-section" : "card"}>
+        <section
+          id="create-appointment"
+          className={isBasicMode ? "card basic-secondary-section appointments-create-card" : "card appointments-create-card"}
+        >
           <h2>{t("appointments.createTitle")}</h2>
           <form className="form-grid two-columns" onSubmit={createAppointment}>
             <label className="field">
@@ -1040,7 +1043,7 @@ export const AppointmentsPage = () => {
       ) : null}
 
       {selectedAppointment || detailLoading ? (
-        <section className="card appointment-detail-card">
+        <section className="card appointment-detail-card appointments-detail-card">
           <div className="section-header">
             <div>
               <p className="eyebrow">Appointment detail</p>
@@ -1101,7 +1104,7 @@ export const AppointmentsPage = () => {
       ) : null}
 
       {isOwner ? (
-        <section className={isBasicMode ? "card basic-primary-section" : "card"}>
+        <section className={isBasicMode ? "card basic-primary-section appointments-schedule-card" : "card appointments-schedule-card"}>
           <div className="section-header">
             <div>
               <h2>{t("appointments.scheduleBoard")}</h2>
@@ -1253,7 +1256,7 @@ export const AppointmentsPage = () => {
       ) : null}
 
       {isOwner ? (
-        <section className="card">
+        <section className="card appointments-upcoming-card">
           <div className="section-header">
             <div>
               <h2>{t("appointments.upcomingTitle")}</h2>
@@ -1277,7 +1280,7 @@ export const AppointmentsPage = () => {
       ) : null}
 
       {isOwner ? (
-        <section className="card">
+        <section className="card appointments-archive-card">
           <div className="section-header">
             <div>
               <h2>{t("appointments.archiveTitle")}</h2>
