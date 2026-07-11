@@ -570,6 +570,14 @@ const sendAppointmentPushNotifications = async (
   }
 };
 
+export const sendCanceledAppointmentNotifications = async (
+  appointment: Awaited<ReturnType<typeof getAppointmentDetail>>,
+  affectedStaffIds: string[] = [appointment.staffId]
+): Promise<void> => {
+  await sendAppointmentCustomerNotifications(appointment, "canceled");
+  await sendAppointmentPushNotifications(appointment, "canceled", affectedStaffIds);
+};
+
 export const createAppointment = async (
   salonId: string,
   actorUserId: string,
@@ -871,6 +879,110 @@ export const updateAppointment = async (
   return updatedAppointment;
 };
 
+export const cancelAppointmentInTransaction = async (
+  tx: Prisma.TransactionClient,
+  input: {
+    salonId: string;
+    appointmentId: string;
+    actorUserId: string;
+    reason?: string;
+    existing?: {
+      id: string;
+      staffId: string;
+      status: AppointmentStatus;
+    };
+  }
+) => {
+  const existing =
+    input.existing ??
+    (await tx.appointment.findFirst({
+      where: {
+        id: input.appointmentId,
+        salonId: input.salonId
+      },
+      select: {
+        id: true,
+        staffId: true,
+        status: true
+      }
+    }));
+  if (!existing) {
+    throw new AppError("Appointment not found.", 404, "APPOINTMENT_NOT_FOUND");
+  }
+  if (existing.status === AppointmentStatus.CANCELED) {
+    return tx.appointment.findUniqueOrThrow({
+      where: { id: existing.id },
+      include: buildAppointmentInclude()
+    });
+  }
+
+  const updated = await tx.appointment.update({
+    where: { id: existing.id },
+    data: {
+      status: AppointmentStatus.CANCELED,
+      canceledReason: input.reason ?? "Canceled by user"
+    }
+  });
+
+  await tx.staff.updateMany({
+    where: {
+      id: existing.staffId,
+      activeAppointmentId: existing.id
+    },
+    data: {
+      currentWorkStatus: StaffWorkStatus.AVAILABLE,
+      activeAppointmentId: null
+    }
+  });
+
+  await tx.staffWorkSession.updateMany({
+    where: {
+      appointmentId: existing.id,
+      status: StaffWorkStatus.IN_PROGRESS
+    },
+    data: {
+      status: StaffWorkStatus.DONE,
+      endedAt: new Date()
+    }
+  });
+
+  await tx.staffReminder.deleteMany({
+    where: {
+      appointmentId: existing.id,
+      deliveredAt: null
+    }
+  });
+
+  await tx.appointmentStatusHistory.create({
+    data: {
+      appointmentId: updated.id,
+      previousStatus: existing.status,
+      newStatus: AppointmentStatus.CANCELED,
+      reason: input.reason ?? "Canceled",
+      changedByUserId: input.actorUserId
+    }
+  });
+
+  await createAuditLog(
+    {
+      salonId: input.salonId,
+      actorUserId: input.actorUserId,
+      action: "APPOINTMENT_CANCELED",
+      entityType: "Appointment",
+      entityId: updated.id,
+      metadata: {
+        reason: input.reason
+      }
+    },
+    tx
+  );
+
+  return tx.appointment.findUniqueOrThrow({
+    where: { id: updated.id },
+    include: buildAppointmentInclude()
+  });
+};
+
 export const cancelAppointment = async (
   salonId: string,
   appointmentId: string,
@@ -891,75 +1003,16 @@ export const cancelAppointment = async (
   }
 
   const canceledAppointment = await prisma.$transaction(async (tx) => {
-    const updated = await tx.appointment.update({
-      where: { id: existing.id },
-      data: {
-        status: AppointmentStatus.CANCELED,
-        canceledReason: reason ?? "Canceled by user"
-      }
-    });
-
-    await tx.staff.updateMany({
-      where: {
-        id: existing.staffId,
-        activeAppointmentId: existing.id
-      },
-      data: {
-        currentWorkStatus: StaffWorkStatus.AVAILABLE,
-        activeAppointmentId: null
-      }
-    });
-
-    await tx.staffWorkSession.updateMany({
-      where: {
-        appointmentId: existing.id,
-        status: StaffWorkStatus.IN_PROGRESS
-      },
-      data: {
-        status: StaffWorkStatus.DONE,
-        endedAt: new Date()
-      }
-    });
-
-    await tx.staffReminder.deleteMany({
-      where: {
-        appointmentId: existing.id,
-        deliveredAt: null
-      }
-    });
-
-    await tx.appointmentStatusHistory.create({
-      data: {
-        appointmentId: updated.id,
-        previousStatus: existing.status,
-        newStatus: AppointmentStatus.CANCELED,
-        reason: reason ?? "Canceled",
-        changedByUserId: actorUserId
-      }
-    });
-
-    await createAuditLog(
-      {
-        salonId,
-        actorUserId,
-        action: "APPOINTMENT_CANCELED",
-        entityType: "Appointment",
-        entityId: updated.id,
-        metadata: {
-          reason
-        }
-      },
-      tx
-    );
-
-    return tx.appointment.findUniqueOrThrow({
-      where: { id: updated.id },
-      include: buildAppointmentInclude()
+    return cancelAppointmentInTransaction(tx, {
+      salonId,
+      appointmentId,
+      actorUserId,
+      reason,
+      existing
     });
   });
 
-  await sendAppointmentCustomerNotifications(canceledAppointment, "canceled");
-  await sendAppointmentPushNotifications(canceledAppointment, "canceled", [existing.staffId]);
+  await sendCanceledAppointmentNotifications(canceledAppointment, [existing.staffId]);
   return canceledAppointment;
 };
 

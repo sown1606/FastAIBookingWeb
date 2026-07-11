@@ -485,12 +485,12 @@ const setupPrismaMock = () => {
 
   patch(prisma.appointment as any, "findFirst", async (args: any) => {
     if (args?.where?.id) {
-      return (
+      const appointment =
         state.appointments.find(
           (appointment) =>
             appointment.id === args.where.id && appointment.salonId === args.where.salonId
-        ) ?? null
-      );
+        ) ?? null;
+      return appointment && args.include ? hydrateAppointment(appointment) : appointment;
     }
     if (args?.where?.staffId) {
       state.validationStaffIds.push(args.where.staffId);
@@ -2893,6 +2893,299 @@ test("Kevin trailing okay does not affirm stale Amy state", async () => {
   assert.doesNotMatch(result.body.data.lexResponse.message, /with Amy/i);
 });
 
+test("final confirmation uses trusted 11 AM instead of stale initial 10 PM transcript", async () => {
+  state.businessHours = state.businessHours.map((hour) => ({
+    ...hour,
+    openTime: "09:00",
+    closeTime: "18:00"
+  }));
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+
+  const confirmation = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Full Set",
+      requestedDate,
+      requestedTime: "11:00",
+      staffPreference: "Amy",
+      confirmationState: undefined,
+      amazonConnectContactId: "connect-stale-10pm-trusted-11am",
+      currentTurnTranscript: "eleven a m",
+      transcript: "eleven a m",
+      attributes: {
+        initialBookingUtterance: "I want to book a full set tomorrow at ten p m",
+        serviceName: "Full Set",
+        confirmedServiceName: "Full Set",
+        requestedDate,
+        requestedTime: "11:00",
+        staffPreference: "Amy",
+        confirmedStaffName: "Amy",
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266"
+      }
+    })
+  );
+  assert.equal(confirmation.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Full Set",
+      requestedDate,
+      requestedTime: "11:00",
+      staffPreference: "Amy",
+      confirmationState: "Confirmed",
+      amazonConnectContactId: "connect-stale-10pm-trusted-11am",
+      currentTurnTranscript: "yeah that's correct",
+      transcript: "I want to book a full set tomorrow at ten p m. no change it to eleven a m. yeah that's correct",
+      attributes: {
+        ...confirmation.body.data.lexResponse.sessionAttributes,
+        initialBookingUtterance: "I want to book a full set tomorrow at ten p m"
+      }
+    })
+  );
+  assert.equal(result.response.status, 201);
+  assert.equal(result.body.data.outcome, "BOOKED");
+  assert.equal(state.appointments.length, 1);
+  const localStart = DateTime.fromJSDate(state.appointments[0].startTime, { zone: "utc" }).setZone(
+    "America/New_York"
+  );
+  assert.equal(localStart.hour, 11);
+  assert.notEqual(localStart.hour, 22);
+});
+
+test("10 AM remains valid inside 9 to 6 business hours", async () => {
+  state.businessHours = state.businessHours.map((hour) => ({
+    ...hour,
+    openTime: "09:00",
+    closeTime: "18:00"
+  }));
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Manicure",
+      requestedDate,
+      requestedTime: "10 AM",
+      staffPreference: "Amy",
+      confirmationState: "Confirmed",
+      amazonConnectContactId: "connect-control-10am",
+      currentTurnTranscript: "yes"
+    })
+  );
+
+  assert.equal(result.response.status, 201);
+  assert.equal(result.body.data.outcome, "BOOKED");
+  const localStart = DateTime.fromJSDate(state.appointments[0].startTime, { zone: "utc" }).setZone(
+    "America/New_York"
+  );
+  assert.equal(localStart.hour, 10);
+});
+
+test("bare okay at final confirmation reprompts and does not create appointment", async () => {
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Full Set",
+      requestedDate,
+      requestedTime: "3 PM",
+      staffPreference: "Amy",
+      confirmationState: "Confirmed",
+      amazonConnectContactId: "connect-final-bare-okay",
+      currentTurnTranscript: "okay",
+      transcript: "okay",
+      attributes: {
+        lastAskedSlot: "bookingConfirmation",
+        awaitingFinalBookingConfirmation: "true",
+        bookingConfirmationAsked: "true",
+        serviceName: "Full Set",
+        requestedDate,
+        requestedTime: "3 PM",
+        staffPreference: "Amy",
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(state.appointments.length, 0);
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.match(result.body.data.lexResponse.message, /Please say yes to confirm/i);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.conversationComplete, "false");
+});
+
+test("staff change before final confirmation requires a fresh confirmation before booking", async () => {
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  const changeResult = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Full Set",
+      requestedDate,
+      requestedTime: "3 PM",
+      staffPreference: "Trang",
+      confirmationState: "None",
+      amazonConnectContactId: "connect-final-change-staff",
+      currentTurnTranscript: "with Amy instead",
+      transcript: "with Amy instead",
+      attributes: {
+        lastAskedSlot: "bookingConfirmation",
+        awaitingFinalBookingConfirmation: "true",
+        bookingConfirmationAsked: "true",
+        serviceName: "Full Set",
+        requestedDate,
+        requestedTime: "3 PM",
+        staffPreference: "Trang",
+        staffId: ids.trang,
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266"
+      }
+    })
+  );
+
+  assert.equal(changeResult.response.status, 200);
+  assert.equal(changeResult.body.data.outcome, "MISSING_INFO");
+  assert.equal(state.appointments.length, 0);
+  assert.equal(changeResult.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(changeResult.body.data.lexResponse.sessionAttributes.staffPreference, "Amy");
+  assert.equal(changeResult.body.data.lexResponse.sessionAttributes.staffId, ids.amy);
+  assert.equal(changeResult.body.data.lexResponse.sessionAttributes.conversationComplete, "false");
+
+  const confirmResult = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Full Set",
+      requestedDate,
+      requestedTime: "3 PM",
+      staffPreference: "Amy",
+      staffId: ids.amy,
+      confirmationState: "Confirmed",
+      amazonConnectContactId: "connect-final-change-staff",
+      currentTurnTranscript: "yes, that's correct",
+      transcript: "yes, that's correct",
+      attributes: changeResult.body.data.lexResponse.sessionAttributes
+    })
+  );
+
+  assert.equal(confirmResult.response.status, 201);
+  assert.equal(confirmResult.body.data.outcome, "BOOKED");
+  assert.equal(state.appointments.length, 1);
+  assert.equal(state.appointments[0].staffId, ids.amy);
+});
+
+test("change the person before final confirmation elicits staff without goodbye", async () => {
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Full Set",
+      requestedDate,
+      requestedTime: "3 PM",
+      staffPreference: undefined,
+      confirmationState: "None",
+      amazonConnectContactId: "connect-final-change-person",
+      currentTurnTranscript: "change the person",
+      transcript: "change the person",
+      attributes: {
+        lastAskedSlot: "bookingConfirmation",
+        awaitingFinalBookingConfirmation: "true",
+        bookingConfirmationAsked: "true",
+        serviceName: "Full Set",
+        requestedDate,
+        requestedTime: "3 PM",
+        staffPreference: "Amy",
+        staffId: ids.amy,
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(state.appointments.length, 0);
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitSlot");
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "staffPreference");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.conversationComplete, "false");
+  assert.doesNotMatch(result.body.data.lexResponse.message, /Thank you for calling/i);
+});
+
+test("reschedule confirmation updates the existing appointment without creating a duplicate", async () => {
+  const originalStart = DateTime.now()
+    .setZone("America/New_York")
+    .plus({ days: 1 })
+    .set({ hour: 15, minute: 0, second: 0, millisecond: 0 });
+  state.appointments.push({
+    id: "upcoming-reschedule-one",
+    salonId: ids.salonA,
+    customerId: ids.kietCustomer,
+    staffId: ids.trang,
+    serviceId: ids.pedicure,
+    startTime: originalStart.toUTC().toJSDate(),
+    endTime: originalStart.plus({ minutes: 45 }).toUTC().toJSDate(),
+    durationMinutes: 45,
+    status: AppointmentStatus.SCHEDULED,
+    source: AppointmentSource.AI
+  });
+
+  const first = await postInternalAppointment(
+    bookingPayload({
+      intentName: "RescheduleAppointmentIntent",
+      amazonConnectContactId: "connect-reschedule-update",
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      confirmationState: undefined,
+      transcript: "I want to reschedule my appointment",
+      currentTurnTranscript: "I want to reschedule my appointment"
+    })
+  );
+  assert.equal(first.body.data.lexResponse.dialogAction.type, "ElicitIntent");
+  assert.equal(first.body.data.lexResponse.sessionAttributes.rescheduleFlowActive, "true");
+
+  const newDate = originalStart.plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  const confirm = await postInternalAppointment(
+    bookingPayload({
+      intentName: "RescheduleAppointmentIntent",
+      amazonConnectContactId: "connect-reschedule-update",
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: "4 PM",
+      confirmationState: undefined,
+      transcript: "move it to 4 PM",
+      currentTurnTranscript: "move it to 4 PM",
+      attributes: {
+        ...first.body.data.lexResponse.sessionAttributes,
+        rescheduleRequestedDate: newDate
+      }
+    })
+  );
+  assert.equal(confirm.body.data.outcome, "MISSING_INFO");
+  assert.equal(confirm.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(state.appointments.length, 1);
+
+  const done = await postInternalAppointment(
+    bookingPayload({
+      intentName: "RescheduleAppointmentIntent",
+      amazonConnectContactId: "connect-reschedule-update",
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      confirmationState: "Confirmed",
+      transcript: "yes, that's correct",
+      currentTurnTranscript: "yes, that's correct",
+      attributes: confirm.body.data.lexResponse.sessionAttributes
+    })
+  );
+
+  assert.equal(done.response.status, 200);
+  assert.equal(done.body.data.outcome, "RESCHEDULED");
+  assert.equal(state.appointments.length, 1);
+  assert.equal(state.appointments[0].id, "upcoming-reschedule-one");
+  const localStart = DateTime.fromJSDate(state.appointments[0].startTime, { zone: "utc" }).setZone(
+    "America/New_York"
+  );
+  assert.equal(localStart.toFormat("yyyy-MM-dd"), newDate);
+  assert.equal(localStart.hour, 16);
+  assert.equal(done.body.data.lexResponse.sessionAttributes.conversationComplete, "true");
+});
+
 test("successful booking creates appointment, booking attempt, call session, transcript, and AI log", async () => {
   const result = await postInternalAppointment(
     bookingPayload({
@@ -3191,10 +3484,20 @@ test("cancel and reschedule intents use upcoming appointment context without tra
     assert.equal(result.body.data.lexResponse.sessionAttributes.customerName, "Kiet");
     assert.equal(result.body.data.lexResponse.sessionAttributes.transferToQueue, "false");
     assert.equal(result.body.data.lexResponse.sessionAttributes.forceHumanEscalation, "false");
-    assert.equal(
-      result.body.data.lexResponse.sessionAttributes.awaitingExistingAppointmentHumanConfirmation,
-      "true"
-    );
+    if (intentName === "CancelAppointmentIntent") {
+      assert.equal(
+        result.body.data.lexResponse.sessionAttributes.awaitingExistingAppointmentHumanConfirmation,
+        "true"
+      );
+    } else {
+      assert.equal(result.body.data.lexResponse.sessionAttributes.rescheduleFlowActive, "true");
+      assert.equal(result.body.data.lexResponse.sessionAttributes.existingAppointmentId, `upcoming-${intentName}`);
+      assert.equal(
+        result.body.data.lexResponse.sessionAttributes.awaitingExistingAppointmentHumanConfirmation,
+        undefined
+      );
+      assert.match(result.body.data.lexResponse.message, /What day, time, or technician would you like to change it to/i);
+    }
     assert.equal(state.escalations.length, 0);
   }
 });

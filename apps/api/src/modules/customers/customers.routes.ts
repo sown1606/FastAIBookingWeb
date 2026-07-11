@@ -123,7 +123,7 @@ customersRouter.delete(
     const { id } = req.params as z.infer<typeof customerIdSchema>;
     const result = await deleteCustomer(req.auth!.salonId!, id, req.auth!.userId);
     return sendSuccess(res, {
-      message: result.mode === "archive" ? "Customer archived." : "Customer deleted.",
+      message: "Customer deleted.",
       data: result
     });
   })

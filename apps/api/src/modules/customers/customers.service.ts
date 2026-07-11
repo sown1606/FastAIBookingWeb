@@ -3,7 +3,11 @@ import { prisma } from "../../db/prisma";
 import { createAuditLog } from "../../lib/audit";
 import { AppError } from "../../lib/errors";
 import { requireCustomerPhone } from "../../utils/phone";
-import { toOwnerAppointmentResponse } from "../appointments/appointments.service";
+import {
+  cancelAppointmentInTransaction,
+  sendCanceledAppointmentNotifications,
+  toOwnerAppointmentResponse
+} from "../appointments/appointments.service";
 
 interface CreateCustomerInput {
   firstName: string;
@@ -32,6 +36,7 @@ const ACTIVE_APPOINTMENT_STATUSES = [
   AppointmentStatus.CONFIRMED,
   AppointmentStatus.IN_PROGRESS
 ];
+const CUSTOMER_PRIVACY_DELETE_REASON = "Customer data deleted by salon owner";
 
 const normalizeNamePart = (value: string | null | undefined) => value?.trim() ?? "";
 
@@ -195,9 +200,7 @@ export const deleteCustomer = async (salonId: string, customerId: string, actorU
     },
     select: {
       id: true,
-      firstName: true,
-      lastName: true,
-      phone: true
+      salonId: true
     }
   });
 
@@ -205,89 +208,134 @@ export const deleteCustomer = async (salonId: string, customerId: string, actorU
     throw new AppError("Customer not found.", 404, "CUSTOMER_NOT_FOUND");
   }
 
-  const activeFutureAppointment = await prisma.appointment.findFirst({
-    where: {
-      salonId,
-      customerId,
-      startTime: {
-        gte: new Date()
-      },
-      status: {
-        in: ACTIVE_APPOINTMENT_STATUSES
+  const [appointmentCount, activeAppointments] = await Promise.all([
+    prisma.appointment.count({
+      where: {
+        salonId,
+        customerId
       }
-    },
-    select: {
-      id: true,
-      startTime: true
-    }
-  });
-
-  if (activeFutureAppointment) {
-    throw new AppError(
-      "Customer has active future appointments. Cancel or reassign those appointments before deleting this customer.",
-      409,
-      "CUSTOMER_HAS_ACTIVE_APPOINTMENTS"
-    );
-  }
-
-  const appointmentCount = await prisma.appointment.count({
-    where: {
-      salonId,
-      customerId
-    }
-  });
+    }),
+    prisma.appointment.findMany({
+      where: {
+        salonId,
+        customerId,
+        status: {
+          in: ACTIVE_APPOINTMENT_STATUSES
+        }
+      },
+      select: {
+        id: true,
+        staffId: true,
+        status: true
+      }
+    })
+  ]);
 
   if (appointmentCount === 0) {
-    await prisma.customer.delete({
-      where: {
-        id: existing.id
-      }
+    const result = await prisma.$transaction(async (tx) => {
+      await tx.customer.delete({
+        where: {
+          id: existing.id
+        }
+      });
+      await createAuditLog(
+        {
+          salonId,
+          actorUserId,
+          action: "CUSTOMER_DELETED",
+          entityType: "Customer",
+          entityId: existing.id,
+          metadata: {
+            mode: "hard_delete",
+            customerId: existing.id,
+            appointmentCount: 0,
+            canceledAppointmentCount: 0
+          }
+        },
+        tx
+      );
+      return {
+        customerId: existing.id,
+        mode: "hard_delete" as const,
+        appointmentCount: 0,
+        canceledAppointmentCount: 0
+      };
     });
-    await createAuditLog({
-      salonId,
-      actorUserId,
-      action: "CUSTOMER_DELETED",
-      entityType: "Customer",
-      entityId: existing.id,
-      metadata: {
-        mode: "hard_delete",
-        phone: existing.phone
-      }
-    });
-    return {
-      customerId: existing.id,
-      mode: "hard_delete" as const,
-      appointmentCount
-    };
+    return result;
   }
 
   const deletedAt = new Date();
-  await prisma.customer.update({
-    where: {
-      id: existing.id
-    },
-    data: {
-      deletedAt
+  const privacyPhone = `deleted-customer-${existing.id}`;
+  const result = await prisma.$transaction(async (tx) => {
+    const canceledAppointments = [];
+    for (const appointment of activeAppointments) {
+      canceledAppointments.push(
+        await cancelAppointmentInTransaction(tx, {
+          salonId,
+          appointmentId: appointment.id,
+          actorUserId,
+          reason: CUSTOMER_PRIVACY_DELETE_REASON,
+          existing: appointment
+        })
+      );
     }
-  });
-  await createAuditLog({
-    salonId,
-    actorUserId,
-    action: "CUSTOMER_ARCHIVED",
-    entityType: "Customer",
-    entityId: existing.id,
-    metadata: {
-      mode: "archive",
+
+    await tx.customer.update({
+      where: {
+        id: existing.id
+      },
+      data: {
+        firstName: "Deleted",
+        lastName: "Customer",
+        email: null,
+        phone: privacyPhone,
+        notes: null,
+        deletedAt
+      }
+    });
+
+    await createAuditLog(
+      {
+        salonId,
+        actorUserId,
+        action: "CUSTOMER_PRIVACY_DELETED",
+        entityType: "Customer",
+        entityId: existing.id,
+        metadata: {
+          mode: "privacy_delete",
+          customerId: existing.id,
+          appointmentCount,
+          canceledAppointmentCount: canceledAppointments.length
+        }
+      },
+      tx
+    );
+
+    return {
+      customerId: existing.id,
+      mode: "privacy_delete" as const,
       appointmentCount,
-      phone: existing.phone
-    }
+      canceledAppointmentCount: canceledAppointments.length,
+      deletedAt,
+      canceledAppointments: canceledAppointments.map((appointment) => ({
+        appointment,
+        affectedStaffIds: [appointment.staffId]
+      }))
+    };
   });
 
+  await Promise.all(
+    result.canceledAppointments.map((item) =>
+      sendCanceledAppointmentNotifications(item.appointment, item.affectedStaffIds)
+    )
+  );
+
   return {
-    customerId: existing.id,
-    mode: "archive" as const,
-    appointmentCount,
-    deletedAt
+    customerId: result.customerId,
+    mode: result.mode,
+    appointmentCount: result.appointmentCount,
+    canceledAppointmentCount: result.canceledAppointmentCount,
+    deletedAt: result.deletedAt
   };
 };
 
@@ -295,7 +343,7 @@ export const getCustomerAppointmentHistory = async (salonId: string, customerId:
   const customer = await prisma.customer.findFirst({
     where: {
       id: customerId,
-      salonId
+      salonId,
     }
   });
   if (!customer) {

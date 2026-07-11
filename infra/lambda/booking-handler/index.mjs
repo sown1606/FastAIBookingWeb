@@ -1101,6 +1101,9 @@ function buildSlotDecisionDebug(event, finalAttributes = {}) {
   const timeZone = getAttribute(event, attributeNames.timezone) || DEFAULT_SALON_TIMEZONE;
   const currentTurnTranscript = getCurrentTurnTranscript(event);
   const dtmfDiagnostics = getCurrentTurnDtmfDiagnostics(event);
+  const currentRecoveryTranscript = [event.inputTranscript]
+    .filter((value) => value && !readDtmfDigit(value))
+    .join(" ");
   const recoveryTranscript = [
     event.inputTranscript,
     getAttribute(event, attributeNames.transcript),
@@ -1108,6 +1111,7 @@ function buildSlotDecisionDebug(event, finalAttributes = {}) {
   ]
     .filter((value, index, values) => value && values.indexOf(value) === index)
     .join(" ");
+  const currentRecovered = extractBookingDetailsFromText(currentRecoveryTranscript, timeZone);
   const recovered = extractBookingDetailsFromText(recoveryTranscript, timeZone);
   const decisions = {};
   for (const fieldName of [
@@ -1125,14 +1129,15 @@ function buildSlotDecisionDebug(event, finalAttributes = {}) {
       getSessionAttribute(previous, names) ||
       (fieldName === "serviceName" ? previous.confirmedServiceName : "") ||
       (fieldName === "staffPreference" ? previous.confirmedStaffName : "");
-    const recoveredValue = recovered[fieldName] || "";
+    const currentRecoveredValue = currentRecovered[fieldName] || "";
+    const recoveredValue = currentRecoveredValue || recovered[fieldName] || "";
     const finalValue =
       getSessionAttribute(finalAttributes, names) ||
       (fieldName === "serviceName" ? finalAttributes.confirmedServiceName : "") ||
       (fieldName === "staffPreference" ? finalAttributes.confirmedStaffName : "");
     const currentGrounded = slotValueIsGroundedInCurrentTranscript(
       fieldName,
-      lexSlot || recoveredValue || finalValue,
+      lexSlot || currentRecoveredValue || finalValue,
       currentTurnTranscript,
       timeZone
     );
@@ -1140,14 +1145,21 @@ function buildSlotDecisionDebug(event, finalAttributes = {}) {
       dtmfDiagnostics.isBareDigitUtterance || dtmfDiagnostics.isMultiDigitOrDigitSequence;
     let decision = finalValue ? "preserved_or_recovered" : "missing";
     let reason = "";
+    let source = finalValue ? "trusted_session" : "missing";
     if (finalValue && previousValue && valuesEquivalent(fieldName, finalValue, previousValue, timeZone)) {
       decision = "preserved_previous";
+      source = "trusted_session";
     }
-    if (finalValue && lexSlot && valuesEquivalent(fieldName, finalValue, lexSlot, timeZone)) {
+    if (finalValue && lexSlot && currentGrounded && valuesEquivalent(fieldName, finalValue, lexSlot, timeZone)) {
       decision = "accepted_lex_slot";
+      source = "current_lex_slot";
     }
-    if (finalValue && recoveredValue && valuesEquivalent(fieldName, finalValue, recoveredValue, timeZone)) {
+    if (finalValue && currentRecoveredValue && valuesEquivalent(fieldName, finalValue, currentRecoveredValue, timeZone)) {
+      decision = "recovered_from_current_turn";
+      source = "current_turn";
+    } else if (finalValue && recoveredValue && valuesEquivalent(fieldName, finalValue, recoveredValue, timeZone)) {
       decision = "recovered_from_transcript";
+      source = previousValue ? "trusted_session" : "historical_fill_only";
     }
     if (
       ["requestedDate", "requestedTime"].includes(fieldName) &&
@@ -1168,7 +1180,8 @@ function buildSlotDecisionDebug(event, finalAttributes = {}) {
       previous: previousValue || undefined,
       final: finalValue || undefined,
       decision,
-      reason: reason || undefined
+      reason: reason || undefined,
+      source
     };
   }
   return decisions;
@@ -2359,9 +2372,17 @@ function classifyFinalBookingConfirmation(value) {
   if (!normalized) {
     return FINAL_CONFIRMATION_OUTCOME.UNKNOWN;
   }
+  if (/^(?:ok|okay)$/.test(normalized)) {
+    return FINAL_CONFIRMATION_OUTCOME.UNKNOWN;
+  }
 
   const hasChangeRequest =
     /\b(?:change|make it|instead|switch|move it|can we do|could we do|actually)\b/.test(normalized);
+  const hasStaffChangeRequest =
+    /\b(?:change|switch)\s+(?:the\s+)?(?:person|staff|technician|tech)\b/.test(normalized) ||
+    /\b(?:someone else|different person|different staff|different technician|different tech)\b/.test(normalized) ||
+    /\bnot\s+(?!correct\b|right\b|book\b|it\b|that\b)[a-z][a-z\s'-]{1,40}\b/.test(normalized) ||
+    /\bwith\s+[a-z][a-z\s'-]{1,40}\s+instead\b/.test(normalized);
   const hasNewBookingValue =
     extractServiceFromTranscript(value) ||
     hasCurrentTurnDatePhrase(value) ||
@@ -2375,6 +2396,10 @@ function classifyFinalBookingConfirmation(value) {
     /\b(?:that s right|that is right|sounds good|that s fine|that is fine|go ahead|please book it|book it|confirm it)\b/.test(
       normalized
     );
+
+  if (hasStaffChangeRequest) {
+    return FINAL_CONFIRMATION_OUTCOME.CHANGE_REQUEST;
+  }
 
   if ((hasExplicitNegation || hasChangeRequest) && hasNewBookingValue) {
     return FINAL_CONFIRMATION_OUTCOME.CHANGE_REQUEST;
@@ -2405,6 +2430,29 @@ function isFinalBookingConfirmationActive(event) {
     sessionAttributes.awaitingFinalBookingConfirmation === "true" ||
       sessionAttributes.lastAskedSlot === "bookingConfirmation"
   );
+}
+
+function shouldRepairToRescheduleIntent(event, rawIntentName) {
+  if (rawIntentName === "RescheduleAppointmentIntent" || rawIntentName === "CancelAppointmentIntent") {
+    return false;
+  }
+  const sessionAttributes = event.sessionState?.sessionAttributes || {};
+  const text = normalizeForMatch(event.inputTranscript);
+  if (!text) {
+    return false;
+  }
+  const mentionsExistingAppointment =
+    /\b(?:my appointment|existing appointment|current appointment)\b/.test(text) ||
+    /\b(?:reschedule|re schedule|change|move|update)\b.*\bappointment\b/.test(text);
+  const hasExistingAppointmentContext = Boolean(sessionAttributes.existingAppointmentId);
+  const asksToMoveExistingContext =
+    hasExistingAppointmentContext &&
+    /\b(?:reschedule|re schedule|change|move|update|different technician|different staff|different person|can i move it)\b/.test(text);
+  const bookingConfirmationStaffChange =
+    isFinalBookingConfirmationActive(event) &&
+    !mentionsExistingAppointment &&
+    /\b(?:change|switch)\s+(?:the\s+)?(?:person|staff|technician|tech)\b|\b(?:someone else|different person|different staff|different technician|different tech)\b|\bwith\s+[a-z][a-z\s'-]{1,40}\s+instead\b|\bnot\s+(?!correct\b|right\b|book\b|it\b|that\b)[a-z][a-z\s'-]{1,40}\b/.test(text);
+  return !bookingConfirmationStaffChange && (mentionsExistingAppointment || asksToMoveExistingContext);
 }
 
 function parseAttemptCount(value) {
@@ -2639,12 +2687,25 @@ function buildKnownBookingSessionAttributes(event) {
   const transcriptValues = [event.inputTranscript, getAttribute(event, attributeNames.transcript), initial]
     .filter((value, index, values) => value && values.indexOf(value) === index)
   const transcript = transcriptValues.join(" ");
+  const currentTurnTranscript = event.inputTranscript || "";
+  const currentRecoveryTranscript = [currentTurnTranscript]
+    .filter((value) => value && !readDtmfDigit(value))
+    .join(" ");
+  const currentTurnIsDigitNoise =
+    dtmfDiagnostics.isBareDigitUtterance || dtmfDiagnostics.isMultiDigitOrDigitSequence;
+  const ignoreLexTimeFromWrongSlotDigit =
+    currentTurnIsDigitNoise &&
+    previous.lastAskedSlot &&
+    previous.lastAskedSlot !== "requestedTime" &&
+    previous.activeDtmfMenu !== "staff";
   const knownDate =
     getSlotValue(slots, slotNames.requestedDate) ||
     getSessionAttribute(previous, slotNames.requestedDate);
   const previousDate = getSessionAttribute(previous, slotNames.requestedDate);
   const knownTime =
-    getSlotValue(slots, slotNames.requestedTime, { preferOriginal: true }) ||
+    (ignoreLexTimeFromWrongSlotDigit
+      ? ""
+      : getSlotValue(slots, slotNames.requestedTime, { preferOriginal: true })) ||
     getSessionAttribute(previous, slotNames.requestedTime);
   const previousTime = getSessionAttribute(previous, slotNames.requestedTime);
   const rawKnownService =
@@ -2653,9 +2714,10 @@ function buildKnownBookingSessionAttributes(event) {
   const serviceDtmfSelection = readScopedDtmfSelection(event, "serviceName", SERVICE_DTMF_OPTIONS);
   const staffDtmfSelection = readScopedStaffDtmfSelection(event);
   const recoveryTranscript =
-    serviceDtmfSelection || staffDtmfSelection
+    serviceDtmfSelection || staffDtmfSelection || currentTurnIsDigitNoise
       ? transcriptValues.filter((value) => !readDtmfDigit(value)).join(" ")
       : transcript;
+  const currentRecovered = extractBookingDetailsFromText(currentRecoveryTranscript, timeZone);
   const recovered = extractBookingDetailsFromText(recoveryTranscript, timeZone);
   const normalizedKnownService = normalizeServiceName(rawKnownService);
   const knownService =
@@ -2667,13 +2729,14 @@ function buildKnownBookingSessionAttributes(event) {
   );
   const stablePreviousService =
     previousService && !isClearlyInvalidServiceName(previousService) ? previousService : "";
-  const explicitCustomerName =
-    recovered.customerName ||
-    (previous.lastAskedSlot === "customerName" ? extractBareCustomerNameAnswer(event.inputTranscript) : "");
   const amazonConnectCustomerPhone = getAttribute(event, attributeNames.customerNumber);
   const protectedCustomerName =
     previous.recognizedCustomerName ||
     (previous.customerNameSource === "phone_lookup" ? previous.customerName : "");
+  const explicitCustomerName =
+    currentRecovered.customerName ||
+    (!protectedCustomerName && !getKnownField(event, "customerName") ? recovered.customerName : "") ||
+    (previous.lastAskedSlot === "customerName" ? extractBareCustomerNameAnswer(event.inputTranscript) : "");
   const previousStaffPreference =
     getSessionAttribute(previous, slotNames.staffPreference) || previous.confirmedStaffName;
   const cleanPreviousStaffPreference = getAuthoritativePreviousStaffPreference(
@@ -2693,32 +2756,35 @@ function buildKnownBookingSessionAttributes(event) {
   const transcriptStaffMention = customerNameTurnOwnsTranscript
     ? ""
     : extractStaffFromTranscript(transcript, previous);
-  const currentTurnIsDigitNoise =
-    dtmfDiagnostics.isBareDigitUtterance || dtmfDiagnostics.isMultiDigitOrDigitSequence;
   const currentTurnHasGroundedDate = hasCurrentTurnDatePhrase(event.inputTranscript);
   const currentTurnHasGroundedTime = hasCurrentTurnTimePhrase(event.inputTranscript);
   const recoveredDateIsGrounded =
-    Boolean(recovered.requestedDate) &&
-    (currentTurnHasGroundedDate ||
-      (!currentTurnIsDigitNoise && hasCurrentTurnDatePhrase(recoveryTranscript)));
+    Boolean(currentRecovered.requestedDate) && currentTurnHasGroundedDate;
   const recoveredTimeIsGrounded =
-    Boolean(recovered.requestedTime) &&
-    (currentTurnHasGroundedTime ||
-      (!currentTurnIsDigitNoise && hasCurrentTurnTimePhrase(recoveryTranscript)));
+    Boolean(currentRecovered.requestedTime) && currentTurnHasGroundedTime;
   const currentService = currentTurnRecognizedService(event);
   const serviceAliasCorrectionRaw = getScopedServiceAliasCorrectionRaw(event);
   const previousResolvedDate = resolveKnownDateValue(previousDate, timeZone);
   const knownResolvedDate = resolveKnownDateValue(knownDate, timeZone);
   const previousResolvedTime = normalizeTimePhrase(previousTime) || previousTime;
   const knownResolvedTime = normalizeTimePhrase(knownTime) || knownTime;
+  const historicalRecoveredDate =
+    !previousResolvedDate && !knownResolvedDate ? recovered.requestedDate : "";
+  const historicalRecoveredTime =
+    !previousResolvedTime && !knownResolvedTime ? recovered.requestedTime : "";
+  const historicalRecoveredService =
+    !stablePreviousService && !knownService ? recovered.serviceName : "";
+  const historicalStaffMention =
+    !cleanPreviousStaffPreference && !knownStaffPreference ? transcriptStaffMention : "";
   const finalDate = previousResolvedDate && !recoveredDateIsGrounded
     ? previousResolvedDate
-    : recovered.requestedDate || previousResolvedDate || knownResolvedDate;
+    : currentRecovered.requestedDate || previousResolvedDate || knownResolvedDate || historicalRecoveredDate;
   const finalTime = previousResolvedTime && !recoveredTimeIsGrounded
     ? previousResolvedTime
-    : (recoveredTimeIsGrounded ? recovered.requestedTime : "") ||
+    : (recoveredTimeIsGrounded ? currentRecovered.requestedTime : "") ||
       previousResolvedTime ||
-      knownResolvedTime;
+      knownResolvedTime ||
+      historicalRecoveredTime;
   const known = {
 	    recognizedCustomerName: previous.recognizedCustomerName,
     customerNameSource:
@@ -2734,15 +2800,15 @@ function buildKnownBookingSessionAttributes(event) {
       getKnownField(event, "customerPhone") ||
       recovered.customerPhone ||
       amazonConnectCustomerPhone,
-    serviceName: serviceDtmfSelection || currentService || recovered.serviceName || stablePreviousService || knownService,
+    serviceName: serviceDtmfSelection || currentService || stablePreviousService || knownService || historicalRecoveredService,
     requestedDate: finalDate,
     requestedTime: finalTime,
     staffPreference:
       (staffDtmfSelection && !staffDtmfSelection.invalid ? staffDtmfSelection.staffName : "") ||
       currentTurnStaffMention ||
-      transcriptStaffMention ||
       cleanPreviousStaffPreference ||
-      knownStaffPreference,
+      knownStaffPreference ||
+      historicalStaffMention,
     staffId:
       (staffDtmfSelection && !staffDtmfSelection.invalid ? staffDtmfSelection.staffId : "") ||
       (!currentTurnStaffMention && cleanPreviousStaffPreference
@@ -2756,9 +2822,9 @@ function buildKnownBookingSessionAttributes(event) {
     confirmedServiceName:
       serviceDtmfSelection ||
       currentService ||
-      recovered.serviceName ||
       previous.confirmedServiceName ||
-      knownService,
+      knownService ||
+      historicalRecoveredService,
     confirmedStaffName:
       (staffDtmfSelection && !staffDtmfSelection.invalid ? staffDtmfSelection.staffName : "") ||
       currentTurnStaffMention ||
@@ -3320,6 +3386,35 @@ function normalizeDialogAction(lexResponse) {
   };
 }
 
+function responseStillNeedsCallerInput(message, dialogAction, sessionAttributes = {}) {
+  if (dialogAction?.type && dialogAction.type !== "Close") {
+    return true;
+  }
+  const outcome = normalizeForMatch(
+    sessionAttributes.conversationOutcome || sessionAttributes.bookingOutcome || ""
+  );
+  if (["missing info", "needs input", "no availability"].includes(outcome)) {
+    return true;
+  }
+  const text = normalizeForMatch(message);
+  if (!text) {
+    return false;
+  }
+  return (
+    String(message || "").includes("?") ||
+    /\b(?:i can help|what would you like|which time|what time|which staff|what day|would you like|please say yes|tell me what you would like|what other time|which appointment)\b/.test(text)
+  );
+}
+
+function isTerminalConversationOutcome(sessionAttributes = {}) {
+  const bookingOutcome = normalizeForMatch(sessionAttributes.bookingOutcome || "");
+  const conversationOutcome = normalizeForMatch(sessionAttributes.conversationOutcome || "");
+  return (
+    ["booked", "rescheduled", "canceled"].includes(bookingOutcome) ||
+    ["booked", "rescheduled", "canceled", "caller goodbye"].includes(conversationOutcome)
+  );
+}
+
 function buildLexResponse(event, message, state = "Fulfilled", sessionAttributes = {}, lexResponse = {}) {
   const intent = event.sessionState?.intent || {};
   let dialogAction = normalizeDialogAction(lexResponse);
@@ -3348,7 +3443,7 @@ function buildLexResponse(event, message, state = "Fulfilled", sessionAttributes
           type: "Delegate"
         };
   }
-  const nextState = dialogAction.type === "Close" ? state : "InProgress";
+  let nextState = dialogAction.type === "Close" ? state : "InProgress";
   const contentType =
     lexResponse.messageContentType || (String(responseMessage || "").trim().startsWith("<speak>") ? "SSML" : "PlainText");
   const mergedSessionAttributes = removeIgnoredPollutedFields({
@@ -3375,14 +3470,27 @@ function buildLexResponse(event, message, state = "Fulfilled", sessionAttributes
     mergedSessionAttributes,
     dialogAction.type === "ElicitSlot" ? dialogAction.slotToElicit : ""
   );
-  if (!responseSessionAttributes.conversationComplete) {
+  const needsCallerInput = responseStillNeedsCallerInput(responseMessage, dialogAction, responseSessionAttributes);
+  if (needsCallerInput && dialogAction.type === "Close") {
+    dialogAction = {
+      type: "ElicitIntent"
+    };
+    nextState = "InProgress";
+  }
+  if (needsCallerInput && responseSessionAttributes.transferToQueue !== "true") {
+    responseSessionAttributes.conversationState = "CONTINUE";
+    responseSessionAttributes.conversationOutcome = responseSessionAttributes.conversationOutcome || "NEEDS_INPUT";
+    responseSessionAttributes.conversationComplete = "false";
+  } else if (!responseSessionAttributes.conversationComplete) {
     if (responseSessionAttributes.transferToQueue === "true") {
       responseSessionAttributes.conversationState = responseSessionAttributes.conversationState || "TRANSFER";
       responseSessionAttributes.conversationOutcome = responseSessionAttributes.conversationOutcome || "NEEDS_INPUT";
       responseSessionAttributes.conversationComplete = "false";
     } else if (
-      responseSessionAttributes.bookingOutcome === "BOOKED" ||
-      (dialogAction.type === "Close" && nextState === "Fulfilled")
+      !needsCallerInput &&
+      isTerminalConversationOutcome(responseSessionAttributes) &&
+      dialogAction.type === "Close" &&
+      nextState === "Fulfilled"
     ) {
       responseSessionAttributes.conversationState = responseSessionAttributes.conversationState || "COMPLETE";
       responseSessionAttributes.conversationOutcome =
@@ -3935,7 +4043,9 @@ function buildWrongSlotDtmfPrompt(event, slotName) {
 async function handleLexEvent(event, analysis = {}) {
   try {
     const rawIntentName = event.sessionState?.intent?.name || "";
-    const intentName = shouldTreatFallbackAsBooking(event, rawIntentName)
+    const intentName = shouldRepairToRescheduleIntent(event, rawIntentName)
+      ? "RescheduleAppointmentIntent"
+      : shouldTreatFallbackAsBooking(event, rawIntentName)
       ? "BookAppointmentIntent"
       : rawIntentName;
     const transferDecision = shouldTransferToHuman(event, intentName);

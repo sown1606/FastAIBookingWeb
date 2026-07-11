@@ -29,6 +29,7 @@ test("staff cannot access owner-only app pages or owner-only API actions", () =>
   const salonRoutes = readApi("modules/salon/salon.routes.ts");
   const servicesRoutes = readApi("modules/services/services.routes.ts");
   const staffRoutes = readApi("modules/staff/staff.routes.ts");
+  const customersRoutes = readApi("modules/customers/customers.routes.ts");
   const callsRoutes = readApi("modules/calls/calls.routes.ts");
   const aiRoutes = readApi("modules/ai/ai.routes.ts");
 
@@ -54,6 +55,7 @@ test("staff cannot access owner-only app pages or owner-only API actions", () =>
   assert.match(servicesRoutes, /servicesRouter\.post\(\s*"\/",\s*requireRoles\(Role\.SALON_OWNER\)/s);
   assert.match(servicesRoutes, /servicesRouter\.patch\(\s*"\/:id",\s*requireRoles\(Role\.SALON_OWNER\)/s);
   assert.match(servicesRoutes, /servicesRouter\.delete\(\s*"\/:id",\s*requireRoles\(Role\.SALON_OWNER\)/s);
+  assert.match(customersRoutes, /customersRouter\.use\(requireRoles\(Role\.SALON_OWNER\)\)/);
   assert.match(staffRoutes, /staffRouter\.get\(\s*"\/",\s*requireRoles\(Role\.SALON_OWNER\)/s);
   assert.match(staffRoutes, /staffRouter\.post\(\s*"\/",\s*requireRoles\(Role\.SALON_OWNER\)/s);
   assert.match(staffRoutes, /staffRouter\.patch\(\s*"\/:id",\s*requireRoles\(Role\.SALON_OWNER\)/s);
@@ -432,6 +434,16 @@ test("owner navigation exposes owner pages and staff navigation exposes profile 
 
   assert.match(staffNavBlock, /to: "\/my-profile"/);
   assert.doesNotMatch(layout, new RegExp(`role === "${"OPER"}${"ATOR"}"`));
+});
+
+test("customer page warns instead of blocking active appointment deletion", () => {
+  const page = readRepo("apps/app/src/pages/customers-page.tsx");
+  const i18n = readRepo("apps/app/src/lib/i18n.tsx");
+
+  assert.doesNotMatch(page, /deleteActiveFutureBlocked/);
+  assert.match(page, /activeCount/);
+  assert.match(i18n, /Deleting customer data will cancel all active appointments/);
+  assert.match(i18n, /Xóa dữ liệu khách hàng sẽ hủy tất cả lịch hẹn đang hoạt động/);
 });
 
 test("platform admin routes require PLATFORM_ADMIN and admin dashboard guard enforces it", () => {

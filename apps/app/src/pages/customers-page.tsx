@@ -42,8 +42,9 @@ interface CustomerHistory {
 
 interface DeleteCustomerResponse {
   customerId: string;
-  mode: "hard_delete" | "archive";
+  mode: "hard_delete" | "privacy_delete";
   appointmentCount: number;
+  canceledAppointmentCount: number;
   deletedAt?: string;
 }
 
@@ -182,35 +183,27 @@ export const CustomersPage = () => {
   const deleteCustomer = async (customer: CustomerItem) => {
     try {
       const history = await apiGet<CustomerHistory>(`/api/v1/customers/${customer.id}/appointments`);
-      const now = Date.now();
-      const activeFuture = history.appointments.find(
-        (appointment) =>
-          activeStatuses.has(appointment.status) && new Date(appointment.startTime).getTime() >= now
-      );
       setSelected(history);
 
-      if (activeFuture) {
-        notify("error", t("customers.deleteActiveFutureBlocked"));
-        return;
-      }
-
       const displayName = formatCustomerName(customer.firstName, customer.lastName) || customer.phone;
+      const activeCount = history.appointments.filter((appointment) => activeStatuses.has(appointment.status)).length;
       const modeLabel = history.appointments.length
-        ? t("customers.deleteModeArchive")
+        ? t("customers.deleteModePrivacy")
         : t("customers.deleteModeHard");
       const confirmed = window.confirm(
         t("customers.deleteConfirm", {
           name: displayName,
           phone: customer.phone,
-          mode: modeLabel
+          mode: modeLabel,
+          activeCount: String(activeCount)
         })
       );
       if (!confirmed) {
         return;
       }
 
-      const result = await apiDelete<DeleteCustomerResponse>(`/api/v1/customers/${customer.id}`);
-      notify("success", result.mode === "archive" ? t("customers.archived") : t("customers.deleted"));
+      await apiDelete<DeleteCustomerResponse>(`/api/v1/customers/${customer.id}`);
+      notify("success", t("customers.deleted"));
       if (selected?.customer.id === customer.id) {
         setSelected(null);
       }

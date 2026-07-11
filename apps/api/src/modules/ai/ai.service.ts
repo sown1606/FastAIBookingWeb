@@ -16,7 +16,11 @@ import { AppError } from "../../lib/errors";
 import { logger } from "../../lib/logger";
 import { formatCustomerName } from "../../utils/customer-name";
 import { normalizeCustomerPhone } from "../../utils/phone";
-import { createAppointmentFromAI, getAppointmentDetail } from "../appointments/appointments.service";
+import {
+  createAppointmentFromAI,
+  getAppointmentDetail,
+  rescheduleAppointment
+} from "../appointments/appointments.service";
 import { getAvailableSlots, validateAppointmentSlot } from "../availability/availability.service";
 import { createOrUpdateCallEscalation } from "../call-center/call-center.service";
 import {
@@ -86,6 +90,7 @@ interface CreateAmazonConnectAIAppointmentInput {
 
 type AmazonConnectAIAppointmentOutcome =
   | "BOOKED"
+  | "RESCHEDULED"
   | "MISSING_INFO"
   | "NO_AVAILABILITY"
   | "HUMAN_ESCALATION"
@@ -617,9 +622,17 @@ const classifyFinalBookingConfirmation = (
   if (!normalized) {
     return "UNKNOWN";
   }
+  if (/^(?:ok|okay)$/.test(normalized)) {
+    return "UNKNOWN";
+  }
 
   const hasChangeRequest =
     /\b(?:change|make it|instead|switch|move it|can we do|could we do|actually)\b/.test(normalized);
+  const hasStaffChangeRequest =
+    /\b(?:change|switch)\s+(?:the\s+)?(?:person|staff|technician|tech)\b/.test(normalized) ||
+    /\b(?:someone else|different person|different staff|different technician|different tech)\b/.test(normalized) ||
+    /\bnot\s+(?!correct\b|right\b|book\b|it\b|that\b)[a-z][a-z\s'-]{1,40}\b/.test(normalized) ||
+    /\bwith\s+[a-z][a-z\s'-]{1,40}\s+instead\b/.test(normalized);
   const hasNewBookingValue =
     hasStaticServiceAliasInText(value) ||
     new RegExp(DATE_PHRASE_PATTERN, "i").test(value ?? "") ||
@@ -633,6 +646,9 @@ const classifyFinalBookingConfirmation = (
       normalized
     );
 
+  if (hasStaffChangeRequest) {
+    return "CHANGE_REQUEST";
+  }
   if ((hasExplicitNegation || hasChangeRequest) && hasNewBookingValue) {
     return "CHANGE_REQUEST";
   }
@@ -4143,6 +4159,33 @@ const buildBookingConfirmationMessage = (input: {
   );
 };
 
+const buildRescheduleFingerprint = (input: {
+  salonId: string;
+  appointmentId: string;
+  startTime: Date;
+  staffId: string;
+}): string => {
+  return createHash("sha256")
+    .update([input.salonId, input.appointmentId, input.startTime.toISOString(), input.staffId].join("|"))
+    .digest("hex");
+};
+
+const buildRescheduleConfirmationMessage = (input: {
+  serviceName: string;
+  oldStartTime: Date;
+  newStartTime: Date;
+  salonTimezone: string;
+  staffName: string;
+}): string => {
+  return speak(
+    `Just to confirm, move your ${escapeSsml(input.serviceName.toLowerCase())} appointment from ${escapeSsml(
+      formatLocalDateTimeForSpeech(input.oldStartTime, input.salonTimezone)
+    )} to ${escapeSsml(formatLocalDateTimeForSpeech(input.newStartTime, input.salonTimezone))} with ${escapeSsml(
+      input.staffName
+    )}. <break time="300ms"/> Is that correct?`
+  );
+};
+
 const buildLexMessage = (input: {
   outcome: AmazonConnectAIAppointmentOutcome;
   missingFields?: string[];
@@ -4177,6 +4220,20 @@ const buildLexMessage = (input: {
     const staff = input.staffName ? ` with ${input.staffName}` : "";
     return speak(
       `You're all set. <break time="300ms"/> Your ${escapeSsml(service)} is booked for ${escapeSsml(appointmentTime)}${escapeSsml(staff)}. Thank you for calling.`
+    );
+  }
+
+  if (input.outcome === "RESCHEDULED") {
+    const appointmentTime = input.appointmentStartTime
+      ? formatLocalDateTimeForSpeech(
+          input.appointmentStartTime,
+          input.salonTimezone ?? "America/New_York"
+        )
+      : "the requested time";
+    const service = input.serviceName ? input.serviceName.toLowerCase() : "appointment";
+    const staff = input.staffName ? ` with ${input.staffName}` : "";
+    return speak(
+      `You're all set. <break time="300ms"/> Your ${escapeSsml(service)} has been moved to ${escapeSsml(appointmentTime)}${escapeSsml(staff)}. Thank you for calling.`
     );
   }
 
@@ -5043,6 +5100,7 @@ export const createAmazonConnectAIAppointment = async (
       "finalBookingConfirmationAsked"
     ]) === "true" ||
     readStringAttribute(normalized.attributes, ["lastAskedSlot"]) === "bookingConfirmation";
+  let finalConfirmationRequiresStaffSelection = false;
   const finalConfirmationText = normalized.currentTurnTranscript ?? normalized.transcriptText;
   const finalConfirmationOutcome = awaitingFinalBookingConfirmation
     ? classifyFinalBookingConfirmation(finalConfirmationText, {
@@ -5057,6 +5115,17 @@ export const createAmazonConnectAIAppointment = async (
     normalized.confirmationState = undefined;
     const changedDate = extractExplicitDate(finalConfirmationText, salon.timezone);
     const changedTime = extractExplicitTime(finalConfirmationText);
+    const requestsStaffChange =
+      /\b(?:change|switch)\s+(?:the\s+)?(?:person|staff|technician|tech)\b/.test(
+        normalizeForMatch(finalConfirmationText)
+      ) ||
+      /\b(?:someone else|different person|different staff|different technician|different tech)\b/.test(
+        normalizeForMatch(finalConfirmationText)
+      ) ||
+      /\bnot\s+(?!correct\b|right\b|book\b|it\b|that\b)[a-z][a-z\s'-]{1,40}\b/.test(
+        normalizeForMatch(finalConfirmationText)
+      ) ||
+      /\bwith\s+[a-z][a-z\s'-]{1,40}\s+instead\b/.test(normalizeForMatch(finalConfirmationText));
     if (changedDate) {
       normalized.requestedDate = changedDate;
     }
@@ -5068,12 +5137,42 @@ export const createAmazonConnectAIAppointment = async (
       if (changedService) {
         normalized.serviceName = getCustomerFacingServiceName(changedService.service.name);
       }
-      const changedStaff = currentTurnStaffMention ?? await findStaffMentionInText(salon.id, finalConfirmationText);
+      const genericStaffChangeWithoutName =
+        /\b(?:change|switch)\s+(?:the\s+)?(?:person|staff|technician|tech)\b/.test(
+          normalizeForMatch(finalConfirmationText)
+        ) ||
+        /\b(?:someone else|different person|different staff|different technician|different tech)\b/.test(
+          normalizeForMatch(finalConfirmationText)
+        );
+      const changedStaff = genericStaffChangeWithoutName
+        ? undefined
+        : currentTurnStaffMention ?? await findStaffMentionInText(salon.id, finalConfirmationText);
       if (changedStaff) {
         normalized.staffPreference = changedStaff;
         normalized.staffId = undefined;
+      } else if (requestsStaffChange) {
+        normalized.staffPreference = undefined;
+        normalized.staffId = undefined;
+        finalConfirmationRequiresStaffSelection = true;
       }
     }
+  } else if (awaitingFinalBookingConfirmation && finalConfirmationOutcome === "UNKNOWN") {
+    normalized.confirmationState = undefined;
+  }
+  if (
+    awaitingFinalBookingConfirmation &&
+    !currentTurnStaffMention &&
+    (/\b(?:change|switch)\s+(?:the\s+)?(?:person|staff|technician|tech)\b/.test(
+      normalizeForMatch(finalConfirmationText)
+    ) ||
+      /\b(?:someone else|different person|different staff|different technician|different tech)\b/.test(
+        normalizeForMatch(finalConfirmationText)
+      ))
+  ) {
+    normalized.confirmationState = undefined;
+    normalized.staffPreference = undefined;
+    normalized.staffId = undefined;
+    finalConfirmationRequiresStaffSelection = true;
   }
 
   const activeAlternativeSlots = awaitingAlternativeSelection
@@ -5487,9 +5586,12 @@ export const createAmazonConnectAIAppointment = async (
   const buildKnownSessionAttributes = (
     extra: Record<string, string | number | null | undefined> = {}
   ): Record<string, string> => {
-    const terminalBooking = extra.bookingOutcome === "BOOKED";
+    const terminalBooking =
+      extra.bookingOutcome === "BOOKED" ||
+      extra.bookingOutcome === "RESCHEDULED" ||
+      extra.bookingOutcome === "CANCELED";
     const defaultConversationState = terminalBooking ? "COMPLETE" : "CONTINUE";
-    const defaultConversationOutcome = terminalBooking ? "BOOKED" : "NEEDS_INPUT";
+    const defaultConversationOutcome = terminalBooking ? String(extra.bookingOutcome) : "NEEDS_INPUT";
     return Object.fromEntries(
       Object.entries({
         conversationState: defaultConversationState,
@@ -5554,6 +5656,23 @@ export const createAmazonConnectAIAppointment = async (
     requestedDate: normalized.requestedDate,
     requestedTime: normalized.requestedTime
   });
+  const normalizedExistingAppointmentText = normalizeForMatch(
+    normalized.currentTurnTranscript ?? normalized.transcriptText
+  );
+  const awaitingRescheduleConfirmation =
+    readStringAttribute(normalized.attributes, ["awaitingRescheduleConfirmation"]) === "true";
+  const rescheduleFlowActive =
+    awaitingRescheduleConfirmation ||
+    readStringAttribute(normalized.attributes, ["rescheduleFlowActive"]) === "true" ||
+    Boolean(readStringAttribute(normalized.attributes, ["existingAppointmentId"]));
+  const isRescheduleRequest =
+    normalized.intentName?.toLowerCase() === "rescheduleappointmentintent" ||
+    rescheduleFlowActive ||
+    (normalized.intentName?.toLowerCase() !== "cancelappointmentintent" &&
+      existingAppointmentRequestKind === "existing" &&
+      /\b(?:reschedule|re schedule|change|move|update|different technician|different staff|different person|can i move it)\b/.test(
+        normalizedExistingAppointmentText
+      ));
 
   if (!recognizedCustomer && existingAppointmentRequestKind === "existing") {
     const message = speak(
@@ -5631,6 +5750,456 @@ export const createAmazonConnectAIAppointment = async (
       missingFields: ["customerPhone"],
       salonResolutionSource: resolutionSource
     };
+  }
+
+  if (recognizedCustomer && isRescheduleRequest) {
+    const upcomingAppointments = await findUpcomingAppointmentsForCustomer({
+      salonId: salon.id,
+      customerId: recognizedCustomer.id
+    });
+    const storedAppointmentId = readStringAttribute(normalized.attributes, ["existingAppointmentId"]);
+    const selectedUpcoming =
+      (storedAppointmentId
+        ? upcomingAppointments.find((appointment) => appointment.id === storedAppointmentId)
+        : null) ?? (upcomingAppointments.length === 1 ? upcomingAppointments[0] : null);
+    const summaries = upcomingAppointments.map((appointment) =>
+      formatUpcomingAppointmentForSpeech(appointment, salon.timezone)
+    );
+    const returnRescheduleNeedsInput = async (inputForResponse: {
+      message: string;
+      dialogAction: { type: string; slotToElicit?: string };
+      failureReason: string;
+      responsePayload: Record<string, unknown>;
+      sessionAttributes: Record<string, string | number | null | undefined>;
+      missingFields?: string[];
+      appointmentId?: string;
+      requestedStartTime?: Date;
+    }) => {
+      const parsed = buildInternalParsedIntent({
+        intentType: "RESCHEDULE_APPOINTMENT",
+        customerName: normalized.customerName,
+        customerPhone: normalized.customerPhone,
+        serviceName: normalized.serviceName,
+        staffPreference: normalized.staffPreference,
+        requestedDateTime: inputForResponse.requestedStartTime?.toISOString() ?? normalized.requestedDate,
+        missingFields: inputForResponse.missingFields ?? [],
+        isReadyToBook: false
+      });
+      const bookingAttempt = await createAttempt({
+        status: BookingAttemptStatus.NEEDS_INPUT,
+        appointmentId: inputForResponse.appointmentId,
+        requestedStartTime: inputForResponse.requestedStartTime,
+        failureReason: inputForResponse.failureReason,
+        normalizedRequest: {
+          intentName: normalized.intentName,
+          existingAppointmentRequestKind,
+          existingAppointmentId: inputForResponse.appointmentId,
+          requestedDateTimeText
+        }
+      });
+      const lexSessionAttributes = buildKnownSessionAttributes(inputForResponse.sessionAttributes);
+      const aiInteraction = await createInteraction({
+        outcome: "MISSING_INFO",
+        message: inputForResponse.message,
+        parsed,
+        bookingAttemptId: bookingAttempt.id,
+        responsePayload: {
+          ...inputForResponse.responsePayload,
+          sessionAttributes: lexSessionAttributes
+        },
+        isValid: true
+      });
+      await finalizeCall({
+        outcome: "MISSING_INFO",
+        bookingAttemptId: bookingAttempt.id,
+        bookingStatus: bookingAttempt.status,
+        parsed,
+        message: inputForResponse.message,
+        failureReason: bookingAttempt.failureReason ?? undefined
+      });
+
+      return {
+        outcome: "MISSING_INFO" as const,
+        message: inputForResponse.message,
+        lexResponse: {
+          fulfillmentState: "InProgress",
+          message: inputForResponse.message,
+          messageContentType: "SSML",
+          dialogAction: inputForResponse.dialogAction,
+          sessionAttributes: lexSessionAttributes
+        },
+        appointment: null,
+        bookingAttempt,
+        callSession,
+        transcript,
+        aiInteraction,
+        escalation: null,
+        alternatives: [],
+        missingFields: inputForResponse.missingFields ?? [],
+        salonResolutionSource: resolutionSource
+      };
+    };
+
+    if (!upcomingAppointments.length) {
+      const message = speak(
+        "I don't see an upcoming appointment for this phone number. Would you like to book a new appointment, or speak with our team?"
+      );
+      return returnRescheduleNeedsInput({
+        message,
+        dialogAction: { type: "ElicitIntent" },
+        failureReason: "No upcoming appointment found for reschedule.",
+        responsePayload: {
+          upcomingAppointmentCount: 0
+        },
+        sessionAttributes: {
+          rescheduleFlowActive: "false",
+          awaitingRescheduleConfirmation: "false",
+          forceHumanEscalation: "false",
+          transferToQueue: "false"
+        }
+      });
+    }
+
+    if (!selectedUpcoming) {
+      const message = speak(
+        `I see a few upcoming appointments: ${escapeSsml(summaries.join("; "))}. <break time="300ms"/> Which appointment are you calling about?`
+      );
+      return returnRescheduleNeedsInput({
+        message,
+        dialogAction: { type: "ElicitIntent" },
+        failureReason: "Multiple upcoming appointments require caller selection.",
+        responsePayload: {
+          upcomingAppointmentCount: upcomingAppointments.length,
+          upcomingAppointmentIds: upcomingAppointments.map((appointment) => appointment.id)
+        },
+        sessionAttributes: {
+          rescheduleFlowActive: "true",
+          upcomingAppointmentCount: String(upcomingAppointments.length),
+          awaitingRescheduleConfirmation: "false",
+          forceHumanEscalation: "false",
+          transferToQueue: "false"
+        }
+      });
+    }
+
+    const existingAppointment = await getAppointmentDetail(salon.id, selectedUpcoming.id);
+    const oldLocalStart = DateTime.fromJSDate(existingAppointment.startTime, { zone: "utc" }).setZone(
+      salon.timezone
+    );
+    const storedRescheduleDate = readStringAttribute(normalized.attributes, ["rescheduleRequestedDate"]);
+    const storedRescheduleTime = readStringAttribute(normalized.attributes, ["rescheduleRequestedTime"]);
+    const storedRescheduleStaffId = readStringAttribute(normalized.attributes, ["rescheduleStaffId"]);
+    const storedRescheduleStaffName = readStringAttribute(normalized.attributes, ["rescheduleStaffName"]);
+    const requestedRescheduleDate = currentTurnExplicitDate ?? storedRescheduleDate;
+    const requestedRescheduleTime = currentTurnExplicitTime ?? storedRescheduleTime;
+    const requestedRescheduleStaffName = currentTurnStaffMention ?? storedRescheduleStaffName;
+    const hasRequestedStaffChange = Boolean(requestedRescheduleStaffName || storedRescheduleStaffId);
+    const hasRequestedDateOrTimeChange = Boolean(requestedRescheduleDate || requestedRescheduleTime);
+
+    if (!hasRequestedDateOrTimeChange && !hasRequestedStaffChange) {
+      const message = speak(
+        `I see your upcoming ${escapeSsml(summaries[0])}. <break time="300ms"/> What day, time, or technician would you like to change it to?`
+      );
+      return returnRescheduleNeedsInput({
+        message,
+        dialogAction: { type: "ElicitIntent" },
+        failureReason: "Reschedule target details required.",
+        responsePayload: {
+          existingAppointmentId: existingAppointment.id
+        },
+        sessionAttributes: {
+          rescheduleFlowActive: "true",
+          existingAppointmentId: existingAppointment.id,
+          existingAppointmentSummary: summaries[0],
+          awaitingRescheduleConfirmation: "false",
+          forceHumanEscalation: "false",
+          transferToQueue: "false"
+        },
+        appointmentId: existingAppointment.id
+      });
+    }
+
+    if (requestedRescheduleDate && !requestedRescheduleTime && !hasRequestedStaffChange) {
+      const message = speak("What time should I move it to?");
+      return returnRescheduleNeedsInput({
+        message,
+        dialogAction: { type: "ElicitSlot", slotToElicit: "requestedTime" },
+        failureReason: "Reschedule time required.",
+        responsePayload: {
+          existingAppointmentId: existingAppointment.id,
+          rescheduleRequestedDate: requestedRescheduleDate
+        },
+        sessionAttributes: {
+          rescheduleFlowActive: "true",
+          existingAppointmentId: existingAppointment.id,
+          existingAppointmentSummary: summaries[0],
+          rescheduleRequestedDate: requestedRescheduleDate,
+          awaitingRescheduleConfirmation: "false",
+          lastAskedSlot: "requestedTime",
+          askedSlotsCount: "1",
+          fallbackCount: "1",
+          errorCount: "1",
+          forceHumanEscalation: "false",
+          transferToQueue: "false"
+        },
+        missingFields: ["requestedTime"],
+        appointmentId: existingAppointment.id
+      });
+    }
+
+    let nextStaffId = existingAppointment.staffId;
+    let nextStaffName = existingAppointment.staff.fullName;
+    if (hasRequestedStaffChange) {
+      const nextStaffResolution = await resolveStaffCandidates({
+        salonId: salon.id,
+        requestedStaffName: requestedRescheduleStaffName,
+        staffId: storedRescheduleStaffId
+      });
+      if (nextStaffResolution.status !== "matched") {
+        const staffOptions = await getMappedActiveBookableStaffForService({
+          salonId: salon.id,
+          serviceId: existingAppointment.serviceId
+        });
+        const message = buildStaffClarificationMessage({
+          availableStaff: staffOptions.length ? staffOptions : await getStaffCandidates({ salonId: salon.id })
+        });
+        return returnRescheduleNeedsInput({
+          message,
+          dialogAction: { type: "ElicitSlot", slotToElicit: "staffPreference" },
+          failureReason: "Reschedule staff preference required.",
+          responsePayload: {
+            existingAppointmentId: existingAppointment.id
+          },
+          sessionAttributes: {
+            rescheduleFlowActive: "true",
+            existingAppointmentId: existingAppointment.id,
+            existingAppointmentSummary: summaries[0],
+            rescheduleRequestedDate: requestedRescheduleDate,
+            rescheduleRequestedTime: requestedRescheduleTime,
+            awaitingRescheduleConfirmation: "false",
+            lastAskedSlot: "staffPreference",
+            forceHumanEscalation: "false",
+            transferToQueue: "false"
+          },
+          missingFields: ["staffPreference"],
+          appointmentId: existingAppointment.id
+        });
+      }
+      nextStaffId = nextStaffResolution.matchedStaff.id;
+      nextStaffName = nextStaffResolution.matchedStaff.fullName;
+      normalized.staffPreference = nextStaffName;
+      normalized.staffId = nextStaffId;
+    }
+
+    const nextDate = requestedRescheduleDate ?? oldLocalStart.toFormat("yyyy-MM-dd");
+    const nextTime = requestedRescheduleTime ?? oldLocalStart.toFormat("HH:mm");
+    let nextStartTime: Date;
+    try {
+      nextStartTime = parseRequestedStartTimeDetailed({
+        requestedDate: nextDate,
+        requestedTime: nextTime,
+        timezone: salon.timezone
+      }).utcDate;
+    } catch (error) {
+      const message = speak("What day and time should I move it to?");
+      return returnRescheduleNeedsInput({
+        message,
+        dialogAction: { type: "ElicitSlot", slotToElicit: "requestedTime" },
+        failureReason: error instanceof Error ? error.message : "Invalid reschedule date or time.",
+        responsePayload: {
+          existingAppointmentId: existingAppointment.id
+        },
+        sessionAttributes: {
+          rescheduleFlowActive: "true",
+          existingAppointmentId: existingAppointment.id,
+          existingAppointmentSummary: summaries[0],
+          awaitingRescheduleConfirmation: "false",
+          lastAskedSlot: "requestedTime",
+          forceHumanEscalation: "false",
+          transferToQueue: "false"
+        },
+        missingFields: ["requestedTime"],
+        appointmentId: existingAppointment.id
+      });
+    }
+
+    const serviceIds = existingAppointment.appointmentServices.length
+      ? existingAppointment.appointmentServices.map((item) => item.serviceId)
+      : [existingAppointment.serviceId];
+    const slotValidation = await validateAppointmentSlot({
+      salonId: salon.id,
+      staffId: nextStaffId,
+      serviceIds,
+      startTime: nextStartTime,
+      excludeAppointmentId: existingAppointment.id
+    });
+    if (!slotValidation.valid) {
+      const message = speak(
+        "That time is not available. <break time=\"300ms\"/> What other day, time, or staff would you like?"
+      );
+      return returnRescheduleNeedsInput({
+        message,
+        dialogAction: { type: "ElicitIntent" },
+        failureReason: slotValidation.reason ?? "Requested reschedule slot is unavailable.",
+        responsePayload: {
+          existingAppointmentId: existingAppointment.id,
+          requestedStartTime: nextStartTime.toISOString()
+        },
+        sessionAttributes: {
+          conversationOutcome: "NO_AVAILABILITY",
+          rescheduleFlowActive: "true",
+          existingAppointmentId: existingAppointment.id,
+          existingAppointmentSummary: summaries[0],
+          awaitingRescheduleConfirmation: "false",
+          forceHumanEscalation: "false",
+          transferToQueue: "false"
+        },
+        appointmentId: existingAppointment.id,
+        requestedStartTime: nextStartTime
+      });
+    }
+
+    const rescheduleFingerprint = buildRescheduleFingerprint({
+      salonId: salon.id,
+      appointmentId: existingAppointment.id,
+      startTime: nextStartTime,
+      staffId: nextStaffId
+    });
+    const storedRescheduleFingerprint = readStringAttribute(normalized.attributes, [
+      "rescheduleConfirmationFingerprint"
+    ]);
+    const rescheduleConfirmationOutcome = awaitingRescheduleConfirmation
+      ? classifyFinalBookingConfirmation(normalized.currentTurnTranscript ?? normalized.transcriptText, {
+          hasExplicitStaffChange: Boolean(currentTurnStaffMention)
+        })
+      : "UNKNOWN";
+
+    if (
+      awaitingRescheduleConfirmation &&
+      rescheduleConfirmationOutcome === "AFFIRMED" &&
+      storedRescheduleFingerprint === rescheduleFingerprint
+    ) {
+      const rescheduled = await rescheduleAppointment(salon.id, existingAppointment.id, actorUserId, {
+        startTime: nextStartTime,
+        staffId: nextStaffId
+      });
+      const message = buildLexMessage({
+        outcome: "RESCHEDULED",
+        appointmentStartTime: nextStartTime,
+        salonTimezone: salon.timezone,
+        serviceName: getCustomerFacingServiceName(existingAppointment.service.name) ?? existingAppointment.service.name,
+        staffName: nextStaffName
+      });
+      const parsed = buildInternalParsedIntent({
+        intentType: "RESCHEDULE_APPOINTMENT",
+        customerName: normalized.customerName,
+        customerPhone: normalized.customerPhone,
+        serviceName: getCustomerFacingServiceName(existingAppointment.service.name) ?? existingAppointment.service.name,
+        staffPreference: nextStaffName,
+        requestedDateTime: nextStartTime.toISOString(),
+        missingFields: [],
+        isReadyToBook: true
+      });
+      const bookingAttempt = await createAttempt({
+        status: BookingAttemptStatus.SUCCESS,
+        appointmentId: existingAppointment.id,
+        requestedStartTime: nextStartTime,
+        normalizedRequest: {
+          existingAppointmentId: existingAppointment.id,
+          staffId: nextStaffId,
+          startTimeIso: nextStartTime.toISOString(),
+          timezone: salon.timezone,
+          rescheduleConfirmationFingerprint: rescheduleFingerprint
+        }
+      });
+      const aiInteraction = await createInteraction({
+        outcome: "RESCHEDULED",
+        message,
+        parsed,
+        bookingAttemptId: bookingAttempt.id,
+        responsePayload: {
+          appointmentId: existingAppointment.id,
+          rescheduleConfirmationFingerprint: rescheduleFingerprint
+        },
+        isValid: true
+      });
+      await finalizeCall({
+        outcome: "RESCHEDULED",
+        bookingAttemptId: bookingAttempt.id,
+        bookingStatus: bookingAttempt.status,
+        parsed,
+        message,
+        appointmentId: existingAppointment.id
+      });
+
+      return {
+        outcome: "RESCHEDULED" as const,
+        message,
+        lexResponse: {
+          fulfillmentState: "Fulfilled",
+          message,
+          messageContentType: "SSML",
+          sessionAttributes: buildKnownSessionAttributes({
+            bookingOutcome: "RESCHEDULED",
+            existingAppointmentId: existingAppointment.id,
+            rescheduleFlowActive: "false",
+            awaitingRescheduleConfirmation: "false",
+            rescheduleConfirmationFingerprint: "",
+            requestedDate: DateTime.fromJSDate(nextStartTime, { zone: "utc" }).setZone(salon.timezone).toFormat("yyyy-MM-dd"),
+            requestedTime: DateTime.fromJSDate(nextStartTime, { zone: "utc" }).setZone(salon.timezone).toFormat("HH:mm"),
+            staffPreference: nextStaffName,
+            staffId: nextStaffId
+          })
+        },
+        appointment: rescheduled,
+        bookingAttempt,
+        callSession,
+        transcript,
+        aiInteraction,
+        escalation: null,
+        alternatives: [],
+        missingFields: [],
+        salonResolutionSource: resolutionSource
+      };
+    }
+
+    const explicitRescheduleReprompt =
+      awaitingRescheduleConfirmation && rescheduleConfirmationOutcome === "UNKNOWN";
+    const message = explicitRescheduleReprompt
+      ? speak("Please say yes to confirm, or tell me what you would like to change.")
+      : buildRescheduleConfirmationMessage({
+          serviceName: getCustomerFacingServiceName(existingAppointment.service.name) ?? existingAppointment.service.name,
+          oldStartTime: existingAppointment.startTime,
+          newStartTime: nextStartTime,
+          salonTimezone: salon.timezone,
+          staffName: nextStaffName
+        });
+    return returnRescheduleNeedsInput({
+      message,
+      dialogAction: { type: "ConfirmIntent" },
+      failureReason: "Reschedule confirmation required before updating appointment.",
+      responsePayload: {
+        existingAppointmentId: existingAppointment.id,
+        rescheduleConfirmationFingerprint: rescheduleFingerprint,
+        awaitingRescheduleConfirmation: true
+      },
+      sessionAttributes: {
+        rescheduleFlowActive: "true",
+        existingAppointmentId: existingAppointment.id,
+        existingAppointmentSummary: summaries[0],
+        rescheduleRequestedDate: nextDate,
+        rescheduleRequestedTime: nextTime,
+        rescheduleStaffId: nextStaffId,
+        rescheduleStaffName: nextStaffName,
+        rescheduleConfirmationFingerprint: rescheduleFingerprint,
+        awaitingRescheduleConfirmation: "true",
+        lastAskedSlot: "rescheduleConfirmation",
+        forceHumanEscalation: "false",
+        transferToQueue: "false"
+      },
+      appointmentId: existingAppointment.id,
+      requestedStartTime: nextStartTime
+    });
   }
 
   if (
@@ -5867,9 +6436,10 @@ export const createAmazonConnectAIAppointment = async (
     missingFields.add("preferredDateTime");
   }
   const shouldAskStaffOnce =
-    staffResolution.status === "all" &&
-    staffResolution.invalidReason !== "explicit_any" &&
-    !staffWasAlreadyAsked;
+    finalConfirmationRequiresStaffSelection ||
+    (staffResolution.status === "all" &&
+      staffResolution.invalidReason !== "explicit_any" &&
+      !staffWasAlreadyAsked);
   if (normalized.invalidStaffDtmfSelection || staffResolution.status === "ambiguous" || shouldAskStaffOnce) {
     missingFields.add("staffPreference");
     normalized.staffId = undefined;
@@ -6877,19 +7447,22 @@ export const createAmazonConnectAIAppointment = async (
     };
   }
 
-	  if (!isConfirmationAccepted(normalized.confirmationState)) {
-	    const message = buildBookingConfirmationMessage({
-	      serviceName: callerServiceName,
-	      appointmentStartTime: requestedStartTime,
-	      salonTimezone: salon.timezone,
-	      staffName: chosenStaff.fullName,
-	      customerName: normalized.customerName,
-	      requestedAnyStaff,
-	      customerNameFallbackNotice:
-	        customerNameSourceOverride === "phone_fallback" && normalized.customerName
-	          ? `I couldn't clearly hear the name, so I'll use Guest ending in ${normalized.customerName.replace(/\D/g, "").slice(-4)} for now.`
-	          : undefined
-	    });
+  if (!isConfirmationAccepted(normalized.confirmationState)) {
+    const message =
+      awaitingFinalBookingConfirmation && finalConfirmationOutcome === "UNKNOWN"
+        ? speak("Please say yes to confirm, or tell me what you would like to change.")
+        : buildBookingConfirmationMessage({
+            serviceName: callerServiceName,
+            appointmentStartTime: requestedStartTime,
+            salonTimezone: salon.timezone,
+            staffName: chosenStaff.fullName,
+            customerName: normalized.customerName,
+            requestedAnyStaff,
+            customerNameFallbackNotice:
+              customerNameSourceOverride === "phone_fallback" && normalized.customerName
+                ? `I couldn't clearly hear the name, so I'll use Guest ending in ${normalized.customerName.replace(/\D/g, "").slice(-4)} for now.`
+                : undefined
+          });
     const parsed = buildInternalParsedIntent({
       intentType: "BOOK_APPOINTMENT",
       customerName: normalized.customerName,
