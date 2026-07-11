@@ -8,6 +8,7 @@ import {
   Role,
   SalonStatus,
   StaffStatus,
+  StaffWorkStatus,
   SubscriptionStatus
 } from "@prisma/client";
 import { env } from "../../config/env";
@@ -461,6 +462,24 @@ const buildExternalCleanupWarnings = (providers: string[]): string[] => {
   });
 };
 
+const salonDeleteAppointmentCancelReason = "Salon permanently deleted by platform admin";
+const salonDeleteCallResolution = "Salon permanently deleted by platform admin";
+const salonDeleteActiveAppointmentStatuses = [
+  AppointmentStatus.SCHEDULED,
+  AppointmentStatus.CONFIRMED,
+  AppointmentStatus.IN_PROGRESS
+];
+const salonDeleteActiveCallStatuses = [
+  CallSessionStatus.RECEIVED,
+  CallSessionStatus.RINGING,
+  CallSessionStatus.IN_PROGRESS
+];
+const salonDeleteOpenEscalationStatuses = [
+  CallEscalationStatus.PENDING,
+  CallEscalationStatus.QUEUED,
+  CallEscalationStatus.CONNECTED
+];
+
 export const getSalonDeletePreviewForAdmin = async (salonId: string) => {
   const salon = await prisma.salon.findUnique({
     where: { id: salonId },
@@ -474,13 +493,23 @@ export const getSalonDeletePreviewForAdmin = async (salonId: string) => {
     throw new AppError("Salon not found.", 404, "SALON_NOT_FOUND");
   }
 
-  const [counts, activeCallCount, inProgressAppointmentCount, configuredProviders] =
+  const [counts, activeCallCount, activeAppointmentCount, inProgressAppointmentCount, configuredProviders] =
     await Promise.all([
       collectSalonDeleteCounts(salonId),
       prisma.callSession.count({
         where: {
           salonId,
-          status: CallSessionStatus.IN_PROGRESS
+          status: {
+            in: salonDeleteActiveCallStatuses
+          }
+        }
+      }),
+      prisma.appointment.count({
+        where: {
+          salonId,
+          status: {
+            in: salonDeleteActiveAppointmentStatuses
+          }
         }
       }),
       prisma.appointment.count({
@@ -496,10 +525,10 @@ export const getSalonDeletePreviewForAdmin = async (salonId: string) => {
     ...buildExternalCleanupWarnings(configuredProviders)
   ];
   if (activeCallCount > 0) {
-    warnings.push("Active calls must finish before deletion.");
+    warnings.push("Active or stale call sessions will be closed before deletion.");
   }
-  if (inProgressAppointmentCount > 0) {
-    warnings.push("In-progress appointments must finish or be stopped before deletion.");
+  if (activeAppointmentCount > 0) {
+    warnings.push("Scheduled, confirmed, or in-progress appointments will be canceled before deletion.");
   }
 
   return {
@@ -508,6 +537,7 @@ export const getSalonDeletePreviewForAdmin = async (salonId: string) => {
     status: salon.status,
     counts,
     activeCallCount,
+    activeAppointmentCount,
     inProgressAppointmentCount,
     configuredProviders,
     warnings
@@ -591,29 +621,129 @@ export const permanentlyDeleteSalonForAdmin = async (
       throw new AppError("Salon name confirmation does not match.", 400, "SALON_CONFIRMATION_MISMATCH");
     }
 
-    const activeCallCount = await tx.callSession.count({
-      where: {
-        salonId,
-        status: CallSessionStatus.IN_PROGRESS
-      }
-    });
-    const inProgressAppointmentCount = await tx.appointment.count({
-      where: {
-        salonId,
-        status: AppointmentStatus.IN_PROGRESS
-      }
-    });
     const counts = await collectSalonDeleteCounts(salonId, tx);
     const configuredProviders = await collectSalonConfiguredProviders(salonId, tx);
-    if (activeCallCount > 0) {
-      throw new AppError("Salon has active calls.", 409, "SALON_HAS_ACTIVE_CALLS");
+
+    await tx.salon.update({
+      where: { id: salonId },
+      data: {
+        status: SalonStatus.SUSPENDED
+      }
+    });
+
+    const now = new Date();
+    const activeAppointments = await tx.appointment.findMany({
+      where: {
+        salonId,
+        status: {
+          in: salonDeleteActiveAppointmentStatuses
+        }
+      },
+      select: {
+        id: true,
+        staffId: true,
+        status: true
+      }
+    });
+    const activeAppointmentIds = activeAppointments.map((appointment) => appointment.id);
+    if (activeAppointmentIds.length) {
+      await tx.appointment.updateMany({
+        where: {
+          id: {
+            in: activeAppointmentIds
+          },
+          salonId
+        },
+        data: {
+          status: AppointmentStatus.CANCELED,
+          canceledReason: salonDeleteAppointmentCancelReason
+        }
+      });
+      await tx.appointmentStatusHistory.createMany({
+        data: activeAppointments.map((appointment) => ({
+          appointmentId: appointment.id,
+          previousStatus: appointment.status,
+          newStatus: AppointmentStatus.CANCELED,
+          reason: salonDeleteAppointmentCancelReason,
+          changedByUserId: actorUserId
+        }))
+      });
+      await tx.staff.updateMany({
+        where: {
+          salonId,
+          activeAppointmentId: {
+            in: activeAppointmentIds
+          }
+        },
+        data: {
+          currentWorkStatus: StaffWorkStatus.AVAILABLE,
+          activeAppointmentId: null
+        }
+      });
+      await tx.staffWorkSession.updateMany({
+        where: {
+          appointmentId: {
+            in: activeAppointmentIds
+          },
+          status: StaffWorkStatus.IN_PROGRESS
+        },
+        data: {
+          status: StaffWorkStatus.DONE,
+          endedAt: now
+        }
+      });
+      await tx.staffReminder.deleteMany({
+        where: {
+          appointmentId: {
+            in: activeAppointmentIds
+          },
+          deliveredAt: null
+        }
+      });
     }
-    if (inProgressAppointmentCount > 0) {
-      throw new AppError(
-        "Salon has in-progress appointments.",
-        409,
-        "SALON_HAS_IN_PROGRESS_APPOINTMENTS"
-      );
+
+    const activeCallSessions = await tx.callSession.findMany({
+      where: {
+        salonId,
+        status: {
+          in: salonDeleteActiveCallStatuses
+        }
+      },
+      select: {
+        id: true
+      }
+    });
+    const activeCallSessionIds = activeCallSessions.map((callSession) => callSession.id);
+    if (activeCallSessionIds.length) {
+      await tx.callEscalation.updateMany({
+        where: {
+          callSessionId: {
+            in: activeCallSessionIds
+          },
+          status: {
+            in: salonDeleteOpenEscalationStatuses
+          }
+        },
+        data: {
+          status: CallEscalationStatus.CLOSED,
+          closedAt: now,
+          resolution: salonDeleteCallResolution
+        }
+      });
+      await tx.callSession.updateMany({
+        where: {
+          id: {
+            in: activeCallSessionIds
+          },
+          salonId
+        },
+        data: {
+          status: CallSessionStatus.CANCELED,
+          endedAt: now,
+          failureReason: salonDeleteCallResolution,
+          finalResolution: salonDeleteCallResolution
+        }
+      });
     }
 
     const staffUsers = await tx.user.findMany({

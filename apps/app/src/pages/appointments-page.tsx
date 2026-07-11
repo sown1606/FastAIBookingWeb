@@ -12,14 +12,24 @@ import { statusLabelKey, useI18n } from "../lib/i18n";
 import { DemoAvatar } from "../components/avatar";
 import { requiredLabel } from "../lib/phone";
 import { useUiMode } from "../lib/ui-mode";
-import { dateTimeLocalToUtcIso, utcToDateTimeLocalInTimeZone } from "../lib/timezone";
+import {
+  dateTimeLocalToUtcIso,
+  getSalonDateKey,
+  shiftSalonDateKey,
+  utcToDateTimeLocalInTimeZone
+} from "../lib/timezone";
 import { formatCustomerName } from "../lib/customer-name";
+import {
+  isHistoryAppointmentStatus,
+  isOperationalAppointmentStatus,
+  type AppointmentStatus
+} from "../lib/appointment-status";
 
 interface AppointmentItem {
   id: string;
   startTime: string;
   endTime: string;
-  status: "SCHEDULED" | "CONFIRMED" | "IN_PROGRESS" | "COMPLETED" | "CANCELED" | "NO_SHOW";
+  status: AppointmentStatus;
   bookingChannel?: string;
   durationMinutes: number;
   notes: string | null;
@@ -137,19 +147,6 @@ const formatCompactSalonDateTime = (value: string, timezone: string) => {
   return `${time} ${get("day")}/${get("month")}/${get("year")}`;
 };
 
-const formatSalonDateKey = (date: Date, timezone = FALLBACK_SALON_TIMEZONE) => {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    timeZone: timezone
-  }).formatToParts(date);
-  const year = parts.find((part) => part.type === "year")?.value ?? "1970";
-  const month = parts.find((part) => part.type === "month")?.value ?? "01";
-  const day = parts.find((part) => part.type === "day")?.value ?? "01";
-  return `${year}-${month}-${day}`;
-};
-
 const minutesFromDayStart = (value: string, timezone: string) => {
   const date = new Date(value);
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -168,13 +165,7 @@ const localDateKey = (value: string, timezone = FALLBACK_SALON_TIMEZONE) => {
   if (Number.isNaN(date.getTime())) {
     return "unknown";
   }
-  return formatSalonDateKey(date, timezone);
-};
-
-const shiftDateKey = (dateKey: string, days: number) => {
-  const [year = 1970, month = 1, day = 1] = dateKey.split("-").map(Number);
-  const date = new Date(Date.UTC(year, month - 1, day + days));
-  return date.toISOString().slice(0, 10);
+  return getSalonDateKey(date, timezone);
 };
 
 const buildAppointmentDateParams = (fromDateKey: string, toDateKey: string, timezone: string) => {
@@ -214,20 +205,17 @@ const buildTimeSlots = (items: AppointmentItem[], timezone: string) => {
   return Array.from({ length: lastHour - firstHour + 1 }, (_value, index) => firstHour + index);
 };
 
-const activeAppointmentStatuses = new Set(["SCHEDULED", "CONFIRMED", "IN_PROGRESS"]);
-const terminalAppointmentStatuses = new Set(["COMPLETED", "CANCELED", "NO_SHOW"]);
-
 const nearestUsefulStaffDateKey = (items: AppointmentItem[], timezone: string) => {
-  const todayKey = formatSalonDateKey(new Date(), timezone);
+  const todayKey = getSalonDateKey(new Date(), timezone);
   const hasToday = items.some(
-    (item) => activeAppointmentStatuses.has(item.status) && localDateKey(item.startTime, timezone) === todayKey
+    (item) => isOperationalAppointmentStatus(item.status) && localDateKey(item.startTime, timezone) === todayKey
   );
   if (hasToday) {
     return todayKey;
   }
   const now = Date.now();
   const nearest = items
-    .filter((item) => activeAppointmentStatuses.has(item.status) && new Date(item.startTime).getTime() >= now)
+    .filter((item) => isOperationalAppointmentStatus(item.status) && new Date(item.startTime).getTime() >= now)
     .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())[0];
   return nearest ? localDateKey(nearest.startTime, timezone) : todayKey;
 };
@@ -250,7 +238,9 @@ export const AppointmentsPage = () => {
   const [selectedAppointment, setSelectedAppointment] = useState<AppointmentItem | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState("");
-  const [selectedDate, setSelectedDate] = useState(() => searchParams.get("date") || formatSalonDateKey(new Date()));
+  const [selectedDate, setSelectedDate] = useState(
+    () => searchParams.get("date") || getSalonDateKey(new Date(), FALLBACK_SALON_TIMEZONE)
+  );
   const [staffDateInitialized, setStaffDateInitialized] = useState(false);
   const [now, setNow] = useState(Date.now());
   const [archiveView, setArchiveView] = useState<"completed" | "canceled">("completed");
@@ -273,7 +263,7 @@ export const AppointmentsPage = () => {
     () => resolveAppointmentTimezone(appointments, salonProfileTimezone),
     [appointments, salonProfileTimezone]
   );
-  const todayDateKey = useMemo(() => formatSalonDateKey(new Date(), salonTimezone), [salonTimezone]);
+  const todayDateKey = useMemo(() => getSalonDateKey(new Date(), salonTimezone), [salonTimezone]);
   const fetchAppointments = async (baseParams: URLSearchParams) => {
     const items: AppointmentItem[] = [];
     let page = 1;
@@ -351,10 +341,10 @@ export const AppointmentsPage = () => {
       } else {
         const note = await apiGet<SalonOperatorNote>("/api/v1/salon/staff-note");
         const timezone = note.timezone || FALLBACK_SALON_TIMEZONE;
-        const todayKey = formatSalonDateKey(new Date(), timezone);
+        const todayKey = getSalonDateKey(new Date(), timezone);
         const fromDateKey = selectedDate < todayKey ? selectedDate : todayKey;
-        const selectedWindowEnd = shiftDateKey(selectedDate, 1);
-        const upcomingWindowEnd = shiftDateKey(todayKey, 30);
+        const selectedWindowEnd = shiftSalonDateKey(selectedDate, 1);
+        const upcomingWindowEnd = shiftSalonDateKey(todayKey, 30);
         const toDateKey = selectedWindowEnd > upcomingWindowEnd ? selectedWindowEnd : upcomingWindowEnd;
         const params = buildAppointmentDateParams(fromDateKey, toDateKey, timezone);
         if (statusFilter) {
@@ -666,7 +656,7 @@ export const AppointmentsPage = () => {
     () =>
       selectedDayAppointments.filter(
         (appointment) =>
-          activeStaffIds.has(appointment.staff.id) && activeAppointmentStatuses.has(appointment.status)
+          activeStaffIds.has(appointment.staff.id) && isOperationalAppointmentStatus(appointment.status)
       ),
     [activeStaffIds, selectedDayAppointments]
   );
@@ -674,30 +664,38 @@ export const AppointmentsPage = () => {
   const todayAppointments = useMemo(
     () =>
       appointments
-        .filter((appointment) => localDateKey(appointment.startTime, salonTimezone) === todayDateKey)
+        .filter(
+          (appointment) =>
+            isOperationalAppointmentStatus(appointment.status) &&
+            localDateKey(appointment.startTime, salonTimezone) === todayDateKey
+        )
         .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()),
     [appointments, salonTimezone, todayDateKey]
   );
 
-  const dailySummary = useMemo(
-    () => ({
-      total: selectedDayAppointments.length,
-      confirmed: selectedDayAppointments.filter((item) => item.status === "CONFIRMED").length,
-      inProgress: selectedDayAppointments.filter((item) => item.status === "IN_PROGRESS").length,
-      completed: selectedDayAppointments.filter((item) => item.status === "COMPLETED").length,
-      canceledOrNoShow: selectedDayAppointments.filter((item) => item.status === "CANCELED" || item.status === "NO_SHOW").length
-    }),
+  const selectedDayOperationalAppointments = useMemo(
+    () => selectedDayAppointments.filter((item) => isOperationalAppointmentStatus(item.status)),
     [selectedDayAppointments]
   );
 
+  const dailySummary = useMemo(
+    () => ({
+      total: selectedDayOperationalAppointments.length,
+      confirmed: selectedDayOperationalAppointments.filter((item) => item.status === "CONFIRMED").length,
+      inProgress: selectedDayOperationalAppointments.filter((item) => item.status === "IN_PROGRESS").length,
+      completed: selectedDayAppointments.filter((item) => item.status === "COMPLETED").length,
+      canceledOrNoShow: selectedDayAppointments.filter((item) => item.status === "CANCELED" || item.status === "NO_SHOW").length
+    }),
+    [selectedDayAppointments, selectedDayOperationalAppointments]
+  );
+
   const upcomingAppointments = useMemo(() => {
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+    const now = Date.now();
     return appointments
       .filter(
         (appointment) =>
-          activeAppointmentStatuses.has(appointment.status) &&
-          new Date(appointment.startTime).getTime() >= todayStart.getTime()
+          isOperationalAppointmentStatus(appointment.status) &&
+          new Date(appointment.startTime).getTime() >= now
       )
       .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
   }, [appointments]);
@@ -812,7 +810,7 @@ export const AppointmentsPage = () => {
           {t("appointments.done")}
         </button>
       ) : null}
-      {activeAppointmentStatuses.has(item.status) ? (
+      {isOperationalAppointmentStatus(item.status) ? (
         <>
           <button type="button" className="button-secondary" onClick={() => void rescheduleAppointment(item)}>
             {t("appointments.reschedule")}
@@ -827,7 +825,7 @@ export const AppointmentsPage = () => {
           {t("appointments.markNoShow")}
         </button>
       ) : null}
-      {terminalAppointmentStatuses.has(item.status) ? (
+      {isHistoryAppointmentStatus(item.status) ? (
         <button type="button" className="button-secondary danger-button" onClick={() => void permanentlyDeleteAppointment(item)}>
           {t("appointments.deletePermanently")}
         </button>
@@ -914,7 +912,7 @@ export const AppointmentsPage = () => {
             type="button"
             className="button-secondary"
             aria-label={t("appointments.previousDay")}
-            onClick={() => setSelectedDate((value) => shiftDateKey(value, -1))}
+            onClick={() => setSelectedDate((value) => shiftSalonDateKey(value, -1))}
           >
             {"<"}
           </button>
@@ -925,7 +923,7 @@ export const AppointmentsPage = () => {
             type="button"
             className="button-secondary"
             aria-label={t("appointments.nextDay")}
-            onClick={() => setSelectedDate((value) => shiftDateKey(value, 1))}
+            onClick={() => setSelectedDate((value) => shiftSalonDateKey(value, 1))}
           >
             {">"}
           </button>

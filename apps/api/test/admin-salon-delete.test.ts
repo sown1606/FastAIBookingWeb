@@ -48,12 +48,22 @@ after(async () => {
 
 const setupSalonDeleteMocks = (input: {
   activeCallCount?: number;
+  activeAppointmentCount?: number;
   inProgressAppointmentCount?: number;
   ownerRole?: Role;
   unexpectedUserRole?: Role;
 } = {}) => {
+  const activeAppointmentCount = input.activeAppointmentCount ?? input.inProgressAppointmentCount ?? 0;
   const state = {
     salonDeleted: false,
+    salonSuspended: false,
+    activeAppointmentsCanceled: 0,
+    appointmentStatusHistoryCreated: 0,
+    staffReleased: false,
+    workSessionsDone: false,
+    remindersDeleted: false,
+    activeCallSessionsTerminalized: 0,
+    openEscalationsClosed: 0,
     callSessionsDeleted: 0,
     auditLogsDeleted: 0,
     refreshTokensDeleted: 0,
@@ -100,6 +110,10 @@ const setupSalonDeleteMocks = (input: {
       }
     };
   });
+  patch(prisma.salon as any, "update", async (args: any) => {
+    state.salonSuspended = args.data?.status === SalonStatus.SUSPENDED;
+    return { id: salonId, status: args.data?.status };
+  });
   patch(prisma.user as any, "count", async (args: any) => {
     if (args.where?.role === Role.SALON_OWNER) {
       return state.counts.owners;
@@ -116,10 +130,13 @@ const setupSalonDeleteMocks = (input: {
     if (args.where?.status === AppointmentStatus.IN_PROGRESS) {
       return input.inProgressAppointmentCount ?? 0;
     }
+    if (args.where?.status?.in) {
+      return activeAppointmentCount;
+    }
     return state.counts.appointments;
   });
   patch(prisma.callSession as any, "count", async (args: any) => {
-    if (args.where?.status === CallSessionStatus.IN_PROGRESS) {
+    if (args.where?.status === CallSessionStatus.IN_PROGRESS || args.where?.status?.in) {
       return input.activeCallCount ?? 0;
     }
     return state.counts.callSessions;
@@ -143,6 +160,46 @@ const setupSalonDeleteMocks = (input: {
       return input.unexpectedUserRole ? [{ id: "unexpected-user", role: input.unexpectedUserRole }] : [];
     }
     return [];
+  });
+  patch(prisma.appointment as any, "findMany", async () =>
+    Array.from({ length: activeAppointmentCount }, (_value, index) => ({
+      id: `appointment-${index}`,
+      staffId: `staff-${index}`,
+      status: index === 0 ? AppointmentStatus.IN_PROGRESS : AppointmentStatus.SCHEDULED
+    }))
+  );
+  patch(prisma.appointment as any, "updateMany", async (args: any) => {
+    state.activeAppointmentsCanceled = args.where?.id?.in?.length ?? 0;
+    return { count: state.activeAppointmentsCanceled };
+  });
+  patch(prisma.appointmentStatusHistory as any, "createMany", async (args: any) => {
+    state.appointmentStatusHistoryCreated = args.data?.length ?? 0;
+    return { count: state.appointmentStatusHistoryCreated };
+  });
+  patch(prisma.staff as any, "updateMany", async () => {
+    state.staffReleased = true;
+    return { count: activeAppointmentCount };
+  });
+  patch(prisma.staffWorkSession as any, "updateMany", async () => {
+    state.workSessionsDone = true;
+    return { count: activeAppointmentCount };
+  });
+  patch(prisma.staffReminder as any, "deleteMany", async () => {
+    state.remindersDeleted = true;
+    return { count: activeAppointmentCount };
+  });
+  patch(prisma.callSession as any, "findMany", async () =>
+    Array.from({ length: input.activeCallCount ?? 0 }, (_value, index) => ({
+      id: `call-session-${index}`
+    }))
+  );
+  patch(prisma.callEscalation as any, "updateMany", async (args: any) => {
+    state.openEscalationsClosed = args.where?.callSessionId?.in?.length ?? 0;
+    return { count: state.openEscalationsClosed };
+  });
+  patch(prisma.callSession as any, "updateMany", async (args: any) => {
+    state.activeCallSessionsTerminalized = args.where?.id?.in?.length ?? 0;
+    return { count: state.activeCallSessionsTerminalized };
   });
   patch(prisma.callSession as any, "deleteMany", async () => {
     state.callSessionsDeleted = state.counts.callSessions;
@@ -205,29 +262,28 @@ test("platform admin salon delete rejects a wrong confirmation name without side
   assert.equal(state.auditActions.length, 0);
 });
 
-test("platform admin salon delete blocks active calls or in-progress appointments", async () => {
-  const activeCallState = setupSalonDeleteMocks({ activeCallCount: 1 });
-  await assert.rejects(
-    () =>
-      permanentlyDeleteSalonForAdmin(salonId, actorUserId, {
-        confirmPermanentDelete: true,
-        confirmationName: "Kiet Nails & Beauty"
-      }),
-    /Salon has active calls/
-  );
-  assert.equal(activeCallState.salonDeleted, false);
+test("platform admin salon delete terminalizes stale active calls and cancels active appointments", async () => {
+  const state = setupSalonDeleteMocks({
+    activeCallCount: 2,
+    activeAppointmentCount: 3,
+    inProgressAppointmentCount: 1
+  });
 
-  restorePatches();
-  const inProgressState = setupSalonDeleteMocks({ inProgressAppointmentCount: 1 });
-  await assert.rejects(
-    () =>
-      permanentlyDeleteSalonForAdmin(salonId, actorUserId, {
-        confirmPermanentDelete: true,
-        confirmationName: "Kiet Nails & Beauty"
-      }),
-    /Salon has in-progress appointments/
-  );
-  assert.equal(inProgressState.salonDeleted, false);
+  const result = await permanentlyDeleteSalonForAdmin(salonId, actorUserId, {
+    confirmPermanentDelete: true,
+    confirmationName: "Kiet Nails & Beauty"
+  });
+
+  assert.equal(result.deleted, true);
+  assert.equal(state.salonSuspended, true);
+  assert.equal(state.activeAppointmentsCanceled, 3);
+  assert.equal(state.appointmentStatusHistoryCreated, 3);
+  assert.equal(state.staffReleased, true);
+  assert.equal(state.workSessionsDone, true);
+  assert.equal(state.remindersDeleted, true);
+  assert.equal(state.openEscalationsClosed, 2);
+  assert.equal(state.activeCallSessionsTerminalized, 2);
+  assert.equal(state.salonDeleted, true);
 });
 
 test("platform admin salon delete removes salon data, owner/staff logins, and writes global audit", async () => {

@@ -18,6 +18,7 @@ import {
   permanentlyDeleteAppointment,
   rescheduleAppointment,
   startAppointmentWork,
+  summarizeAppointments,
   toOwnerAppointmentResponse,
   updateAppointment
 } from "./appointments.service";
@@ -99,6 +100,13 @@ const listAppointmentsQuerySchema = z.object({
   dateTo: z.string().datetime({ offset: true }).optional()
 });
 
+const appointmentSummaryQuerySchema = z.object({
+  staffId: z.string().uuid().optional(),
+  customerId: z.string().uuid().optional(),
+  dateFrom: z.string().datetime({ offset: true }).optional(),
+  dateTo: z.string().datetime({ offset: true }).optional()
+});
+
 export const appointmentsRouter = Router();
 
 const staffEditableStatuses: AppointmentStatus[] = [
@@ -141,6 +149,24 @@ appointmentsRouter.get(
         ...result,
         items: result.items.map(toOwnerAppointmentResponse)
       }
+    });
+  })
+);
+
+appointmentsRouter.get(
+  "/summary",
+  validate(appointmentSummaryQuerySchema, "query"),
+  asyncHandler(async (req, res) => {
+    const payload = req.query as unknown as z.infer<typeof appointmentSummaryQuerySchema>;
+    const restrictedStaffId = req.auth!.role === Role.STAFF ? req.auth!.staffId ?? undefined : undefined;
+    const summary = await summarizeAppointments(req.auth!.salonId!, {
+      staffId: restrictedStaffId ?? payload.staffId,
+      customerId: req.auth!.role === Role.STAFF ? undefined : payload.customerId,
+      dateFrom: payload.dateFrom ? new Date(payload.dateFrom) : undefined,
+      dateTo: payload.dateTo ? new Date(payload.dateTo) : undefined
+    });
+    return sendSuccess(res, {
+      data: summary
     });
   })
 );

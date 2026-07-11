@@ -58,6 +58,25 @@ export const dateTimeLocalToUtcIso = (value: string, timezone: string): string |
   return Number.isNaN(utcDate.getTime()) ? null : utcDate.toISOString();
 };
 
+export const getSalonDateKey = (
+  value: string | Date,
+  timezone = "America/New_York"
+): string => {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "unknown";
+  }
+  const parts = getTimeZoneParts(date, timezone);
+  const pad = (part: number) => String(part).padStart(2, "0");
+  return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}`;
+};
+
+export const shiftSalonDateKey = (dateKey: string, days: number): string => {
+  const [year = 1970, month = 1, day = 1] = dateKey.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day + days, 12));
+  return date.toISOString().slice(0, 10);
+};
+
 export const utcToDateTimeLocalInTimeZone = (
   value: string | Date | null | undefined,
   timezone: string

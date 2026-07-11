@@ -1,7 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  apiDelete,
   apiGet,
   apiPatch,
   apiPost,
@@ -23,6 +22,7 @@ import {
 import { formatUsPhoneInput, validateOptionalUsPhone } from "../lib/phone";
 import { getStatusLabel, useI18n } from "../lib/i18n";
 import { InfoHint } from "../components/info-hint";
+import { openSalonDeleteDialog } from "../lib/salon-delete";
 
 interface SalonSettings {
   currency: string;
@@ -336,26 +336,6 @@ interface CallRailHealthStatus {
   lastReceivedWebhookAt: string | null;
   lastWebhookReceivedAt: string | null;
   lastMappedCallAt: string | null;
-}
-
-interface SalonDeletePreview {
-  salonId: string;
-  salonName: string;
-  status: string;
-  counts: Record<string, number>;
-  activeCallCount: number;
-  inProgressAppointmentCount: number;
-  configuredProviders: string[];
-  warnings: string[];
-}
-
-interface SalonDeleteResponse {
-  salonId: string;
-  deleted: true;
-  deletedAt: string;
-  deletedUserCount: number;
-  counts: Record<string, number>;
-  externalCleanupRequired: string[];
 }
 
 const integrationProviderOptions: Array<IntegrationConfig["provider"]> = [
@@ -1191,74 +1171,17 @@ export const SalonDetailPage = () => {
     if (!salonId) {
       return;
     }
-    try {
-      const preview = await apiGet<SalonDeletePreview>(`/api/v1/admin/salons/${salonId}/delete-preview`);
-      const countSummary = Object.entries(preview.counts)
-        .map(([key, value]) => `${key}: ${value}`)
-        .join(" · ");
-      const activeSummary = `${t("salonDetail.activeCalls")}: ${preview.activeCallCount} · ${t("salonDetail.inProgressAppointments")}: ${preview.inProgressAppointmentCount}`;
-      const warnings = ensureArray(preview.warnings).join(" ");
-      const externalCleanup = ensureArray(preview.configuredProviders).length
-        ? `${t("salonDetail.externalCleanup")}: ${joinList(preview.configuredProviders)}.`
-        : "";
-      const values = await openFormDialog({
-        title: t("salonDetail.confirmPermanentDelete"),
-        description: [
-          preview.salonName,
-          t("salonDetail.permanentDeleteWarning"),
-          t("salonDetail.permanentDeleteLoginWarning"),
-          activeSummary,
-          countSummary,
-          externalCleanup,
-          warnings
-        ].filter(Boolean).join(" "),
-        fields: [
-          {
-            name: "confirmationName",
-            label: t("salonDetail.confirmSalonName"),
-            required: true,
-            placeholder: preview.salonName
-          }
-        ],
-        initialValues: {
-          confirmationName: ""
-        },
-        confirmLabel: t("salonDetail.permanentDeleteSalon")
-      });
-      if (!values) {
-        return;
-      }
-      if (values.confirmationName.trim() !== preview.salonName) {
-        notify("error", t("salonDetail.confirmSalonName"));
-        return;
-      }
-      await permanentlyDeleteSalon(values.confirmationName);
-    } catch (previewError) {
-      notify("error", extractErrorMessage(previewError));
-    }
-  };
-
-  const permanentlyDeleteSalon = async (confirmationName: string) => {
-    if (!salonId) {
-      return;
-    }
     setDeletingSalon(true);
     try {
-      const result = await apiDelete<SalonDeleteResponse>(`/api/v1/admin/salons/${salonId}`, {
-        data: {
-          confirmPermanentDelete: true,
-          confirmationName
+      await openSalonDeleteDialog({
+        salonId,
+        t,
+        openFormDialog,
+        notify,
+        onDeleted: () => {
+          navigate("/salons");
         }
       });
-      notify(
-        "success",
-        t("salonDetail.permanentDeleteSuccess", {
-          userCount: String(result.deletedUserCount)
-        })
-      );
-      navigate("/salons");
-    } catch (deleteError) {
-      notify("error", extractErrorMessage(deleteError));
     } finally {
       setDeletingSalon(false);
     }

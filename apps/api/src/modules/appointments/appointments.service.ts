@@ -57,6 +57,13 @@ interface ListAppointmentsInput {
   dateTo?: Date;
 }
 
+interface AppointmentSummaryInput {
+  staffId?: string;
+  customerId?: string;
+  dateFrom?: Date;
+  dateTo?: Date;
+}
+
 interface RescheduleAppointmentInput {
   staffId?: string;
   startTime: Date;
@@ -78,6 +85,18 @@ const terminalStatuses = new Set<AppointmentStatus>([
   AppointmentStatus.CANCELED,
   AppointmentStatus.NO_SHOW
 ]);
+
+export const operationalAppointmentStatuses: AppointmentStatus[] = [
+  AppointmentStatus.SCHEDULED,
+  AppointmentStatus.CONFIRMED,
+  AppointmentStatus.IN_PROGRESS
+];
+
+export const historyAppointmentStatuses: AppointmentStatus[] = [
+  AppointmentStatus.COMPLETED,
+  AppointmentStatus.CANCELED,
+  AppointmentStatus.NO_SHOW
+];
 
 const createAllowedStatuses = new Set<AppointmentStatus>([
   AppointmentStatus.SCHEDULED,
@@ -794,6 +813,67 @@ export const listAppointments = async (salonId: string, input: ListAppointmentsI
       limit: input.limit,
       total
     }
+  };
+};
+
+export const summarizeAppointments = async (
+  salonId: string,
+  input: AppointmentSummaryInput
+) => {
+  const where = {
+    salonId,
+    ...(input.staffId ? { staffId: input.staffId } : {}),
+    ...(input.customerId ? { customerId: input.customerId } : {}),
+    ...(input.dateFrom || input.dateTo
+      ? {
+          startTime: {
+            ...(input.dateFrom ? { gte: input.dateFrom } : {}),
+            ...(input.dateTo ? { lte: input.dateTo } : {})
+          }
+        }
+      : {})
+  };
+
+  const grouped = await prisma.appointment.groupBy({
+    by: ["status"],
+    where,
+    _count: {
+      _all: true
+    }
+  });
+
+  const byStatus = Object.values(AppointmentStatus).reduce<Record<AppointmentStatus, number>>(
+    (accumulator, status) => {
+      accumulator[status] = 0;
+      return accumulator;
+    },
+    {} as Record<AppointmentStatus, number>
+  );
+
+  grouped.forEach((row) => {
+    byStatus[row.status] = row._count._all;
+  });
+
+  const operationalCount = operationalAppointmentStatuses.reduce(
+    (total, status) => total + byStatus[status],
+    0
+  );
+  const completedCount = byStatus[AppointmentStatus.COMPLETED];
+  const canceledCount = byStatus[AppointmentStatus.CANCELED];
+  const noShowCount = byStatus[AppointmentStatus.NO_SHOW];
+  const historyCount = historyAppointmentStatuses.reduce(
+    (total, status) => total + byStatus[status],
+    0
+  );
+
+  return {
+    total: grouped.reduce((total, row) => total + row._count._all, 0),
+    operationalCount,
+    completedCount,
+    canceledCount,
+    noShowCount,
+    historyCount,
+    byStatus
   };
 };
 

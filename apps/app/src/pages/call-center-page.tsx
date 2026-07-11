@@ -9,8 +9,9 @@ import { formatUsPhoneInput, validateOptionalUsPhone } from "../lib/phone";
 import { useAuth } from "../auth/auth-context";
 import { statusLabelKey, useI18n } from "../lib/i18n";
 import { useUiMode } from "../lib/ui-mode";
-import { utcToDateTimeLocalInTimeZone } from "../lib/timezone";
+import { dateTimeLocalToUtcIso, getSalonDateKey, shiftSalonDateKey, utcToDateTimeLocalInTimeZone } from "../lib/timezone";
 import { formatCustomerName as formatCustomerDisplayName } from "../lib/customer-name";
+import { isOperationalAppointmentStatus } from "../lib/appointment-status";
 
 interface RuntimeResponse {
   assignedSalonCount: number;
@@ -301,8 +302,18 @@ type AmazonConnectGlobal = {
 };
 
 const FALLBACK_SALON_TIMEZONE = "America/New_York";
-const ACTIVE_APPOINTMENT_STATUSES = new Set(["SCHEDULED", "CONFIRMED", "IN_PROGRESS"]);
 const CCP_FRAME_BLOCKED_ERROR = "frame-ancestors 'self'";
+
+type CcpStatus =
+  | "idle"
+  | "disabled"
+  | "loading_streams"
+  | "login_required"
+  | "initializing"
+  | "ready"
+  | "frame_blocked"
+  | "popup_blocked"
+  | "error";
 
 const getAmazonConnect = (): AmazonConnectGlobal | undefined => {
   return (globalThis as typeof globalThis & { connect?: AmazonConnectGlobal }).connect;
@@ -337,34 +348,87 @@ const validateCcpUrl = (
   }
 };
 
-const getDateKeyInTimezone = (date: Date, timezone = FALLBACK_SALON_TIMEZONE): string => {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).formatToParts(date);
-  const year = parts.find((part) => part.type === "year")?.value ?? String(date.getFullYear());
-  const month = parts.find((part) => part.type === "month")?.value ?? String(date.getMonth() + 1).padStart(2, "0");
-  const day = parts.find((part) => part.type === "day")?.value ?? String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+type Translate = ReturnType<typeof useI18n>["t"];
+
+const normalizeLegacyOperatorText = (value?: string | null) =>
+  value?.trim().replace(/\s+/g, " ") ?? "";
+
+const isInternalCodeText = (value: string) => /^[A-Z0-9_]+$/.test(value);
+
+const formatEscalationReason = (reason: string | null | undefined, t: Translate) => {
+  const text = normalizeLegacyOperatorText(reason);
+  if (!text) {
+    return t("common.none");
+  }
+
+  const normalized = text.replace(/[.。]+$/, "").toLowerCase();
+  if (
+    normalized === "caller pressed zero for operator" ||
+    normalized === "customer pressed zero for operator" ||
+    normalized === "customer_pressed_zero" ||
+    normalized === "pressed_zero" ||
+    normalized === "operator_transfer"
+  ) {
+    return t("callCenter.reasonPressedZero");
+  }
+  if (
+    normalized === "human escalation created" ||
+    normalized === "explicit_human_request" ||
+    normalized === "customer_requested_operator" ||
+    normalized === "operator_requested"
+  ) {
+    return t("callCenter.reasonHumanRequested");
+  }
+  if (isInternalCodeText(text)) {
+    return t("callCenter.reasonSupportNeeded");
+  }
+  return text;
+};
+
+const formatMessageToCaller = (message: string | null | undefined, t: Translate) => {
+  const text = normalizeLegacyOperatorText(message);
+  if (!text) {
+    return t("common.none");
+  }
+
+  const normalized = text.replace(/[.。]+$/, "").toLowerCase();
+  if (
+    normalized === "please wait while i connect you" ||
+    normalized === "please wait while i connect you to an operator"
+  ) {
+    return t("callCenter.messageConnectingOperator");
+  }
+  if (isInternalCodeText(text)) {
+    return t("callCenter.messageSupportNeeded");
+  }
+  return text;
+};
+
+const formatBookingAttemptFailure = (reason: string | null | undefined, t: Translate) => {
+  const text = normalizeLegacyOperatorText(reason);
+  if (!text) {
+    return t("callCenter.noFailureReason");
+  }
+  return formatEscalationReason(text, t);
 };
 
 const addDaysToDateKey = (dateKey: string, days: number): string => {
-  const [year, month, day] = dateKey.split("-").map(Number);
-  const date = new Date(Date.UTC(year, month - 1, day + days, 12));
-  return date.toISOString().slice(0, 10);
+  return shiftSalonDateKey(dateKey, days);
 };
 
-const buildAppointmentDateQuery = (dateKey: string): string => {
-  const dateFrom = new Date(`${addDaysToDateKey(dateKey, -1)}T00:00:00.000Z`);
-  const dateTo = new Date(`${addDaysToDateKey(dateKey, 2)}T00:00:00.000Z`);
+const buildAppointmentDateQuery = (dateKey: string, timezone: string): string => {
   const params = new URLSearchParams({
     page: "1",
-    limit: "100",
-    dateFrom: dateFrom.toISOString(),
-    dateTo: dateTo.toISOString()
+    limit: "100"
   });
+  const dateFrom = dateTimeLocalToUtcIso(`${dateKey}T00:00`, timezone);
+  const dateTo = dateTimeLocalToUtcIso(`${dateKey}T23:59`, timezone);
+  if (dateFrom) {
+    params.set("dateFrom", dateFrom);
+  }
+  if (dateTo) {
+    params.set("dateTo", dateTo);
+  }
   return params.toString();
 };
 
@@ -468,7 +532,7 @@ const AmazonConnectCcpPanel = ({
   const lastMatchKeyRef = useRef("");
   const initializedCcpKeyRef = useRef("");
   const attemptedCcpKeyRef = useRef("");
-  const [ccpStatus, setCcpStatus] = useState<"direct" | "disabled" | "loading" | "ready" | "blocked" | "error">("direct");
+  const [ccpStatus, setCcpStatus] = useState<CcpStatus>("idle");
   const [ccpWarning, setCcpWarning] = useState("");
   const [ccpDebugDetails, setCcpDebugDetails] = useState("");
   const [ccpErrorSignature, setCcpErrorSignature] = useState("");
@@ -524,12 +588,21 @@ const AmazonConnectCcpPanel = ({
     if (!ccpValidation.url) {
       return;
     }
-    window.open(ccpValidation.url, "_blank", "noopener,noreferrer");
-  }, [ccpValidation.url]);
+    const popup = window.open(ccpValidation.url, "_blank", "noopener,noreferrer");
+    if (!popup) {
+      setCcpStatus("popup_blocked");
+      setCcpWarning(t("callCenter.ccpPopupBlocked"));
+      return;
+    }
+    clearCcpContainer();
+    setCcpStatus("initializing");
+    setCcpWarning(t("callCenter.ccpLoginInProgress"));
+    setRetryNonce((value) => value + 1);
+  }, [ccpValidation.url, clearCcpContainer, t]);
 
   const showFrameBlockedError = useCallback(
     (details?: string) => {
-      setCcpStatus("blocked");
+      setCcpStatus("frame_blocked");
       setEmbeddedBlocked(true);
       setCcpWarning(t("callCenter.ccpFrameBlocked"));
       setCcpErrorSignature(CCP_FRAME_BLOCKED_ERROR);
@@ -545,7 +618,7 @@ const AmazonConnectCcpPanel = ({
     }
     clearCcpContainer();
     setEmbeddedBlocked(false);
-    setCcpStatus("loading");
+    setCcpStatus("initializing");
     setCcpWarning("");
     setCcpDebugDetails("");
     setCcpErrorSignature("");
@@ -596,8 +669,8 @@ const AmazonConnectCcpPanel = ({
 
     if (!embeddedEnabled) {
       clearCcpContainer();
-      setCcpStatus("direct");
-      setCcpWarning("");
+      setCcpStatus("login_required");
+      setCcpWarning(t("callCenter.directCcpProductionBody"));
       setCcpDebugDetails("");
       setCcpErrorSignature("");
       return;
@@ -614,7 +687,7 @@ const AmazonConnectCcpPanel = ({
 
     if (embeddedBlocked) {
       clearCcpContainer();
-      setCcpStatus("blocked");
+      setCcpStatus("frame_blocked");
       return;
     }
 
@@ -631,7 +704,7 @@ const AmazonConnectCcpPanel = ({
     }
     attemptedCcpKeyRef.current = initKey;
     containerRef.current.innerHTML = "";
-    setCcpStatus("loading");
+    setCcpStatus("loading_streams");
     setCcpWarning("");
     setCcpDebugDetails("");
     setCcpErrorSignature("");
@@ -649,8 +722,11 @@ const AmazonConnectCcpPanel = ({
       if (cancelled || ready) {
         return;
       }
-      showFrameBlockedError(t("callCenter.ccpFrameBlockedDetails", { ccpUrl: validatedCcpUrl }));
-    }, 30000);
+      setCcpStatus("login_required");
+      setCcpWarning(t("callCenter.ccpLoginRequiredHint"));
+      setCcpDebugDetails(t("callCenter.ccpSlowLoadDetails", { ccpUrl: validatedCcpUrl }));
+      setCcpErrorSignature("");
+    }, 45000);
 
     const init = async () => {
       try {
@@ -663,11 +739,12 @@ const AmazonConnectCcpPanel = ({
           return;
         }
         initializedCcpKeyRef.current = initKey;
+        setCcpStatus("initializing");
 
         amazonConnect.core.initCCP(containerRef.current, {
           ccpUrl: validatedCcpUrl,
           region: region ?? undefined,
-          loginPopup: true,
+          loginPopup: false,
           loginPopupAutoClose: true,
           loginOptions: {
             autoClose: true,
@@ -754,24 +831,32 @@ const AmazonConnectCcpPanel = ({
   const statusLabel =
     ccpStatus === "ready"
       ? t("callCenter.ccpStatusReady")
-      : ccpStatus === "loading"
+      : ccpStatus === "loading_streams"
         ? t("callCenter.ccpStatusLoading")
-        : ccpStatus === "blocked"
+        : ccpStatus === "initializing"
+          ? t("callCenter.ccpStatusInitializing")
+        : ccpStatus === "login_required"
+          ? t("callCenter.ccpStatusLoginRequired")
+        : ccpStatus === "popup_blocked"
+          ? t("callCenter.ccpStatusPopupBlocked")
+        : ccpStatus === "frame_blocked"
           ? t("callCenter.ccpStatusFrameBlocked")
         : ccpStatus === "error"
           ? t("callCenter.ccpStatusError")
-        : ccpStatus === "direct"
-          ? t("callCenter.ccpStatusDirect")
           : t("callCenter.ccpStatusDisabled");
-  const isFrameBlocked = ccpStatus === "blocked";
+  const isFrameBlocked = ccpStatus === "frame_blocked";
   const showDirectCcpFallback = enabled && (!embeddedEnabled || ccpStatus !== "ready");
   const directModeBody = !embeddedEnabled
     ? t("callCenter.directCcpProductionBody")
     : isFrameBlocked
       ? t("callCenter.ccpFrameBlocked")
       : ccpWarning || t("callCenter.directCcpHint");
+  const fallbackTitle =
+    ccpStatus === "login_required" || ccpStatus === "idle"
+      ? t("callCenter.ccpLoginTitle")
+      : t("callCenter.ccpFallbackTitle");
   const canRetryEmbedded = embeddedEnabled && manualRetryCount < 1;
-  const showEmbeddedFrame = embeddedEnabled && ccpStatus !== "blocked" && ccpStatus !== "error";
+  const showEmbeddedFrame = embeddedEnabled && ccpStatus !== "frame_blocked" && ccpStatus !== "error";
 
   return (
     <article className="card ccp-panel">
@@ -780,7 +865,7 @@ const AmazonConnectCcpPanel = ({
           <h3>{t("callCenter.softphoneTitle")}</h3>
           <p className="muted">{t("callCenter.ccpApprovedOriginHint")}</p>
         </div>
-        <span className={ccpStatus === "ready" ? "status-pill success" : ccpStatus === "error" || ccpStatus === "blocked" ? "status-pill warning" : "status-pill info"}>
+        <span className={ccpStatus === "ready" ? "status-pill success" : ccpStatus === "error" || ccpStatus === "frame_blocked" || ccpStatus === "popup_blocked" ? "status-pill warning" : "status-pill info"}>
           {statusLabel}
         </span>
       </div>
@@ -805,32 +890,20 @@ const AmazonConnectCcpPanel = ({
         <div className={isFrameBlocked ? "ccp-help-box direct-mode blocked" : "ccp-help-box direct-mode"}>
           <div className="section-header compact-header">
             <div>
-              <strong>{t("callCenter.directCcpTitle")}</strong>
+              <strong>{fallbackTitle}</strong>
               <p>{directModeBody}</p>
             </div>
-            <span className="status-pill info">{t("callCenter.directCcpMode")}</span>
+            <span className="status-pill info">{t("callCenter.ccpFallbackMode")}</span>
           </div>
           <p className="direct-mode-note">{t("callCenter.directCcpIndependentNote")}</p>
           <p className="muted">{t("callCenter.ccpPollingHint")}</p>
-          <div className="ccp-diagnostics">
-            <div>
-              <span>{t("callCenter.ccpDiagnosticOrigin")}</span>
-              <strong>{appOrigin || t("common.none")}</strong>
-            </div>
-            <div>
-              <span>{t("callCenter.ccpDiagnosticUrl")}</span>
-              <strong>{ccpValidation.url ?? ccpUrl ?? t("common.none")}</strong>
-            </div>
-            <div>
-              <span>{t("callCenter.ccpDiagnosticApprovedOrigin")}</span>
-              <strong>{approvedOrigin}</strong>
-            </div>
-          </div>
           <div className="ccp-help-actions">
             {ccpValidation.url ? (
               <>
                 <button type="button" className="button-primary" onClick={openCcpWindow}>
-                  {t("callCenter.openConnectCcp")}
+                  {ccpStatus === "login_required" || ccpStatus === "idle"
+                    ? t("callCenter.loginConnectCcp")
+                    : t("callCenter.openConnectCcp")}
                 </button>
                 <button type="button" className="button-secondary" onClick={canRetryEmbedded ? retryCcp : onDirectRefresh}>
                   {canRetryEmbedded ? t("callCenter.retryCcp") : t("callCenter.directRefreshQueue")}
@@ -838,11 +911,23 @@ const AmazonConnectCcpPanel = ({
               </>
             ) : null}
           </div>
-          <details className="ccp-technical-details" open={showTechnicalDetails}>
+          <details className="ccp-technical-details">
             <summary>{t("callCenter.technicalDetails")}</summary>
             {ccpDebugDetails ? <p>{ccpDebugDetails}</p> : null}
             {ccpErrorSignature ? <p>{ccpErrorSignature}</p> : null}
             <div className="ccp-diagnostics">
+              <div>
+                <span>{t("callCenter.ccpDiagnosticOrigin")}</span>
+                <strong>{appOrigin || t("common.none")}</strong>
+              </div>
+              <div>
+                <span>{t("callCenter.ccpDiagnosticUrl")}</span>
+                <strong>{ccpValidation.url ?? ccpUrl ?? t("common.none")}</strong>
+              </div>
+              <div>
+                <span>{t("callCenter.ccpDiagnosticApprovedOrigin")}</span>
+                <strong>{approvedOrigin}</strong>
+              </div>
               <div>
                 <span>{t("callCenter.ccpEmbeddedEnabled")}</span>
                 <strong>{embeddedEnabledLabel}</strong>
@@ -852,10 +937,14 @@ const AmazonConnectCcpPanel = ({
                 <strong>{awsCheckReportPath}</strong>
               </div>
             </div>
-            <p>{t("callCenter.ccpTechnicalCommandIntro")}</p>
-            <pre>{`aws sts get-caller-identity --profile nailnew
+            {showTechnicalDetails && (ccpStatus === "frame_blocked" || ccpStatus === "error") ? (
+              <>
+                <p>{t("callCenter.ccpTechnicalCommandIntro")}</p>
+                <pre>{`aws sts get-caller-identity --profile nailnew
 ${listApprovedOriginsCommand}
 ${approvedOriginScriptCommand}`}</pre>
+              </>
+            ) : null}
           </details>
         </div>
       ) : null}
@@ -912,7 +1001,9 @@ export const CallCenterPage = () => {
   const [ccpEmbeddedReady, setCcpEmbeddedReady] = useState(false);
   const [selectedEscalationId, setSelectedEscalationId] = useState("");
   const [selectedEscalation, setSelectedEscalation] = useState<EscalationDetail | null>(null);
-  const [scheduleDateKey, setScheduleDateKey] = useState(() => getDateKeyInTimezone(new Date()));
+  const [scheduleDateKey, setScheduleDateKey] = useState(
+    () => getSalonDateKey(new Date(), FALLBACK_SALON_TIMEZONE)
+  );
   const [customerForm, setCustomerForm] = useState({
     firstName: "",
     lastName: "",
@@ -932,7 +1023,7 @@ export const CallCenterPage = () => {
   });
   const isOwner = session?.user.role === "SALON_OWNER";
   const configuredCcpUrl = import.meta.env.VITE_AMAZON_CONNECT_CCP_URL?.trim();
-  const embeddedCcpEnabled = import.meta.env.VITE_AMAZON_CONNECT_EMBEDDED_CCP_ENABLED === "true";
+  const embeddedCcpEnabled = import.meta.env.VITE_AMAZON_CONNECT_EMBEDDED_CCP_ENABLED !== "false";
   const ccpUrl = configuredCcpUrl || runtime?.amazonConnect.ccpUrl || null;
   const targetSalonId = searchParams.get("salonId") ?? "";
   const targetEscalationId = searchParams.get("escalationId") ?? "";
@@ -988,7 +1079,7 @@ export const CallCenterPage = () => {
   };
 
   const getTodayDayOfWeek = (timezone: string) => {
-    const todayKey = getDateKeyInTimezone(new Date(), timezone);
+    const todayKey = getSalonDateKey(new Date(), timezone);
     return new Date(`${todayKey}T12:00:00.000Z`).getUTCDay();
   };
 
@@ -1047,9 +1138,12 @@ export const CallCenterPage = () => {
   };
 
   const loadSalonData = async (salonId: string, dateKey = scheduleDateKey) => {
-    const appointmentQuery = buildAppointmentDateQuery(dateKey);
-    const [salonDetail, staffItems, serviceItems, customerItems, appointmentItems] = await Promise.all([
-      apiGet<SalonDetailResponse>(`/api/v1/call-center/salons/${salonId}`),
+    const salonDetail = await apiGet<SalonDetailResponse>(`/api/v1/call-center/salons/${salonId}`);
+    const appointmentQuery = buildAppointmentDateQuery(
+      dateKey,
+      salonDetail.timezone || FALLBACK_SALON_TIMEZONE
+    );
+    const [staffItems, serviceItems, customerItems, appointmentItems] = await Promise.all([
       apiGet<StaffItem[]>(`/api/v1/call-center/salons/${salonId}/staff`),
       apiGet<ServiceItem[]>(`/api/v1/call-center/salons/${salonId}/services`),
       apiGet<CustomersResponse>(`/api/v1/call-center/salons/${salonId}/customers?page=1&limit=100`),
@@ -1565,7 +1659,7 @@ export const CallCenterPage = () => {
   }, [selectedEscalationId]);
 
   const salonTimezone = selectedSalonDetail?.timezone || FALLBACK_SALON_TIMEZONE;
-  const todayDateKey = getDateKeyInTimezone(new Date(), salonTimezone);
+  const todayDateKey = getSalonDateKey(new Date(), salonTimezone);
   const selectedSalonQueue = useMemo(() => {
     const getStatusPriority = (item: QueueItem) => {
       if (item.status === "QUEUED") {
@@ -1644,7 +1738,11 @@ export const CallCenterPage = () => {
 
   const visibleAppointments = useMemo(() => {
     return appointments
-      .filter((appointment) => getDateKeyInTimezone(new Date(appointment.startTime), salonTimezone) === scheduleDateKey)
+      .filter(
+        (appointment) =>
+          isOperationalAppointmentStatus(appointment.status) &&
+          getSalonDateKey(new Date(appointment.startTime), salonTimezone) === scheduleDateKey
+      )
       .slice()
       .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
   }, [appointments, salonTimezone, scheduleDateKey]);
@@ -1659,7 +1757,7 @@ export const CallCenterPage = () => {
     if (appointment.status === "IN_PROGRESS") {
       return true;
     }
-    if (!ACTIVE_APPOINTMENT_STATUSES.has(appointment.status)) {
+    if (!isOperationalAppointmentStatus(appointment.status)) {
       return false;
     }
     const now = new Date();
@@ -1668,7 +1766,7 @@ export const CallCenterPage = () => {
     return start.getTime() <= now.getTime() && end.getTime() >= now.getTime();
   };
   const isAppointmentUpcoming = (appointment: AppointmentItem) => {
-    return ACTIVE_APPOINTMENT_STATUSES.has(appointment.status) && new Date(appointment.startTime).getTime() > Date.now();
+    return isOperationalAppointmentStatus(appointment.status) && new Date(appointment.startTime).getTime() > Date.now();
   };
   const formatCustomerName = (customer: CustomerItem) => {
     return formatCustomerDisplayName(customer.firstName, customer.lastName) || customer.phone || t("common.none");
@@ -2060,7 +2158,7 @@ export const CallCenterPage = () => {
                 </div>
                 <div>
                   <span className="muted">{t("callCenter.escalationReason")}</span>
-                  <strong>{selectedEscalation.escalationReason ?? t("common.none")}</strong>
+                  <strong>{formatEscalationReason(selectedEscalation.escalationReason, t)}</strong>
                 </div>
                 <div>
                   <span className="muted">{t("callCenter.finalResolution")}</span>
@@ -2100,7 +2198,7 @@ export const CallCenterPage = () => {
                           {attempt.requestedService ?? t("callCenter.noService")} ·{" "}
                           {attempt.requestedStaff ?? t("common.unassigned")}
                         </span>
-                        <small>{attempt.failureReason ?? t("callCenter.noFailureReason")}</small>
+                        <small>{formatBookingAttemptFailure(attempt.failureReason, t)}</small>
                       </article>
                     ))}
                   </div>
@@ -2358,14 +2456,14 @@ export const CallCenterPage = () => {
                   </div>
                   <div>
                     <span className="muted">{t("callCenter.escalationReason")}</span>
-                    <strong className="text-clamp-3">{selectedEscalation.escalationReason ?? t("common.none")}</strong>
+                    <strong className="text-clamp-3">{formatEscalationReason(selectedEscalation.escalationReason, t)}</strong>
                   </div>
                 </div>
 
                 <div className="operator-call-summary">
                   <div>
                     <span className="muted">{t("callCenter.messageToCaller")}</span>
-                    <p>{selectedEscalation.messageToCaller ?? t("common.none")}</p>
+                    <p>{formatMessageToCaller(selectedEscalation.messageToCaller, t)}</p>
                   </div>
                   <div>
                     <span className="muted">{t("callCenter.aiSummary")}</span>
@@ -2379,7 +2477,7 @@ export const CallCenterPage = () => {
                     <span className="muted">{t("callCenter.bookingAttempts")}</span>
                     <p>
                       {latestBookingAttempt
-                        ? `${statusLabelKey(latestBookingAttempt.status) ? t(statusLabelKey(latestBookingAttempt.status)!) : latestBookingAttempt.status} · ${latestBookingAttempt.requestedService ?? t("callCenter.noService")} · ${latestBookingAttempt.failureReason ?? t("callCenter.noFailureReason")}`
+                        ? `${statusLabelKey(latestBookingAttempt.status) ? t(statusLabelKey(latestBookingAttempt.status)!) : latestBookingAttempt.status} · ${latestBookingAttempt.requestedService ?? t("callCenter.noService")} · ${formatBookingAttemptFailure(latestBookingAttempt.failureReason, t)}`
                         : t("callCenter.bookingAttemptsEmpty")}
                     </p>
                   </div>
@@ -2645,10 +2743,10 @@ export const CallCenterPage = () => {
                       <details className="queue-row-details" onClick={(event) => event.stopPropagation()}>
                         <summary>{t("callCenter.callDetails")}</summary>
                         <p>
-                          <strong>{t("callCenter.escalationReason")}:</strong> {item.escalationReason ?? t("common.none")}
+                          <strong>{t("callCenter.escalationReason")}:</strong> {formatEscalationReason(item.escalationReason, t)}
                         </p>
                         <p>
-                          <strong>{t("callCenter.messageToCaller")}:</strong> {item.messageToCaller ?? t("common.none")}
+                          <strong>{t("callCenter.messageToCaller")}:</strong> {formatMessageToCaller(item.messageToCaller, t)}
                         </p>
                       </details>
                     ) : null}
@@ -2860,7 +2958,7 @@ export const CallCenterPage = () => {
                             <span>
                               {attempt.requestedService ?? t("callCenter.noService")} · {attempt.requestedStaff ?? t("common.unassigned")}
                             </span>
-                            <small>{attempt.failureReason ?? t("callCenter.noFailureReason")}</small>
+                            <small>{formatBookingAttemptFailure(attempt.failureReason, t)}</small>
                           </article>
                         ))}
                       </div>

@@ -578,7 +578,11 @@ export const createOrUpdateCallEscalation = async (input: {
       escalationId: escalation.id,
       status,
       routingOutcome,
-      customerPhone: input.customerPhone
+      customerPhone: input.customerPhone,
+      requestedBy: input.requestedBy,
+      escalationReason: input.escalationReason,
+      messageToCaller,
+      salonName: salon.name
     },
     sendSms: false
   });

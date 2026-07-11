@@ -9,7 +9,8 @@ import { formatCustomerName } from "../lib/customer-name";
 import { statusLabelKey, useI18n } from "../lib/i18n";
 import { useUiMode } from "../lib/ui-mode";
 import { InfoHint } from "../components/info-hint";
-import { dateTimeLocalToUtcIso } from "../lib/timezone";
+import { dateTimeLocalToUtcIso, getSalonDateKey, shiftSalonDateKey } from "../lib/timezone";
+import { isOperationalAppointmentStatus } from "../lib/appointment-status";
 
 interface AppointmentItem {
   id: string;
@@ -29,6 +30,16 @@ interface AppointmentItem {
 
 interface AppointmentsResponse {
   items: AppointmentItem[];
+}
+
+interface AppointmentSummaryResponse {
+  total: number;
+  operationalCount: number;
+  completedCount: number;
+  canceledCount: number;
+  noShowCount: number;
+  historyCount: number;
+  byStatus: Record<string, number>;
 }
 
 interface StaffItem {
@@ -93,11 +104,6 @@ const getSalonDateParts = (value: string | Date, timezone: string) => {
   };
 };
 
-const getSalonDateKey = (value: string | Date, timezone: string) => {
-  const parts = getSalonDateParts(value, timezone);
-  return `${parts.year}-${parts.month}-${parts.day}`;
-};
-
 const formatHeroAppointmentDate = (value: string, timezone: string) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -115,12 +121,6 @@ const formatHeroAppointmentDate = (value: string, timezone: string) => {
   };
 };
 
-const shiftDateKey = (dateKey: string, days: number) => {
-  const [year = 1970, month = 1, day = 1] = dateKey.split("-").map(Number);
-  const date = new Date(Date.UTC(year, month - 1, day + days));
-  return date.toISOString().slice(0, 10);
-};
-
 const getSalonRangeParams = (fromDateKey: string, toDateKey: string, timezone: string) => {
   const dateFrom = dateTimeLocalToUtcIso(`${fromDateKey}T00:00`, timezone);
   const dateTo = dateTimeLocalToUtcIso(`${toDateKey}T23:59`, timezone);
@@ -135,6 +135,16 @@ const getSalonRangeParams = (fromDateKey: string, toDateKey: string, timezone: s
     params.set("dateTo", dateTo);
   }
   return params;
+};
+
+const emptyAppointmentSummary: AppointmentSummaryResponse = {
+  total: 0,
+  operationalCount: 0,
+  completedCount: 0,
+  canceledCount: 0,
+  noShowCount: 0,
+  historyCount: 0,
+  byStatus: {}
 };
 
 const getStatusToneClass = (status: string) => {
@@ -165,6 +175,7 @@ export const DashboardPage = () => {
   const [settings, setSettings] = useState<SalonSettings | null>(null);
   const [salonProfile, setSalonProfile] = useState<SalonProfileSummary | null>(null);
   const [operatorNote, setOperatorNote] = useState<SalonOperatorNote | null>(null);
+  const [todaySummary, setTodaySummary] = useState<AppointmentSummaryResponse>(emptyAppointmentSummary);
 
   const load = async () => {
     setError("");
@@ -178,6 +189,7 @@ export const DashboardPage = () => {
         setSettings(null);
         setSalonProfile(null);
         setOperatorNote(null);
+        setTodaySummary(emptyAppointmentSummary);
         return;
       }
 
@@ -186,17 +198,24 @@ export const DashboardPage = () => {
         const todayKey = getSalonDateKey(new Date(), profile.timezone || FALLBACK_SALON_TIMEZONE);
         const appointmentParams = getSalonRangeParams(
           todayKey,
-          shiftDateKey(todayKey, 14),
+          shiftSalonDateKey(todayKey, 14),
           profile.timezone || FALLBACK_SALON_TIMEZONE
         );
-        const [appointmentResult, staff, services, customers, salonSettings] = await Promise.all([
+        const todaySummaryParams = getSalonRangeParams(
+          todayKey,
+          todayKey,
+          profile.timezone || FALLBACK_SALON_TIMEZONE
+        );
+        const [appointmentResult, appointmentSummary, staff, services, customers, salonSettings] = await Promise.all([
           apiGet<AppointmentsResponse>(`/api/v1/appointments?${appointmentParams.toString()}`),
+          apiGet<AppointmentSummaryResponse>(`/api/v1/appointments/summary?${todaySummaryParams.toString()}`),
           apiGet<StaffItem[]>("/api/v1/staff?includeInactive=false"),
           apiGet<ServiceItem[]>("/api/v1/services"),
           apiGet<CustomerResponse>("/api/v1/customers?page=1&limit=1"),
           apiGet<SalonSettings>("/api/v1/salon/settings")
         ]);
         setAppointments(appointmentResult.items);
+        setTodaySummary(appointmentSummary);
         setStaffCount(staff.length);
         setServiceCount(services.length);
         setCustomerCount(customers.pagination.total);
@@ -209,13 +228,16 @@ export const DashboardPage = () => {
         const todayKey = getSalonDateKey(new Date(), timezone);
         const appointmentParams = getSalonRangeParams(
           todayKey,
-          shiftDateKey(todayKey, 14),
+          shiftSalonDateKey(todayKey, 14),
           timezone
         );
-        const appointmentResult = await apiGet<AppointmentsResponse>(
-          `/api/v1/appointments?${appointmentParams.toString()}`
-        );
+        const todaySummaryParams = getSalonRangeParams(todayKey, todayKey, timezone);
+        const [appointmentResult, appointmentSummary] = await Promise.all([
+          apiGet<AppointmentsResponse>(`/api/v1/appointments?${appointmentParams.toString()}`),
+          apiGet<AppointmentSummaryResponse>(`/api/v1/appointments/summary?${todaySummaryParams.toString()}`)
+        ]);
         setAppointments(appointmentResult.items);
+        setTodaySummary(appointmentSummary);
         setStaffCount(0);
         setServiceCount(0);
         setCustomerCount(0);
@@ -253,25 +275,36 @@ export const DashboardPage = () => {
   const upcoming = useMemo(() => {
     const now = Date.now();
     return appointments
-      .filter((item) => new Date(item.startTime).getTime() >= now)
+      .filter((item) => isOperationalAppointmentStatus(item.status) && new Date(item.startTime).getTime() >= now)
       .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
       .slice(0, 8);
   }, [appointments]);
 
   const salonTimezone = salonProfile?.timezone || operatorNote?.timezone || FALLBACK_SALON_TIMEZONE;
   const todayDateKey = getSalonDateKey(new Date(), salonTimezone);
-  const todayAppointments = useMemo(
-    () => appointments.filter((item) => getSalonDateKey(item.startTime, salonTimezone) === todayDateKey),
+  const todayOperationalAppointments = useMemo(
+    () =>
+      appointments.filter(
+        (item) =>
+          isOperationalAppointmentStatus(item.status) &&
+          getSalonDateKey(item.startTime, salonTimezone) === todayDateKey
+      ),
     [appointments, salonTimezone, todayDateKey]
   );
-  const completedToday = useMemo(
-    () => todayAppointments.filter((item) => item.status === "COMPLETED"),
-    [todayAppointments]
-  );
+  const todayOperationalCount = todaySummary.operationalCount;
+  const completedTodayCount = todaySummary.completedCount;
+  const canceledOrNoShowTodayCount = todaySummary.canceledCount + todaySummary.noShowCount;
+  const todayHasOperationalWork = todayOperationalCount > 0;
   const inProgressToday = useMemo(
-    () => todayAppointments.filter((item) => item.status === "IN_PROGRESS"),
-    [todayAppointments]
+    () => todayOperationalAppointments.filter((item) => item.status === "IN_PROGRESS"),
+    [todayOperationalAppointments]
   );
+  const formatDashboardCustomerName = (customer: AppointmentItem["customer"]) => {
+    const name = formatCustomerName(customer.firstName, customer.lastName);
+    return !name || name.trim().toLowerCase() === "anonymous customer"
+      ? t("customers.deletedLabel")
+      : name;
+  };
   const nextAppointment = upcoming[0] ?? null;
   const nextAppointmentParts = nextAppointment
     ? formatHeroAppointmentDate(nextAppointment.startTime, salonTimezone)
@@ -323,7 +356,7 @@ export const DashboardPage = () => {
 
   if (session?.user.role === "SALON_OWNER" && isBasicMode) {
     const displayName = session.user.fullName.split(" ")[0] || session.user.fullName;
-    const appointmentPreview = todayAppointments.slice(0, 4);
+    const appointmentPreview = todayOperationalAppointments.slice(0, 4);
     return (
       <div className="stack appointments-home">
         <section className="home-greeting-card">
@@ -334,7 +367,7 @@ export const DashboardPage = () => {
           </div>
           <div className="home-count-card">
             <span>{t("dashboard.todayAppointments")}</span>
-            <strong>{todayAppointments.length}</strong>
+            <strong>{todayOperationalCount}</strong>
           </div>
         </section>
 
@@ -349,11 +382,15 @@ export const DashboardPage = () => {
           <div className="section-header">
             <div>
               <h2>{t("dashboard.todayAppointments")}</h2>
-              <p className="muted">{todayAppointments.length ? t("dashboard.todayOpenStatus") : t("dashboard.todayQuietStatus")}</p>
+              <p className="muted">{todayHasOperationalWork ? t("dashboard.todayOpenStatus") : t("dashboard.todayQuietStatus")}</p>
             </div>
             <Link to="/appointments" className="button-secondary">
               {t("dashboard.openDetails")}
             </Link>
+          </div>
+          <div className="summary-badges">
+            <span className="summary-badge">{t("dashboard.completedToday")}: {completedTodayCount}</span>
+            <Link to="/appointments" className="summary-badge">{t("dashboard.canceledToday")}: {canceledOrNoShowTodayCount}</Link>
           </div>
           {appointmentPreview.length ? (
             <div className="entity-grid compact-appointment-grid">
@@ -362,7 +399,7 @@ export const DashboardPage = () => {
                   <div className="appointment-card-header">
                     <div className="appointment-card-copy">
                       <strong>
-                        {formatCustomerName(item.customer.firstName, item.customer.lastName)}
+                        {formatDashboardCustomerName(item.customer)}
                       </strong>
                       <span className="muted">{item.service.name}</span>
                     </div>
@@ -384,7 +421,7 @@ export const DashboardPage = () => {
               ))}
             </div>
           ) : (
-            <EmptyBlock message={t("dashboard.noTodayAppointments")} />
+            <EmptyBlock message={t("dashboard.noTodayOperationalAppointments")} />
           )}
         </section>
 
@@ -432,18 +469,18 @@ export const DashboardPage = () => {
                   <InfoHint text={t("hints.callCenter")} />
                 </span>
                 <span className="status-pill info">
-                  {t("dashboard.todayStatus")}: {todayAppointments.length ? t("dashboard.todayOpenStatus") : t("dashboard.todayQuietStatus")}
+                  {t("dashboard.todayStatus")}: {todayHasOperationalWork ? t("dashboard.todayOpenStatus") : t("dashboard.todayQuietStatus")}
                 </span>
               </div>
               <div className="hero-stats">
                 <article className="hero-stat-card">
                   <span>{t("dashboard.todayAppointments")}</span>
-                  <strong>{todayAppointments.length}</strong>
+                  <strong>{todayOperationalCount}</strong>
                 </article>
                 {!isBasicMode ? (
                   <article className="hero-stat-card">
                     <span>{t("dashboard.completedToday")}</span>
-                    <strong>{completedToday.length}</strong>
+                    <strong>{completedTodayCount}</strong>
                   </article>
                 ) : null}
                 <article className="hero-stat-card">
@@ -477,11 +514,11 @@ export const DashboardPage = () => {
             <section className="card-grid">
               <article className="card stat-card">
                 <h3>{t("dashboard.todayAppointments")}</h3>
-                <strong>{todayAppointments.length}</strong>
+                <strong>{todayOperationalCount}</strong>
                 <span className="muted">
                   {nextAppointmentParts
                     ? `${nextAppointmentParts.time} · ${nextAppointmentParts.date}`
-                    : t("dashboard.noNextAppointment")}
+                    : todayHasOperationalWork ? t("dashboard.noNextAppointment") : t("dashboard.todayQuietStatus")}
                 </span>
               </article>
               <article className="card stat-card">
@@ -537,11 +574,11 @@ export const DashboardPage = () => {
               <div className="hero-stats">
                 <article className="hero-stat-card">
                   <span>{t("appointments.todayCount")}</span>
-                  <strong>{todayAppointments.length}</strong>
+                  <strong>{todayOperationalCount}</strong>
                 </article>
                 <article className="hero-stat-card">
                   <span>{t("appointments.completedCount")}</span>
-                  <strong>{completedToday.length}</strong>
+                  <strong>{completedTodayCount}</strong>
                 </article>
                 <article className="hero-stat-card">
                   <span>{t("appointments.inProgressCount")}</span>
@@ -575,14 +612,14 @@ export const DashboardPage = () => {
                 {t("dashboard.openDetails")}
               </Link>
             </div>
-            {todayAppointments.length ? (
+            {todayOperationalAppointments.length ? (
               <div className="entity-grid">
-                {todayAppointments.map((item) => (
+                {todayOperationalAppointments.map((item) => (
                   <article key={item.id} className="appointment-card">
                     <div className="appointment-card-header">
                       <div className="appointment-card-copy">
                         <strong>
-                          {formatCustomerName(item.customer.firstName, item.customer.lastName)}
+                          {formatDashboardCustomerName(item.customer)}
                         </strong>
                         <span className="muted">{item.service.name}</span>
                       </div>
@@ -604,7 +641,7 @@ export const DashboardPage = () => {
                 ))}
               </div>
             ) : (
-              <EmptyBlock message={t("dashboard.noTodayAppointments")} />
+              <EmptyBlock message={t("dashboard.noTodayOperationalAppointments")} />
             )}
           </section>
         </>
@@ -630,7 +667,7 @@ export const DashboardPage = () => {
                     <tr key={item.id}>
                       <td>{formatDateTime(item.startTime, salonTimezone)}</td>
                       <td>
-                        {formatCustomerName(item.customer.firstName, item.customer.lastName)}
+                        {formatDashboardCustomerName(item.customer)}
                       </td>
                       <td>{item.service.name}</td>
                       <td>{item.staff.fullName}</td>

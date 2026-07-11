@@ -4,6 +4,7 @@ import {
   AppointmentSource,
   AppointmentStatus
 } from "@prisma/client";
+import { DateTime } from "luxon";
 import { BLOCKING_APPOINTMENT_STATUSES } from "../src/config/constants";
 import { prisma } from "../src/db/prisma";
 import { validateAppointmentSlot } from "../src/modules/availability/availability.service";
@@ -11,6 +12,7 @@ import {
   formatAppointmentAlertDateTime,
   permanentlyDeleteAppointment,
   removeTechnicalAppointmentNoteLines,
+  summarizeAppointments,
   toOwnerAppointmentResponse
 } from "../src/modules/appointments/appointments.service";
 import {
@@ -173,6 +175,84 @@ test("booking alert date formatter uses salon timezone and locale", () => {
     formatAppointmentAlertDateTime(new Date("2026-03-08T07:30:00.000Z"), "America/New_York", "en-US"),
     "Mar 8, 2026 at 3:30 AM"
   );
+});
+
+test("appointment summary counts operational statuses without pagination", async () => {
+  let capturedArgs: any = null;
+  patch(prisma.appointment as any, "groupBy", async (args: any) => {
+    capturedArgs = args;
+    return [
+      { status: AppointmentStatus.SCHEDULED, _count: { _all: 2 } },
+      { status: AppointmentStatus.CONFIRMED, _count: { _all: 1 } },
+      { status: AppointmentStatus.IN_PROGRESS, _count: { _all: 1 } },
+      { status: AppointmentStatus.COMPLETED, _count: { _all: 1 } },
+      { status: AppointmentStatus.CANCELED, _count: { _all: 3 } },
+      { status: AppointmentStatus.NO_SHOW, _count: { _all: 2 } }
+    ];
+  });
+
+  const summary = await summarizeAppointments(salonId, {});
+
+  assert.equal(summary.operationalCount, 4);
+  assert.equal(summary.completedCount, 1);
+  assert.equal(summary.canceledCount, 3);
+  assert.equal(summary.noShowCount, 2);
+  assert.equal(summary.historyCount, 6);
+  assert.equal(summary.total, 10);
+  assert.equal(capturedArgs.take, undefined);
+  assert.equal(capturedArgs.skip, undefined);
+});
+
+test("appointment summary returns zero operational count for canceled-only day", async () => {
+  patch(prisma.appointment as any, "groupBy", async () => [
+    { status: AppointmentStatus.CANCELED, _count: { _all: 14 } }
+  ]);
+
+  const summary = await summarizeAppointments(salonId, {});
+
+  assert.equal(summary.operationalCount, 0);
+  assert.equal(summary.canceledCount, 14);
+  assert.equal(summary.completedCount, 0);
+});
+
+test("appointment summary accepts salon-timezone day ranges across midnight and DST", async () => {
+  let capturedWhere: any = null;
+  patch(prisma.appointment as any, "groupBy", async (args: any) => {
+    capturedWhere = args.where;
+    return [{ status: AppointmentStatus.SCHEDULED, _count: { _all: 1 } }];
+  });
+
+  const summerFrom = DateTime.fromISO("2026-07-11T00:00", {
+    zone: "America/New_York"
+  }).toUTC().toJSDate();
+  const summerTo = DateTime.fromISO("2026-07-11T23:59", {
+    zone: "America/New_York"
+  }).toUTC().toJSDate();
+  await summarizeAppointments(salonId, {
+    dateFrom: summerFrom,
+    dateTo: summerTo
+  });
+
+  assert.equal(capturedWhere.startTime.gte.toISOString(), "2026-07-11T04:00:00.000Z");
+  assert.equal(capturedWhere.startTime.lte.toISOString(), "2026-07-12T03:59:00.000Z");
+  assert.equal(
+    new Date("2026-07-12T03:30:00.000Z").getTime() <= capturedWhere.startTime.lte.getTime(),
+    true
+  );
+
+  const dstFrom = DateTime.fromISO("2026-03-08T00:00", {
+    zone: "America/New_York"
+  }).toUTC().toJSDate();
+  const dstTo = DateTime.fromISO("2026-03-08T23:59", {
+    zone: "America/New_York"
+  }).toUTC().toJSDate();
+  await summarizeAppointments(salonId, {
+    dateFrom: dstFrom,
+    dateTo: dstTo
+  });
+
+  assert.equal(capturedWhere.startTime.gte.toISOString(), "2026-03-08T05:00:00.000Z");
+  assert.equal(capturedWhere.startTime.lte.toISOString(), "2026-03-09T03:59:00.000Z");
 });
 
 test("customer update accepts international E.164 and rejects duplicate canonical phones", async () => {

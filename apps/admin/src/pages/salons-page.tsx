@@ -4,6 +4,9 @@ import { apiGet, extractErrorMessage } from "../lib/api";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
 import type { Pagination } from "../types";
 import { getStatusLabel, useI18n } from "../lib/i18n";
+import { useToast } from "../components/toast";
+import { useFormDialog } from "../components/form-dialog";
+import { openSalonDeleteDialog } from "../lib/salon-delete";
 
 interface SalonListItem {
   id: string;
@@ -29,6 +32,8 @@ interface SalonListResponse {
 
 export const SalonsPage = () => {
   const { t } = useI18n();
+  const { notify } = useToast();
+  const { openFormDialog, FormDialog } = useFormDialog();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
   const [subscriptionStatus, setSubscriptionStatus] = useState("");
@@ -37,6 +42,7 @@ export const SalonsPage = () => {
   const [data, setData] = useState<SalonListResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [deletingSalonId, setDeletingSalonId] = useState("");
 
   const load = async () => {
     setError("");
@@ -83,6 +89,34 @@ export const SalonsPage = () => {
     });
   }, [data?.items, query]);
 
+  const deleteSalon = async (salonId: string) => {
+    setDeletingSalonId(salonId);
+    try {
+      await openSalonDeleteDialog({
+        salonId,
+        t,
+        openFormDialog,
+        notify,
+        onDeleted: () => {
+          setData((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  items: prev.items.filter((item) => item.id !== salonId),
+                  pagination: {
+                    ...prev.pagination,
+                    total: Math.max(prev.pagination.total - 1, 0)
+                  }
+                }
+              : prev
+          );
+        }
+      });
+    } finally {
+      setDeletingSalonId("");
+    }
+  };
+
   if (loading) {
     return <LoadingBlock />;
   }
@@ -95,6 +129,7 @@ export const SalonsPage = () => {
 
   return (
     <div className="stack">
+      <FormDialog />
       <section className="card page-hero">
         <div className="section-header">
           <div>
@@ -152,9 +187,19 @@ export const SalonsPage = () => {
                     </Link>
                     <span>{salon.contactPhone ?? t("salons.hotlineMissing")}</span>
                   </div>
-                  <Link to={`/salons/${salon.id}`} className="button-secondary">
-                    {t("common.viewDetail")}
-                  </Link>
+                  <div className="entity-card-actions">
+                    <Link to={`/salons/${salon.id}`} className="button-secondary">
+                      {t("common.viewDetail")}
+                    </Link>
+                    <button
+                      type="button"
+                      className="button-secondary danger"
+                      disabled={deletingSalonId === salon.id}
+                      onClick={() => void deleteSalon(salon.id)}
+                    >
+                      {deletingSalonId === salon.id ? t("common.saving") : t("salons.delete")}
+                    </button>
+                  </div>
                 </div>
                 <div className="summary-badges">
                   <span className={salon.status === "ACTIVE" ? "status-pill success" : "status-pill warning"}>
