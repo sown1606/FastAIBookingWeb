@@ -1,7 +1,7 @@
 import { Fragment, FormEvent, useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { useSearchParams } from "react-router-dom";
-import { apiDelete, apiGet, apiPatch, apiPost, extractErrorMessage } from "../lib/api";
+import { apiDelete, apiGet, apiPatch, apiPost, extractApiErrorCode, extractErrorMessage } from "../lib/api";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
 import { useToast } from "../components/toast";
 import { useAuth } from "../auth/auth-context";
@@ -168,6 +168,9 @@ const localDateKey = (value: string, timezone = FALLBACK_SALON_TIMEZONE) => {
   return getSalonDateKey(date, timezone);
 };
 
+const isAppointmentNotFoundError = (error: unknown) =>
+  extractApiErrorCode(error) === "APPOINTMENT_NOT_FOUND";
+
 const buildAppointmentDateParams = (fromDateKey: string, toDateKey: string, timezone: string) => {
   const params = new URLSearchParams({
     limit: "100"
@@ -262,6 +265,15 @@ export const AppointmentsPage = () => {
   const salonTimezone = useMemo(
     () => resolveAppointmentTimezone(appointments, salonProfileTimezone),
     [appointments, salonProfileTimezone]
+  );
+  const allLoadedAppointments = useMemo(
+    () => [
+      ...appointments,
+      ...ownerUpcomingAppointments,
+      ...ownerCompletedAppointments,
+      ...ownerCanceledNoShowAppointments
+    ],
+    [appointments, ownerCanceledNoShowAppointments, ownerCompletedAppointments, ownerUpcomingAppointments]
   );
   const todayDateKey = useMemo(() => getSalonDateKey(new Date(), salonTimezone), [salonTimezone]);
   const fetchAppointments = async (baseParams: URLSearchParams) => {
@@ -396,15 +408,71 @@ export const AppointmentsPage = () => {
     if (!highlightedAppointmentId || loading) {
       return;
     }
-    const appointment = appointments.find((item) => item.id === highlightedAppointmentId);
-    if (!appointment) {
+    const selectedDeepLinkAppointment =
+      selectedAppointment?.id === highlightedAppointmentId ? selectedAppointment : null;
+    const loadedDeepLinkAppointment =
+      selectedDeepLinkAppointment ?? allLoadedAppointments.find((item) => item.id === highlightedAppointmentId);
+    if (loadedDeepLinkAppointment) {
+      if (!selectedDeepLinkAppointment) {
+        setSelectedAppointment(loadedDeepLinkAppointment);
+      }
+      const appointmentTimezone = loadedDeepLinkAppointment.salon?.timezone || salonTimezone;
+      const appointmentDate = localDateKey(loadedDeepLinkAppointment.startTime, appointmentTimezone);
+      if (selectedDate !== appointmentDate) {
+        setSelectedDate(appointmentDate);
+      }
       return;
     }
-    const appointmentDate = localDateKey(appointment.startTime, salonTimezone);
-    if (selectedDate !== appointmentDate) {
-      setSelectedDate(appointmentDate);
-    }
-  }, [appointments, highlightedAppointmentId, loading, salonTimezone, selectedDate]);
+
+    let cancelled = false;
+    setDetailLoading(true);
+    const loadDeepLinkAppointment = async () => {
+      try {
+        const appointment = await apiGet<AppointmentItem>(`/api/v1/appointments/${highlightedAppointmentId}`);
+        if (cancelled) {
+          return;
+        }
+        setSelectedAppointment(appointment);
+        const appointmentTimezone = appointment.salon?.timezone || salonTimezone;
+        const appointmentDate = localDateKey(appointment.startTime, appointmentTimezone);
+        if (selectedDate !== appointmentDate) {
+          setSelectedDate(appointmentDate);
+        }
+      } catch (detailError) {
+        if (cancelled) {
+          return;
+        }
+        if (isAppointmentNotFoundError(detailError)) {
+          const nextParams = new URLSearchParams(searchParams);
+          nextParams.delete("appointmentId");
+          setSearchParams(nextParams, { replace: true });
+          setSelectedAppointment(null);
+          notify("error", t("appointments.notFoundStale"));
+          return;
+        }
+        notify("error", extractErrorMessage(detailError));
+      } finally {
+        if (!cancelled) {
+          setDetailLoading(false);
+        }
+      }
+    };
+    void loadDeepLinkAppointment();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    allLoadedAppointments,
+    highlightedAppointmentId,
+    loading,
+    notify,
+    salonTimezone,
+    searchParams,
+    selectedAppointment,
+    selectedDate,
+    setSearchParams,
+    t
+  ]);
 
   useEffect(() => {
     if (!highlightedAppointmentId || loading) {
@@ -448,21 +516,29 @@ export const AppointmentsPage = () => {
   };
 
   const selectAppointment = async (appointmentId: string) => {
-    const existing = [
-      ...appointments,
-      ...ownerUpcomingAppointments,
-      ...ownerCompletedAppointments,
-      ...ownerCanceledNoShowAppointments
-    ].find((item) => item.id === appointmentId);
+    const existing = allLoadedAppointments.find((item) => item.id === appointmentId);
     if (existing) {
       setSelectedAppointment(existing);
-      return;
+      return existing;
     }
     setDetailLoading(true);
     try {
-      setSelectedAppointment(await apiGet<AppointmentItem>(`/api/v1/appointments/${appointmentId}`));
+      const appointment = await apiGet<AppointmentItem>(`/api/v1/appointments/${appointmentId}`);
+      setSelectedAppointment(appointment);
+      return appointment;
     } catch (detailError) {
+      if (isAppointmentNotFoundError(detailError)) {
+        if (appointmentId === highlightedAppointmentId) {
+          const nextParams = new URLSearchParams(searchParams);
+          nextParams.delete("appointmentId");
+          setSearchParams(nextParams, { replace: true });
+        }
+        setSelectedAppointment(null);
+        notify("error", t("appointments.notFoundStale"));
+        return null;
+      }
       notify("error", extractErrorMessage(detailError));
+      return null;
     } finally {
       setDetailLoading(false);
     }
@@ -877,6 +953,69 @@ export const AppointmentsPage = () => {
     );
   };
 
+  const renderAppointmentDetailSection = () => (
+    selectedAppointment || detailLoading ? (
+      <section className="card appointment-detail-card appointments-detail-card">
+        <div className="section-header">
+          <div>
+            <p className="eyebrow">Appointment detail</p>
+            <h2>
+              {selectedAppointment
+                ? formatCustomerName(selectedAppointment.customer.firstName, selectedAppointment.customer.lastName)
+                : t("common.loading")}
+            </h2>
+          </div>
+          <button type="button" className="button-secondary" onClick={() => setSelectedAppointment(null)}>
+            Close
+          </button>
+        </div>
+        {selectedAppointment ? (
+          <>
+            <div className="summary-badges">
+              <span className={selectedAppointment.status === "COMPLETED" ? "status-pill success" : selectedAppointment.status === "IN_PROGRESS" ? "status-pill info" : selectedAppointment.status === "CANCELED" || selectedAppointment.status === "NO_SHOW" ? "status-pill warning" : "status-pill"}>
+                {statusLabelKey(selectedAppointment.status)
+                  ? t(statusLabelKey(selectedAppointment.status)!)
+                  : selectedAppointment.status}
+              </span>
+            </div>
+            <div className="appointment-card-meta">
+              <div>
+                <span className="muted">{t("appointments.time")}</span>
+                <strong>
+                  {t("appointments.timeRange", {
+                    start: formatTimeOnly(selectedAppointment.startTime, salonTimezone),
+                    end: formatTimeOnly(selectedAppointment.endTime, salonTimezone)
+                  })}
+                </strong>
+              </div>
+              <div>
+                <span className="muted">{t("appointments.service")}</span>
+                <strong>{selectedAppointment.service.name}</strong>
+              </div>
+              <div>
+                <span className="muted">{t("appointments.staff")}</span>
+                <strong>{selectedAppointment.staff.fullName}</strong>
+              </div>
+              <div>
+                <span className="muted">{t("appointments.notes")}</span>
+                <strong>{selectedAppointment.notes || t("appointments.noNotes")}</strong>
+              </div>
+            </div>
+            {isOwner ? (
+              <div className="inline-actions">
+                {renderOwnerAppointmentActions(selectedAppointment)}
+              </div>
+            ) : (
+              <div className="inline-actions">{renderStaffAppointmentActions(selectedAppointment)}</div>
+            )}
+          </>
+        ) : (
+          <LoadingBlock />
+        )}
+      </section>
+    ) : null
+  );
+
   if (loading) {
     return <LoadingBlock />;
   }
@@ -968,10 +1107,12 @@ export const AppointmentsPage = () => {
       </section>
 
       {isOwner ? (
-        <section
-          id="create-appointment"
-          className={isBasicMode ? "card basic-secondary-section appointments-create-card" : "card appointments-create-card"}
-        >
+        <div className="owner-appointments-workspace">
+          <div className="owner-appointments-sidebar">
+            <section
+              id="create-appointment"
+              className={isBasicMode ? "card basic-secondary-section appointments-create-card" : "card appointments-create-card"}
+            >
           <h2>{t("appointments.createTitle")}</h2>
           <form className="form-grid two-columns" onSubmit={createAppointment}>
             <label className="field">
@@ -1037,71 +1178,63 @@ export const AppointmentsPage = () => {
               </button>
             </div>
           </form>
-        </section>
-      ) : null}
+            </section>
 
-      {selectedAppointment || detailLoading ? (
-        <section className="card appointment-detail-card appointments-detail-card">
-          <div className="section-header">
-            <div>
-              <p className="eyebrow">Appointment detail</p>
-              <h2>
-                {selectedAppointment
-                  ? formatCustomerName(selectedAppointment.customer.firstName, selectedAppointment.customer.lastName)
-                  : t("common.loading")}
-              </h2>
-            </div>
-            <button type="button" className="button-secondary" onClick={() => setSelectedAppointment(null)}>
-              Close
-            </button>
+            {renderAppointmentDetailSection()}
+
+            <section className="card appointments-archive-card">
+              <div className="section-header">
+                <div>
+                  <h2>{t("appointments.archiveTitle")}</h2>
+                  <p className="muted">{t("appointments.archiveHint")}</p>
+                </div>
+              </div>
+              <div className="segmented-control" role="tablist" aria-label={t("appointments.archiveTitle")}>
+                <button
+                  type="button"
+                  className={archiveView === "completed" ? "button-primary" : "button-secondary"}
+                  onClick={() => setArchiveView("completed")}
+                >
+                  {t("appointments.completedTab")}: {ownerCompletedAppointments.length}
+                </button>
+                <button
+                  type="button"
+                  className={archiveView === "canceled" ? "button-primary" : "button-secondary"}
+                  onClick={() => setArchiveView("canceled")}
+                >
+                  {t("appointments.canceledNoShowTab")}: {ownerCanceledNoShowAppointments.length}
+                </button>
+              </div>
+              {archiveView === "completed" && ownerCompletedByDay.length ? (
+                ownerCompletedByDay.map(([day, items]) => (
+                  <div key={`completed-${day}`} className="day-section">
+                    <h3>{formatSelectedDateLabel(day, locale)}</h3>
+                    <div className="entity-grid">
+                      {items.map(renderOwnerAppointmentCard)}
+                    </div>
+                  </div>
+                ))
+              ) : null}
+              {archiveView === "canceled" && ownerCanceledNoShowByDay.length ? (
+                ownerCanceledNoShowByDay.map(([day, items]) => (
+                  <div key={`terminal-${day}`} className="day-section">
+                    <h3>{formatSelectedDateLabel(day, locale)}</h3>
+                    <div className="entity-grid">
+                      {items.map(renderOwnerAppointmentCard)}
+                    </div>
+                  </div>
+                ))
+              ) : null}
+              {archiveView === "completed" && !ownerCompletedByDay.length ? (
+                <EmptyBlock message={t("appointments.noArchive")} />
+              ) : null}
+              {archiveView === "canceled" && !ownerCanceledNoShowByDay.length ? (
+                <EmptyBlock message={t("appointments.noArchive")} />
+              ) : null}
+            </section>
           </div>
-          {selectedAppointment ? (
-            <>
-              <div className="summary-badges">
-                <span className={selectedAppointment.status === "COMPLETED" ? "status-pill success" : selectedAppointment.status === "IN_PROGRESS" ? "status-pill info" : selectedAppointment.status === "CANCELED" || selectedAppointment.status === "NO_SHOW" ? "status-pill warning" : "status-pill"}>
-                  {statusLabelKey(selectedAppointment.status)
-                    ? t(statusLabelKey(selectedAppointment.status)!)
-                    : selectedAppointment.status}
-                </span>
-              </div>
-              <div className="appointment-card-meta">
-                <div>
-                  <span className="muted">{t("appointments.time")}</span>
-                  <strong>
-                    {t("appointments.timeRange", {
-                      start: formatTimeOnly(selectedAppointment.startTime, salonTimezone),
-                      end: formatTimeOnly(selectedAppointment.endTime, salonTimezone)
-                    })}
-                  </strong>
-                </div>
-                <div>
-                  <span className="muted">{t("appointments.service")}</span>
-                  <strong>{selectedAppointment.service.name}</strong>
-                </div>
-                <div>
-                  <span className="muted">{t("appointments.staff")}</span>
-                  <strong>{selectedAppointment.staff.fullName}</strong>
-                </div>
-                <div>
-                  <span className="muted">{t("appointments.notes")}</span>
-                  <strong>{selectedAppointment.notes || t("appointments.noNotes")}</strong>
-                </div>
-              </div>
-              {isOwner ? (
-                <div className="inline-actions">
-                  {renderOwnerAppointmentActions(selectedAppointment)}
-                </div>
-              ) : (
-                <div className="inline-actions">{renderStaffAppointmentActions(selectedAppointment)}</div>
-              )}
-            </>
-          ) : (
-            <LoadingBlock />
-          )}
-        </section>
-      ) : null}
+          <div className="owner-appointments-main">
 
-      {isOwner ? (
         <section className={isBasicMode ? "card basic-primary-section appointments-schedule-card" : "card appointments-schedule-card"}>
           <div className="section-header">
             <div>
@@ -1250,11 +1383,9 @@ export const AppointmentsPage = () => {
               ) : null}
             </div>
           )}
-        </section>
-      ) : null}
+            </section>
 
-      {isOwner ? (
-        <section className="card appointments-upcoming-card">
+            <section className="card appointments-upcoming-card">
           <div className="section-header">
             <div>
               <h2>{t("appointments.upcomingTitle")}</h2>
@@ -1274,61 +1405,12 @@ export const AppointmentsPage = () => {
           ) : (
             <EmptyBlock message={t("appointments.noOwner")} />
           )}
-        </section>
+            </section>
+          </div>
+        </div>
       ) : null}
 
-      {isOwner ? (
-        <section className="card appointments-archive-card">
-          <div className="section-header">
-            <div>
-              <h2>{t("appointments.archiveTitle")}</h2>
-              <p className="muted">{t("appointments.archiveHint")}</p>
-            </div>
-          </div>
-          <div className="segmented-control" role="tablist" aria-label={t("appointments.archiveTitle")}>
-            <button
-              type="button"
-              className={archiveView === "completed" ? "button-primary" : "button-secondary"}
-              onClick={() => setArchiveView("completed")}
-            >
-              {t("appointments.completedTab")}: {ownerCompletedAppointments.length}
-            </button>
-            <button
-              type="button"
-              className={archiveView === "canceled" ? "button-primary" : "button-secondary"}
-              onClick={() => setArchiveView("canceled")}
-            >
-              {t("appointments.canceledNoShowTab")}: {ownerCanceledNoShowAppointments.length}
-            </button>
-          </div>
-          {archiveView === "completed" && ownerCompletedByDay.length ? (
-            ownerCompletedByDay.map(([day, items]) => (
-              <div key={`completed-${day}`} className="day-section">
-                <h3>{formatSelectedDateLabel(day, locale)}</h3>
-                <div className="entity-grid">
-                  {items.map(renderOwnerAppointmentCard)}
-                </div>
-              </div>
-            ))
-          ) : null}
-          {archiveView === "canceled" && ownerCanceledNoShowByDay.length ? (
-            ownerCanceledNoShowByDay.map(([day, items]) => (
-              <div key={`terminal-${day}`} className="day-section">
-                <h3>{formatSelectedDateLabel(day, locale)}</h3>
-                <div className="entity-grid">
-                  {items.map(renderOwnerAppointmentCard)}
-                </div>
-              </div>
-            ))
-          ) : null}
-          {archiveView === "completed" && !ownerCompletedByDay.length ? (
-            <EmptyBlock message={t("appointments.noArchive")} />
-          ) : null}
-          {archiveView === "canceled" && !ownerCanceledNoShowByDay.length ? (
-            <EmptyBlock message={t("appointments.noArchive")} />
-          ) : null}
-        </section>
-      ) : null}
+      {!isOwner ? renderAppointmentDetailSection() : null}
 
       {!isOwner && !isBasicMode ? (
         <section className="card">

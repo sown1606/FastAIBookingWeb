@@ -205,7 +205,7 @@ const ANY_STAFF_ALIASES = [
 const SERVICE_DTMF_PROMPT =
   "Hi, thanks for calling Kiet Nails. How can I help? You can say the service, day, time, and technician in one sentence. Press 0 for a person.";
 const SERVICE_KEYPAD_PROMPT =
-  "Sorry, what service would you like?";
+  "Sure. Which service would you like?";
 const SERVICE_DTMF_SHORT_PROMPT =
   "I can list the services once. Please say the service name, or press 0 for a person.";
 const STAFF_DTMF_PROMPT =
@@ -273,6 +273,10 @@ const SERVICE_ALIAS_GROUPS = {
     "food set",
     "fool set",
     "foot set",
+    "boom set",
+    "book a set",
+    "want a set",
+    "a nail set",
     "full step",
     "full said",
     "fullsat",
@@ -324,7 +328,7 @@ const WEEKDAY_INDEXES = {
 
 const SLOT_ELICIT_PROMPTS = {
   serviceName: [
-    SERVICE_DTMF_PROMPT,
+    SERVICE_KEYPAD_PROMPT,
     SERVICE_KEYPAD_PROMPT,
     SERVICE_DTMF_SHORT_PROMPT
   ],

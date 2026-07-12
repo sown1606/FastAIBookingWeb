@@ -270,11 +270,12 @@
           "operatorHelpMentioned": "true",
           "x-amz-lex:allow-interrupt:*:*": "true",
           "x-amz-lex:audio:start-timeout-ms:*:*": "7000",
-          "x-amz-lex:audio:end-timeout-ms:*:*": "1300",
+          "x-amz-lex:audio:end-timeout-ms:*:*": "2400",
           "x-amz-lex:audio:max-length-ms:*:*": "20000",
-          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedTime": "1100",
-          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference": "1100",
-          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:customerName": "1500"
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName": "2200",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedTime": "1600",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference": "1600",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:customerName": "2000"
         },
         "Text": "Hi, thanks for calling Kiet Nails. How can I help? You can say the service, day, time, and technician in one sentence. Press 0 for a person."
       },
@@ -316,6 +317,24 @@
               "Operator": "Equals",
               "Operands": [
                 "HumanEscalationIntent"
+              ]
+            }
+          },
+          {
+            "NextAction": "check-transfer-to-queue",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "FallbackIntent"
+              ]
+            }
+          },
+          {
+            "NextAction": "check-transfer-to-queue",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "AMAZON.FallbackIntent"
               ]
             }
           }
@@ -371,11 +390,12 @@
           "operatorHelpMentioned": "true",
           "x-amz-lex:allow-interrupt:*:*": "true",
           "x-amz-lex:audio:start-timeout-ms:*:*": "7000",
-          "x-amz-lex:audio:end-timeout-ms:*:*": "1300",
+          "x-amz-lex:audio:end-timeout-ms:*:*": "2400",
           "x-amz-lex:audio:max-length-ms:*:*": "20000",
-          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedTime": "1100",
-          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference": "1100",
-          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:customerName": "1500",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName": "2200",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedTime": "1600",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference": "1600",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:customerName": "2000",
           "conversationState": "$.Lex.SessionAttributes.conversationState",
           "conversationOutcome": "$.Lex.SessionAttributes.conversationOutcome",
           "conversationComplete": "$.Lex.SessionAttributes.conversationComplete",
@@ -403,7 +423,7 @@
           "lastAskedSlot": "$.Lex.SessionAttributes.lastAskedSlot",
           "outerRecoveryAttempt": "true"
         },
-        "Text": "Sorry, I missed that. Please tell me what you need, or press 0 for a person."
+        "Text": "Please tell me what you need, or press 0 for a person."
       },
       "Transitions": {
         "NextAction": "check-transfer-to-queue",
@@ -443,15 +463,33 @@
                 "HumanEscalationIntent"
               ]
             }
+          },
+          {
+            "NextAction": "check-transfer-to-queue",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "FallbackIntent"
+              ]
+            }
+          },
+          {
+            "NextAction": "check-transfer-to-queue",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "AMAZON.FallbackIntent"
+              ]
+            }
           }
         ],
         "Errors": [
           {
-            "NextAction": "67ada978-600a-4d39-9965-6230c52810a9",
+            "NextAction": "41e3f239-5b57-4363-92fc-9d594579fa98",
             "ErrorType": "NoMatchingCondition"
           },
           {
-            "NextAction": "67ada978-600a-4d39-9965-6230c52810a9",
+            "NextAction": "41e3f239-5b57-4363-92fc-9d594579fa98",
             "ErrorType": "NoMatchingError"
           }
         ]
@@ -462,13 +500,13 @@
       "Type": "MessageParticipant",
       "Parameters": {
         "SkipWhenDTMFBufferEnabled": "false",
-        "Text": "I am having trouble hearing that. Please call again or press 0 next time for a person."
+        "Text": "I am having technical trouble continuing this call. Please call again, or press 0 on the next prompt for a person."
       },
       "Transitions": {
-        "NextAction": "67ada978-600a-4d39-9965-6230c52810a9",
+        "NextAction": "ef8d8054-77ea-40c7-aa4e-800ed784c49c",
         "Errors": [
           {
-            "NextAction": "67ada978-600a-4d39-9965-6230c52810a9",
+            "NextAction": "ef8d8054-77ea-40c7-aa4e-800ed784c49c",
             "ErrorType": "NoMatchingError"
           }
         ]

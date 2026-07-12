@@ -1108,6 +1108,34 @@ test("known Amazon Connect caller phone skips name and phone prompts", async () 
   assert.equal(state.appointments.length, 0);
 });
 
+test("partial booking fragment asks for service without greeting again", async () => {
+  const result = await postInternalAppointment(
+    bookingPayload({
+      customerName: undefined,
+      customerPhone: undefined,
+      callerPhone: "+17325956266",
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      transcript: "i want to book",
+      currentTurnTranscript: "i want to book",
+      attributes: {
+        CustomerEndpointAddress: "+17325956266"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
+  assert.match(result.body.data.lexResponse.message, /Sure\. Which service would you like\?/i);
+  assert.doesNotMatch(result.body.data.lexResponse.message, /Welcome back/i);
+  assert.doesNotMatch(result.body.data.lexResponse.message, /Sorry, I/i);
+  assert.doesNotMatch(result.body.data.lexResponse.message, /list the services/i);
+  assert.equal(state.appointments.length, 0);
+});
+
 test("recognized customer name noise is not reused for greeting or booking summary", async () => {
   state.customers.push({
     id: "customer-with-noise",
@@ -1537,6 +1565,65 @@ test("Full Set full utterance with Lee keeps service date time and staff", async
   assert.notEqual(result.body.data.lexResponse.sessionAttributes.transferToQueue, "true");
 });
 
+test("spoken Lee creates a new customer without inheriting Phan", async () => {
+  const customerPhone = "+84999990001";
+  const result = await postInternalAppointment(
+    bookingPayload({
+      customerName: "Lee",
+      customerPhone,
+      serviceName: "Full Set",
+      staffPreference: "Trang",
+      confirmationState: "Confirmed",
+      amazonConnectContactId: "connect-spoken-lee-new-profile"
+    })
+  );
+
+  assert.equal(result.response.status, 201);
+  assert.equal(result.body.data.outcome, "BOOKED");
+  const customer = state.customers.find((item) => item.phone === customerPhone);
+  assert.ok(customer);
+  assert.equal(customer.firstName, "Lee");
+  assert.equal(customer.lastName, "");
+  assert.equal(state.appointments[0].customerId, customer.id);
+});
+
+test("existing Lee Phan profile is reused without silently overwriting surname", async () => {
+  const customerPhone = "+84999990002";
+  state.customers.push({
+    id: "customer-lee-phan",
+    salonId: ids.salonA,
+    firstName: "Lee",
+    lastName: "Phan",
+    phone: customerPhone,
+    createdAt: new Date("2026-01-10T00:00:00.000Z")
+  } as any);
+
+  const result = await postInternalAppointment(
+    bookingPayload({
+      customerName: "Lee",
+      customerPhone,
+      serviceName: "Full Set",
+      staffPreference: "Trang",
+      confirmationState: "Confirmed",
+      amazonConnectContactId: "connect-spoken-lee-existing-profile",
+      currentTurnTranscript: "my name is Lee",
+      transcript: "my name is Lee"
+    })
+  );
+
+  assert.equal(result.response.status, 201);
+  assert.equal(result.body.data.outcome, "BOOKED");
+  const customer = state.customers.find((item) => item.id === "customer-lee-phan");
+  assert.equal(customer?.firstName, "Lee");
+  assert.equal(customer?.lastName, "Phan");
+  assert.equal(state.appointments[0].customerId, "customer-lee-phan");
+  assert.equal(state.bookingAttempts.at(-1)?.normalizedRequest.recognizedCustomerId, "customer-lee-phan");
+  assert.equal(state.bookingAttempts.at(-1)?.normalizedRequest.spokenCustomerName, "Lee");
+  assert.equal(state.bookingAttempts.at(-1)?.normalizedRequest.persistedCustomerFirstName, "Lee");
+  assert.equal(state.bookingAttempts.at(-1)?.normalizedRequest.persistedCustomerLastName, "Phan");
+  assert.equal(state.bookingAttempts.at(-1)?.normalizedRequest.customerProfileSource, "active_customer");
+});
+
 test("Full Set speech aliases resolve to the active Full Set service", async () => {
   for (const phrase of [
     "full set",
@@ -1560,6 +1647,10 @@ test("Full Set speech aliases resolve to the active Full Set service", async () 
     "food set",
     "fool set",
     "foot set",
+    "boom set",
+    "book a set",
+    "want a set",
+    "a nail set",
     "full step",
     "full said",
     "fullsat",
@@ -1770,6 +1861,13 @@ test("confirmed any-staff booking creates appointment with resolved staff id", a
   assert.equal(state.appointments.length, 1);
   assert.equal(state.appointments[0].staffId, ids.trang);
   assert.equal(state.bookingAttempts.at(-1).requestedStaff, "Trang");
+  assert.equal(state.bookingAttempts.at(-1).normalizedRequest.staffId, ids.trang);
+  assert.equal(state.bookingAttempts.at(-1).normalizedRequest.selectedStaffId, ids.trang);
+  assert.equal(state.bookingAttempts.at(-1).normalizedRequest.confirmedStaffId, ids.trang);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffId, ids.trang);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.selectedStaffId, ids.trang);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedStaffId, ids.trang);
+  assert.match(result.body.data.lexResponse.message, /with Trang/i);
   assert.notEqual(state.bookingAttempts.at(-1).normalizedRequest.staffPreference, null);
 });
 

@@ -8,6 +8,8 @@ const vietnameseApiMessages: Record<string, string> = {
   "Selected staff is not assigned to this service.": "Nhân viên đã chọn chưa được gán dịch vụ này.",
   "Service not found or inactive.": "Không tìm thấy dịch vụ hoặc dịch vụ đang tắt.",
   "Customer not found for this salon.": "Không tìm thấy khách hàng trong tiệm này.",
+  "Customer not found.": "Không tìm thấy khách hàng trong tiệm này.",
+  "Appointment not found.": "Không tìm thấy lịch hẹn.",
   "Invalid login credentials.": "Email hoặc mật khẩu không đúng.",
   "Role is not allowed for this login.": "Tài khoản này không được đăng nhập bằng vai trò đã chọn.",
   "Staff access is not configured.": "Tài khoản nhân viên chưa được cấu hình quyền truy cập.",

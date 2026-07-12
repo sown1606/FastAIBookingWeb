@@ -276,6 +276,10 @@ const SERVICE_ALIASES: Record<string, string[]> = {
     "food set",
     "fool set",
     "foot set",
+    "boom set",
+    "book a set",
+    "want a set",
+    "a nail set",
     "full step",
     "full said",
     "fullsat",
@@ -466,7 +470,7 @@ const SERVICE_DTMF_PROMPT =
   "Hi, thanks for calling Kiet Nails. How can I help? You can say the service, day, time, and technician in one sentence. Press 0 for a person.";
 const SERVICE_DTMF_OPTIONS_PROMPT =
   "I can list the services once. Please say the service name, or press 0 for a person.";
-const SERVICE_FIRST_RETRY_PROMPT = "Sorry, what service would you like?";
+const SERVICE_FIRST_RETRY_PROMPT = "Sure. Which service would you like?";
 const STAFF_DTMF_PROMPT =
   "Which staff would you like, Trang, Amy, Kelly, or first available?";
 
@@ -569,6 +573,24 @@ const findConfiguredServiceNameInText = (
     })
   );
   return getCustomerFacingServiceName(matchedServiceName);
+};
+
+const PARTIAL_BOOKING_FRAGMENTS = new Set([
+  "i want to",
+  "i want to book",
+  "i want to book a",
+  "want to book",
+  "want to book a",
+  "book a",
+  "book an",
+  "with",
+  "change it to",
+  "full"
+]);
+
+const isPartialBookingFragment = (text?: string | null): boolean => {
+  const normalized = normalizeForMatch(text).replace(/[.?!,]+$/g, "").trim();
+  return PARTIAL_BOOKING_FRAGMENTS.has(normalized);
 };
 
 const extractCustomerNameFromText = (text?: string): string | undefined => {
@@ -4269,6 +4291,7 @@ const buildLexMessage = (input: {
   attemptCount?: number;
   invalidStaffDtmfSelection?: boolean;
   repeatedKnownFieldWhileAskingName?: boolean;
+  partialBookingFragment?: boolean;
 }): string => {
   if (input.outcome === "BOOKED") {
     const appointmentTime = input.appointmentStartTime
@@ -4354,6 +4377,9 @@ const buildLexMessage = (input: {
       );
     }
     if (input.missingFields?.includes("serviceName")) {
+      if (input.partialBookingFragment) {
+        return speak(SERVICE_FIRST_RETRY_PROMPT);
+      }
       const firstName = input.knownFields?.customerName?.split(/\s+/)[0];
       const servicePrompt = isRetry
         ? input.servicePromptText ?? SERVICE_DTMF_OPTIONS_PROMPT
@@ -5142,6 +5168,12 @@ export const createAmazonConnectAIAppointment = async (
   ) {
     customerNameNeedsReview = false;
   }
+  const spokenCustomerName = currentTurnAcceptedCustomerName;
+  const customerProfileSource = recognizedCustomer
+    ? "active_customer"
+    : knownCallerMemory
+      ? knownCallerMemory.source ?? "caller_memory"
+      : customerNameSourceOverride ?? "current_request";
 
   const transcript =
     callSession && normalized.transcriptText
@@ -5406,9 +5438,14 @@ export const createAmazonConnectAIAppointment = async (
         salonId: salon.id,
         salonResolutionSource: resolutionSource,
 	        customerId: recognizedCustomer?.id,
+	        recognizedCustomerId: recognizedCustomer?.id,
+	        spokenCustomerName,
+	        persistedCustomerFirstName: recognizedCustomer?.firstName,
+	        persistedCustomerLastName: recognizedCustomer?.lastName,
 	        customerName: normalized.customerName,
 	        customerPhone: normalized.customerPhone,
 	        customerNameSource: customerNameSourceOverride,
+	        customerProfileSource,
 	        customerNameNeedsReview: customerNameNeedsReview || undefined,
 	        serviceName: normalized.serviceName,
         requestedDate: normalized.requestedDate,
@@ -5713,10 +5750,14 @@ export const createAmazonConnectAIAppointment = async (
         conversationComplete: terminalBooking ? "true" : "false",
         customerId: recognizedCustomer?.id,
         recognizedCustomerId: recognizedCustomer?.id,
+        spokenCustomerName,
+        persistedCustomerFirstName: recognizedCustomer?.firstName,
+        persistedCustomerLastName: recognizedCustomer?.lastName,
         recognizedCustomerName: recognizedCustomerReusableName ?? knownCallerMemory?.customerName,
         customerNameSource: recognizedCustomerReusableName
           ? "customer"
           : customerNameSourceOverride ?? knownCallerMemory?.source,
+        customerProfileSource,
 	        customerNameNeedsReview: customerNameNeedsReview ? "true" : undefined,
 	        customerName: normalized.customerName,
         customerPhone: normalized.customerPhone,
@@ -6613,6 +6654,9 @@ export const createAmazonConnectAIAppointment = async (
       attemptCount: elicitDecision.attemptCount,
       servicePromptText: servicePromptSessionAttributes.serviceDtmfPromptText,
       invalidStaffDtmfSelection: normalized.invalidStaffDtmfSelection,
+      partialBookingFragment: isPartialBookingFragment(
+        normalized.currentTurnTranscript ?? normalized.transcriptText
+      ),
       repeatedKnownFieldWhileAskingName:
         elicitDecision.slotToElicit === "customerName" &&
         readStringAttribute(normalized.attributes, ["lastAskedSlot"]) === "customerName" &&
@@ -7222,19 +7266,21 @@ export const createAmazonConnectAIAppointment = async (
 
     if (successfulAttempt && successfulAppointmentId && isSameConfirmedBooking) {
       const appointment = await getAppointmentDetail(salon.id, successfulAppointmentId);
+      const persistedRetryServiceName =
+        getCustomerFacingServiceName(appointment.service.name) ?? appointment.service.name;
       const message = buildLexMessage({
         outcome: "BOOKED",
         appointmentStartTime: requestedStartTime,
         salonTimezone: salon.timezone,
-        serviceName: callerServiceName,
-        staffName: staffResolution.matchedStaff.fullName
+        serviceName: persistedRetryServiceName,
+        staffName: appointment.staff.fullName
       });
       const parsed = buildInternalParsedIntent({
         intentType: "BOOK_APPOINTMENT",
         customerName: normalized.customerName,
         customerPhone: normalized.customerPhone,
-        serviceName: callerServiceName,
-        staffPreference: staffResolution.matchedStaff.fullName,
+        serviceName: persistedRetryServiceName,
+        staffPreference: appointment.staff.fullName,
         requestedDateTime: requestedStartTime.toISOString(),
         missingFields: [],
         isReadyToBook: true
@@ -7278,6 +7324,13 @@ export const createAmazonConnectAIAppointment = async (
           messageContentType: "SSML",
           sessionAttributes: buildKnownSessionAttributes({
             bookingOutcome: "BOOKED",
+            serviceName: persistedRetryServiceName,
+            confirmedServiceName: persistedRetryServiceName,
+            staffPreference: appointment.staff.fullName,
+            staffId: appointment.staffId,
+            selectedStaffId: appointment.staffId,
+            confirmedStaffId: appointment.staffId,
+            confirmedStaffName: appointment.staff.fullName,
             aiAlternativeSlots: "[]",
             awaitingAlternativeSelection: "false",
             awaitingFinalBookingConfirmation: "false",
@@ -7756,19 +7809,21 @@ export const createAmazonConnectAIAppointment = async (
 
     if (isSameConfirmedBooking) {
       const appointment = await getAppointmentDetail(salon.id, successfulAttempt.appointmentId!);
+      const persistedRetryServiceName =
+        getCustomerFacingServiceName(appointment.service.name) ?? appointment.service.name;
       const message = buildLexMessage({
         outcome: "BOOKED",
         appointmentStartTime: requestedStartTime,
         salonTimezone: salon.timezone,
-        serviceName: callerServiceName,
-        staffName: chosenStaff.fullName
+        serviceName: persistedRetryServiceName,
+        staffName: appointment.staff.fullName
       });
       const parsed = buildInternalParsedIntent({
         intentType: "BOOK_APPOINTMENT",
         customerName: normalized.customerName,
         customerPhone: normalized.customerPhone,
-        serviceName: callerServiceName,
-        staffPreference: chosenStaff.fullName,
+        serviceName: persistedRetryServiceName,
+        staffPreference: appointment.staff.fullName,
         requestedDateTime: requestedStartTime.toISOString(),
         missingFields: [],
         isReadyToBook: true
@@ -7793,6 +7848,13 @@ export const createAmazonConnectAIAppointment = async (
           messageContentType: "SSML",
           sessionAttributes: buildKnownSessionAttributes({
             bookingOutcome: "BOOKED",
+            serviceName: persistedRetryServiceName,
+            confirmedServiceName: persistedRetryServiceName,
+            staffPreference: appointment.staff.fullName,
+            staffId: appointment.staffId,
+            selectedStaffId: appointment.staffId,
+            confirmedStaffId: appointment.staffId,
+            confirmedStaffName: appointment.staff.fullName,
             aiAlternativeSlots: "[]",
             awaitingAlternativeSelection: "false",
             awaitingFinalBookingConfirmation: "false",
@@ -7818,14 +7880,125 @@ export const createAmazonConnectAIAppointment = async (
     serviceId: service.id,
     startTime: requestedStartTime
   });
+  const persistedStaff = {
+    id: appointment.staffId,
+    fullName: appointment.staff.fullName
+  };
+  const persistedServiceName = getCustomerFacingServiceName(appointment.service.name) ?? appointment.service.name;
+  if (persistedStaff.id !== chosenStaff.id) {
+    logger.error(
+      {
+        contactId: normalized.contactId,
+        callSessionId: callSession?.id,
+        appointmentId: appointment.id,
+        confirmationStaffId: chosenStaff.id,
+        persistedStaffId: persistedStaff.id,
+        confirmationStaffName: chosenStaff.fullName,
+        persistedStaffName: persistedStaff.fullName
+      },
+      "Amazon Connect AI appointment staff mismatch after persistence."
+    );
+    const message = speak("I need to double-check the technician before I confirm this. Which technician would you like?");
+    const parsed = buildInternalParsedIntent({
+      intentType: "BOOK_APPOINTMENT",
+      customerName: normalized.customerName,
+      customerPhone: normalized.customerPhone,
+      serviceName: persistedServiceName,
+      staffPreference: persistedStaff.fullName,
+      requestedDateTime: requestedStartTime.toISOString(),
+      missingFields: ["staffPreference"],
+      isReadyToBook: false
+    });
+    const bookingAttempt = await createAttempt({
+      status: BookingAttemptStatus.NEEDS_INPUT,
+      appointmentId: appointment.id,
+      requestedStartTime,
+      failureReason: "Persisted appointment staff did not match confirmation snapshot.",
+      normalizedRequest: {
+        serviceId: appointment.serviceId,
+        staffId: persistedStaff.id,
+        selectedStaffId: persistedStaff.id,
+        confirmedStaffId: chosenStaff.id,
+        persistedStaffName: persistedStaff.fullName,
+        confirmationStaffName: chosenStaff.fullName,
+        customerId: customer.id,
+        startTimeIso: requestedStartTime.toISOString(),
+        timezone: salon.timezone
+      }
+    });
+    const aiInteraction = await createInteraction({
+      outcome: "MISSING_INFO",
+      message,
+      parsed,
+      bookingAttemptId: bookingAttempt.id,
+      responsePayload: {
+        appointmentId: appointment.id,
+        confirmationStaffId: chosenStaff.id,
+        persistedStaffId: persistedStaff.id,
+        staffInvariantMismatch: true
+      },
+      isValid: false
+    });
+    await finalizeCall({
+      outcome: "MISSING_INFO",
+      bookingAttemptId: bookingAttempt.id,
+      bookingStatus: bookingAttempt.status,
+      parsed,
+      message,
+      failureReason: bookingAttempt.failureReason ?? undefined
+    });
+
+    return {
+      outcome: "MISSING_INFO" as const,
+      message,
+      lexResponse: {
+        fulfillmentState: "InProgress",
+        message,
+        messageContentType: "SSML",
+        dialogAction: {
+          type: "ElicitSlot",
+          slotToElicit: "staffPreference"
+        },
+        sessionAttributes: buildKnownSessionAttributes({
+          serviceName: persistedServiceName,
+          confirmedServiceName: persistedServiceName,
+          staffPreference: undefined,
+          staffId: undefined,
+          selectedStaffId: undefined,
+          confirmedStaffId: undefined,
+          confirmedStaffName: undefined,
+          lastAskedSlot: "staffPreference",
+          askedSlotsCount: "1",
+          fallbackCount: "1",
+          errorCount: "1",
+          awaitingFinalBookingConfirmation: "false",
+          bookingConfirmationAsked: "false"
+        })
+      },
+      appointment,
+      bookingAttempt,
+      callSession,
+      transcript,
+      aiInteraction,
+      escalation: null,
+      alternatives: [],
+      missingFields: ["staffPreference"],
+      salonResolutionSource: resolutionSource
+    };
+  }
 
   const bookingAttempt = await createAttempt({
     status: BookingAttemptStatus.SUCCESS,
     appointmentId: appointment.id,
     requestedStartTime,
     normalizedRequest: {
-      serviceId: service.id,
-      staffId: chosenStaff.id,
+      serviceId: appointment.serviceId,
+      serviceName: persistedServiceName,
+      serviceRecordName: appointment.service.name,
+      staffId: persistedStaff.id,
+      selectedStaffId: persistedStaff.id,
+      confirmedStaffId: persistedStaff.id,
+      staffName: persistedStaff.fullName,
       customerId: customer.id,
       startTimeIso: requestedStartTime.toISOString(),
       timezone: salon.timezone
@@ -7835,15 +8008,15 @@ export const createAmazonConnectAIAppointment = async (
     outcome: "BOOKED",
     appointmentStartTime: requestedStartTime,
     salonTimezone: salon.timezone,
-    serviceName: callerServiceName,
-    staffName: chosenStaff.fullName
+    serviceName: persistedServiceName,
+    staffName: persistedStaff.fullName
   });
   const parsed = buildInternalParsedIntent({
     intentType: "BOOK_APPOINTMENT",
     customerName: normalized.customerName,
     customerPhone: normalized.customerPhone,
-    serviceName: callerServiceName,
-    staffPreference: chosenStaff.fullName,
+    serviceName: persistedServiceName,
+    staffPreference: persistedStaff.fullName,
     requestedDateTime: requestedStartTime.toISOString(),
     missingFields: [],
     isReadyToBook: true
@@ -7877,6 +8050,13 @@ export const createAmazonConnectAIAppointment = async (
       messageContentType: "SSML",
       sessionAttributes: buildKnownSessionAttributes({
         bookingOutcome: "BOOKED",
+        serviceName: persistedServiceName,
+        confirmedServiceName: persistedServiceName,
+        staffPreference: persistedStaff.fullName,
+        staffId: persistedStaff.id,
+        selectedStaffId: persistedStaff.id,
+        confirmedStaffId: persistedStaff.id,
+        confirmedStaffName: persistedStaff.fullName,
         aiAlternativeSlots: "[]",
         awaitingAlternativeSelection: "false",
         awaitingFinalBookingConfirmation: "false",

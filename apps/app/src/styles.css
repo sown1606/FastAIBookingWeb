@@ -2403,6 +2403,15 @@ pre {
   align-items: start;
 }
 
+.owner-appointments-workspace,
+.owner-appointments-main,
+.owner-appointments-sidebar {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+  min-width: 0;
+}
+
 .appointments-create-card,
 .appointments-detail-card,
 .appointments-archive-card,
@@ -3233,38 +3242,27 @@ pre {
 }
 
 @media (min-width: 1280px) {
-  .owner-appointments-page {
+  .owner-appointments-workspace {
     grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr);
-    gap: 16px;
+    align-items: start;
   }
 
-  .owner-appointments-page .appointments-toolbar-card {
-    grid-column: 1 / -1;
-  }
-
-  .owner-appointments-page .appointments-schedule-card,
-  .owner-appointments-page .appointments-upcoming-card {
+  .owner-appointments-main {
     grid-column: 1;
+    grid-row: 1;
   }
 
-  .owner-appointments-page .appointments-create-card,
-  .owner-appointments-page .appointments-detail-card,
-  .owner-appointments-page .appointments-archive-card {
+  .owner-appointments-sidebar {
     grid-column: 2;
+    grid-row: 1;
   }
 
-  .owner-appointments-page .appointments-create-card .form-grid.two-columns {
+  .owner-appointments-sidebar .appointments-create-card .form-grid.two-columns {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .owner-appointments-page .appointments-archive-card .entity-grid {
+  .owner-appointments-sidebar .appointments-archive-card .entity-grid {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .owner-appointments-page .appointments-create-card {
-    position: sticky;
-    top: 18px;
-    align-self: start;
   }
 }
 

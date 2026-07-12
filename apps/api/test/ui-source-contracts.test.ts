@@ -75,3 +75,40 @@ test("call-center CCP is embedded-first with collapsed technical details", () =>
   assert.doesNotMatch(source, /setCcpStatus\("direct"\)/);
   assert.doesNotMatch(source, /<details className="ccp-technical-details" open=/);
 });
+
+test("customer delete reloads list without fetching deleted selected history", () => {
+  const source = readRepoFile("apps/app/src/pages/customers-page.tsx");
+
+  assert.match(source, /const loadCustomers = async/);
+  assert.match(source, /const loadSelectedHistory = async \(customerId: string\)/);
+  assert.match(source, /refreshSelected\?: boolean/);
+  assert.match(source, /await load\(\{ refreshSelected: false \}\)/);
+  assert.match(source, /setSelected\(null\);\s*\n\s*await load\(\{ refreshSelected: false \}\)/);
+  assert.match(source, /isCustomerNotFoundError\(historyError\)/);
+  assert.match(source, /t\("customers\.historyUnavailable"\)/);
+  assert.doesNotMatch(source, /apiGet<CustomerHistory>\(`\/api\/v1\/customers\/\$\{selected\.customer\.id\}\/appointments`\)/);
+});
+
+test("appointment deep links fetch exact appointment detail and clear stale URLs", () => {
+  const source = readRepoFile("apps/app/src/pages/appointments-page.tsx");
+
+  assert.match(source, /const allLoadedAppointments = useMemo/);
+  assert.match(source, /allLoadedAppointments\.find\(\(item\) => item\.id === highlightedAppointmentId\)/);
+  assert.match(source, /apiGet<AppointmentItem>\(`\/api\/v1\/appointments\/\$\{highlightedAppointmentId\}`\)/);
+  assert.match(source, /isAppointmentNotFoundError\(detailError\)/);
+  assert.match(source, /nextParams\.delete\("appointmentId"\)/);
+  assert.match(source, /setSearchParams\(nextParams, \{ replace: true \}\)/);
+  assert.match(source, /setSelectedDate\(appointmentDate\)/);
+});
+
+test("owner appointments page uses independent main and sidebar stacks", () => {
+  const source = readRepoFile("apps/app/src/pages/appointments-page.tsx");
+  const styles = readRepoFile("apps/app/src/styles.css");
+
+  assert.match(source, /owner-appointments-workspace/);
+  assert.match(source, /owner-appointments-main/);
+  assert.match(source, /owner-appointments-sidebar/);
+  assert.match(styles, /\.owner-appointments-workspace,\s*\n\.owner-appointments-main,\s*\n\.owner-appointments-sidebar/);
+  assert.match(styles, /grid-template-columns: minmax\(0, 2fr\) minmax\(320px, 1fr\)/);
+  assert.doesNotMatch(styles, /owner-appointments-page \.appointments-create-card\s*\{\s*position: sticky/);
+});

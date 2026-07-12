@@ -134,6 +134,13 @@ export const extractErrorMessage = (error: unknown): string => {
   return localizeApiErrorMessage("Unexpected error.");
 };
 
+export const extractApiErrorCode = (error: unknown): string => {
+  if (axios.isAxiosError(error) && isApiErrorEnvelope(error.response?.data)) {
+    return error.response.data.error.code;
+  }
+  return "";
+};
+
 export const apiGet = async <T>(url: string, config?: AxiosRequestConfig): Promise<T> => {
   const response = await http.get<ApiEnvelope<T>>(url, config);
   return unwrap(response);

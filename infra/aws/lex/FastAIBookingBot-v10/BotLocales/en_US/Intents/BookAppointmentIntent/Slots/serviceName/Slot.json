@@ -77,7 +77,7 @@
             "ssmlMessage": null,
             "customPayload": null,
             "plainTextMessage": {
-              "value": "Sorry, what service would you like?"
+              "value": "Sure. Which service would you like?"
             },
             "imageResponseCard": null
           },
@@ -99,7 +99,7 @@
           "audioAndDTMFInputSpecification": {
             "startTimeoutMs": 7000,
             "audioSpecification": {
-              "endTimeoutMs": 1300,
+              "endTimeoutMs": 2200,
               "maxLengthMs": 20000
             },
             "dtmfSpecification": {
@@ -122,7 +122,7 @@
           "audioAndDTMFInputSpecification": {
             "startTimeoutMs": 7000,
             "audioSpecification": {
-              "endTimeoutMs": 1300,
+              "endTimeoutMs": 2200,
               "maxLengthMs": 20000
             },
             "dtmfSpecification": {
@@ -145,7 +145,7 @@
           "audioAndDTMFInputSpecification": {
             "startTimeoutMs": 7000,
             "audioSpecification": {
-              "endTimeoutMs": 1300,
+              "endTimeoutMs": 2200,
               "maxLengthMs": 20000
             },
             "dtmfSpecification": {

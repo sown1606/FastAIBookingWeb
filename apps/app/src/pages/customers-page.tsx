@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { apiDelete, apiGet, apiPatch, apiPost, extractErrorMessage } from "../lib/api";
+import { apiDelete, apiGet, apiPatch, apiPost, extractApiErrorCode, extractErrorMessage } from "../lib/api";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
 import { useToast } from "../components/toast";
 import { formatDateTime } from "../lib/format";
@@ -72,6 +72,9 @@ const localDateKey = (value: string) => {
   return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 10);
 };
 
+const isCustomerNotFoundError = (error: unknown) =>
+  extractApiErrorCode(error) === "CUSTOMER_NOT_FOUND";
+
 export const CustomersPage = () => {
   const { notify } = useToast();
   const { locale, t } = useI18n();
@@ -91,22 +94,41 @@ export const CustomersPage = () => {
     phone: ""
   });
 
-  const load = async () => {
+  const loadCustomers = async () => {
+    const params = new URLSearchParams({
+      page: "1",
+      limit: "50"
+    });
+    if (query.trim()) {
+      params.set("q", query.trim());
+    }
+    const response = await apiGet<CustomersResponse>(`/api/v1/customers?${params.toString()}`);
+    setCustomers(response);
+    return response;
+  };
+
+  const loadSelectedHistory = async (customerId: string) => {
+    const history = await apiGet<CustomerHistory>(`/api/v1/customers/${customerId}/appointments`);
+    setSelected(history);
+    return history;
+  };
+
+  const load = async (options: { refreshSelected?: boolean; selectedCustomerId?: string | null } = {}) => {
     setError("");
     setLoading(true);
     try {
-      const params = new URLSearchParams({
-        page: "1",
-        limit: "50"
-      });
-      if (query.trim()) {
-        params.set("q", query.trim());
-      }
-      const response = await apiGet<CustomersResponse>(`/api/v1/customers?${params.toString()}`);
-      setCustomers(response);
-      if (selected) {
-        const history = await apiGet<CustomerHistory>(`/api/v1/customers/${selected.customer.id}/appointments`);
-        setSelected(history);
+      await loadCustomers();
+      const selectedCustomerId = options.selectedCustomerId ?? selected?.customer.id ?? null;
+      if (options.refreshSelected !== false && selectedCustomerId) {
+        try {
+          await loadSelectedHistory(selectedCustomerId);
+        } catch (historyError) {
+          if (isCustomerNotFoundError(historyError)) {
+            setSelected(null);
+            return;
+          }
+          throw historyError;
+        }
       }
     } catch (loadError) {
       setError(extractErrorMessage(loadError));
@@ -147,9 +169,14 @@ export const CustomersPage = () => {
 
   const selectCustomer = async (customerId: string) => {
     try {
-      const history = await apiGet<CustomerHistory>(`/api/v1/customers/${customerId}/appointments`);
-      setSelected(history);
+      await loadSelectedHistory(customerId);
     } catch (selectError) {
+      if (isCustomerNotFoundError(selectError)) {
+        setSelected(null);
+        await load({ refreshSelected: false });
+        notify("error", t("customers.historyUnavailable"));
+        return;
+      }
       notify("error", extractErrorMessage(selectError));
     }
   };
@@ -242,11 +269,15 @@ export const CustomersPage = () => {
           activeCount: String(result.canceledAppointmentCount)
         })
       );
-      if (selected && result.deletedCustomerIds.includes(selected.customer.id)) {
-        setSelected(null);
-      }
-      await load();
+      setSelected(null);
+      await load({ refreshSelected: false });
     } catch (deleteError) {
+      if (isCustomerNotFoundError(deleteError)) {
+        setSelected(null);
+        await load({ refreshSelected: false });
+        notify("error", t("customers.historyUnavailable"));
+        return;
+      }
       notify("error", extractErrorMessage(deleteError));
     }
   };

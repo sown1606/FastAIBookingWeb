@@ -14,7 +14,7 @@ const lexRoots = ["v7", "v8", "v10"].map((version) => ({
 const connectRoot = path.join(repoRoot, "infra/aws/connect/contact-flows");
 const CANONICAL_SERVICE_PROMPT =
   "Hi, thanks for calling Kiet Nails. How can I help? You can say the service, day, time, and technician in one sentence. Press 0 for a person.";
-const FIRST_SERVICE_RETRY_PROMPT = "Sorry, what service would you like?";
+const FIRST_SERVICE_RETRY_PROMPT = "Sure. Which service would you like?";
 const SERVICE_MENU_PROMPT =
   "I can list the services once. Please say the service name, or press 0 for a person.";
 let importCounter = 0;
@@ -199,7 +199,11 @@ test("production Full Set aliases are present in Lambda, API, and Lex v10 source
     "fullsat",
     "fall set",
     "phone set",
-    "set of nails"
+    "set of nails",
+    "boom set",
+    "book a set",
+    "want a set",
+    "a nail set"
   ];
   const lambdaSource = readFileSync(lambdaPath, "utf8");
   const apiSource = readFileSync(apiAiServicePath, "utf8");
@@ -461,8 +465,12 @@ test("Connect AI reception has one reachable greeting and no outer service promp
   assert.equal(primary.Parameters.Text, CANONICAL_SERVICE_PROMPT);
   assert.doesNotMatch(primary.Parameters.Text, /press 1 for Pedicure/i);
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:allow-interrupt:*:*"], "true");
-  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:*:*"], "1300");
-  assert.equal(recovery.Parameters.Text, "Sorry, I missed that. Please tell me what you need, or press 0 for a person.");
+  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:*:*"], "2400");
+  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName"], "2200");
+  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedTime"], "1600");
+  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference"], "1600");
+  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:customerName"], "2000");
+  assert.equal(recovery.Parameters.Text, "Please tell me what you need, or press 0 for a person.");
   assert.equal(recovery.Transitions.NextAction, "check-transfer-to-queue");
   assert.equal(recovery.Parameters.LexSessionAttributes.confirmationFingerprint, "$.Lex.SessionAttributes.confirmationFingerprint");
   assert.equal(recovery.Parameters.LexSessionAttributes.aiAlternativeSlots, "$.Lex.SessionAttributes.aiAlternativeSlots");
@@ -488,6 +496,20 @@ test("Connect AI reception routes only explicit complete conversations to goodby
   assert.equal(completeCheck.Transitions.NextAction, "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d");
   assert.equal(completeCheck.Transitions.Conditions[0].NextAction, "67ada978-600a-4d39-9965-6230c52810a9");
   assert.equal(primary.Transitions.Errors[0].NextAction, "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d");
+  assert.equal(recovery.Transitions.Errors[0].NextAction, "41e3f239-5b57-4363-92fc-9d594579fa98");
+  assert.equal(recovery.Transitions.Errors[1].NextAction, "41e3f239-5b57-4363-92fc-9d594579fa98");
+  assert.notEqual(recovery.Transitions.Errors[0].NextAction, "67ada978-600a-4d39-9965-6230c52810a9");
+  assert.notEqual(recovery.Transitions.Errors[1].NextAction, "67ada978-600a-4d39-9965-6230c52810a9");
+  assert.ok(
+    recovery.Transitions.Conditions.some((condition) =>
+      condition.Condition.Operands.includes("FallbackIntent")
+    )
+  );
+  assert.ok(
+    recovery.Transitions.Conditions.some((condition) =>
+      condition.Condition.Operands.includes("AMAZON.FallbackIntent")
+    )
+  );
 });
 
 test("booking prompts are speech-first and service menu is not the greeting", () => {
@@ -530,12 +552,12 @@ test("Lex booking slot prompt attempts allow interrupt and use phone-friendly au
     "infra/aws/lex/FastAIBookingBot-v10/BotLocales/en_US/Intents/BookAppointmentIntent/Slots"
   );
   const expected = {
-    serviceName: { startMin: 7000, endMin: 1200, endMax: 1500, maxMin: 20000 },
-    requestedDate: { startMin: 6000, endMin: 1000, endMax: 1200, maxMin: 15000 },
-    requestedTime: { startMin: 6000, endMin: 1000, endMax: 1200, maxMin: 15000 },
-    staffPreference: { startMin: 6000, endMin: 1000, endMax: 1200, maxMin: 15000 },
-    customerName: { startMin: 7000, endMin: 1500, endMax: 1500, maxMin: 15000 },
-    customerPhone: { startMin: 7000, endMin: 1500, endMax: 1500, maxMin: 15000 }
+    serviceName: { startMin: 7000, endMin: 2000, endMax: 2400, maxMin: 20000 },
+    requestedDate: { startMin: 6000, endMin: 2200, endMax: 2500, maxMin: 15000 },
+    requestedTime: { startMin: 6000, endMin: 1400, endMax: 1700, maxMin: 15000 },
+    staffPreference: { startMin: 6000, endMin: 1400, endMax: 1700, maxMin: 15000 },
+    customerName: { startMin: 7000, endMin: 1800, endMax: 2200, maxMin: 15000 },
+    customerPhone: { startMin: 7000, endMin: 1800, endMax: 2200, maxMin: 15000 }
   };
 
   for (const [slotName, range] of Object.entries(expected)) {
