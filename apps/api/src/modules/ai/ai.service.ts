@@ -133,7 +133,7 @@ type UpcomingAppointmentCandidate = {
 
 type StaffPreferenceResolution =
   | {
-      status: "all";
+      status: "missing" | "explicit_any" | "invalid_noise" | "unmatched_specific";
       candidates: StaffCandidate[];
       allStaff: StaffCandidate[];
       rawStaffPreference?: string;
@@ -390,7 +390,6 @@ const ORDINAL_DAY_WORDS: Record<string, number> = {
 };
 
 const ANY_STAFF_PHRASES = new Set([
-  "any",
   "anyone",
   "any one",
   "anybody",
@@ -404,7 +403,6 @@ const ANY_STAFF_PHRASES = new Set([
   "no specific staff",
   "first available",
   "someone available",
-  "whoever",
   "whoever is available",
   "whoever s available",
   "whoever's available",
@@ -870,7 +868,7 @@ const isReusableCallerName = (value?: string | null): value is string => {
 
 const STAFF_ALIAS_PHRASES: Record<string, string[]> = {
   trang: ["trang", "chang", "train", "trangg"],
-  amy: ["amy", "amie", "a me"],
+  amy: ["amy", "amie", "emmy", "emmie", "a me"],
   kelly: ["kelly", "kelley", "keli", "ke li"]
 };
 
@@ -896,6 +894,112 @@ const textContainsStaffAlias = (normalizedText: string, alias: string): boolean 
   return new RegExp(`\\b${escapeRegExp(normalizedAlias)}\\b`).test(normalizedText);
 };
 
+const staffAliasMatchesInText = (normalizedText: string, alias: string): number[] => {
+  const normalizedAlias = normalizeForMatch(alias);
+  if (!normalizedText || !normalizedAlias) {
+    return [];
+  }
+  const pattern = new RegExp(`(^|\\s)${escapeRegExp(normalizedAlias)}(?=\\s|$)`, "g");
+  const matches: number[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(normalizedText)) !== null) {
+    matches.push(match.index + (match[1] ? match[1].length : 0));
+  }
+  return matches;
+};
+
+const isNegatedStaffAlias = (normalizedText: string, matchIndex: number): boolean => {
+  const before = normalizedText.slice(0, matchIndex).trim();
+  return /\bnot(?:\s+(?:the|that|this|one|staff|technician|tech))?$/.test(before);
+};
+
+const normalizeScopedStaffCandidatePhrase = (value?: string | null): string | undefined => {
+  const normalized = normalizeForMatch(value);
+  if (!normalized) {
+    return undefined;
+  }
+  if (isAnyStaffPreference(normalized)) {
+    return "any staff";
+  }
+  if (
+    /\bnot\s+(?:correct|right|sure|today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/.test(
+      normalized
+    ) ||
+    /\b(?:do not|don t|dont)\s+book\b|\bcancel it\b|\bwait no\b|\bno that is wrong\b/.test(normalized)
+  ) {
+    return undefined;
+  }
+  if (Array.from(ANY_STAFF_PHRASES).some((phrase) => textContainsStaffAlias(normalized, phrase))) {
+    return "any staff";
+  }
+
+  let candidate = normalized
+    .replace(/\b(?:technician|tech|staff|please|actually|instead)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  candidate = candidate
+    .replace(/^(?:no\s+)?i\s+want(?:\s+to\s+book)?\s+/, "")
+    .replace(/^(?:book\s+with|with|use|i\s+said|change(?:\s+it)?\s+to|switch(?:\s+it)?\s+to)\s+/, "")
+    .trim();
+
+  if (candidate.startsWith("not ")) {
+    const [, , ...replacementTokens] = candidate.split(/\s+/);
+    candidate = replacementTokens.join(" ");
+  } else {
+    const notIndex = candidate.indexOf(" not ");
+    if (notIndex > 0) {
+      candidate = candidate.slice(0, notIndex);
+    }
+  }
+
+  candidate = normalizeForMatch(
+    candidate.replace(
+      /\b(?:with|book|use|i|want|to|said|change|switch|it|instead|no|please|actually|technician|staff|tech|the|a|an)\b/g,
+      " "
+    )
+  );
+  if (!candidate || candidate.split(/\s+/).length > 2) {
+    return undefined;
+  }
+  if (
+    /^(?:yes|yeah|yep|correct|right|sure|ok|okay|no|nope|nah|wrong)(?:\s+(?:yes|yeah|yep|correct|right|sure|ok|okay|no|nope|nah|wrong))*$/.test(
+      candidate
+    )
+  ) {
+    return undefined;
+  }
+  if (
+    hasStaticServiceAliasInText(candidate) ||
+    new RegExp(DATE_PHRASE_PATTERN, "i").test(candidate) ||
+    Boolean(extractTimeCandidate(candidate))
+  ) {
+    return undefined;
+  }
+  return candidate;
+};
+
+const hasExplicitStaffPhrase = (value?: string | null): boolean => {
+  const normalized = normalizeForMatch(value);
+  return Boolean(
+    normalized &&
+      (normalizeScopedStaffCandidatePhrase(value) ||
+        /\bnot\s+(?!today\b|tomorrow\b|monday\b|tuesday\b|wednesday\b|thursday\b|friday\b|saturday\b|sunday\b|correct\b|right\b|book\b|it\b|that\b|this\b)[a-z][a-z'-]{1,40}\b/.test(normalized))
+  );
+};
+
+const hasStaffCuePhrase = (value?: string | null): boolean => {
+  const normalized = normalizeForMatch(value);
+  return Boolean(
+    normalized &&
+      (/\b(?:with|use|i said|technician|staff|tech)\b/.test(normalized) ||
+        /\b(?:change|switch)(?:\s+it)?\s+to\b/.test(normalized) ||
+        /\b(?:no\s+)?i\s+want(?:\s+to\s+book)?\b/.test(normalized) ||
+        /\binstead\b/.test(normalized) ||
+        /\bnot\s+(?!today\b|tomorrow\b|monday\b|tuesday\b|wednesday\b|thursday\b|friday\b|saturday\b|sunday\b|correct\b|right\b|book\b|it\b|that\b|this\b)[a-z][a-z'-]{1,40}\b/.test(normalized))
+  );
+};
+
 const isConservativeStaffFuzzyMatch = (alias: string, requested: string): boolean => {
   const compactAlias = compactForMatch(alias);
   const compactRequested = compactForMatch(requested);
@@ -916,6 +1020,9 @@ const isClearlyInvalidStaffPreference = (value?: string | null): boolean => {
     return true;
   }
   if (/^(?:am|pm|a m|p m|time|phone|phone number)$/.test(normalized)) {
+    return true;
+  }
+  if (normalized.split(/\s+/).length > 3) {
     return true;
   }
   if (compact.length < 3) {
@@ -1677,7 +1784,7 @@ const sanitizeParsedIntentForConfiguredData = async (
     } else if (staffResolution.status === "ambiguous") {
       requestedStaff = staffResolution.rawStaffPreference;
       nextNormalizedRequest.staffName = staffResolution.rawStaffPreference;
-    } else if (staffResolution.invalidReason === "explicit_any") {
+    } else if (staffResolution.status === "explicit_any") {
       requestedStaff = "Any staff";
       nextNormalizedRequest.staffName = "Any staff";
     } else {
@@ -2416,19 +2523,42 @@ const findStaffMentionInText = async (
 
   if (
     isAnyStaffPreference(normalizedText) ||
-    Array.from(ANY_STAFF_PHRASES).some((phrase) => normalizedText.includes(phrase))
+    Array.from(ANY_STAFF_PHRASES).some((phrase) => textContainsStaffAlias(normalizedText, phrase))
   ) {
     return "Any staff";
   }
 
   const staff = await getStaffCandidates({ salonId });
-  for (const member of staff) {
-    const aliasMatch = getStaffAliasPhrases(member.fullName).some((alias) =>
-      textContainsStaffAlias(normalizedText, alias)
+  const scopedCandidate = normalizeScopedStaffCandidatePhrase(text);
+  const searchText = scopedCandidate && scopedCandidate !== "any staff" ? scopedCandidate : normalizedText;
+  const aliasMatches = staff.flatMap((member) => {
+    const aliases = new Set(getStaffAliasPhrases(member.fullName).map((alias) => normalizeForMatch(alias)));
+    return Array.from(aliases.values()).flatMap((alias) =>
+      staffAliasMatchesInText(searchText, alias).map((index) => ({
+        member,
+        index,
+        negated: isNegatedStaffAlias(searchText, index)
+      }))
     );
-    if (aliasMatch) {
-      return member.fullName;
+  });
+  const positiveMatches = aliasMatches.filter((match) => !match.negated);
+  const positiveStaff = dedupeStaffById(positiveMatches.map((match) => match.member));
+  if (positiveStaff.length === 1) {
+    return positiveStaff[0]!.fullName;
+  }
+  if (positiveStaff.length > 1) {
+    return undefined;
+  }
+  if (aliasMatches.length && positiveMatches.length === 0) {
+    return undefined;
+  }
+
+  if (scopedCandidate && scopedCandidate !== "any staff") {
+    const candidateResolution = resolveStaffPreferenceFromCandidates(staff, scopedCandidate);
+    if (candidateResolution.status === "matched") {
+      return candidateResolution.matchedStaff.fullName;
     }
+    return undefined;
   }
 
   const tokens = normalizedText.split(/\s+/).filter((token) => token.length >= 5);
@@ -2607,11 +2737,12 @@ const resolveStaffPreferenceFromCandidates = (
 ): StaffPreferenceResolution => {
   const allStaff = orderStaffForPrompt(dedupeStaffById(staff));
   const rawStaffPreference = requestedStaffName?.trim();
-  const requested = normalizeForMatch(rawStaffPreference);
+  const scopedStaffPreference = normalizeScopedStaffCandidatePhrase(rawStaffPreference);
+  const requested = normalizeForMatch(scopedStaffPreference ?? rawStaffPreference);
 
   if (!requested) {
     return {
-      status: "all",
+      status: "missing",
       candidates: allStaff,
       allStaff,
       invalidReason: "missing"
@@ -2619,7 +2750,7 @@ const resolveStaffPreferenceFromCandidates = (
   }
   if (isAnyStaffPreference(requested)) {
     return {
-      status: "all",
+      status: "explicit_any",
       candidates: allStaff,
       allStaff,
       rawStaffPreference,
@@ -2628,8 +2759,8 @@ const resolveStaffPreferenceFromCandidates = (
   }
   if (isClearlyInvalidStaffPreference(requested)) {
     return {
-      status: "all",
-      candidates: allStaff,
+      status: "invalid_noise",
+      candidates: [],
       allStaff,
       rawStaffPreference,
       invalidReason: "invalid_format"
@@ -2736,8 +2867,8 @@ const resolveStaffPreferenceFromCandidates = (
   }
 
   return {
-    status: "all",
-    candidates: allStaff,
+    status: "unmatched_specific",
+    candidates: [],
     allStaff,
     rawStaffPreference,
     invalidReason: "no_match"
@@ -4290,6 +4421,7 @@ const buildLexMessage = (input: {
   };
   attemptCount?: number;
   invalidStaffDtmfSelection?: boolean;
+  unmatchedStaffPreference?: boolean;
   repeatedKnownFieldWhileAskingName?: boolean;
   partialBookingFragment?: boolean;
 }): string => {
@@ -4331,9 +4463,11 @@ const buildLexMessage = (input: {
     const isRetry = (input.attemptCount ?? 1) > 1;
     const intro = input.invalidStaffDtmfSelection
       ? "I didn't find that option. Please choose from the list."
-      : isRetry
-        ? "Sorry, I did not catch that."
-        : "Got it.";
+      : input.unmatchedStaffPreference
+        ? "I didn't find that technician."
+        : isRetry
+          ? "Sorry, I did not catch that."
+          : "Got it.";
     if (input.missingFields?.includes("staffPreference")) {
       const prompt = buildStaffDtmfPromptText(input.staffOptions ?? []);
       const serviceIntro = input.knownFields?.serviceName
@@ -4342,7 +4476,9 @@ const buildLexMessage = (input: {
       return speak(
         input.invalidStaffDtmfSelection
           ? `${intro} <break time="300ms"/> ${prompt}`
-          : `${serviceIntro}${prompt}`
+          : input.unmatchedStaffPreference
+            ? `${intro} <break time="300ms"/> ${prompt}`
+            : `${serviceIntro}${prompt}`
       );
     }
     if (input.missingFields?.includes("customerName")) {
@@ -5218,25 +5354,6 @@ export const createAmazonConnectAIAppointment = async (
     }
   }
 
-  const customerNameTurnOwnsTranscript =
-    readStringAttribute(normalized.attributes, ["lastAskedSlot"]) === "customerName" &&
-    readStringAttribute(normalized.attributes, ["activeDtmfMenu"]) !== "staff";
-  const currentTurnStaffMention = normalized.currentTurnTranscript && !customerNameTurnOwnsTranscript
-    ? await findStaffMentionInText(salon.id, normalized.currentTurnTranscript)
-    : undefined;
-  if (currentTurnStaffMention) {
-    const previousStaffPreference = normalized.staffPreference;
-    normalized.staffPreference = currentTurnStaffMention;
-    if (
-      previousStaffPreference &&
-      normalizeForMatch(previousStaffPreference) !== normalizeForMatch(currentTurnStaffMention)
-    ) {
-      normalized.staffId = undefined;
-    }
-  } else if (!normalized.staffPreference && normalized.transcriptText) {
-    normalized.staffPreference = await findStaffMentionInText(salon.id, normalized.transcriptText);
-  }
-
   const awaitingAlternativeSelection =
     readStringAttribute(normalized.attributes, ["awaitingAlternativeSelection"]) === "true";
   const awaitingFinalBookingConfirmation =
@@ -5246,6 +5363,44 @@ export const createAmazonConnectAIAppointment = async (
       "finalBookingConfirmationAsked"
     ]) === "true" ||
     readStringAttribute(normalized.attributes, ["lastAskedSlot"]) === "bookingConfirmation";
+  const customerNameTurnOwnsTranscript =
+    readStringAttribute(normalized.attributes, ["lastAskedSlot"]) === "customerName" &&
+    readStringAttribute(normalized.attributes, ["activeDtmfMenu"]) !== "staff";
+  const currentTurnStaffMention = normalized.currentTurnTranscript && !customerNameTurnOwnsTranscript
+    ? await findStaffMentionInText(salon.id, normalized.currentTurnTranscript)
+    : undefined;
+  const currentTurnAllowsUnmatchedStaff =
+    Boolean(normalized.currentTurnTranscript) &&
+    !customerNameTurnOwnsTranscript &&
+    (readStringAttribute(normalized.attributes, ["lastAskedSlot"]) === "staffPreference" ||
+      readStringAttribute(normalized.attributes, ["activeDtmfMenu"]) === "staff" ||
+      awaitingFinalBookingConfirmation ||
+      hasStaffCuePhrase(normalized.currentTurnTranscript));
+  const currentTurnStaffCandidate = currentTurnAllowsUnmatchedStaff
+    ? normalizeScopedStaffCandidatePhrase(normalized.currentTurnTranscript)
+    : undefined;
+  const currentTurnHasExplicitStaffPhrase = currentTurnAllowsUnmatchedStaff
+    ? hasExplicitStaffPhrase(normalized.currentTurnTranscript)
+    : false;
+  if (currentTurnStaffMention) {
+    const previousStaffPreference = normalized.staffPreference;
+    normalized.staffPreference = currentTurnStaffMention;
+    if (
+      previousStaffPreference &&
+      normalizeForMatch(previousStaffPreference) !== normalizeForMatch(currentTurnStaffMention)
+    ) {
+      normalized.staffId = undefined;
+    }
+  } else if (currentTurnHasExplicitStaffPhrase) {
+    normalized.staffPreference =
+      currentTurnStaffCandidate && currentTurnStaffCandidate !== "any staff"
+        ? currentTurnStaffCandidate
+        : undefined;
+    normalized.staffId = undefined;
+  } else if (!normalized.staffPreference && normalized.transcriptText) {
+    normalized.staffPreference = await findStaffMentionInText(salon.id, normalized.transcriptText);
+  }
+
   let finalConfirmationRequiresStaffSelection = false;
   const finalConfirmationText = normalized.currentTurnTranscript ?? normalized.transcriptText;
   const finalConfirmationOutcome = awaitingFinalBookingConfirmation
@@ -5382,19 +5537,19 @@ export const createAmazonConnectAIAppointment = async (
     requestedStaffName: normalized.staffPreference,
     staffId: normalized.staffId
   });
-  const staffWasAlreadyAsked =
-    readStringAttribute(normalized.attributes, ["lastAskedSlot"]) === "staffPreference";
   if (staffResolution.status === "matched") {
     normalized.staffPreference = staffResolution.matchedStaff.fullName;
     normalized.staffId = staffResolution.matchedStaff.id;
-  } else if (staffResolution.status === "all" && staffResolution.invalidReason === "explicit_any") {
+  } else if (staffResolution.status === "explicit_any") {
     normalized.staffPreference = "Any staff";
     normalized.staffId = undefined;
   } else if (normalized.invalidStaffDtmfSelection) {
     normalized.staffPreference = undefined;
     normalized.staffId = undefined;
   } else if (staffResolution.status !== "ambiguous") {
-    normalized.staffPreference = staffWasAlreadyAsked ? "Any staff" : undefined;
+    normalized.staffPreference = staffResolution.status === "unmatched_specific"
+      ? staffResolution.rawStaffPreference
+      : undefined;
     normalized.staffId = undefined;
   }
 
@@ -6590,14 +6745,14 @@ export const createAmazonConnectAIAppointment = async (
   }
   const shouldAskStaffOnce =
     finalConfirmationRequiresStaffSelection ||
-    (staffResolution.status === "all" &&
-      staffResolution.invalidReason !== "explicit_any" &&
-      !staffWasAlreadyAsked);
+    (staffResolution.status === "missing" && staffResolution.allStaff.length > 0) ||
+    staffResolution.status === "invalid_noise" ||
+    staffResolution.status === "unmatched_specific";
   if (normalized.invalidStaffDtmfSelection || staffResolution.status === "ambiguous" || shouldAskStaffOnce) {
     missingFields.add("staffPreference");
     normalized.staffId = undefined;
   }
-  if (!missingFields.has("staffPreference") && staffResolution.status !== "matched") {
+  if (!missingFields.has("staffPreference") && staffResolution.status === "explicit_any") {
     normalized.staffPreference = "Any staff";
     normalized.staffId = undefined;
   }
@@ -6654,6 +6809,7 @@ export const createAmazonConnectAIAppointment = async (
       attemptCount: elicitDecision.attemptCount,
       servicePromptText: servicePromptSessionAttributes.serviceDtmfPromptText,
       invalidStaffDtmfSelection: normalized.invalidStaffDtmfSelection,
+      unmatchedStaffPreference: staffResolution.status === "unmatched_specific",
       partialBookingFragment: isPartialBookingFragment(
         normalized.currentTurnTranscript ?? normalized.transcriptText
       ),
@@ -6668,6 +6824,15 @@ export const createAmazonConnectAIAppointment = async (
     });
     const staffPromptAttributes = shouldPromptStaff
       ? buildStaffPromptSessionAttributes(staffPromptOptions)
+      : {};
+    const unresolvedStaffAttributes = shouldPromptStaff
+      ? {
+          staffPreference: undefined,
+          staffId: undefined,
+          selectedStaffId: undefined,
+          confirmedStaffId: undefined,
+          confirmedStaffName: undefined
+        }
       : {};
     const parsed = buildInternalParsedIntent({
       intentType: "BOOK_APPOINTMENT",
@@ -6687,6 +6852,7 @@ export const createAmazonConnectAIAppointment = async (
       }
     });
     const lexSessionAttributes = buildKnownSessionAttributes({
+      ...unresolvedStaffAttributes,
       ...elicitDecision.sessionAttributes,
       ...staffPromptAttributes
     });
@@ -6994,6 +7160,11 @@ export const createAmazonConnectAIAppointment = async (
           slotToElicit: "staffPreference"
         },
         sessionAttributes: buildKnownSessionAttributes({
+          staffPreference: undefined,
+          staffId: undefined,
+          selectedStaffId: undefined,
+          confirmedStaffId: undefined,
+          confirmedStaffName: undefined,
           lastAskedSlot: "staffPreference",
           askedSlotsCount: "1",
           fallbackCount: "1",
@@ -7355,7 +7526,7 @@ export const createAmazonConnectAIAppointment = async (
       ? staffResolution.candidates.filter((staff) => mappedStaffIds.has(staff.id))
       : mappedStaffCandidates;
   const allStaffCandidates = mappedStaffCandidates;
-  const requestedAnyStaff = staffResolution.status === "all" && staffResolution.invalidReason === "explicit_any";
+  const requestedAnyStaff = staffResolution.status === "explicit_any";
 
   let chosenStaff: { id: string; fullName: string } | null = null;
   const rejectedReasons: string[] = [];
@@ -8615,7 +8786,7 @@ export const suggestSlotsFromAIInput = async (input: SuggestSlotsInput) => {
   const staffResolution: StaffPreferenceResolution = input.staffName
     ? resolveStaffPreferenceFromCandidates(mappedStaffCandidates, input.staffName)
     : {
-        status: "all" as const,
+        status: "missing" as const,
         candidates: mappedStaffCandidates,
         allStaff: mappedStaffCandidates,
         invalidReason: "missing"
@@ -8623,7 +8794,7 @@ export const suggestSlotsFromAIInput = async (input: SuggestSlotsInput) => {
   const staffCandidates =
     staffResolution.status === "ambiguous"
       ? []
-      : staffResolution.status === "all" && staffResolution.invalidReason === "no_match"
+      : staffResolution.status === "unmatched_specific" || staffResolution.status === "invalid_noise"
         ? []
         : staffResolution.candidates;
   if (!staffCandidates.length) {

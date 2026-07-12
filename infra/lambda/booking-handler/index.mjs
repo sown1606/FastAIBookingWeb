@@ -190,7 +190,7 @@ const CUSTOMER_NAME_NOISE = new Set([
 ]);
 const STAFF_ALIAS_GROUPS = {
   Trang: ["trang", "chang", "train", "trangg"],
-  Amy: ["amy", "amie", "a me"],
+  Amy: ["amy", "amie", "emmy", "emmie", "a me"],
   Kelly: ["kelly", "kelley", "keli", "ke li"]
 };
 const ANY_STAFF_ALIASES = [
@@ -593,6 +593,121 @@ function textContainsStaffAlias(normalizedText, alias) {
   return new RegExp(`\\b${escapeRegExp(normalizedAlias)}\\b`).test(normalizedText);
 }
 
+function staffAliasMatchesInText(normalizedText, alias) {
+  const normalizedAlias = normalizeForMatch(alias);
+  if (!normalizedText || !normalizedAlias) {
+    return [];
+  }
+  const pattern = new RegExp(`(^|\\s)${escapeRegExp(normalizedAlias)}(?=\\s|$)`, "g");
+  const matches = [];
+  let match;
+  while ((match = pattern.exec(normalizedText)) !== null) {
+    matches.push(match.index + (match[1] ? match[1].length : 0));
+  }
+  return matches;
+}
+
+function isNegatedStaffAlias(normalizedText, matchIndex) {
+  const before = normalizedText.slice(0, matchIndex).trim();
+  return /\bnot(?:\s+(?:the|that|this|one|staff|technician|tech))?$/.test(before);
+}
+
+function normalizeScopedStaffCandidatePhrase(text) {
+  const normalized = normalizeForMatch(text);
+  if (!normalized) {
+    return "";
+  }
+  if (ANY_STAFF_ALIASES.some((alias) => normalized.includes(normalizeForMatch(alias)))) {
+    return "any staff";
+  }
+  if (
+    /\bnot\s+(?:correct|right|sure|today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/.test(
+      normalized
+    ) ||
+    /\b(?:do not|don t|dont)\s+book\b|\bcancel it\b|\bwait no\b|\bno that is wrong\b/.test(normalized)
+  ) {
+    return "";
+  }
+
+  let candidate = normalized
+    .replace(/\b(?:technician|tech|staff|please|actually|instead)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  candidate = candidate
+    .replace(/^(?:no\s+)?i\s+want(?:\s+to\s+book)?\s+/, "")
+    .replace(/^(?:book\s+with|with|use|i\s+said|change(?:\s+it)?\s+to|switch(?:\s+it)?\s+to)\s+/, "")
+    .trim();
+
+  if (candidate.startsWith("not ")) {
+    const [, , ...replacementTokens] = candidate.split(/\s+/);
+    candidate = replacementTokens.join(" ");
+  } else {
+    const notIndex = candidate.indexOf(" not ");
+    if (notIndex > 0) {
+      candidate = candidate.slice(0, notIndex);
+    }
+  }
+
+  candidate = normalizeForMatch(
+    candidate.replace(
+      /\b(?:with|book|use|i|want|to|said|change|switch|it|instead|no|please|actually|technician|staff|tech|the|a|an)\b/g,
+      " "
+    )
+  );
+  if (!candidate || candidate.split(/\s+/).length > 2) {
+    return "";
+  }
+  if (
+    /^(?:yes|yeah|yep|correct|right|sure|ok|okay|no|nope|nah|wrong)(?:\s+(?:yes|yeah|yep|correct|right|sure|ok|okay|no|nope|nah|wrong))*$/.test(
+      candidate
+    )
+  ) {
+    return "";
+  }
+  if (
+    extractServiceFromTranscript(candidate) ||
+    hasCurrentTurnDatePhrase(candidate) ||
+    hasCurrentTurnTimePhrase(candidate)
+  ) {
+    return "";
+  }
+  return candidate;
+}
+
+function collectStaffAliasMatches(normalizedText, sessionAttributes = {}) {
+  const matches = [];
+  const addMatches = (staffName, aliases) => {
+    const seenAliases = new Set();
+    for (const alias of aliases) {
+      const normalizedAlias = normalizeForMatch(alias);
+      if (!normalizedAlias || seenAliases.has(normalizedAlias)) {
+        continue;
+      }
+      seenAliases.add(normalizedAlias);
+      for (const index of staffAliasMatchesInText(normalizedText, normalizedAlias)) {
+        matches.push({
+          staffName,
+          index,
+          negated: isNegatedStaffAlias(normalizedText, index)
+        });
+      }
+    }
+  };
+
+  for (const [staffName, aliases] of Object.entries(STAFF_ALIAS_GROUPS)) {
+    addMatches(staffName, [staffName, ...aliases]);
+  }
+  for (const staffName of Object.values(getStaffDtmfOptions(sessionAttributes))) {
+    if (normalizeForMatch(staffName) === "any staff") {
+      continue;
+    }
+    addMatches(staffName, [staffName, String(staffName).split(/\s+/)[0]]);
+  }
+
+  return matches.sort((left, right) => left.index - right.index);
+}
+
 function extractStaffFromTranscript(text, sessionAttributes = {}) {
   const normalizedText = normalizeForMatch(text);
   if (!normalizedText) {
@@ -601,18 +716,29 @@ function extractStaffFromTranscript(text, sessionAttributes = {}) {
   if (ANY_STAFF_ALIASES.some((alias) => normalizedText.includes(normalizeForMatch(alias)))) {
     return "Any staff";
   }
-  for (const [staffName, aliases] of Object.entries(STAFF_ALIAS_GROUPS)) {
-    if (aliases.some((alias) => textContainsStaffAlias(normalizedText, alias))) {
-      return staffName;
-    }
+  const scopedCandidate = normalizeScopedStaffCandidatePhrase(text);
+  const searchText = scopedCandidate && normalizeForMatch(scopedCandidate) !== "any staff"
+    ? scopedCandidate
+    : normalizedText;
+  const positiveMatches = collectStaffAliasMatches(searchText, sessionAttributes)
+    .filter((match) => !match.negated);
+  const positiveNames = Array.from(new Set(positiveMatches.map((match) => match.staffName)));
+  if (positiveNames.length === 1) {
+    return positiveNames[0];
   }
-  const dynamicStaffNames = Object.values(getStaffDtmfOptions(sessionAttributes))
-    .filter((name) => normalizeForMatch(name) !== "any staff");
-  return dynamicStaffNames.find((staffName) => {
-    const fullName = normalizeForMatch(staffName);
-    const firstName = normalizeForMatch(staffName.split(/\s+/)[0]);
-    return textContainsStaffAlias(normalizedText, fullName) || textContainsStaffAlias(normalizedText, firstName);
-  }) || "";
+  return "";
+}
+
+function hasExplicitStaffPhrase(text, sessionAttributes = {}) {
+  const normalized = normalizeForMatch(text);
+  if (!normalized) {
+    return false;
+  }
+  if (normalizeScopedStaffCandidatePhrase(text)) {
+    return true;
+  }
+  const matches = collectStaffAliasMatches(normalized, sessionAttributes);
+  return matches.length > 0 || /\bnot\s+(?!today\b|tomorrow\b|monday\b|tuesday\b|wednesday\b|thursday\b|friday\b|saturday\b|sunday\b|correct\b|right\b|book\b|it\b|that\b|this\b)[a-z][a-z'-]{1,40}\b/.test(normalized);
 }
 
 function readDtmfDigit(value) {
@@ -1405,6 +1531,9 @@ function analyzeLexTurnSanitization(event) {
   const currentTurnStaffMention = customerNameTurnOwnsTranscript
     ? ""
     : extractStaffFromTranscript(currentTurnTranscript, previous);
+  const currentTurnHasExplicitStaffPhrase = customerNameTurnOwnsTranscript
+    ? false
+    : hasExplicitStaffPhrase(currentTurnTranscript, previous);
   const previousStaffPreferenceForAnalysis =
     getSessionAttribute(previous, slotNames.staffPreference) || previous.confirmedStaffName;
   const authoritativePreviousStaffPreference = getAuthoritativePreviousStaffPreference(
@@ -1591,6 +1720,24 @@ function analyzeLexTurnSanitization(event) {
       continue;
     }
 
+    if (
+      fieldName === "staffPreference" &&
+      isCurrentAskedSlot &&
+      !grounded &&
+      !isDtmfAcceptedSlot &&
+      !currentTurnStaffMention &&
+      (currentTurnHasExplicitStaffPhrase || !alreadyTrusted)
+    ) {
+      delete sanitizedSlots[name];
+      ignoredUngroundedSlots.push(fieldName);
+      if (currentTurnHasExplicitStaffPhrase && previousStaffPreferenceForAnalysis) {
+        fieldsToClear.add("staffPreference");
+        discardedStaleStaff = discardedStaleStaff || previousStaffPreferenceForAnalysis;
+      }
+      changed = true;
+      continue;
+    }
+
     if (!isCurrentAskedSlot && !grounded && !alreadyTrusted && !isDtmfAcceptedSlot) {
       delete sanitizedSlots[name];
       ignoredUngroundedSlots.push(fieldName);
@@ -1678,6 +1825,17 @@ function analyzeLexTurnSanitization(event) {
     changed = true;
   }
 
+  if (
+    previousStaffPreferenceForAnalysis &&
+    currentTurnHasExplicitStaffPhrase &&
+    !currentTurnStaffMention
+  ) {
+    fieldsToClear.add("staffPreference");
+    ignoredPollutedSlots.push("sessionAttributes.staffPreference");
+    discardedStaleStaff = discardedStaleStaff || previousStaffPreferenceForAnalysis;
+    changed = true;
+  }
+
   return {
     scopedDtmfDigit,
     currentTurnTranscript,
@@ -1687,6 +1845,7 @@ function analyzeLexTurnSanitization(event) {
     ignoredUngroundedSlots: Array.from(new Set(ignoredUngroundedSlots)),
     ignoredNoiseFields: Array.from(new Set(ignoredNoiseFields)),
     currentTurnStaffMention,
+    currentTurnHasExplicitStaffPhrase,
     currentTurnServiceMention: recognizedService || "",
     serviceAliasCorrectionRaw,
     discardedPlaceholderService,
@@ -1781,6 +1940,9 @@ function sanitizeLexEvent(event, analysis) {
       delete sessionAttributes.selectedStaffId;
       delete sessionAttributes.confirmedStaffId;
     }
+  }
+  if (analysis.discardedStaleStaff && !sessionAttributes.discardedStaleStaff) {
+    sessionAttributes.discardedStaleStaff = analysis.discardedStaleStaff;
   }
   if (analysis.ignoredUngroundedSlots?.length) {
     sessionAttributes.ignoredUngroundedSlots = JSON.stringify(analysis.ignoredUngroundedSlots);
@@ -4125,6 +4287,7 @@ function buildLexTurnDebug(event, analysis = {}) {
       ignoredNoiseFields: analysis.ignoredNoiseFields || [],
       preservedConfirmedService: Boolean(analysis.preservedConfirmedService),
       currentTurnStaffMention: analysis.currentTurnStaffMention || null,
+      currentTurnHasExplicitStaffPhrase: Boolean(analysis.currentTurnHasExplicitStaffPhrase),
       currentTurnServiceMention: analysis.currentTurnServiceMention || null,
       serviceAliasInput: analysis.serviceAliasCorrectionRaw || null,
       discardedPlaceholderService: analysis.discardedPlaceholderService || null,

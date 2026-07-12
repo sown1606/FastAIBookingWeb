@@ -3259,6 +3259,284 @@ test("DialogCodeHook final confirmation value-only changes route as draft update
   }
 });
 
+test("DialogCodeHook canonicalizes with emmy to Amy while staffPreference is being asked", async () => {
+  const handler = await loadHandler();
+  const fetchCalls = installFetchMock((_url, _options, body) =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "MISSING_INFO",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "InProgress",
+          message: "Sure. Pedicure tomorrow at 11 AM with Amy. Is that correct?",
+          messageContentType: "PlainText",
+          dialogAction: {
+            type: "ConfirmIntent"
+          },
+          sessionAttributes: {
+            serviceName: body.serviceName,
+            requestedDate: body.requestedDate,
+            requestedTime: body.requestedTime,
+            staffPreference: "Amy",
+            staffId: "staff-amy",
+            selectedStaffId: "staff-amy",
+            confirmedStaffId: "staff-amy",
+            confirmedStaffName: "Amy",
+            awaitingFinalBookingConfirmation: "true",
+            bookingConfirmationAsked: "true",
+            forceHumanEscalation: "false",
+            transferToQueue: "false"
+          }
+        }
+      })
+    )
+  );
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "with emmy",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+84978634886",
+          AmazonConnectContactId: "connect-with-emmy",
+          customerName: "Jane",
+          customerPhone: "+84978634886",
+          serviceName: "Pedicure",
+          confirmedServiceName: "Pedicure",
+          requestedDate: usEasternDate(1),
+          requestedTime: "11 AM",
+          lastAskedSlot: "staffPreference",
+          staffDtmfOptions: JSON.stringify({
+            "1": "Trang",
+            "2": "Amy",
+            "3": "Kelly",
+            "4": "Any staff"
+          }),
+          staffDtmfStaffIds: JSON.stringify({
+            "1": "staff-trang",
+            "2": "staff-amy",
+            "3": "staff-kelly"
+          })
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          confirmationState: "None",
+          slots: {
+            serviceName: slot("Pedicure"),
+            requestedDate: slot("tomorrow"),
+            requestedTime: slot("11 AM"),
+            staffPreference: slotWith({
+              originalValue: "with emmy",
+              interpretedValue: "withemmy",
+              resolvedValues: ["withemmy"]
+            }),
+            customerName: slot("Jane"),
+            customerPhone: slot("+84978634886")
+          }
+        }
+      }
+    })
+  );
+
+  assert.equal(fetchCalls.length, 0);
+  assert.equal(response.sessionState.intent.slots.staffPreference.value.interpretedValue, "Amy");
+  assert.equal(response.sessionState.sessionAttributes.staffPreference, "Amy");
+  assert.equal(response.sessionState.sessionAttributes.confirmedStaffName, "Amy");
+  assert.equal(response.sessionState.sessionAttributes.staffSource, "current_turn_alias");
+  assert.equal(response.sessionState.sessionAttributes.discardedStaleStaff, "with emmy");
+});
+
+test("DialogCodeHook final confirmation correction no i want emmy not chang replaces stale Trang", async () => {
+  const handler = await loadHandler();
+  const fetchCalls = installFetchMock((_url, _options, body) =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "MISSING_INFO",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "InProgress",
+          message: "Sure. Pedicure tomorrow at 11 AM with Amy. Is that correct?",
+          messageContentType: "PlainText",
+          dialogAction: {
+            type: "ConfirmIntent"
+          },
+          sessionAttributes: {
+            serviceName: body.serviceName,
+            requestedDate: body.requestedDate,
+            requestedTime: body.requestedTime,
+            staffPreference: "Amy",
+            staffId: "staff-amy",
+            selectedStaffId: "staff-amy",
+            confirmedStaffId: "staff-amy",
+            confirmedStaffName: "Amy",
+            confirmationFingerprint: "new-amy-fingerprint",
+            awaitingFinalBookingConfirmation: "true",
+            bookingConfirmationAsked: "true",
+            forceHumanEscalation: "false",
+            transferToQueue: "false"
+          }
+        }
+      })
+    )
+  );
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "no i want emmy not chang",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+84978634886",
+          AmazonConnectContactId: "connect-emmy-not-chang",
+          customerName: "Jane",
+          customerPhone: "+84978634886",
+          serviceName: "Pedicure",
+          confirmedServiceName: "Pedicure",
+          requestedDate: usEasternDate(1),
+          requestedTime: "11 AM",
+          staffPreference: "Trang",
+          staffId: "staff-trang",
+          selectedStaffId: "staff-trang",
+          confirmedStaffName: "Trang",
+          confirmedStaffId: "staff-trang",
+          confirmationFingerprint: "old-trang-fingerprint",
+          awaitingFinalBookingConfirmation: "true",
+          bookingConfirmationAsked: "true",
+          lastAskedSlot: "bookingConfirmation"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          confirmationState: "None",
+          slots: {
+            serviceName: slot("Pedicure"),
+            requestedDate: slot("tomorrow"),
+            requestedTime: slot("11 AM"),
+            staffPreference: slot("Trang"),
+            customerName: slot("Jane"),
+            customerPhone: slot("+84978634886")
+          }
+        }
+      }
+    })
+  );
+
+  assert.equal(fetchCalls.length, 1);
+  assert.equal(fetchCalls[0].body.confirmationState, "None");
+  assert.equal(fetchCalls[0].body.attributes.finalConfirmationChangeRequest, "true");
+  assert.equal(fetchCalls[0].body.staffPreference, "Amy");
+  assert.equal(fetchCalls[0].body.staffId, undefined);
+  assert.equal(fetchCalls[0].body.attributes.staffPreference, "Amy");
+  assert.equal(fetchCalls[0].body.attributes.confirmedStaffName, "Amy");
+  assert.equal(fetchCalls[0].body.attributes.staffId, undefined);
+  assert.equal(fetchCalls[0].body.attributes.selectedStaffId, undefined);
+  assert.equal(fetchCalls[0].body.attributes.confirmedStaffId, undefined);
+  assert.equal(fetchCalls[0].body.attributes.discardedStaleStaff, "Trang");
+  assert.equal(
+    fetchCalls[0].body.attributes.lexTurnDebug.sanitization.currentTurnStaffMention,
+    "Amy"
+  );
+  assert.equal(response.sessionState.dialogAction.type, "ConfirmIntent");
+  assert.equal(response.sessionState.sessionAttributes.staffPreference, "Amy");
+  assert.equal(response.sessionState.sessionAttributes.staffId, "staff-amy");
+  assert.equal(response.sessionState.sessionAttributes.confirmationFingerprint, "new-amy-fingerprint");
+  assert.doesNotMatch(response.messages[0].content, /Trang/i);
+});
+
+test("DialogCodeHook unknown explicit staff clears stale Trang instead of sending Any staff", async () => {
+  const handler = await loadHandler();
+  const fetchCalls = installFetchMock((_url, _options, body) =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "MISSING_INFO",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "InProgress",
+          message: "I didn't find that technician. Which staff would you like, Trang, Amy, Kelly, or first available?",
+          messageContentType: "PlainText",
+          dialogAction: {
+            type: "ElicitSlot",
+            slotToElicit: "staffPreference"
+          },
+          sessionAttributes: {
+            serviceName: body.serviceName,
+            requestedDate: body.requestedDate,
+            requestedTime: body.requestedTime,
+            awaitingFinalBookingConfirmation: "false",
+            bookingConfirmationAsked: "false",
+            forceHumanEscalation: "false",
+            transferToQueue: "false",
+            lastAskedSlot: "staffPreference"
+          }
+        }
+      })
+    )
+  );
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "with Emily",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+84978634886",
+          AmazonConnectContactId: "connect-with-emily",
+          customerName: "Jane",
+          customerPhone: "+84978634886",
+          serviceName: "Pedicure",
+          confirmedServiceName: "Pedicure",
+          requestedDate: usEasternDate(1),
+          requestedTime: "11 AM",
+          staffPreference: "Trang",
+          staffId: "staff-trang",
+          selectedStaffId: "staff-trang",
+          confirmedStaffName: "Trang",
+          confirmedStaffId: "staff-trang",
+          lastAskedSlot: "staffPreference"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          confirmationState: "None",
+          slots: {
+            serviceName: slot("Pedicure"),
+            requestedDate: slot("tomorrow"),
+            requestedTime: slot("11 AM"),
+            staffPreference: slot("Trang"),
+            customerName: slot("Jane"),
+            customerPhone: slot("+84978634886")
+          }
+        }
+      }
+    })
+  );
+
+  assert.equal(fetchCalls.length, 1);
+  assert.equal(fetchCalls[0].body.staffPreference, undefined);
+  assert.equal(fetchCalls[0].body.staffId, undefined);
+  assert.equal(fetchCalls[0].body.attributes.staffPreference, undefined);
+  assert.equal(fetchCalls[0].body.attributes.confirmedStaffName, undefined);
+  assert.equal(fetchCalls[0].body.attributes.staffId, undefined);
+  assert.equal(fetchCalls[0].body.attributes.selectedStaffId, undefined);
+  assert.equal(fetchCalls[0].body.attributes.confirmedStaffId, undefined);
+  assert.equal(fetchCalls[0].body.attributes.discardedStaleStaff, "Trang");
+  assert.equal(
+    fetchCalls[0].body.attributes.lexTurnDebug.sanitization.currentTurnHasExplicitStaffPhrase,
+    true
+  );
+  assert.notEqual(fetchCalls[0].body.staffPreference, "Any staff");
+  assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "staffPreference");
+});
+
 test("DialogCodeHook repairs reschedule NLU to booking draft change during final confirmation", async () => {
   const handler = await loadHandler();
   const phrase = "change it to Monday at two PM with Kelly";
