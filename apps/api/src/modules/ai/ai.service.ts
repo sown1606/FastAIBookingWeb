@@ -230,7 +230,9 @@ const SERVICE_ALIASES: Record<string, string[]> = {
     "toe service",
     "foot service",
     "foot pedicure",
-    "toe pedicure"
+    "toe pedicure",
+    "p t q",
+    "ptq"
   ],
   manicure: [
     "many cure",
@@ -322,6 +324,20 @@ const DATE_PHRASE_PATTERN =
 
 const SPOKEN_HOUR_PATTERN =
   "one|two|three|tree|tri|four|five|fife|six|seven|eight|nine|ten|eleven|twelve";
+const SPOKEN_MINUTE_PATTERN =
+  "[0-5]\\d|zero|oh|o|ten|fifteen|twenty(?:\\s+(?:one|two|three|four|five|six|seven|eight|nine))?|thirty(?:\\s+(?:one|two|three|four|five|six|seven|eight|nine))?|forty(?:\\s+(?:one|two|three|four|five|six|seven|eight|nine))?|fourty(?:\\s+(?:one|two|three|four|five|six|seven|eight|nine))?|fifty(?:\\s+(?:one|two|three|four|five|six|seven|eight|nine))?";
+const SPOKEN_MINUTE_BASE: Record<string, number> = {
+  zero: 0,
+  oh: 0,
+  o: 0,
+  ten: 10,
+  fifteen: 15,
+  twenty: 20,
+  thirty: 30,
+  forty: 40,
+  fourty: 40,
+  fifty: 50
+};
 
 const MONTH_DAY_PATTERN =
   "\\b(?:january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|august|aug|september|sep|sept|october|oct|november|nov|december|dec)\\.?\\s+(?:\\d{1,2}(?:st|nd|rd|th)?|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth|thirteenth|fourteenth|fifteenth|sixteenth|seventeenth|eighteenth|nineteenth|twentieth|twenty\\s+first|twenty\\s+second|twenty\\s+third|twenty\\s+fourth|twenty\\s+fifth|twenty\\s+sixth|twenty\\s+seventh|twenty\\s+eighth|twenty\\s+ninth|thirtieth|thirty\\s+first)(?:\\s*,?\\s*\\d{4})?\\b";
@@ -402,6 +418,10 @@ const ANY_STAFF_PHRASES = new Set([
   "no staff preference",
   "no specific staff",
   "first available",
+  "the first available",
+  "for available",
+  "first avaiable",
+  "first available one",
   "someone available",
   "whoever is available",
   "whoever s available",
@@ -993,12 +1013,23 @@ const hasStaffCuePhrase = (value?: string | null): boolean => {
   return Boolean(
     normalized &&
       (/\b(?:with|use|i said|technician|staff|tech)\b/.test(normalized) ||
-        /\b(?:change|switch)(?:\s+it)?\s+to\b/.test(normalized) ||
         /\b(?:no\s+)?i\s+want(?:\s+to\s+book)?\b/.test(normalized) ||
         /\binstead\b/.test(normalized) ||
         /\bnot\s+(?!today\b|tomorrow\b|monday\b|tuesday\b|wednesday\b|thursday\b|friday\b|saturday\b|sunday\b|correct\b|right\b|book\b|it\b|that\b|this\b)[a-z][a-z'-]{1,40}\b/.test(normalized))
   );
 };
+
+const STAFF_FUZZY_STOP_TOKENS = new Set([
+  "change",
+  "changes",
+  "changed",
+  "changing",
+  "switch",
+  "move",
+  "make",
+  "into",
+  "instead"
+]);
 
 const isConservativeStaffFuzzyMatch = (alias: string, requested: string): boolean => {
   const compactAlias = compactForMatch(alias);
@@ -1020,6 +1051,9 @@ const isClearlyInvalidStaffPreference = (value?: string | null): boolean => {
     return true;
   }
   if (/^(?:am|pm|a m|p m|time|phone|phone number)$/.test(normalized)) {
+    return true;
+  }
+  if (hasStaticServiceAliasInText(normalized)) {
     return true;
   }
   if (normalized.split(/\s+/).length > 3) {
@@ -1229,7 +1263,7 @@ const parseLocalDateText = (value: string, timezone: string): DateTime | null =>
     /^(?:(this|next)\s+)?(sunday|monday|tuesday|wednesday|thursday|friday|saturday)$/
   );
   const weekday = weekdayMatch ? WEEKDAY_INDEXES[weekdayMatch[2]!] : WEEKDAY_INDEXES[cleaned];
-  if (weekday) {
+  if (weekday !== undefined) {
     let daysUntil = weekday - now.weekday;
     if (daysUntil < 0 || (daysUntil === 0 && weekdayMatch?.[1] === "next")) {
       daysUntil += 7;
@@ -1261,8 +1295,51 @@ const parseLocalDateText = (value: string, timezone: string): DateTime | null =>
   return null;
 };
 
+const readSpokenMinuteValue = (value: string): number | null => {
+  const normalized = normalizeForMatch(value);
+  if (/^[0-5]?\d$/.test(normalized)) {
+    return Number(normalized);
+  }
+  if (Object.prototype.hasOwnProperty.call(SPOKEN_MINUTE_BASE, normalized)) {
+    return SPOKEN_MINUTE_BASE[normalized]!;
+  }
+  const [base, suffix] = normalized.split(/\s+/);
+  if (
+    base &&
+    suffix &&
+    Object.prototype.hasOwnProperty.call(SPOKEN_MINUTE_BASE, base) &&
+    NUMBER_WORDS[suffix] !== undefined
+  ) {
+    const minute = SPOKEN_MINUTE_BASE[base]! + NUMBER_WORDS[suffix]!;
+    return minute >= 0 && minute <= 59 ? minute : null;
+  }
+  return null;
+};
+
+const normalizeHourMinuteTimeExpression = (value?: string | null): string => {
+  const source = (value ?? "")
+    .replace(/\b([ap])\s*\.?\s*m\.?\b/gi, "$1m")
+    .replace(/\ba\.?m\.?\b/gi, "am")
+    .replace(/\bp\.?m\.?\b/gi, "pm");
+  const pattern = new RegExp(
+    `\\b(${SPOKEN_HOUR_PATTERN}|\\d{1,2})\\s+(?:and\\s+)?(${SPOKEN_MINUTE_PATTERN})(?:\\s+(am|pm))?\\b`,
+    "i"
+  );
+  return source.replace(pattern, (match, hourText: string, minuteText: string, periodText?: string) => {
+    const hour = /^\d{1,2}$/.test(hourText)
+      ? Number(hourText)
+      : NUMBER_WORDS[normalizeForMatch(hourText)];
+    const minute = readSpokenMinuteValue(minuteText);
+    if (!hour || hour < 1 || hour > 12 || minute === null || minute > 59) {
+      return match;
+    }
+    const period = periodText ? ` ${periodText.toUpperCase()}` : "";
+    return `${hour}:${String(minute).padStart(2, "0")}${period}`;
+  });
+};
+
 const parseLocalTimeText = (value: string): { hour: number; minute: number; ambiguous: boolean } | null => {
-  const normalized = normalizeSpokenNumbers(value)
+  const normalized = normalizeSpokenNumbers(normalizeHourMinuteTimeExpression(value))
     .replace(/\b([ap])\s*\.?\s*m\.?\b/gi, "$1m")
     .replace(/\ba\.?m\.?\b/gi, "am")
     .replace(/\bp\.?m\.?\b/gi, "pm")
@@ -1324,7 +1401,7 @@ const parseLocalTimeText = (value: string): { hour: number; minute: number; ambi
 };
 
 const extractTimeCandidate = (value: string): string | undefined => {
-  const source = value
+  const source = normalizeHourMinuteTimeExpression(value)
     .replace(/\b([ap])\s*\.?\s*m\.?\b/gi, "$1m")
     .trim();
   const searchable = source.replace(/^\s*(?:at|around|about|for|by)\s+/i, "");
@@ -2561,7 +2638,9 @@ const findStaffMentionInText = async (
     return undefined;
   }
 
-  const tokens = normalizedText.split(/\s+/).filter((token) => token.length >= 5);
+  const tokens = normalizedText
+    .split(/\s+/)
+    .filter((token) => token.length >= 5 && !STAFF_FUZZY_STOP_TOKENS.has(token));
   const fuzzyMatches = staff.filter((member) =>
     getStaffAliasPhrases(member.fullName).some((alias) =>
       tokens.some((token) => isConservativeStaffFuzzyMatch(alias, token))

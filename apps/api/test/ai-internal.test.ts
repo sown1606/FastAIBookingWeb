@@ -3975,6 +3975,195 @@ test("active booking multi-field change updates date time and staff in one turn"
   assert.equal(state.appointments.length, 0);
 });
 
+test("time-only final correction preserves non-first Kevin staff identity", async () => {
+  addKevinStaff();
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Full Set",
+      requestedDate,
+      requestedTime: "2 PM",
+      staffPreference: "Kevin",
+      staffId: ids.kevin,
+      confirmationState: "None",
+      amazonConnectContactId: "connect-final-time-only-kevin",
+      currentTurnTranscript: "no uh change it into four p m",
+      transcript: "no uh change it into four p m",
+      attributes: {
+        lastAskedSlot: "bookingConfirmation",
+        awaitingFinalBookingConfirmation: "true",
+        bookingConfirmationAsked: "true",
+        serviceName: "Full Set",
+        confirmedServiceName: "Full Set",
+        requestedDate,
+        requestedTime: "2 PM",
+        staffPreference: "Kevin",
+        staffId: ids.kevin,
+        selectedStaffId: ids.kevin,
+        confirmedStaffId: ids.kevin,
+        confirmedStaffName: "Kevin",
+        customerName: "Lee",
+        customerPhone: "+17325956266",
+        confirmationFingerprint: "old-kevin-two-pm"
+      }
+    })
+  );
+
+  const attrs = result.body.data.lexResponse.sessionAttributes;
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(attrs.serviceName, "Full Set");
+  assert.equal(attrs.requestedDate, requestedDate);
+  assert.equal(attrs.requestedTime, "16:00");
+  assert.equal(attrs.staffPreference, "Kevin");
+  assert.equal(attrs.staffId, ids.kevin);
+  assert.equal(attrs.selectedStaffId, ids.kevin);
+  assert.equal(attrs.confirmedStaffId, ids.kevin);
+  assert.equal(attrs.confirmedStaffName, "Kevin");
+  assert.notEqual(attrs.confirmationFingerprint, "old-kevin-two-pm");
+  assert.equal(state.appointments.length, 0);
+});
+
+test("spoken minute final correction preserves Kevin and exact minutes", async () => {
+  addKevinStaff();
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Full Set",
+      requestedDate,
+      requestedTime: "2 PM",
+      staffPreference: "Kevin",
+      staffId: ids.kevin,
+      confirmationState: "None",
+      amazonConnectContactId: "connect-final-time-minutes-kevin",
+      currentTurnTranscript: "change it to three fifty PM",
+      transcript: "change it to three fifty PM",
+      attributes: {
+        lastAskedSlot: "bookingConfirmation",
+        awaitingFinalBookingConfirmation: "true",
+        bookingConfirmationAsked: "true",
+        serviceName: "Full Set",
+        confirmedServiceName: "Full Set",
+        requestedDate,
+        requestedTime: "2 PM",
+        staffPreference: "Kevin",
+        staffId: ids.kevin,
+        selectedStaffId: ids.kevin,
+        confirmedStaffId: ids.kevin,
+        confirmedStaffName: "Kevin",
+        customerName: "Lee",
+        customerPhone: "+17325956266"
+      }
+    })
+  );
+
+  const attrs = result.body.data.lexResponse.sessionAttributes;
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(attrs.requestedTime, "15:50");
+  assert.equal(attrs.staffPreference, "Kevin");
+  assert.equal(attrs.staffId, ids.kevin);
+  assert.equal(attrs.selectedStaffId, ids.kevin);
+  assert.equal(attrs.confirmedStaffId, ids.kevin);
+  assert.equal(attrs.confirmedStaffName, "Kevin");
+  assert.match(result.body.data.lexResponse.message, /3:50 PM/i);
+  assert.equal(state.appointments.length, 0);
+});
+
+test("first available ASR variants enter explicit-any flow without staff clarification", async () => {
+  for (const phrase of ["for available", "first avaiable"]) {
+    resetMockState();
+    const result = await postInternalAppointment(
+      bookingPayload({
+        serviceName: "Manicure",
+        requestedDate: DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd"),
+        requestedTime: "5 PM",
+        staffPreference: undefined,
+        confirmationState: undefined,
+        amazonConnectContactId: `connect-any-${phrase.replace(/\s+/g, "-")}`,
+        currentTurnTranscript: phrase,
+        transcript: phrase,
+        attributes: {
+          lastAskedSlot: "staffPreference",
+          serviceName: "Manicure",
+          requestedDate: DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd"),
+          requestedTime: "5 PM",
+          customerName: "Lee",
+          customerPhone: "+17325956266"
+        }
+      })
+    );
+
+    assert.equal(result.body.data.outcome, "MISSING_INFO", phrase);
+    assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent", phrase);
+    assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Trang", phrase);
+    assert.equal(result.body.data.lexResponse.sessionAttributes.staffId, ids.trang, phrase);
+    assert.doesNotMatch(result.body.data.lexResponse.message, /didn't find that technician/i, phrase);
+    assert.equal(state.appointments.length, 0, phrase);
+  }
+});
+
+test("time-only answer does not invent requestedDate today", async () => {
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Full Set",
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: "Amy",
+      staffId: ids.amy,
+      confirmationState: undefined,
+      amazonConnectContactId: "connect-time-no-date",
+      currentTurnTranscript: "two p m",
+      transcript: "two p m",
+      attributes: {
+        lastAskedSlot: "requestedTime",
+        serviceName: "Full Set",
+        staffPreference: "Amy",
+        staffId: ids.amy,
+        customerName: "Lee",
+        customerPhone: "+17325956266"
+      }
+    })
+  );
+
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitSlot");
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "requestedDate");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.requestedDate, undefined);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "14:00");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Amy");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffId, ids.amy);
+  assert.equal(state.appointments.length, 0);
+});
+
+test("ptq service ASR resolves to Pedicure and is not stored as staff", async () => {
+  const result = await postInternalAppointment(
+    bookingPayload({
+      customerName: undefined,
+      customerPhone: "+84798171999",
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: "ptq",
+      confirmationState: undefined,
+      amazonConnectContactId: "connect-ptq-service",
+      currentTurnTranscript: "hi i want to book a p t q tomorrow",
+      transcript: "hi i want to book a p t q tomorrow",
+      attributes: {
+        currentTurnTranscript: "hi i want to book a p t q tomorrow"
+      }
+    })
+  );
+
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Pedicure");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedServiceName, "Pedicure");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, undefined);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffId, undefined);
+  assert.notEqual(state.bookingAttempts.at(-1)?.requestedStaff, "ptq");
+  assert.equal(state.appointments.length, 0);
+});
+
 test("active booking fragment with does not overwrite staff or customer name", async () => {
   addKevinStaff();
   const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");

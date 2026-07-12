@@ -30,6 +30,20 @@ const NUMBER_WORDS = {
 
 const SPOKEN_HOUR_PATTERN =
   "one|two|three|tree|tri|four|five|fife|six|seven|eight|nine|ten|eleven|twelve";
+const SPOKEN_MINUTE_PATTERN =
+  "[0-5]\\d|zero|oh|o|ten|fifteen|twenty(?:\\s+(?:one|two|three|four|five|six|seven|eight|nine))?|thirty(?:\\s+(?:one|two|three|four|five|six|seven|eight|nine))?|forty(?:\\s+(?:one|two|three|four|five|six|seven|eight|nine))?|fourty(?:\\s+(?:one|two|three|four|five|six|seven|eight|nine))?|fifty(?:\\s+(?:one|two|three|four|five|six|seven|eight|nine))?";
+const SPOKEN_MINUTE_BASE = {
+  zero: 0,
+  oh: 0,
+  o: 0,
+  ten: 10,
+  fifteen: 15,
+  twenty: 20,
+  thirty: 30,
+  forty: 40,
+  fourty: 40,
+  fifty: 50
+};
 
 const DATE_PHRASE_PATTERN =
   "\\b(?:tomorrow\\s+(?:morning|afternoon|evening|night)|this\\s+(?:morning|afternoon|evening)|tonight|today|tomorrow|(?:this|next)\\s+(?:sunday|monday|tuesday|wednesday|thursday|friday|saturday)|sunday|monday|tuesday|wednesday|thursday|friday|saturday)\\b";
@@ -124,7 +138,9 @@ const PEDICURE_ALIASES = [
   "toe service",
   "foot service",
   "foot pedicure",
-  "toe pedicure"
+  "toe pedicure",
+  "p t q",
+  "ptq"
 ];
 
 const DEMO_SERVICE_NAMES = [
@@ -200,7 +216,12 @@ const ANY_STAFF_ALIASES = [
   "any staff",
   "no preference",
   "whoever is available",
-  "first available"
+  "who is available",
+  "first available",
+  "the first available",
+  "for available",
+  "first avaiable",
+  "first available one"
 ];
 const SERVICE_DTMF_PROMPT =
   "Hi, thanks for calling Kiet Nails. How can I help? You can say the service, day, time, and technician in one sentence. Press 0 for a person.";
@@ -655,6 +676,9 @@ function normalizeScopedStaffCandidatePhrase(text) {
       " "
     )
   );
+  if (/^(?:am|pm|a m|p m)$/.test(candidate)) {
+    return "";
+  }
   if (!candidate || candidate.split(/\s+/).length > 2) {
     return "";
   }
@@ -1461,8 +1485,18 @@ function isInvalidStaffPreferenceNoise(value, sessionAttributes = {}) {
   if (!normalized) {
     return true;
   }
+  if (
+    previousStaffHasValidatedIdentity(sessionAttributes) &&
+    (normalizeForMatch(sessionAttributes.staffPreference) === normalized ||
+      normalizeForMatch(sessionAttributes.confirmedStaffName) === normalized)
+  ) {
+    return false;
+  }
   if (isKnownStaffPreference(raw, sessionAttributes)) {
     return false;
+  }
+  if (extractServiceFromTranscript(raw)) {
+    return true;
   }
   if (/^[a-z]$/.test(normalized) || readDtmfDigit(raw)) {
     return true;
@@ -2192,8 +2226,49 @@ function resolveKnownDateValue(value, timeZone = DEFAULT_SALON_TIMEZONE) {
   return raw;
 }
 
-function extractTimeCandidate(value) {
+function readSpokenMinuteValue(value) {
+  const normalized = normalizeForMatch(value);
+  if (/^[0-5]?\d$/.test(normalized)) {
+    return Number(normalized);
+  }
+  if (Object.prototype.hasOwnProperty.call(SPOKEN_MINUTE_BASE, normalized)) {
+    return SPOKEN_MINUTE_BASE[normalized];
+  }
+  const [base, suffix] = normalized.split(/\s+/);
+  if (
+    Object.prototype.hasOwnProperty.call(SPOKEN_MINUTE_BASE, base) &&
+    NUMBER_WORDS[suffix] !== undefined
+  ) {
+    const minute = SPOKEN_MINUTE_BASE[base] + NUMBER_WORDS[suffix];
+    return minute >= 0 && minute <= 59 ? minute : null;
+  }
+  return null;
+}
+
+function normalizeHourMinuteTimeExpression(value) {
   const source = String(value || "")
+    .replace(/\b([ap])\s*\.?\s*m\.?\b/gi, "$1m")
+    .replace(/\ba\.?m\.?\b/gi, "am")
+    .replace(/\bp\.?m\.?\b/gi, "pm");
+  const pattern = new RegExp(
+    `\\b(${SPOKEN_HOUR_PATTERN}|\\d{1,2})\\s+(?:and\\s+)?(${SPOKEN_MINUTE_PATTERN})(?:\\s+(am|pm))?\\b`,
+    "i"
+  );
+  return source.replace(pattern, (match, hourText, minuteText, periodText) => {
+    const hour = /^\d{1,2}$/.test(hourText)
+      ? Number(hourText)
+      : NUMBER_WORDS[normalizeForMatch(hourText)];
+    const minute = readSpokenMinuteValue(minuteText);
+    if (!hour || hour < 1 || hour > 12 || minute === null || minute > 59) {
+      return match;
+    }
+    const period = periodText ? ` ${String(periodText).toUpperCase()}` : "";
+    return `${hour}:${String(minute).padStart(2, "0")}${period}`;
+  });
+}
+
+function extractTimeCandidate(value) {
+  const source = normalizeHourMinuteTimeExpression(value)
     .replace(/\b([ap])\s*\.?\s*m\.?\b/gi, "$1m")
     .trim();
   const searchable = source.replace(/^\s*(?:at|around|about|for|by)\s+/i, "");
@@ -2254,7 +2329,7 @@ function getPreferredDateCandidate(raw) {
 }
 
 function normalizeTimePhrase(value, datePhrase = "") {
-  const normalized = normalizeSpokenNumbers(value)
+  const normalized = normalizeSpokenNumbers(normalizeHourMinuteTimeExpression(value))
     .replace(/\b([ap])\s*\.?\s*m\.?\b/gi, "$1m")
     .replace(/\ba\.?m\.?\b/gi, "am")
     .replace(/\bp\.?m\.?\b/gi, "pm")
