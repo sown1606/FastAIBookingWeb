@@ -38,6 +38,33 @@ test("admin salon list uses shared delete dialog and preview endpoint", () => {
   assert.match(helperSource, /confirmPermanentDelete/);
 });
 
+test("admin call detail copy and download share sanitized debug payload", () => {
+  const source = readRepoFile("apps/admin/src/pages/call-detail-page.tsx");
+  const i18nSource = readRepoFile("apps/admin/src/lib/i18n.tsx");
+
+  assert.match(source, /const buildCallDebugPayload/);
+  assert.match(source, /downloadJsonFile\(filename,\s*buildCallDebugPayload\(call,\s*exportedAt\)\)/);
+  assert.match(source, /copyTextToClipboard\(JSON\.stringify\(payload,\s*null,\s*2\)\)/);
+  assert.match(source, /navigator\.clipboard\?\.writeText/);
+  assert.match(source, /document\.execCommand\("copy"\)/);
+  for (const key of [
+    "authorization",
+    "cookie",
+    "set-cookie",
+    "accesstoken",
+    "refreshtoken",
+    "apikey",
+    "secret",
+    "password"
+  ]) {
+    assert.match(source, new RegExp(`"${key}"`));
+  }
+  assert.match(source, /calls\.copyDebugJson/);
+  assert.match(source, /calls\.debugJsonCopied/);
+  assert.match(i18nSource, /"calls\.copyDebugJson": "Copy debug JSON"/);
+  assert.match(i18nSource, /"calls\.debugJsonCopied": "Debug JSON copied"/);
+});
+
 test("call-center CCP is embedded-first with collapsed technical details", () => {
   const source = readRepoFile("apps/app/src/pages/call-center-page.tsx");
 

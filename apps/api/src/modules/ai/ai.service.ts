@@ -424,14 +424,37 @@ const CUSTOMER_NAME_NOISE = new Set([
   "ah",
   "uh",
   "um",
+  "with",
+  "at",
+  "on",
+  "for",
+  "to",
+  "by",
+  "from",
+  "and",
+  "the",
+  "a",
+  "an",
+  "please",
   "okay",
   "ok",
   "yes",
   "no",
   "toss",
   "full set",
+  "first available",
+  "any staff",
   "tomorrow",
   "today",
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday",
+  "am",
+  "pm",
   "operator",
   "zero",
   "four",
@@ -533,7 +556,7 @@ const findConfiguredServiceNameInText = (
 
 const extractCustomerNameFromText = (text?: string): string | undefined => {
   const match = text?.match(
-    /(?:my name is|name is|this is|i am|i'm)\s+(\p{L}[\p{L}'-]*(?:\s+\p{L}[\p{L}'-]*){0,4})(?=\s*(?:[,.!?;]|$|and\s+(?:my\s+)?phone|(?:my\s+)?phone\s+(?:number\s+)?(?:is|should|to)))/iu
+    /(?:my name is|name is|this is|i am|i'm|you can call me)\s+(\p{L}[\p{L}'-]*(?:\s+\p{L}[\p{L}'-]*){0,4})(?=\s*(?:[,.!?;]|$|and\s+(?:my\s+)?phone|(?:my\s+)?phone\s+(?:number\s+)?(?:is|should|to)))/iu
   );
   const name = collapseSpokenNameSpelling(match?.[1]);
   return isAcceptableCustomerName(name) ? name : undefined;
@@ -655,6 +678,9 @@ const classifyFinalBookingConfirmation = (
   if (hasNewBookingValue && hasAffirmation && /\b(?:but|actually|instead|change|make|move|switch|want|need|with|at|for)\b/.test(normalized)) {
     return "CHANGE_REQUEST";
   }
+  if (hasNewBookingValue && !hasAffirmation) {
+    return "CHANGE_REQUEST";
+  }
   if (hasExplicitNegation) {
     return "DENIED";
   }
@@ -750,7 +776,7 @@ const isInvalidCustomerNameNoise = (value?: string | null): boolean => {
     normalized &&
       (CUSTOMER_NAME_NOISE.has(normalized) ||
         isDigitOnlyOrSequenceUtterance(value) ||
-        /\b(book|booking|appointment|service|pedicure|manicure|full set|dip|powder|tomorrow|today|morning|afternoon|evening|night|phone|number|zero|one|two|three|four|five|six|seven|eight|nine|ten)\b/.test(
+        /\b(book|booking|appointment|service|pedicure|manicure|full set|dip|powder|first available|any staff|tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|morning|afternoon|evening|night|am|pm|with|at|on|for|to|by|from|and|the|please|phone|number|zero|one|two|three|four|five|six|seven|eight|nine|ten)\b/.test(
           normalized
         ))
   );
@@ -779,7 +805,7 @@ const extractBareCustomerNameAnswer = (value?: string | null): string | undefine
     isOperatorZeroRequest(raw) ||
     isInvalidCustomerNameNoise(raw) ||
     /\b(real person|live person|human|operator|representative|talk to a person|talk to someone|speak to someone|speak with someone)\b/.test(normalized) ||
-    /\b(book|booking|appointment|service|pedicure|manicure|full set|dip|powder|tomorrow|today|morning|afternoon|evening|night|phone|number|zero|one|two|three|four|five|six|seven|eight|nine|ten)\b/.test(normalized)
+    /\b(book|booking|appointment|service|pedicure|manicure|full set|dip|powder|first available|any staff|tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|morning|afternoon|evening|night|am|pm|with|at|on|for|to|by|from|and|the|please|phone|number|zero|one|two|three|four|five|six|seven|eight|nine|ten)\b/.test(normalized)
   ) {
     return undefined;
   }
@@ -806,6 +832,19 @@ const getStaffAliasPhrases = (staffName: string): string[] => {
     firstName,
     ...((firstName && STAFF_ALIAS_PHRASES[normalizeForMatch(firstName)]) || [])
   ].filter(Boolean);
+};
+
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const textContainsStaffAlias = (normalizedText: string, alias: string): boolean => {
+  const normalizedAlias = normalizeForMatch(alias);
+  if (!normalizedAlias) {
+    return false;
+  }
+  if (normalizedAlias.includes(" ")) {
+    return normalizedText.includes(normalizedAlias);
+  }
+  return new RegExp(`\\b${escapeRegExp(normalizedAlias)}\\b`).test(normalizedText);
 };
 
 const isConservativeStaffFuzzyMatch = (alias: string, requested: string): boolean => {
@@ -854,6 +893,11 @@ const stripLeadingCountryCode = (value?: string | null): string => {
 
 const customerDisplayName = (customer: CustomerCandidate): string => {
   return customer.firstName.trim() || formatCustomerName(customer.firstName, customer.lastName);
+};
+
+const getReusableCustomerDisplayName = (customer: CustomerCandidate): string | undefined => {
+  const displayName = customerDisplayName(customer);
+  return isReusableCallerName(displayName) ? displayName : undefined;
 };
 
 const customerFullName = (customer: CustomerCandidate): string =>
@@ -1245,6 +1289,13 @@ const extractExplicitTime = (value: string | undefined): string | undefined => {
     return undefined;
   }
   return `${String(parsed.hour).padStart(2, "0")}:${String(parsed.minute).padStart(2, "0")}`;
+};
+
+const rejectsMentionedDate = (value?: string | null): boolean => {
+  const normalized = normalizeForMatch(value);
+  return /\b(?:not\s+on|no|not)\s+(?:today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/.test(
+    normalized
+  );
 };
 
 const localTimesEquivalent = (left?: string, right?: string): boolean => {
@@ -2338,7 +2389,7 @@ const findStaffMentionInText = async (
   const staff = await getStaffCandidates({ salonId });
   for (const member of staff) {
     const aliasMatch = getStaffAliasPhrases(member.fullName).some((alias) =>
-      normalizedText.includes(normalizeForMatch(alias))
+      textContainsStaffAlias(normalizedText, alias)
     );
     if (aliasMatch) {
       return member.fullName;
@@ -2358,7 +2409,7 @@ const findStaffMentionInText = async (
   return staff.find((member) => {
     const fullName = normalizeForMatch(member.fullName);
     const firstName = normalizeForMatch(member.fullName.split(/\s+/)[0]);
-    return normalizedText.includes(fullName) || normalizedText.includes(firstName);
+    return textContainsStaffAlias(normalizedText, fullName) || textContainsStaffAlias(normalizedText, firstName);
   })?.fullName;
 };
 
@@ -3346,8 +3397,8 @@ const findKnownCallerMemoryByPhone = async (input: {
 }): Promise<{ customerName: string; customerPhone?: string; source: string } | null> => {
   const existingCustomer = await findExistingCustomerByPhone(input);
   if (existingCustomer) {
-    const existingCustomerName = customerDisplayName(existingCustomer);
-    if (isReusableCallerName(existingCustomerName)) {
+    const existingCustomerName = getReusableCustomerDisplayName(existingCustomer);
+    if (existingCustomerName) {
       return {
         customerName: existingCustomerName,
         customerPhone: existingCustomer.phone,
@@ -3378,24 +3429,29 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
   const attributes = input.attributes ?? {};
   const lastAskedSlot = readStringAttribute(attributes, ["lastAskedSlot"]);
   const activeDtmfMenu = readStringAttribute(attributes, ["activeDtmfMenu"]);
+  const lexTurnDebug =
+    input.attributes &&
+    typeof input.attributes.lexTurnDebug === "object" &&
+    input.attributes.lexTurnDebug !== null &&
+    !Array.isArray(input.attributes.lexTurnDebug)
+      ? (input.attributes.lexTurnDebug as Record<string, unknown>)
+      : undefined;
+  const currentTurnTranscriptWasProvided =
+    Object.prototype.hasOwnProperty.call(input, "currentTurnTranscript") ||
+    Object.prototype.hasOwnProperty.call(attributes, "currentTurnTranscript") ||
+    Boolean(lexTurnDebug && Object.prototype.hasOwnProperty.call(lexTurnDebug, "currentTurnTranscript"));
   const currentTurnTranscript =
     asTrimmedString(input.currentTurnTranscript) ??
     readStringAttribute(attributes, ["currentTurnTranscript"]) ??
-    asTrimmedString(
-      input.attributes &&
-        typeof input.attributes.lexTurnDebug === "object" &&
-        input.attributes.lexTurnDebug !== null &&
-        !Array.isArray(input.attributes.lexTurnDebug)
-        ? (input.attributes.lexTurnDebug as Record<string, unknown>).currentTurnTranscript
-        : undefined
-    ) ??
-    asTrimmedString(input.text);
+    asTrimmedString(lexTurnDebug?.currentTurnTranscript) ??
+    (currentTurnTranscriptWasProvided ? undefined : asTrimmedString(input.text));
   const aggregatedBookingTranscript =
     asTrimmedString(input.aggregatedBookingTranscript) ??
     readStringAttribute(attributes, ["aggregatedBookingTranscript"]) ??
     asTrimmedString(input.transcript) ??
     currentTurnTranscript;
-  const transcriptText = currentTurnTranscript ?? aggregatedBookingTranscript;
+  const transcriptText =
+    currentTurnTranscript ?? (currentTurnTranscriptWasProvided ? undefined : aggregatedBookingTranscript);
   const suggestedServiceName = readStringAttribute(attributes, [
     "serviceSuggestionName",
     "aiSuggestedServiceName"
@@ -3519,6 +3575,7 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
     contactId,
     transcriptText,
     currentTurnTranscript,
+    currentTurnTranscriptWasProvided,
     aggregatedBookingTranscript,
     amazonConnectPhoneNumber:
       asTrimmedString(input.amazonConnectPhoneNumber) ??
@@ -4582,6 +4639,9 @@ export const createAmazonConnectAIRecoverableFailure = async (
     ]) ?? asTrimmedString(activeBookingAttempt?.requestedDateTimeText ?? undefined);
   normalized.requestedTime ??= readStringAttribute(activeNormalizedRequest, ["requestedTime"]);
   normalized.staffId ??= readStringAttribute(activeNormalizedRequest, ["staffId", "selectedStaffId"]);
+  if (normalized.customerName && !isAcceptableCustomerName(normalized.customerName)) {
+    normalized.customerName = undefined;
+  }
 
   const missingFields = new Set<string>();
   if (!normalized.customerName) {
@@ -4906,15 +4966,24 @@ export const createAmazonConnectAIAppointment = async (
         customerPhone: normalized.customerPhone
       })
     : null;
-	  if (recognizedCustomer) {
-	    normalized.customerName =
-	      explicitNameMatchesRecognizedCustomer(recognizedCustomer, explicitCustomerName) && explicitCustomerName
-	        ? explicitCustomerName
-	        : customerDisplayName(recognizedCustomer);
-	    normalized.customerPhone = normalizePhoneForMatching(normalized.customerPhone) ?? recognizedCustomer.phone;
-	    customerNameSourceOverride = undefined;
-	    customerNameNeedsReview = false;
-	  }
+  const recognizedCustomerReusableName = recognizedCustomer
+    ? getReusableCustomerDisplayName(recognizedCustomer)
+    : undefined;
+  if (recognizedCustomer) {
+    const explicitNameMatchesProfile =
+      explicitNameMatchesRecognizedCustomer(recognizedCustomer, explicitCustomerName) && explicitCustomerName;
+    normalized.customerName =
+      explicitNameMatchesProfile ||
+      recognizedCustomerReusableName ||
+      explicitCustomerName ||
+      bareCustomerName;
+    if (normalized.customerName && !isAcceptableCustomerName(normalized.customerName)) {
+      normalized.customerName = undefined;
+    }
+    normalized.customerPhone = normalizePhoneForMatching(normalized.customerPhone) ?? recognizedCustomer.phone;
+    customerNameSourceOverride = recognizedCustomerReusableName ? undefined : customerNameSourceOverride;
+    customerNameNeedsReview = false;
+  }
   const knownCallerMemory =
     !recognizedCustomer && normalized.customerPhone && !explicitCustomerName && !bareCustomerName
       ? await findKnownCallerMemoryByPhone({
@@ -5032,6 +5101,7 @@ export const createAmazonConnectAIAppointment = async (
     normalized.confirmationState = undefined;
     const changedDate = extractExplicitDate(finalConfirmationText, salon.timezone);
     const changedTime = extractExplicitTime(finalConfirmationText);
+    const clearedDate = rejectsMentionedDate(finalConfirmationText);
     const requestsStaffChange =
       /\b(?:change|switch)\s+(?:the\s+)?(?:person|staff|technician|tech)\b/.test(
         normalizeForMatch(finalConfirmationText)
@@ -5039,11 +5109,13 @@ export const createAmazonConnectAIAppointment = async (
       /\b(?:someone else|different person|different staff|different technician|different tech)\b/.test(
         normalizeForMatch(finalConfirmationText)
       ) ||
-      /\bnot\s+(?!correct\b|right\b|book\b|it\b|that\b)[a-z][a-z\s'-]{1,40}\b/.test(
+      (!clearedDate && /\bnot\s+(?!correct\b|right\b|book\b|it\b|that\b)[a-z][a-z\s'-]{1,40}\b/.test(
         normalizeForMatch(finalConfirmationText)
-      ) ||
+      )) ||
       /\bwith\s+[a-z][a-z\s'-]{1,40}\s+instead\b/.test(normalizeForMatch(finalConfirmationText));
-    if (changedDate) {
+    if (clearedDate) {
+      normalized.requestedDate = undefined;
+    } else if (changedDate) {
       normalized.requestedDate = changedDate;
     }
     if (changedTime) {
@@ -5516,12 +5588,10 @@ export const createAmazonConnectAIAppointment = async (
         conversationComplete: terminalBooking ? "true" : "false",
         customerId: recognizedCustomer?.id,
         recognizedCustomerId: recognizedCustomer?.id,
-	        recognizedCustomerName: recognizedCustomer
-	          ? customerDisplayName(recognizedCustomer)
-	          : knownCallerMemory?.customerName,
-	        customerNameSource: recognizedCustomer
-	          ? "customer"
-	          : customerNameSourceOverride ?? knownCallerMemory?.source,
+        recognizedCustomerName: recognizedCustomerReusableName ?? knownCallerMemory?.customerName,
+        customerNameSource: recognizedCustomerReusableName
+          ? "customer"
+          : customerNameSourceOverride ?? knownCallerMemory?.source,
 	        customerNameNeedsReview: customerNameNeedsReview ? "true" : undefined,
 	        customerName: normalized.customerName,
         customerPhone: normalized.customerPhone,
@@ -6909,7 +6979,8 @@ export const createAmazonConnectAIAppointment = async (
       awaitingAlternativeSelection: "false",
       awaitingFinalBookingConfirmation: "false",
       bookingConfirmationAsked: "false",
-      lastAskedSlot: "requestedTime",
+      requestedDate: businessHoursDecision.reason === "closed" ? undefined : normalized.requestedDate,
+      lastAskedSlot: businessHoursDecision.reason === "closed" ? "requestedDate" : "requestedTime",
       askedSlotsCount: "1",
       fallbackCount: "1",
       errorCount: "1",

@@ -2423,6 +2423,50 @@ test("DialogCodeHook customerName noise does not persist sorry", async () => {
   );
 });
 
+test("DialogCodeHook customerName noise does not persist with Kevin", async () => {
+  const handler = await loadHandler();
+  globalThis.fetch = async () => {
+    throw new Error("fetch should not be called for customer name noise");
+  };
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "with Kevin",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+84798171999",
+          AmazonConnectContactId: "connect-customer-name-with-kevin",
+          lastAskedSlot: "customerName",
+          serviceName: "Full Set",
+          confirmedServiceName: "Full Set",
+          requestedDate: usEasternDate(1),
+          requestedTime: "3 PM",
+          staffPreference: "Trang",
+          customerPhone: "7325956266"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          slots: {
+            customerName: slot("with Kevin")
+          }
+        }
+      }
+    })
+  );
+
+  assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "customerName");
+  assert.equal(response.sessionState.sessionAttributes.customerName, undefined);
+  assert.equal(response.sessionState.sessionAttributes.staffPreference, "Trang");
+  assert.deepEqual(JSON.parse(response.sessionState.sessionAttributes.ignoredNoiseFields), [
+    "customerName"
+  ]);
+});
+
 test("Full utterance asks only for customer name with persisted slot state", async () => {
   const handler = await loadHandler();
   installFetchMock(() =>
@@ -3032,6 +3076,172 @@ test("DialogCodeHook natural final confirmations post confirmed booking once", a
     assert.ok(response.sessionState.sessionAttributes.appointmentId, phrase);
     assert.doesNotMatch(response.messages[0].content, /Is that correct/i, phrase);
   }
+});
+
+test("DialogCodeHook final confirmation value-only changes route as draft updates", async () => {
+  const handler = await loadHandler();
+
+  for (const phrase of ["Monday at two PM", "with Kelly"]) {
+    const fetchCalls = installFetchMock((_url, _options, body) =>
+      jsonResponse(
+        successfulBackendPayload({
+          outcome: "MISSING_INFO",
+          appointment: null,
+          lexResponse: {
+            fulfillmentState: "InProgress",
+            message: "Sure. Just to confirm the updated appointment.",
+            messageContentType: "PlainText",
+            dialogAction: {
+              type: "ConfirmIntent"
+            },
+            sessionAttributes: {
+              customerName: body.customerName,
+              customerPhone: body.customerPhone,
+              serviceName: body.serviceName,
+              requestedDate: body.requestedDate,
+              requestedTime: body.requestedTime,
+              staffPreference: body.staffPreference,
+              awaitingFinalBookingConfirmation: "true",
+              bookingConfirmationAsked: "true",
+              forceHumanEscalation: "false",
+              transferToQueue: "false"
+            }
+          }
+        })
+      )
+    );
+
+    const response = await handler(
+      baseEvent({
+        invocationSource: "DialogCodeHook",
+        inputTranscript: phrase,
+        sessionState: {
+          ...baseEvent().sessionState,
+          sessionAttributes: {
+            salonId: "salon-explicit",
+            CalledNumber: "+18483487681",
+            CustomerEndpointAddress: "+84978634886",
+            AmazonConnectContactId: `connect-final-change-${phrase.replace(/\W+/g, "-")}`,
+            customerName: "Jane",
+            customerPhone: "+84978634886",
+            serviceName: "Full Set",
+            confirmedServiceName: "Full Set",
+            requestedDate: usEasternDate(1),
+            requestedTime: "3 PM",
+            staffPreference: "Trang",
+            staffId: "staff-trang",
+            selectedStaffId: "staff-trang",
+            confirmedStaffName: "Trang",
+            confirmedStaffId: "staff-trang",
+            awaitingFinalBookingConfirmation: "true",
+            bookingConfirmationAsked: "true",
+            lastAskedSlot: "bookingConfirmation"
+          },
+          intent: {
+            ...baseEvent().sessionState.intent,
+            confirmationState: "None",
+            slots: {
+              serviceName: slot("Full Set"),
+              requestedDate: slot("tomorrow"),
+              requestedTime: slot("3 PM"),
+              staffPreference: slot("Trang"),
+              customerName: slot("Jane"),
+              customerPhone: slot("+84978634886")
+            }
+          }
+        }
+      })
+    );
+
+    assert.equal(fetchCalls.length, 1, phrase);
+    assert.equal(fetchCalls[0].body.confirmationState, "None", phrase);
+    assert.equal(fetchCalls[0].body.attributes.finalConfirmationChangeRequest, "true", phrase);
+    assert.equal(fetchCalls[0].body.currentTurnTranscript, phrase, phrase);
+    assert.equal(response.sessionState.dialogAction.type, "ConfirmIntent", phrase);
+  }
+});
+
+test("DialogCodeHook repairs reschedule NLU to booking draft change during final confirmation", async () => {
+  const handler = await loadHandler();
+  const phrase = "change it to Monday at two PM with Kelly";
+  const fetchCalls = installFetchMock((_url, _options, body) =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "MISSING_INFO",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "InProgress",
+          message: "Sure. Just to confirm the updated appointment.",
+          messageContentType: "PlainText",
+          dialogAction: {
+            type: "ConfirmIntent"
+          },
+          sessionAttributes: {
+            customerName: body.customerName,
+            customerPhone: body.customerPhone,
+            serviceName: body.serviceName,
+            requestedDate: body.requestedDate,
+            requestedTime: body.requestedTime,
+            staffPreference: body.staffPreference,
+            awaitingFinalBookingConfirmation: "true",
+            bookingConfirmationAsked: "true",
+            forceHumanEscalation: "false",
+            transferToQueue: "false"
+          }
+        }
+      })
+    )
+  );
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: phrase,
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+84978634886",
+          AmazonConnectContactId: "connect-final-change-reschedule-nlu",
+          customerName: "Jane",
+          customerPhone: "+84978634886",
+          serviceName: "Full Set",
+          confirmedServiceName: "Full Set",
+          requestedDate: usEasternDate(1),
+          requestedTime: "3 PM",
+          staffPreference: "Trang",
+          staffId: "staff-trang",
+          selectedStaffId: "staff-trang",
+          confirmedStaffName: "Trang",
+          confirmedStaffId: "staff-trang",
+          awaitingFinalBookingConfirmation: "true",
+          bookingConfirmationAsked: "true",
+          lastAskedSlot: "bookingConfirmation"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          name: "RescheduleAppointmentIntent",
+          confirmationState: "None",
+          slots: {
+            serviceName: slot("Full Set"),
+            requestedDate: slot("tomorrow"),
+            requestedTime: slot("3 PM"),
+            staffPreference: slot("Trang"),
+            customerName: slot("Jane"),
+            customerPhone: slot("+84978634886")
+          }
+        }
+      }
+    })
+  );
+
+  assert.equal(fetchCalls.length, 1);
+  assert.equal(fetchCalls[0].body.intentName, "BookAppointmentIntent");
+  assert.equal(fetchCalls[0].body.attributes.finalConfirmationChangeRequest, "true");
+  assert.equal(fetchCalls[0].body.currentTurnTranscript, phrase);
+  assert.equal(response.sessionState.intent.name, "BookAppointmentIntent");
+  assert.equal(response.sessionState.dialogAction.type, "ConfirmIntent");
 });
 
 test("DialogCodeHook denied final confirmations preserve slots and ask what to change", async () => {
@@ -3879,6 +4089,52 @@ test("cancel and reschedule intents pass through backend appointment context wit
     assert.equal(response.sessionState.sessionAttributes.transferToQueue, "false");
     delete globalThis.fetch;
   }
+});
+
+test("reschedule backend slot prompt is downgraded for slotless Lex intent", async () => {
+  const handler = await loadHandler();
+  installFetchMock(() =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "MISSING_INFO",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "InProgress",
+          message: "What phone number should I use to find your appointment?",
+          messageContentType: "PlainText",
+          dialogAction: {
+            type: "ElicitSlot",
+            slotToElicit: "customerPhone"
+          },
+          sessionAttributes: {
+            rescheduleFlowActive: "true",
+            forceHumanEscalation: "false",
+            transferToQueue: "false"
+          }
+        }
+      })
+    )
+  );
+
+  const response = await handler(
+    baseEvent({
+      inputTranscript: "I want to change my existing appointment",
+      sessionState: {
+        ...baseEvent().sessionState,
+        intent: {
+          ...baseEvent().sessionState.intent,
+          name: "RescheduleAppointmentIntent",
+          slots: null
+        }
+      }
+    })
+  );
+
+  assert.equal(response.sessionState.dialogAction.type, "ElicitIntent");
+  assert.equal(response.sessionState.sessionAttributes.lastAskedSlot, "customerPhone");
+  assert.equal(response.sessionState.sessionAttributes.slotToElicit, "customerPhone");
+  assert.equal(response.sessionState.sessionAttributes.activeDtmfMenu, undefined);
+  delete globalThis.fetch;
 });
 
 test("yes after existing appointment handoff offer transfers only after confirmation", async () => {

@@ -154,14 +154,37 @@ const CUSTOMER_NAME_NOISE = new Set([
   "ah",
   "uh",
   "um",
+  "with",
+  "at",
+  "on",
+  "for",
+  "to",
+  "by",
+  "from",
+  "and",
+  "the",
+  "a",
+  "an",
+  "please",
   "okay",
   "ok",
   "yes",
   "no",
   "toss",
   "full set",
+  "first available",
+  "any staff",
   "tomorrow",
   "today",
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday",
+  "am",
+  "pm",
   "operator",
   "zero",
   "four",
@@ -533,6 +556,21 @@ function currentTurnServiceMention(event) {
   return "";
 }
 
+function escapeRegExp(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function textContainsStaffAlias(normalizedText, alias) {
+  const normalizedAlias = normalizeForMatch(alias);
+  if (!normalizedAlias) {
+    return false;
+  }
+  if (normalizedAlias.includes(" ")) {
+    return normalizedText.includes(normalizedAlias);
+  }
+  return new RegExp(`\\b${escapeRegExp(normalizedAlias)}\\b`).test(normalizedText);
+}
+
 function extractStaffFromTranscript(text, sessionAttributes = {}) {
   const normalizedText = normalizeForMatch(text);
   if (!normalizedText) {
@@ -542,7 +580,7 @@ function extractStaffFromTranscript(text, sessionAttributes = {}) {
     return "Any staff";
   }
   for (const [staffName, aliases] of Object.entries(STAFF_ALIAS_GROUPS)) {
-    if (aliases.some((alias) => normalizedText.includes(normalizeForMatch(alias)))) {
+    if (aliases.some((alias) => textContainsStaffAlias(normalizedText, alias))) {
       return staffName;
     }
   }
@@ -551,7 +589,7 @@ function extractStaffFromTranscript(text, sessionAttributes = {}) {
   return dynamicStaffNames.find((staffName) => {
     const fullName = normalizeForMatch(staffName);
     const firstName = normalizeForMatch(staffName.split(/\s+/)[0]);
-    return normalizedText.includes(fullName) || normalizedText.includes(firstName);
+    return textContainsStaffAlias(normalizedText, fullName) || textContainsStaffAlias(normalizedText, firstName);
   }) || "";
 }
 
@@ -716,7 +754,7 @@ function isInvalidCustomerNameNoise(value) {
 	        extractServiceFromTranscript(value) ||
 	        getPreferredDateCandidate(value) ||
         normalizeTimePhrase(extractTimeCandidate(value)) ||
-        /(?:phone|number|appointment|book|service|tomorrow|today|morning|afternoon|evening|night|zero|one|two|three|four|five|six|seven|eight|nine|ten)\b/i.test(
+        /(?:phone|number|appointment|book|service|first available|any staff|tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|morning|afternoon|evening|night|am|pm|with|at|on|for|to|by|from|and|the|please|zero|one|two|three|four|five|six|seven|eight|nine|ten)\b/i.test(
           String(value || "")
         ))
   );
@@ -1772,7 +1810,7 @@ function buildInvalidStaffDtmfResponse(event) {
 
 function extractCustomerNameFromText(text) {
   const match = String(text || "").match(
-    /(?:my name is|name is|this is|i am|i'm)\s+(\p{L}[\p{L}'-]*(?:\s+\p{L}[\p{L}'-]*){0,4})(?=\s*(?:[,.!?;]|$|and\s+(?:my\s+)?phone|(?:my\s+)?phone\s+(?:number\s+)?(?:is|should|to)))/iu
+    /(?:my name is|name is|this is|i am|i'm|you can call me)\s+(\p{L}[\p{L}'-]*(?:\s+\p{L}[\p{L}'-]*){0,4})(?=\s*(?:[,.!?;]|$|and\s+(?:my\s+)?phone|(?:my\s+)?phone\s+(?:number\s+)?(?:is|should|to)))/iu
   );
   const name = collapseSpokenNameSpelling(match?.[1]);
   return isAcceptableCustomerName(name) ? name : "";
@@ -1790,7 +1828,7 @@ function extractBareCustomerNameAnswer(text) {
     extractServiceFromTranscript(raw) ||
     getPreferredDateCandidate(raw) ||
     normalizeTimePhrase(extractTimeCandidate(raw)) ||
-    /(?:phone|number|appointment|book|service|tomorrow|today|morning|afternoon|evening|night|zero|one|two|three|four|five|six|seven|eight|nine|ten)\b/i.test(raw)
+    /(?:phone|number|appointment|book|service|first available|any staff|tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|morning|afternoon|evening|night|am|pm|with|at|on|for|to|by|from|and|the|please|zero|one|two|three|four|five|six|seven|eight|nine|ten)\b/i.test(raw)
   ) {
     return "";
   }
@@ -2413,6 +2451,10 @@ function classifyFinalBookingConfirmation(value) {
     return FINAL_CONFIRMATION_OUTCOME.CHANGE_REQUEST;
   }
 
+  if (hasNewBookingValue && !hasAffirmation) {
+    return FINAL_CONFIRMATION_OUTCOME.CHANGE_REQUEST;
+  }
+
   if (hasExplicitNegation) {
     return FINAL_CONFIRMATION_OUTCOME.DENIED;
   }
@@ -2430,6 +2472,37 @@ function isFinalBookingConfirmationActive(event) {
     sessionAttributes.awaitingFinalBookingConfirmation === "true" ||
       sessionAttributes.lastAskedSlot === "bookingConfirmation"
   );
+}
+
+function withIntentName(event, intentName) {
+  return {
+    ...event,
+    sessionState: {
+      ...(event.sessionState || {}),
+      intent: {
+        ...(event.sessionState?.intent || {}),
+        name: intentName
+      }
+    }
+  };
+}
+
+function shouldRepairRescheduleToActiveBookingIntent(event, rawIntentName) {
+  if (rawIntentName !== "RescheduleAppointmentIntent" || !isFinalBookingConfirmationActive(event)) {
+    return false;
+  }
+  const sessionAttributes = event.sessionState?.sessionAttributes || {};
+  if (sessionAttributes.existingAppointmentId || sessionAttributes.rescheduleFlowActive === "true") {
+    return false;
+  }
+  const text = normalizeForMatch(event.inputTranscript);
+  if (!text) {
+    return false;
+  }
+  const mentionsExistingAppointment =
+    /\b(?:my appointment|existing appointment|current appointment|my booking|existing booking|current booking)\b/.test(text) ||
+    /\b(?:reschedule|re schedule|change|move|update)\b.*\b(?:appointment|booking)\b/.test(text);
+  return !mentionsExistingAppointment;
 }
 
 function shouldRepairToRescheduleIntent(event, rawIntentName) {
@@ -2739,7 +2812,6 @@ function buildKnownBookingSessionAttributes(event) {
     (previous.customerNameSource === "phone_lookup" ? previous.customerName : "");
   const explicitCustomerName =
     currentRecovered.customerName ||
-    (!protectedCustomerName && !getKnownField(event, "customerName") ? recovered.customerName : "") ||
     (previous.lastAskedSlot === "customerName" ? extractBareCustomerNameAnswer(event.inputTranscript) : "");
   const previousStaffPreference =
     getSessionAttribute(previous, slotNames.staffPreference) || previous.confirmedStaffName;
@@ -3401,6 +3473,10 @@ function normalizeDialogAction(lexResponse) {
   };
 }
 
+function intentSupportsLexSlotElicitation(intentName) {
+  return intentName === "BookAppointmentIntent";
+}
+
 function responseStillNeedsCallerInput(message, dialogAction, sessionAttributes = {}) {
   if (dialogAction?.type && dialogAction.type !== "Close") {
     return true;
@@ -3433,6 +3509,7 @@ function isTerminalConversationOutcome(sessionAttributes = {}) {
 function buildLexResponse(event, message, state = "Fulfilled", sessionAttributes = {}, lexResponse = {}) {
   const intent = event.sessionState?.intent || {};
   let dialogAction = normalizeDialogAction(lexResponse);
+  let requestedSlotToElicit = dialogAction.type === "ElicitSlot" ? dialogAction.slotToElicit || "" : "";
   const knownAttributes = buildKnownBookingSessionAttributes(event);
   let responseMessage = message;
   if (
@@ -3457,6 +3534,7 @@ function buildLexResponse(event, message, state = "Fulfilled", sessionAttributes
       : {
           type: "Delegate"
         };
+    requestedSlotToElicit = dialogAction.type === "ElicitSlot" ? dialogAction.slotToElicit || "" : "";
   }
   let nextState = dialogAction.type === "Close" ? state : "InProgress";
   const contentType =
@@ -3468,6 +3546,7 @@ function buildLexResponse(event, message, state = "Fulfilled", sessionAttributes
   });
   if (dialogAction.type === "ElicitSlot" && dialogAction.slotToElicit) {
     mergedSessionAttributes.lastAskedSlot = dialogAction.slotToElicit;
+    mergedSessionAttributes.slotToElicit = dialogAction.slotToElicit;
     if (dialogAction.slotToElicit !== "serviceName") {
       const previous = event.sessionState?.sessionAttributes || {};
       const previousCount = parseAttemptCount(previous.askedSlotsCount || previous.fallbackCount);
@@ -3481,9 +3560,16 @@ function buildLexResponse(event, message, state = "Fulfilled", sessionAttributes
       delete mergedSessionAttributes.serviceFallbackOffered;
     }
   }
+  const canElicitSlotInCurrentIntent = intentSupportsLexSlotElicitation(intent.name);
+  if (dialogAction.type === "ElicitSlot" && !canElicitSlotInCurrentIntent) {
+    dialogAction = {
+      type: "ElicitIntent"
+    };
+    nextState = "InProgress";
+  }
   const responseSessionAttributes = applyActiveDtmfMenuAttributes(
     mergedSessionAttributes,
-    dialogAction.type === "ElicitSlot" ? dialogAction.slotToElicit : ""
+    dialogAction.type === "ElicitSlot" && canElicitSlotInCurrentIntent ? dialogAction.slotToElicit : ""
   );
   const needsCallerInput = responseStillNeedsCallerInput(responseMessage, dialogAction, responseSessionAttributes);
   if (needsCallerInput && dialogAction.type === "Close") {
@@ -3534,11 +3620,12 @@ function buildLexResponse(event, message, state = "Fulfilled", sessionAttributes
 	        content: responseMessage
 	      }
 	    ]
-	  };
+  };
   return commitDialogState(response, {
-    slotToElicit: dialogAction.type === "ElicitSlot" ? dialogAction.slotToElicit : "",
+    slotToElicit: dialogAction.type === "ElicitSlot" ? dialogAction.slotToElicit : requestedSlotToElicit,
     trustedSlots: responseSessionAttributes,
-    responseMessage
+    responseMessage,
+    ...(dialogAction.type !== "ElicitSlot" && requestedSlotToElicit ? { activeDtmfMenu: "" } : {})
   });
 	}
 
@@ -4058,11 +4145,16 @@ function buildWrongSlotDtmfPrompt(event, slotName) {
 async function handleLexEvent(event, analysis = {}) {
   try {
     const rawIntentName = event.sessionState?.intent?.name || "";
-    const intentName = shouldRepairToRescheduleIntent(event, rawIntentName)
+    const intentName = shouldRepairRescheduleToActiveBookingIntent(event, rawIntentName)
+      ? "BookAppointmentIntent"
+      : shouldRepairToRescheduleIntent(event, rawIntentName)
       ? "RescheduleAppointmentIntent"
       : shouldTreatFallbackAsBooking(event, rawIntentName)
       ? "BookAppointmentIntent"
       : rawIntentName;
+    if (intentName !== rawIntentName) {
+      event = withIntentName(event, intentName);
+    }
     const transferDecision = shouldTransferToHuman(event, intentName);
     const shouldEscalate = transferDecision.transfer;
     const sessionAttributes = event.sessionState?.sessionAttributes || {};

@@ -96,6 +96,37 @@ const asRecord = (value: unknown): Record<string, unknown> =>
 
 const readNestedRecord = (value: unknown, key: string): Record<string, unknown> => asRecord(asRecord(value)[key]);
 
+const SENSITIVE_DEBUG_KEY_PATTERNS = [
+  "authorization",
+  "cookie",
+  "set-cookie",
+  "accesstoken",
+  "refreshtoken",
+  "apikey",
+  "secret",
+  "password"
+];
+
+const isSensitiveDebugKey = (key: string): boolean => {
+  const normalized = key.toLowerCase();
+  return SENSITIVE_DEBUG_KEY_PATTERNS.some((pattern) => normalized === pattern || normalized.includes(pattern));
+};
+
+const sanitizeDebugJsonValue = (value: unknown): unknown => {
+  if (Array.isArray(value)) {
+    return value.map(sanitizeDebugJsonValue);
+  }
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
+      key,
+      isSensitiveDebugKey(key) ? "[REDACTED]" : sanitizeDebugJsonValue(entry)
+    ])
+  );
+};
+
 const buildAiTurnDebug = (item: CallDetail["aiInteractions"][number]) => {
   const requestPayload = asRecord(item.requestPayload);
   const responsePayload = asRecord(item.responsePayload);
@@ -128,6 +159,65 @@ const buildAiTurnDebug = (item: CallDetail["aiInteractions"][number]) => {
     trustedSlotsBefore: debug.trustedSlotsBefore,
     trustedSlotsAfter: debug.trustedSlotsAfter
   };
+};
+
+const buildCallDebugPayload = (call: CallDetail, exportedAt: string) =>
+  sanitizeDebugJsonValue({
+    schemaVersion: 1,
+    exportedAt,
+    exportType: "call_debug",
+    callSession: {
+      id: call.id,
+      provider: call.provider,
+      providerCallId: call.providerCallId,
+      status: call.status,
+      routingOutcome: call.routingOutcome,
+      callerPhone: call.callerPhone,
+      dialedPhone: call.dialedPhone,
+      trackingNumber: call.trackingNumber,
+      sourceName: call.sourceName,
+      campaignName: call.campaignName,
+      startedAt: call.startedAt,
+      endedAt: call.endedAt,
+      durationSeconds: call.durationSeconds,
+      recordingUrl: call.recordingUrl,
+      transcriptSummary: call.transcriptSummary,
+      aiSummary: call.aiSummary,
+      failureReason: call.failureReason,
+      finalResolution: call.finalResolution,
+      salon: call.salon
+    },
+    events: call.events,
+    transcripts: call.transcripts,
+    bookingAttempts: call.bookingAttempts,
+    aiInteractions: call.aiInteractions,
+    turnHistories: call.aiInteractions.map((item, index) => ({
+      aiInteractionId: item.id,
+      index: index + 1,
+      ...buildAiTurnDebug(item)
+    })),
+    escalationRecords: call.callEscalations,
+    finalResolution: call.finalResolution
+  });
+
+const copyTextToClipboard = async (text: string) => {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textArea = document.createElement("textarea");
+  textArea.value = text;
+  textArea.setAttribute("readonly", "true");
+  textArea.style.position = "fixed";
+  textArea.style.left = "-9999px";
+  document.body.appendChild(textArea);
+  textArea.select();
+  const copied = document.execCommand("copy");
+  document.body.removeChild(textArea);
+  if (!copied) {
+    throw new Error("Clipboard API unavailable.");
+  }
 };
 
 export const CallDetailPage = () => {
@@ -187,46 +277,22 @@ export const CallDetailPage = () => {
         "unknown-contact"
       )}-${toUtcTimestampForFilename(new Date(exportedAt))}.json`;
 
-      downloadJsonFile(filename, {
-        schemaVersion: 1,
-        exportedAt,
-        exportType: "call_debug",
-        callSession: {
-          id: call.id,
-          provider: call.provider,
-          providerCallId: call.providerCallId,
-          status: call.status,
-          routingOutcome: call.routingOutcome,
-          callerPhone: call.callerPhone,
-          dialedPhone: call.dialedPhone,
-          trackingNumber: call.trackingNumber,
-          sourceName: call.sourceName,
-          campaignName: call.campaignName,
-          startedAt: call.startedAt,
-          endedAt: call.endedAt,
-          durationSeconds: call.durationSeconds,
-          recordingUrl: call.recordingUrl,
-          transcriptSummary: call.transcriptSummary,
-          aiSummary: call.aiSummary,
-          failureReason: call.failureReason,
-          finalResolution: call.finalResolution,
-          salon: call.salon
-        },
-        events: call.events,
-        transcripts: call.transcripts,
-        bookingAttempts: call.bookingAttempts,
-        aiInteractions: call.aiInteractions,
-        turnHistories: call.aiInteractions.map((item, index) => ({
-          aiInteractionId: item.id,
-          index: index + 1,
-          ...buildAiTurnDebug(item)
-        })),
-        escalationRecords: call.callEscalations,
-        finalResolution: call.finalResolution
-      });
+      downloadJsonFile(filename, buildCallDebugPayload(call, exportedAt));
       notify("success", t("calls.exported"));
     } catch (exportError) {
       notify("error", extractErrorMessage(exportError));
+    }
+  };
+
+  const copyDebugJson = async () => {
+    if (!call) return;
+
+    try {
+      const payload = buildCallDebugPayload(call, new Date().toISOString());
+      await copyTextToClipboard(JSON.stringify(payload, null, 2));
+      notify("success", t("calls.debugJsonCopied"));
+    } catch (copyError) {
+      notify("error", extractErrorMessage(copyError));
     }
   };
 
@@ -255,9 +321,14 @@ export const CallDetailPage = () => {
             </h2>
             <p className="muted">{t("calls.flowValue")}</p>
           </div>
-          <button type="button" className="button-secondary" onClick={exportDebugJson}>
-            {t("common.exportJson")}
-          </button>
+          <div className="inline-actions">
+            <button type="button" className="button-secondary" onClick={copyDebugJson}>
+              {t("calls.copyDebugJson")}
+            </button>
+            <button type="button" className="button-secondary" onClick={exportDebugJson}>
+              {t("common.exportJson")}
+            </button>
+          </div>
         </div>
         <div className="metrics-grid">
           <div>
