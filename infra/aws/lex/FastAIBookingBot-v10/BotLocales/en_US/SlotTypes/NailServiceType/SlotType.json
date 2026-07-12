@@ -6,9 +6,6 @@
     {
       "synonyms": [
         {
-          "value": "1"
-        },
-        {
           "value": "pedicure"
         },
         {
@@ -88,9 +85,6 @@
     {
       "synonyms": [
         {
-          "value": "2"
-        },
-        {
           "value": "manicure"
         },
         {
@@ -130,52 +124,6 @@
     },
     {
       "synonyms": [
-        {
-          "value": "3"
-        },
-        {
-          "value": "gel manicure"
-        },
-        {
-          "value": "gel mani"
-        },
-        {
-          "value": "gel mani cure"
-        },
-        {
-          "value": "gel manny cure"
-        },
-        {
-          "value": "gel many cure"
-        },
-        {
-          "value": "jell manicure"
-        },
-        {
-          "value": "jail manicure"
-        },
-        {
-          "value": "gel nail"
-        },
-        {
-          "value": "gel nails"
-        },
-        {
-          "value": "gel hand service"
-        },
-        {
-          "value": "gel manicure appointment"
-        }
-      ],
-      "sampleValue": {
-        "value": "Gel Manicure"
-      }
-    },
-    {
-      "synonyms": [
-        {
-          "value": "4"
-        },
         {
           "value": "full set"
         },
@@ -231,10 +179,22 @@
           "value": "pool set"
         },
         {
+          "value": "food set"
+        },
+        {
+          "value": "fool set"
+        },
+        {
+          "value": "foot set"
+        },
+        {
           "value": "full step"
         },
         {
           "value": "full said"
+        },
+        {
+          "value": "fullsat"
         },
         {
           "value": "full sit"
@@ -267,6 +227,9 @@
           "value": "nail extensions"
         },
         {
+          "value": "set of nails"
+        },
+        {
           "value": "full set appointment"
         }
       ],
@@ -276,9 +239,6 @@
     },
     {
       "synonyms": [
-        {
-          "value": "5"
-        },
         {
           "value": "dip powder"
         },
@@ -315,31 +275,6 @@
       ],
       "sampleValue": {
         "value": "Dip Powder"
-      }
-    },
-    {
-      "synonyms": [
-        {
-          "value": "other services"
-        },
-        {
-          "value": "other service"
-        },
-        {
-          "value": "others services"
-        },
-        {
-          "value": "something else"
-        },
-        {
-          "value": "different service"
-        },
-        {
-          "value": "custom service"
-        }
-      ],
-      "sampleValue": {
-        "value": "Other Services"
       }
     }
   ],

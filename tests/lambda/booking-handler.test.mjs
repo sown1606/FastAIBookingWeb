@@ -16,7 +16,7 @@ const CANONICAL_SERVICE_PROMPT =
   "Hi, thanks for calling Kiet Nails. How can I help? You can say the service, day, time, and technician in one sentence. Press 0 for a person.";
 const FIRST_SERVICE_RETRY_PROMPT = "Sorry, what service would you like?";
 const SERVICE_MENU_PROMPT =
-  "I can list the services once. Press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Full Set, 5 for Dip Powder, or 0 for a person.";
+  "I can list the services once. Please say the service name, or press 0 for a person.";
 let importCounter = 0;
 
 const slot = (value) => ({
@@ -191,10 +191,15 @@ test("production Full Set aliases are present in Lambda, API, and Lex v10 source
     "pull set",
     "pull step",
     "pool set",
+    "food set",
+    "fool set",
+    "foot set",
     "full step",
     "full said",
+    "fullsat",
     "fall set",
-    "phone set"
+    "phone set",
+    "set of nails"
   ];
   const lambdaSource = readFileSync(lambdaPath, "utf8");
   const apiSource = readFileSync(apiAiServicePath, "utf8");
@@ -217,6 +222,20 @@ test("production Full Set aliases are present in Lambda, API, and Lex v10 source
     assert.match(apiSource, new RegExp(`"${alias}"`), `API missing ${alias}`);
     assert.equal(lexAliases.has(alias), true, `Lex v10 missing ${alias}`);
   }
+  assert.equal(
+    lexSlotType.slotTypeValues.some((entry) => entry.sampleValue?.value === "Gel Manicure"),
+    false
+  );
+  assert.equal(
+    lexSlotType.slotTypeValues.some((entry) => entry.sampleValue?.value === "Other Services"),
+    false
+  );
+  assert.equal(
+    lexSlotType.slotTypeValues.some((entry) =>
+      entry.synonyms?.some((synonym) => /^[1-9]$/.test(synonym.value))
+    ),
+    false
+  );
 });
 
 test("BookAppointmentIntent with complete slots posts the backend contract and maps session attributes", async () => {
@@ -798,7 +817,11 @@ test("DialogCodeHook recognizes production Full Set speech aliases without DTMF"
     "Hi, I want to book Full Set tomorrow at 3 PM with Trang.",
     "I want to book a room set tomorrow at 3 PM with Trang.",
     "I want to book a pull set tomorrow at 3 PM with Trang.",
-    "I want to book a pull step tomorrow at 3 PM with Trang."
+    "I want to book a pull step tomorrow at 3 PM with Trang.",
+    "I want to book a food set tomorrow at 3 PM with Trang.",
+    "I want to book a fool set tomorrow at 3 PM with Trang.",
+    "I want to book a foot set tomorrow at 3 PM with Trang.",
+    "I want a set of nails tomorrow at 3 PM with Trang."
   ]) {
     const fetchCountBefore = fetchCalls.length;
     const response = await handler(
@@ -853,6 +876,51 @@ test("DialogCodeHook recognizes production Full Set speech aliases without DTMF"
     assert.equal(response.sessionState.sessionAttributes.serviceName, "Full Set", inputTranscript);
     assert.equal(response.sessionState.sessionAttributes.confirmedServiceName, "Full Set", inputTranscript);
   }
+});
+
+test("DialogCodeHook current food set wins over stale placeholder service", async () => {
+  const handler = await loadHandler();
+  globalThis.fetch = async () => {
+    throw new Error("fetch should not be called before date is collected");
+  };
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "food set",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+84978634886",
+          AmazonConnectContactId: "connect-food-set-placeholder",
+          customerName: "Jane",
+          customerPhone: "+84978634886",
+          serviceName: "test service",
+          confirmedServiceName: "test service",
+          lastAskedSlot: "serviceName"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          state: "InProgress",
+          confirmationState: "None",
+          slots: {
+            serviceName: slotWith({
+              originalValue: "food set",
+              interpretedValue: "food set",
+              resolvedValues: []
+            })
+          }
+        }
+      }
+    })
+  );
+
+  assert.equal(response.sessionState.sessionAttributes.serviceName, "Full Set");
+  assert.equal(response.sessionState.sessionAttributes.confirmedServiceName, "Full Set");
+  assert.notEqual(response.sessionState.sessionAttributes.serviceName, "test service");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "requestedDate");
 });
 
 test("Fallback and empty intent service recovery recognize Full Set aliases", async () => {
@@ -1110,8 +1178,9 @@ test("DialogCodeHook second no input uses shorter prompt without transfer", asyn
   assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName");
   assert.equal(response.sessionState.sessionAttributes.noInputCount, "2");
   assert.equal(response.sessionState.sessionAttributes.transferToQueue, undefined);
-  assert.match(response.messages[0].content, /1 for Pedicure/i);
-  assert.match(response.messages[0].content, /5 for Dip Powder/i);
+  assert.match(response.messages[0].content, /say the service name/i);
+  assert.doesNotMatch(response.messages[0].content, /1 for Pedicure/i);
+  assert.doesNotMatch(response.messages[0].content, /5 for Dip Powder/i);
   assert.doesNotMatch(response.messages[0].content, /You can also press 1 for Pedicure/i);
 });
 
@@ -1352,6 +1421,8 @@ test("DialogCodeHook maps service DTMF only when serviceName was last asked", as
           CustomerEndpointAddress: "+17325956266",
           AmazonConnectContactId: "connect-contact-1",
           lastAskedSlot: "serviceName",
+          activeDtmfMenu: "service",
+          activeDtmfOptionsJson: JSON.stringify({ "1": "Pedicure", "0": "__operator__" }),
           customerName: "Kiet Nguyen",
           customerPhone: "7325956266",
           requestedDate: usEasternDate(1),
@@ -1430,9 +1501,8 @@ test("live-shaped FallbackIntent full set turn resumes BookAppointmentIntent and
           activeDtmfOptionsJson: JSON.stringify({
             "1": "Pedicure",
             "2": "Manicure",
-            "3": "Gel Manicure",
+            "3": "Dip Powder",
             "4": "Full Set",
-            "5": "Dip Powder",
             "0": "__operator__"
           })
         },
@@ -1743,7 +1813,9 @@ test("DialogCodeHook maps service DTMF 4 to Full Set and preserves it for name a
     CalledNumber: "+18483487681",
     CustomerEndpointAddress: "+18483487681",
     AmazonConnectContactId: "connect-full-set-dtmf",
-    lastAskedSlot: "serviceName"
+    lastAskedSlot: "serviceName",
+    activeDtmfMenu: "service",
+    activeDtmfOptionsJson: JSON.stringify({ "4": "Full Set", "0": "__operator__" })
   };
 
   const dtmfResponse = await handler(
@@ -1881,7 +1953,9 @@ test("DialogCodeHook scopes polluted ViberOut service DTMF 4 to serviceName only
           CalledNumber: "+18483487681",
           CustomerEndpointAddress: "+17325956266",
           AmazonConnectContactId: "9fed7297-a05f-4862-bb34-372e84f74825",
-          lastAskedSlot: "serviceName"
+          lastAskedSlot: "serviceName",
+          activeDtmfMenu: "service",
+          activeDtmfOptionsJson: JSON.stringify({ "4": "Full Set", "0": "__operator__" })
         },
         intent: {
           ...baseEvent().sessionState.intent,
@@ -2161,7 +2235,9 @@ test("DialogCodeHook number four maps to Full Set when serviceName was last aske
           CalledNumber: "+18483487681",
           CustomerEndpointAddress: "+84798171999",
           AmazonConnectContactId: "connect-number-four-service",
-          lastAskedSlot: "serviceName"
+          lastAskedSlot: "serviceName",
+          activeDtmfMenu: "service",
+          activeDtmfOptionsJson: JSON.stringify({ "4": "Full Set", "0": "__operator__" })
         },
         intent: {
           ...baseEvent().sessionState.intent,
@@ -2177,7 +2253,7 @@ test("DialogCodeHook number four maps to Full Set when serviceName was last aske
   assert.notEqual(response.sessionState.dialogAction.slotToElicit, "serviceName");
 });
 
-test("DialogCodeHook initial DTMF 4 maps to Full Set without lastAskedSlot", async () => {
+test("DialogCodeHook initial DTMF 4 does not map service without active service menu", async () => {
   const handler = await loadHandler();
   globalThis.fetch = async () => {
     throw new Error("fetch should not be called for initial service DTMF recovery");
@@ -2206,10 +2282,10 @@ test("DialogCodeHook initial DTMF 4 maps to Full Set without lastAskedSlot", asy
     })
   );
 
-  assert.equal(response.sessionState.sessionAttributes.serviceName, "Full Set");
-  assert.equal(response.sessionState.sessionAttributes.confirmedServiceName, "Full Set");
-  assert.equal(response.sessionState.sessionAttributes.requestedTime, undefined);
-  assert.notEqual(response.sessionState.dialogAction.slotToElicit, "serviceName");
+  assert.notEqual(response.sessionState.sessionAttributes.serviceName, "Full Set");
+  assert.notEqual(response.sessionState.sessionAttributes.confirmedServiceName, "Full Set");
+  assert.equal(response.sessionState.sessionAttributes.requestedTime, "4 PM");
+  assert.ok(["customerName", "serviceName"].includes(response.sessionState.dialogAction.slotToElicit));
 });
 
 test("DialogCodeHook active service DTMF menu routes 4 to Full Set", async () => {

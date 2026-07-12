@@ -108,6 +108,11 @@ type StaffCandidate = {
   fullName: string;
 };
 
+type ServiceMenuCandidate = {
+  id: string;
+  name: string;
+};
+
 type CustomerCandidate = {
   id: string;
   firstName: string;
@@ -268,8 +273,12 @@ const SERVICE_ALIASES: Record<string, string[]> = {
     "pull set",
     "pull step",
     "pool set",
+    "food set",
+    "fool set",
+    "foot set",
     "full step",
     "full said",
+    "fullsat",
     "full sit",
     "full sat",
     "full sell",
@@ -280,6 +289,7 @@ const SERVICE_ALIASES: Record<string, string[]> = {
     "fake nails",
     "extension nails",
     "nail extensions",
+    "set of nails",
     "full set appointment"
   ],
   "dip powder": [
@@ -397,20 +407,7 @@ const ANY_STAFF_PHRASES = new Set([
   "who is available"
 ]);
 
-const DEMO_SERVICE_NAMES = [
-  "Manicure",
-  "Pedicure",
-  "Gel Manicure",
-  "Full Set",
-  "Dip Powder",
-  "Other Services"
-];
 const SERVICE_DTMF_OPTIONS: Record<string, string> = {
-  "1": "Pedicure",
-  "2": "Manicure",
-  "3": "Gel Manicure",
-  "4": "Full Set",
-  "5": "Dip Powder",
   "0": "__operator__"
 };
 const STAFF_DTMF_OPTIONS: Record<string, string> = {
@@ -468,7 +465,7 @@ const CUSTOMER_NAME_NOISE = new Set([
 const SERVICE_DTMF_PROMPT =
   "Hi, thanks for calling Kiet Nails. How can I help? You can say the service, day, time, and technician in one sentence. Press 0 for a person.";
 const SERVICE_DTMF_OPTIONS_PROMPT =
-  "I can list the services once. Press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Full Set, 5 for Dip Powder, or 0 for a person.";
+  "I can list the services once. Please say the service name, or press 0 for a person.";
 const SERVICE_FIRST_RETRY_PROMPT = "Sorry, what service would you like?";
 const STAFF_DTMF_PROMPT =
   "Which staff would you like, Trang, Amy, Kelly, or first available?";
@@ -485,6 +482,26 @@ const normalizeForMatch = (value?: string | null): string => {
 };
 
 const compactForMatch = (value?: string | null): string => normalizeForMatch(value).replace(/\s/g, "");
+
+const INVALID_SERVICE_PLACEHOLDERS = new Set([
+  "service",
+  "services",
+  "a service",
+  "the service",
+  "some service",
+  "any service",
+  "nail service",
+  "nail services",
+  "test service",
+  "sample service",
+  "unknown service",
+  "other service",
+  "other services"
+]);
+
+const isInvalidServicePlaceholder = (value?: string | null): boolean => {
+  return INVALID_SERVICE_PLACEHOLDERS.has(normalizeForMatch(value));
+};
 
 const CUSTOMER_NAME_PATTERN = /^\p{L}[\p{L}' -]{0,80}$/u;
 
@@ -721,6 +738,16 @@ const readScopedDtmfSelection = (
   return undefined;
 };
 
+const readServiceDtmfOptions = (
+  attributes: Record<string, unknown> | undefined
+): Record<string, string> => {
+  const activeOptions = parseJsonStringRecord(readStringAttribute(attributes, ["activeDtmfOptionsJson"]));
+  if (Object.keys(activeOptions).length) {
+    return activeOptions;
+  }
+  return SERVICE_DTMF_OPTIONS;
+};
+
 const isAnyStaffPreference = (value?: string | null): boolean => {
   const normalized = normalizeForMatch(value);
   return Boolean(normalized && ANY_STAFF_PHRASES.has(normalized));
@@ -898,23 +925,6 @@ const customerDisplayName = (customer: CustomerCandidate): string => {
 const getReusableCustomerDisplayName = (customer: CustomerCandidate): string | undefined => {
   const displayName = customerDisplayName(customer);
   return isReusableCallerName(displayName) ? displayName : undefined;
-};
-
-const customerFullName = (customer: CustomerCandidate): string =>
-  formatCustomerName(customer.firstName, customer.lastName);
-
-const explicitNameMatchesRecognizedCustomer = (
-  customer: CustomerCandidate,
-  explicitName?: string
-): boolean => {
-  const normalizedExplicit = normalizeForMatch(explicitName);
-  if (!normalizedExplicit) {
-    return false;
-  }
-  return [customerFullName(customer), customerDisplayName(customer)]
-    .map((name) => normalizeForMatch(name))
-    .filter(Boolean)
-    .some((name) => name === normalizedExplicit);
 };
 
 const readStringAttribute = (
@@ -1441,6 +1451,9 @@ const isClearlyInvalidServiceName = (value?: string | null, timezone = "America/
 
   const normalized = normalizeForMatch(trimmed);
   const digits = trimmed.replace(/\D/g, "");
+  if (isInvalidServicePlaceholder(trimmed)) {
+    return true;
+  }
   if (/^(?:am|pm|a m|p m)$/.test(normalized)) {
     return true;
   }
@@ -3467,7 +3480,7 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
         asTrimmedString(input.service),
         readBookingFieldAttribute(attributes, "serviceName")
       ],
-      SERVICE_DTMF_OPTIONS
+      readServiceDtmfOptions(attributes)
     );
   const staffDtmfSelection =
     readScopedDtmfSelection(
@@ -3755,6 +3768,83 @@ const buildStaffPromptSessionAttributes = (staff: StaffCandidate[]): Record<stri
   };
 };
 
+const getActiveServiceMenuServices = async (salonId: string): Promise<ServiceMenuCandidate[]> => {
+  const services = await prisma.service.findMany({
+    where: {
+      salonId,
+      isActive: true
+    },
+    select: {
+      id: true,
+      name: true
+    },
+    orderBy: {
+      createdAt: "asc"
+    }
+  });
+
+  const seen = new Set<string>();
+  return services
+    .map((service) => ({
+      id: service.id,
+      name: getCustomerFacingServiceName(service.name) ?? service.name
+    }))
+    .filter((service) => {
+      const key = normalizeForMatch(service.name);
+      if (!key || seen.has(key) || isInvalidServicePlaceholder(service.name)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
+};
+
+const buildServiceDtmfOptionMaps = (services: ServiceMenuCandidate[]) => {
+  const options: Record<string, string> = {};
+  const serviceIds: Record<string, string> = {};
+  services.slice(0, 9).forEach((service, index) => {
+    const digit = String(index + 1);
+    options[digit] = service.name;
+    serviceIds[digit] = service.id;
+  });
+  return { options, serviceIds };
+};
+
+const buildServiceDtmfPromptText = (services: ServiceMenuCandidate[]): string => {
+  const { options } = buildServiceDtmfOptionMaps(services);
+  const optionPhrases = Object.entries(options).map(
+    ([digit, serviceName]) => `Press ${digit} for ${serviceName}`
+  );
+  return optionPhrases.length
+    ? `I can list the services once. ${optionPhrases.join(", ")}, or 0 for a person.`
+    : SERVICE_DTMF_OPTIONS_PROMPT;
+};
+
+const buildServicePromptSessionAttributes = (services: ServiceMenuCandidate[]): Record<string, string> => {
+  const { options, serviceIds } = buildServiceDtmfOptionMaps(services);
+  const activeServiceIds = services.map((service) => service.id);
+  const activeServiceNames = services.map((service) => service.name);
+  const serviceMenuVersion = createHash("sha1")
+    .update(JSON.stringify({ activeServiceIds, activeServiceNames }))
+    .digest("hex")
+    .slice(0, 12);
+
+  return {
+    serviceDtmfOptions: JSON.stringify(options),
+    serviceDtmfServiceIds: JSON.stringify(serviceIds),
+    serviceDtmfPromptText: buildServiceDtmfPromptText(services),
+    serviceMenuSource: "active_services",
+    serviceMenuVersion,
+    activeServiceIds: JSON.stringify(activeServiceIds),
+    activeServiceNames: JSON.stringify(activeServiceNames),
+    activeDtmfMenu: "service",
+    activeDtmfOptionsJson: JSON.stringify({
+      ...options,
+      "0": "__operator__"
+    })
+  };
+};
+
 const getServicePromptNames = (serviceNames: string[]): string[] => {
   const customerFacingNames = Array.from(
     new Set(
@@ -3763,9 +3853,7 @@ const getServicePromptNames = (serviceNames: string[]): string[] => {
         .filter((name): name is string => Boolean(name))
     )
   );
-  const available = new Set(customerFacingNames.map((name) => normalizeForMatch(name)));
-  const demoNames = DEMO_SERVICE_NAMES.filter((name) => available.has(normalizeForMatch(name)));
-  return demoNames.length === DEMO_SERVICE_NAMES.length ? demoNames : customerFacingNames.slice(0, 5);
+  return customerFacingNames.filter((name) => !isInvalidServicePlaceholder(name)).slice(0, 5);
 };
 
 const formatLocalTimeForSpeech = (value: Date | string, timezone: string): string => {
@@ -4166,6 +4254,7 @@ const buildLexMessage = (input: {
   serviceName?: string;
   staffName?: string;
   staffOptions?: StaffCandidate[];
+  servicePromptText?: string;
   requestedStaffName?: string;
   alternatives?: SuggestedSlot[];
   failureReason?: string;
@@ -4266,7 +4355,9 @@ const buildLexMessage = (input: {
     }
     if (input.missingFields?.includes("serviceName")) {
       const firstName = input.knownFields?.customerName?.split(/\s+/)[0];
-      const servicePrompt = isRetry ? SERVICE_DTMF_OPTIONS_PROMPT : SERVICE_FIRST_RETRY_PROMPT;
+      const servicePrompt = isRetry
+        ? input.servicePromptText ?? SERVICE_DTMF_OPTIONS_PROMPT
+        : SERVICE_FIRST_RETRY_PROMPT;
       return speak(
         firstName && !isRetry
           ? `Welcome back, ${escapeSsml(firstName)}. How may I help you today?`
@@ -4334,7 +4425,8 @@ const buildLexMessage = (input: {
 
 const getElicitSlotForMissingFields = (
   missingFields: Set<string>,
-  normalized: ReturnType<typeof normalizeAmazonConnectAppointmentInput>
+  normalized: ReturnType<typeof normalizeAmazonConnectAppointmentInput>,
+  servicePromptSessionAttributes: Record<string, string> = {}
 ): {
   slotToElicit: string;
   promptMissingFields: string[];
@@ -4380,8 +4472,15 @@ const getElicitSlotForMissingFields = (
     errorCount: String(attemptCount)
   };
   if (slotToElicit === "serviceName") {
-    sessionAttributes.activeDtmfMenu = "service";
-    sessionAttributes.activeDtmfOptionsJson = JSON.stringify(SERVICE_DTMF_OPTIONS);
+    Object.assign(
+      sessionAttributes,
+      Object.keys(servicePromptSessionAttributes).length
+        ? servicePromptSessionAttributes
+        : {
+            activeDtmfMenu: "service",
+            activeDtmfOptionsJson: JSON.stringify(SERVICE_DTMF_OPTIONS)
+          }
+    );
   }
 
   return {
@@ -4397,10 +4496,11 @@ const buildServiceClarificationMessage = (input: {
   suggestedServiceName?: string;
   availableServiceNames: string[];
   attempts: number;
+  servicePromptText?: string;
 }): string => {
   const options = formatNameList(getServicePromptNames(input.availableServiceNames));
   return options
-    ? speak(input.attempts >= 1 ? SERVICE_DTMF_OPTIONS_PROMPT : SERVICE_FIRST_RETRY_PROMPT)
+    ? speak(input.attempts >= 1 ? input.servicePromptText ?? SERVICE_DTMF_OPTIONS_PROMPT : SERVICE_FIRST_RETRY_PROMPT)
     : speak(
         `I heard ${escapeSsml(input.heardServiceName)}. <break time="300ms"/> Which service would you like?`
       );
@@ -4590,6 +4690,8 @@ export const createAmazonConnectAIRecoverableFailure = async (
     calledNumber: normalized.calledNumber
   });
   const actorUserId = await resolveActionActorUserId(salon.id);
+  const activeServiceMenuServices = await getActiveServiceMenuServices(salon.id);
+  const servicePromptSessionAttributes = buildServicePromptSessionAttributes(activeServiceMenuServices);
   const callSession = await upsertAmazonConnectCallSession({
     salonId: salon.id,
     contactId: normalized.contactId,
@@ -4687,7 +4789,11 @@ export const createAmazonConnectAIRecoverableFailure = async (
   let dialogAction: { type: string; slotToElicit?: string };
   let promptMissingFields: string[] = [];
   if (missingFields.size > 0) {
-    const elicitDecision = getElicitSlotForMissingFields(missingFields, normalized);
+    const elicitDecision = getElicitSlotForMissingFields(
+      missingFields,
+      normalized,
+      servicePromptSessionAttributes
+    );
     promptMissingFields = elicitDecision.promptMissingFields;
     Object.assign(baseSessionAttributes, elicitDecision.sessionAttributes);
     message = buildLexMessage({
@@ -4695,7 +4801,8 @@ export const createAmazonConnectAIRecoverableFailure = async (
       missingFields: elicitDecision.promptMissingFields,
       knownFields: normalized,
       salonTimezone: salon.timezone,
-      attemptCount: elicitDecision.attemptCount
+      attemptCount: elicitDecision.attemptCount,
+      servicePromptText: servicePromptSessionAttributes.serviceDtmfPromptText
     });
     dialogAction = {
       type: "ElicitSlot",
@@ -4861,6 +4968,8 @@ export const createAmazonConnectAIAppointment = async (
     calledNumber: normalized.calledNumber
   });
   const actorUserId = await resolveActionActorUserId(salon.id);
+  const activeServiceMenuServices = await getActiveServiceMenuServices(salon.id);
+  const servicePromptSessionAttributes = buildServicePromptSessionAttributes(activeServiceMenuServices);
   const callSession = await upsertAmazonConnectCallSession({
     salonId: salon.id,
     contactId: normalized.contactId,
@@ -4959,6 +5068,12 @@ export const createAmazonConnectAIAppointment = async (
   if (normalized.customerName && !isAcceptableCustomerName(normalized.customerName)) {
     normalized.customerName = undefined;
   }
+  const trustedCustomerNameBeforeLookup = normalized.customerName;
+  const currentTurnAcceptedCustomerName = explicitCustomerName || bareCustomerName;
+  if (currentTurnAcceptedCustomerName && normalized.customerName) {
+    customerNameSourceOverride = "current_turn_explicit";
+    customerNameNeedsReview = false;
+  }
 
   const recognizedCustomer = normalized.customerPhone
     ? await findExistingCustomerByPhone({
@@ -4970,19 +5085,25 @@ export const createAmazonConnectAIAppointment = async (
     ? getReusableCustomerDisplayName(recognizedCustomer)
     : undefined;
   if (recognizedCustomer) {
-    const explicitNameMatchesProfile =
-      explicitNameMatchesRecognizedCustomer(recognizedCustomer, explicitCustomerName) && explicitCustomerName;
     normalized.customerName =
-      explicitNameMatchesProfile ||
+      currentTurnAcceptedCustomerName ||
       recognizedCustomerReusableName ||
-      explicitCustomerName ||
-      bareCustomerName;
+      trustedCustomerNameBeforeLookup;
     if (normalized.customerName && !isAcceptableCustomerName(normalized.customerName)) {
       normalized.customerName = undefined;
     }
     normalized.customerPhone = normalizePhoneForMatching(normalized.customerPhone) ?? recognizedCustomer.phone;
-    customerNameSourceOverride = recognizedCustomerReusableName ? undefined : customerNameSourceOverride;
-    customerNameNeedsReview = false;
+    if (currentTurnAcceptedCustomerName && normalized.customerName) {
+      customerNameSourceOverride = "current_turn_explicit";
+      customerNameNeedsReview = false;
+    } else if (recognizedCustomerReusableName) {
+      customerNameSourceOverride = undefined;
+      customerNameNeedsReview = false;
+    } else if (trustedCustomerNameBeforeLookup && normalized.customerName) {
+      customerNameNeedsReview = customerNameSourceOverride === "phone_fallback" ? customerNameNeedsReview : false;
+    } else {
+      customerNameNeedsReview = false;
+    }
   }
   const knownCallerMemory =
     !recognizedCustomer && normalized.customerPhone && !explicitCustomerName && !bareCustomerName
@@ -5013,6 +5134,13 @@ export const createAmazonConnectAIAppointment = async (
     normalized.customerName = `Guest${lastFourDigits ? ` ${lastFourDigits}` : ""}`;
     customerNameSourceOverride = "phone_fallback";
     customerNameNeedsReview = true;
+  }
+  if (
+    normalized.customerName &&
+    isAcceptableCustomerName(normalized.customerName) &&
+    customerNameSourceOverride !== "phone_fallback"
+  ) {
+    customerNameNeedsReview = false;
   }
 
   const transcript =
@@ -5422,10 +5550,7 @@ export const createAmazonConnectAIAppointment = async (
       responseSlotToElicit === "serviceName" &&
       !inferredResponseSessionAttributes.activeDtmfMenu
     ) {
-      Object.assign(inferredResponseSessionAttributes, {
-        activeDtmfMenu: "service",
-        activeDtmfOptionsJson: JSON.stringify(SERVICE_DTMF_OPTIONS)
-      });
+      Object.assign(inferredResponseSessionAttributes, servicePromptSessionAttributes);
     }
     const responsePayloadDebug =
       input.attributes?.lexTurnDebug && typeof input.attributes.lexTurnDebug === "object"
@@ -6463,7 +6588,11 @@ export const createAmazonConnectAIAppointment = async (
   }
 
   if (missingFields.size > 0 || !requestedStartTime) {
-    const elicitDecision = getElicitSlotForMissingFields(missingFields, normalized);
+    const elicitDecision = getElicitSlotForMissingFields(
+      missingFields,
+      normalized,
+      servicePromptSessionAttributes
+    );
     const shouldPromptStaff = elicitDecision.promptMissingFields.includes("staffPreference");
     const staffPromptOptions =
       shouldPromptStaff && serviceMatch?.service.id
@@ -6482,6 +6611,7 @@ export const createAmazonConnectAIAppointment = async (
       knownFields: normalized,
       salonTimezone: salon.timezone,
       attemptCount: elicitDecision.attemptCount,
+      servicePromptText: servicePromptSessionAttributes.serviceDtmfPromptText,
       invalidStaffDtmfSelection: normalized.invalidStaffDtmfSelection,
       repeatedKnownFieldWhileAskingName:
         elicitDecision.slotToElicit === "customerName" &&
@@ -6571,20 +6701,13 @@ export const createAmazonConnectAIAppointment = async (
     const attempts = parseAttemptCount(
       readStringAttribute(normalized.attributes, ["serviceClarificationAttempts"])
     );
-    const services = await prisma.service.findMany({
-      where: {
-        salonId: salon.id,
-        isActive: true
-      },
-      select: { name: true },
-      orderBy: { createdAt: "asc" }
-    });
     const suggestedServiceName = getCustomerFacingServiceName(serviceMatch.service.name);
     const message = buildServiceClarificationMessage({
       heardServiceName: normalized.serviceName!,
       suggestedServiceName,
-      availableServiceNames: services.map((service) => service.name),
-      attempts
+      availableServiceNames: activeServiceMenuServices.map((service) => service.name),
+      attempts,
+      servicePromptText: servicePromptSessionAttributes.serviceDtmfPromptText
     });
     const parsed = buildInternalParsedIntent({
       intentType: "BOOK_APPOINTMENT",
@@ -6652,7 +6775,8 @@ export const createAmazonConnectAIAppointment = async (
           lastAskedSlot: "serviceName",
           askedSlotsCount: String(attempts + 1),
           fallbackCount: String(attempts + 1),
-          errorCount: String(attempts + 1)
+          errorCount: String(attempts + 1),
+          ...servicePromptSessionAttributes
         })
       },
       appointment: null,
@@ -6671,18 +6795,11 @@ export const createAmazonConnectAIAppointment = async (
     const attempts = parseAttemptCount(
       readStringAttribute(normalized.attributes, ["serviceClarificationAttempts"])
     );
-    const services = await prisma.service.findMany({
-      where: {
-        salonId: salon.id,
-        isActive: true
-      },
-      select: { name: true },
-      orderBy: { createdAt: "asc" }
-    });
     const message = buildServiceClarificationMessage({
       heardServiceName: normalized.serviceName!,
-      availableServiceNames: services.map((service) => service.name),
-      attempts
+      availableServiceNames: activeServiceMenuServices.map((service) => service.name),
+      attempts,
+      servicePromptText: servicePromptSessionAttributes.serviceDtmfPromptText
     });
     const parsed = buildInternalParsedIntent({
       intentType: "BOOK_APPOINTMENT",
@@ -6700,7 +6817,7 @@ export const createAmazonConnectAIAppointment = async (
       failureReason: "Service not found or inactive.",
       normalizedRequest: {
         serviceName: normalized.serviceName,
-        availableServiceNames: services.map((service) => service.name),
+        availableServiceNames: activeServiceMenuServices.map((service) => service.name),
         startTimeIso: requestedStartTime.toISOString(),
         timezone: salon.timezone
       }
@@ -6712,7 +6829,7 @@ export const createAmazonConnectAIAppointment = async (
       bookingAttemptId: bookingAttempt.id,
       responsePayload: {
         serviceName: normalized.serviceName,
-        availableServiceNames: services.map((service) => service.name),
+        availableServiceNames: activeServiceMenuServices.map((service) => service.name),
         attempts: attempts + 1,
         slotToElicit: "serviceName"
       },
@@ -6743,7 +6860,8 @@ export const createAmazonConnectAIAppointment = async (
           lastAskedSlot: "serviceName",
           askedSlotsCount: String(attempts + 1),
           fallbackCount: String(attempts + 1),
-          errorCount: String(attempts + 1)
+          errorCount: String(attempts + 1),
+          ...servicePromptSessionAttributes
         })
       },
       appointment: null,
@@ -7447,7 +7565,9 @@ export const createAmazonConnectAIAppointment = async (
             customerName: normalized.customerName,
             requestedAnyStaff,
             customerNameFallbackNotice:
-              customerNameSourceOverride === "phone_fallback" && normalized.customerName
+              customerNameSourceOverride === "phone_fallback" &&
+              normalized.customerName &&
+              normalized.customerName.replace(/\D/g, "").slice(-4)
                 ? `I couldn't clearly hear the name, so I'll use Guest ending in ${normalized.customerName.replace(/\D/g, "").slice(-4)} for now.`
                 : undefined
           });

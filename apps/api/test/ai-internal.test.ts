@@ -123,7 +123,7 @@ const createInitialState = () => {
         name: "Gel Manicure",
         durationMinutes: 60,
         priceCents: 5000,
-        isActive: true,
+        isActive: false,
         createdAt: new Date("2026-01-03T00:00:00.000Z")
       },
       {
@@ -1201,6 +1201,100 @@ test("customerName turn rejects with Kevin noise and accepts clear call-me phras
   assert.equal(state.appointments.length, 0);
 });
 
+test("explicit customer name stays sticky through first available and time change", async () => {
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  const contactId = "connect-sticky-name";
+  state.customers.push({
+    id: "customer-invalid-phone-name",
+    salonId: ids.salonA,
+    firstName: "with",
+    lastName: "",
+    phone: "18483481236",
+    createdAt: new Date("2026-01-02T00:00:00.000Z")
+  });
+
+  const nameTurn = await postInternalAppointment(
+    bookingPayload({
+      customerName: undefined,
+      customerPhone: "+18483481236",
+      serviceName: "Full Set",
+      requestedDate,
+      requestedTime: "3 PM",
+      staffPreference: undefined,
+      confirmationState: undefined,
+      amazonConnectContactId: contactId,
+      currentTurnTranscript: "my name is Pham",
+      transcript: "my name is Pham",
+      attributes: {
+        AmazonConnectContactId: contactId,
+        lastAskedSlot: "customerName",
+        serviceName: "Full Set",
+        requestedDate,
+        requestedTime: "3 PM",
+        customerPhone: "+18483481236"
+      }
+    })
+  );
+
+  assert.equal(nameTurn.response.status, 200);
+  assert.equal(nameTurn.body.data.lexResponse.sessionAttributes.customerName, "Pham");
+  assert.equal(nameTurn.body.data.lexResponse.sessionAttributes.customerNameSource, "current_turn_explicit");
+  assert.equal(nameTurn.body.data.lexResponse.sessionAttributes.customerNameNeedsReview, undefined);
+  assert.doesNotMatch(nameTurn.body.data.lexResponse.message, /Welcome back,\s*with/i);
+
+  const staffTurn = await postInternalAppointment(
+    bookingPayload({
+      customerName: undefined,
+      customerPhone: "+18483481236",
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      amazonConnectContactId: contactId,
+      currentTurnTranscript: "first available",
+      transcript: "first available",
+      attributes: {
+        ...nameTurn.body.data.lexResponse.sessionAttributes,
+        AmazonConnectContactId: contactId,
+        lastAskedSlot: "staffPreference"
+      }
+    })
+  );
+
+  assert.equal(staffTurn.response.status, 200);
+  assert.equal(staffTurn.body.data.lexResponse.sessionAttributes.customerName, "Pham");
+  assert.notEqual(staffTurn.body.data.lexResponse.dialogAction.slotToElicit, "customerName");
+  assert.doesNotMatch(staffTurn.body.data.lexResponse.message, /catch your name|May I have your name/i);
+
+  const timeTurn = await postInternalAppointment(
+    bookingPayload({
+      customerName: undefined,
+      customerPhone: "+18483481236",
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      amazonConnectContactId: contactId,
+      currentTurnTranscript: "change it to eleven a m",
+      transcript: "change it to eleven a m",
+      attributes: {
+        ...staffTurn.body.data.lexResponse.sessionAttributes,
+        AmazonConnectContactId: contactId,
+        lastAskedSlot: "bookingConfirmation",
+        awaitingFinalBookingConfirmation: "true"
+      }
+    })
+  );
+
+  assert.equal(timeTurn.response.status, 200);
+  assert.equal(timeTurn.body.data.lexResponse.sessionAttributes.customerName, "Pham");
+  assert.notEqual(timeTurn.body.data.lexResponse.dialogAction.slotToElicit, "customerName");
+  assert.doesNotMatch(timeTurn.body.data.lexResponse.message, /catch your name|May I have your name/i);
+  assert.equal(state.customers.some((customer) => customer.firstName === "with" && customer.id !== "customer-invalid-phone-name"), false);
+});
+
 test("AI caller memory does not reuse names from historical booking attempts", async () => {
   const first = await postInternalAppointment(
     bookingPayload({
@@ -1463,8 +1557,13 @@ test("Full Set speech aliases resolve to the active Full Set service", async () 
     "pull set",
     "pull step",
     "pool set",
+    "food set",
+    "fool set",
+    "foot set",
     "full step",
-    "full said"
+    "full said",
+    "fullsat",
+    "set of nails"
   ]) {
     resetMockState();
     const result = await postInternalAppointment(
@@ -1483,6 +1582,94 @@ test("Full Set speech aliases resolve to the active Full Set service", async () 
     assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Full Set", phrase);
     assert.notEqual(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName", phrase);
   }
+});
+
+test("invalid placeholder services are cleared and active service menu excludes inactive Gel", async () => {
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "test service",
+      staffPreference: "Trang",
+      confirmationState: undefined,
+      currentTurnTranscript: "test service",
+      transcript: "test service",
+      attributes: {
+        serviceName: "service",
+        confirmedServiceName: "test service",
+        requestedDate: "2026-05-28",
+        requestedTime: "3 PM",
+        staffPreference: "Trang",
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitSlot");
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, undefined);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedServiceName, undefined);
+  assert.doesNotMatch(result.body.data.lexResponse.message, /I have your service/i);
+  assert.doesNotMatch(result.body.data.lexResponse.sessionAttributes.activeDtmfOptionsJson, /Gel Manicure/);
+  assert.doesNotMatch(result.body.data.lexResponse.sessionAttributes.activeServiceNames, /Gel Manicure/);
+  assert.equal(state.bookingAttempts.at(-1)?.requestedService, undefined);
+});
+
+test("current food set wins over stale placeholder service", async () => {
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: undefined,
+      staffPreference: "Trang",
+      confirmationState: undefined,
+      currentTurnTranscript: "food set",
+      transcript: "food set",
+      attributes: {
+        lastAskedSlot: "serviceName",
+        serviceName: "test service",
+        confirmedServiceName: "test service",
+        requestedDate: "2026-05-28",
+        requestedTime: "3 PM",
+        staffPreference: "Trang",
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedServiceName, "Full Set");
+  assert.match(result.body.data.lexResponse.message, /just to confirm: Full Set .* with Trang/i);
+  assert.equal(state.bookingAttempts.at(-1)?.requestedService, "Full Set");
+});
+
+test("food without set does not resolve to Full Set", async () => {
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: undefined,
+      staffPreference: "Trang",
+      confirmationState: undefined,
+      currentTurnTranscript: "I need food",
+      transcript: "I need food",
+      attributes: {
+        requestedDate: "2026-05-28",
+        requestedTime: "3 PM",
+        staffPreference: "Trang",
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitSlot");
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
+  assert.notEqual(result.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
+  assert.equal(state.bookingAttempts.at(-1)?.requestedService, undefined);
 });
 
 test("scoped princess ASR resolves to Full Set unless Princess is an active exact service", async () => {
@@ -1763,8 +1950,9 @@ test("unclear service asks the canonical service list without escalation", async
   assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
   assert.equal(result.body.data.lexResponse.sessionAttributes.transferToQueue, undefined);
   assert.equal(result.body.data.lexResponse.sessionAttributes.forceHumanEscalation, undefined);
-  assert.match(result.body.data.lexResponse.message, /1 for Pedicure/i);
-  assert.match(result.body.data.lexResponse.message, /5 for Dip Powder/i);
+  assert.match(result.body.data.lexResponse.message, /1 for Manicure/i);
+  assert.match(result.body.data.lexResponse.message, /4 for Dip Powder/i);
+  assert.doesNotMatch(result.body.data.lexResponse.message, /Gel Manicure/i);
   assert.match(result.body.data.lexResponse.message, /0 for a person/i);
   assert.equal(result.body.data.lexResponse.sessionAttributes.activeDtmfMenu, "service");
   assert.equal(state.escalations.length, 0);
@@ -1814,6 +2002,8 @@ test("service DTMF applies only to serviceName before staff prompt", async () =>
       transcript: "1",
       attributes: {
         lastAskedSlot: "serviceName",
+        activeDtmfMenu: "service",
+        activeDtmfOptionsJson: JSON.stringify({ "1": "Pedicure", "0": "__operator__" }),
         serviceName: "pretty soon",
         requestedDate: "2026-05-28",
         requestedTime: "5 PM",
@@ -1842,6 +2032,8 @@ test("service DTMF 4 maps to Full Set", async () => {
       transcript: "4",
       attributes: {
         lastAskedSlot: "serviceName",
+        activeDtmfMenu: "service",
+        activeDtmfOptionsJson: JSON.stringify({ "4": "Full Set", "0": "__operator__" }),
         serviceName: "unclear",
         requestedDate: "2026-05-28",
         requestedTime: "3 PM",
@@ -1858,6 +2050,31 @@ test("service DTMF 4 maps to Full Set", async () => {
   assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedServiceName, "Full Set");
   assert.match(result.body.data.lexResponse.message, /just to confirm: Full Set .* with Trang/i);
   assert.deepEqual(new Set(state.validationStaffIds), new Set([ids.trang]));
+  assert.equal(state.appointments.length, 0);
+});
+
+test("service digit does not map without active service DTMF menu", async () => {
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: undefined,
+      staffPreference: "Trang",
+      confirmationState: undefined,
+      transcript: "4",
+      attributes: {
+        lastAskedSlot: "serviceName",
+        requestedDate: "2026-05-28",
+        requestedTime: "3 PM",
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitSlot");
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
+  assert.notEqual(result.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
   assert.equal(state.appointments.length, 0);
 });
 
@@ -2285,6 +2502,8 @@ test("after service DTMF 4, name and date turns keep Full Set", async () => {
       transcript: "4",
       attributes: {
         lastAskedSlot: "serviceName",
+        activeDtmfMenu: "service",
+        activeDtmfOptionsJson: JSON.stringify({ "4": "Full Set", "0": "__operator__" }),
         customerPhone: "+18483487681"
       }
     })

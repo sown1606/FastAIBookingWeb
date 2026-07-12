@@ -130,17 +130,10 @@ const PEDICURE_ALIASES = [
 const DEMO_SERVICE_NAMES = [
   "Manicure",
   "Pedicure",
-  "Gel Manicure",
   "Full Set",
-  "Dip Powder",
-  "Other Services"
+  "Dip Powder"
 ];
 const SERVICE_DTMF_OPTIONS = {
-  "1": "Pedicure",
-  "2": "Manicure",
-  "3": "Gel Manicure",
-  "4": "Full Set",
-  "5": "Dip Powder",
   "0": "__operator__"
 };
 const STAFF_DTMF_OPTIONS = {
@@ -214,7 +207,7 @@ const SERVICE_DTMF_PROMPT =
 const SERVICE_KEYPAD_PROMPT =
   "Sorry, what service would you like?";
 const SERVICE_DTMF_SHORT_PROMPT =
-  "I can list the services once. Press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Full Set, 5 for Dip Powder, or 0 for a person.";
+  "I can list the services once. Please say the service name, or press 0 for a person.";
 const STAFF_DTMF_PROMPT =
   "Which staff would you like, Trang, Amy, Kelly, or first available?";
 const STAFF_DTMF_SHORT_PROMPT =
@@ -277,8 +270,12 @@ const SERVICE_ALIAS_GROUPS = {
     "pull set",
     "pull step",
     "pool set",
+    "food set",
+    "fool set",
+    "foot set",
     "full step",
     "full said",
+    "fullsat",
     "full sit",
     "full sat",
     "full sell",
@@ -289,6 +286,7 @@ const SERVICE_ALIAS_GROUPS = {
     "fake nails",
     "extension nails",
     "nail extensions",
+    "set of nails",
     "full set appointment"
   ],
   "Dip Powder": [
@@ -428,6 +426,26 @@ function normalizeForMatch(value) {
 
 function compactForMatch(value) {
   return normalizeForMatch(value).replace(/\s/g, "");
+}
+
+const INVALID_SERVICE_PLACEHOLDERS = new Set([
+  "service",
+  "services",
+  "a service",
+  "the service",
+  "some service",
+  "any service",
+  "nail service",
+  "nail services",
+  "test service",
+  "sample service",
+  "unknown service",
+  "other service",
+  "other services"
+]);
+
+function isInvalidServicePlaceholder(value) {
+  return INVALID_SERVICE_PLACEHOLDERS.has(normalizeForMatch(value));
 }
 
 function toCustomerNameCase(value) {
@@ -1393,6 +1411,7 @@ function analyzeLexTurnSanitization(event) {
   let preservedConfirmedService = false;
   let replacementInputTranscript = "";
   let discardedStaleStaff = "";
+  let discardedPlaceholderService = "";
   let staffSource = "";
   let changed = false;
 
@@ -1401,7 +1420,7 @@ function analyzeLexTurnSanitization(event) {
     scopedServiceDigit !== "0" &&
     (previous.lastAskedSlot === "serviceName" || dtmfRouting.route === "service_menu")
   ) {
-    const serviceSelection = SERVICE_DTMF_OPTIONS[scopedServiceDigit];
+    const serviceSelection = getActiveDtmfOptions(previous, "service")[scopedServiceDigit];
     if (serviceSelection) {
       const { name: serviceSlotName } = getSlotObject(slots, slotNames.serviceName);
       sanitizedSlots[serviceSlotName || "serviceName"] = buildLexSlot(serviceSelection);
@@ -1593,6 +1612,20 @@ function analyzeLexTurnSanitization(event) {
     preservedConfirmedService = true;
   }
 
+  const previousServiceForPlaceholder =
+    previous.confirmedServiceName || getSessionAttribute(previous, slotNames.serviceName);
+  if (
+    previousServiceForPlaceholder &&
+    isInvalidServicePlaceholder(previousServiceForPlaceholder) &&
+    !recognizedService &&
+    !(scopedServiceDigit && scopedServiceDigit !== "0")
+  ) {
+    fieldsToClear.add("serviceName");
+    ignoredNoiseFields.push("serviceName");
+    discardedPlaceholderService = previousServiceForPlaceholder;
+    changed = true;
+  }
+
   const { name: staffSlotName, slot: staffSlot } = getSlotObject(slots, slotNames.staffPreference);
   if (
     staffSlot &&
@@ -1652,6 +1685,7 @@ function analyzeLexTurnSanitization(event) {
     currentTurnStaffMention,
     currentTurnServiceMention: recognizedService || "",
     serviceAliasCorrectionRaw,
+    discardedPlaceholderService,
     discardedStaleStaff,
     staffSource,
     fieldsToClear: Array.from(fieldsToClear),
@@ -2106,6 +2140,9 @@ function isClearlyInvalidServiceName(value) {
   }
   const normalized = normalizeForMatch(raw);
   const digits = raw.replace(/\D/g, "");
+  if (isInvalidServicePlaceholder(raw)) {
+    return true;
+  }
   if (/^(?:am|pm|a m|p m)$/.test(normalized)) {
     return true;
   }
@@ -2279,6 +2316,10 @@ function isRecognizedService(value) {
   if (isClearlyInvalidServiceName(value)) {
     return false;
   }
+  const serviceName = normalizeServiceName(value);
+  if (!DEMO_SERVICE_NAMES.includes(serviceName)) {
+    return false;
+  }
   const compact = compactForMatch(value);
   return SERVICE_ALIASES.some((alias) => {
     const aliasCompact = compactForMatch(alias);
@@ -2349,7 +2390,7 @@ function shouldPromptForServiceFallback(event, intentName) {
   if (getConfirmedRecognizedService(previous)) {
     return false;
   }
-  if (readScopedDtmfSelection(event, "serviceName", SERVICE_DTMF_OPTIONS)) {
+  if (readScopedDtmfSelection(event, "serviceName", getActiveDtmfOptions(previous, "service"))) {
     return false;
   }
   if (previous.serviceFallbackOffered === "true") {
@@ -2788,7 +2829,11 @@ function buildKnownBookingSessionAttributes(event) {
   const rawKnownService =
     getSlotValue(slots, slotNames.serviceName, { preferOriginal: true }) ||
     getSessionAttribute(previous, slotNames.serviceName);
-  const serviceDtmfSelection = readScopedDtmfSelection(event, "serviceName", SERVICE_DTMF_OPTIONS);
+  const serviceDtmfSelection = readScopedDtmfSelection(
+    event,
+    "serviceName",
+    getActiveDtmfOptions(previous, "service")
+  );
   const staffDtmfSelection = readScopedStaffDtmfSelection(event);
   const recoveryTranscript =
     serviceDtmfSelection || staffDtmfSelection || currentTurnIsDigitNoise
@@ -2898,7 +2943,7 @@ function buildKnownBookingSessionAttributes(event) {
     confirmedServiceName:
       serviceDtmfSelection ||
       currentService ||
-      previous.confirmedServiceName ||
+      stablePreviousService ||
       knownService ||
       historicalRecoveredService,
     confirmedStaffName:
@@ -2933,6 +2978,10 @@ function buildKnownBookingSessionAttributes(event) {
     delete merged.staffId;
     delete merged.selectedStaffId;
     delete merged.confirmedStaffId;
+  }
+  if (isClearlyInvalidServiceName(merged.serviceName || merged.confirmedServiceName)) {
+    delete merged.serviceName;
+    delete merged.confirmedServiceName;
   }
   return removeIgnoredPollutedFields(merged);
 }
@@ -3922,6 +3971,9 @@ function removeIgnoredPollutedFields(sessionAttributes = {}) {
     for (const name of slotNames[fieldName] || [fieldName]) {
       delete cleaned[name];
     }
+    if (fieldName === "serviceName") {
+      delete cleaned.confirmedServiceName;
+    }
     if (fieldName === "staffPreference") {
       delete cleaned.confirmedStaffName;
       delete cleaned.staffId;
@@ -4069,6 +4121,9 @@ function buildLexTurnDebug(event, analysis = {}) {
       ignoredNoiseFields: analysis.ignoredNoiseFields || [],
       preservedConfirmedService: Boolean(analysis.preservedConfirmedService),
       currentTurnStaffMention: analysis.currentTurnStaffMention || null,
+      currentTurnServiceMention: analysis.currentTurnServiceMention || null,
+      serviceAliasInput: analysis.serviceAliasCorrectionRaw || null,
+      discardedPlaceholderService: analysis.discardedPlaceholderService || null,
       discardedStaleStaff: analysis.discardedStaleStaff || null,
       staffSource: analysis.staffSource || null
     },
