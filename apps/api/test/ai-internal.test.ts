@@ -1142,6 +1142,139 @@ test("known Amazon Connect caller phone skips name and phone prompts", async () 
   assert.equal(state.appointments.length, 0);
 });
 
+test("known caller acknowledgement is spoken once and can be corrected for current booking", async () => {
+  state.customers.push({
+    id: "customer-lee-known",
+    salonId: ids.salonA,
+    firstName: "Lee",
+    lastName: "Stored",
+    phone: "84798171999",
+    createdAt: new Date("2026-01-10T00:00:00.000Z")
+  } as any);
+
+  const first = await postInternalAppointment(
+    bookingPayload({
+      customerName: undefined,
+      customerPhone: undefined,
+      callerPhone: "+84798171999",
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      amazonConnectContactId: "connect-known-lee-once",
+      attributes: {
+        CustomerEndpointAddress: "+84798171999"
+      }
+    })
+  );
+
+  assert.match(first.body.data.lexResponse.message, /Welcome back, Lee/i);
+  assert.equal(first.body.data.lexResponse.sessionAttributes.knownCallerAcknowledged, "true");
+  assert.equal(first.body.data.lexResponse.sessionAttributes.customerName, "Lee");
+  assert.equal(first.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
+
+  const second = await postInternalAppointment(
+    bookingPayload({
+      customerName: undefined,
+      customerPhone: undefined,
+      callerPhone: "+84798171999",
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      amazonConnectContactId: "connect-known-lee-once",
+      currentTurnTranscript: "I want Pedicure",
+      transcript: "I want Pedicure",
+      attributes: first.body.data.lexResponse.sessionAttributes
+    })
+  );
+
+  assert.doesNotMatch(second.body.data.lexResponse.message, /Welcome back/i);
+  assert.equal(second.body.data.lexResponse.sessionAttributes.customerName, "Lee");
+  assert.equal(second.body.data.lexResponse.sessionAttributes.serviceName, "Pedicure");
+
+  const correction = await postInternalAppointment(
+    bookingPayload({
+      customerName: undefined,
+      customerPhone: undefined,
+      callerPhone: "+84798171999",
+      serviceName: "Full Set",
+      requestedDate: "2026-05-28",
+      requestedTime: "2 PM",
+      staffPreference: "Trang",
+      staffId: ids.trang,
+      confirmationState: undefined,
+      amazonConnectContactId: "connect-known-lee-correction",
+      currentTurnTranscript: "That's not my name. My name is Thuyet.",
+      transcript: "That's not my name. My name is Thuyet.",
+      attributes: {
+        CustomerEndpointAddress: "+84798171999",
+        serviceName: "Full Set",
+        requestedDate: "2026-05-28",
+        requestedTime: "2 PM",
+        staffPreference: "Trang",
+        staffId: ids.trang
+      }
+    })
+  );
+
+  assert.equal(correction.body.data.lexResponse.sessionAttributes.customerName, "Thuyet");
+  assert.equal(correction.body.data.lexResponse.sessionAttributes.customerNameSource, "current_turn_explicit");
+  assert.equal(correction.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
+  assert.equal(correction.body.data.lexResponse.sessionAttributes.requestedDate, "2026-05-28");
+  assert.equal(correction.body.data.lexResponse.sessionAttributes.requestedTime, "2 PM");
+  assert.equal(correction.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
+  assert.equal(correction.body.data.lexResponse.sessionAttributes.staffId, ids.trang);
+  assert.equal(state.customers.find((customer) => customer.id === "customer-lee-known")?.firstName, "Lee");
+});
+
+test("known caller rejection without a new name asks for name and preserves booking fields", async () => {
+  state.customers.push({
+    id: "customer-lee-reject",
+    salonId: ids.salonA,
+    firstName: "Lee",
+    lastName: "Stored",
+    phone: "84798171999",
+    createdAt: new Date("2026-01-10T00:00:00.000Z")
+  } as any);
+
+  const result = await postInternalAppointment(
+    bookingPayload({
+      customerName: undefined,
+      customerPhone: undefined,
+      callerPhone: "+84798171999",
+      serviceName: "Full Set",
+      requestedDate: "2026-05-28",
+      requestedTime: "2 PM",
+      staffPreference: "Trang",
+      staffId: ids.trang,
+      confirmationState: undefined,
+      amazonConnectContactId: "connect-known-lee-reject",
+      currentTurnTranscript: "That's not me.",
+      transcript: "That's not me.",
+      attributes: {
+        CustomerEndpointAddress: "+84798171999",
+        serviceName: "Full Set",
+        requestedDate: "2026-05-28",
+        requestedTime: "2 PM",
+        staffPreference: "Trang",
+        staffId: ids.trang
+      }
+    })
+  );
+
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "customerName");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.customerName, undefined);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.customerNameSource, "current_turn_rejected_profile");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.requestedDate, "2026-05-28");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "2 PM");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffId, ids.trang);
+});
+
 test("partial booking fragment asks for service without greeting again", async () => {
   const result = await postInternalAppointment(
     bookingPayload({
@@ -1989,6 +2122,78 @@ test("invalid placeholder services are cleared and active service menu excludes 
   assert.equal(state.bookingAttempts.at(-1)?.requestedService, undefined);
 });
 
+test("unsupported service requests activate service DTMF and never become staff", async () => {
+  for (const phrase of ["I want gel", "I want gel nails", "I want haircut", "I want a facial"]) {
+    resetMockState();
+    const result = await postInternalAppointment(
+      bookingPayload({
+        serviceName: undefined,
+        requestedDate: undefined,
+        requestedTime: undefined,
+        staffPreference: undefined,
+        confirmationState: undefined,
+        amazonConnectContactId: `connect-unsupported-${phrase.replace(/\W+/g, "-")}`,
+        currentTurnTranscript: phrase,
+        transcript: phrase,
+        attributes: {
+          currentTurnTranscript: phrase,
+          customerName: "Lee",
+          customerPhone: "+17325956266"
+        }
+      })
+    );
+
+    assert.equal(result.body.data.outcome, "MISSING_INFO", phrase);
+    assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitSlot", phrase);
+    assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName", phrase);
+    assert.equal(result.body.data.lexResponse.sessionAttributes.activeDtmfMenu, "service", phrase);
+    assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, undefined, phrase);
+    assert.equal(result.body.data.lexResponse.sessionAttributes.staffId, undefined, phrase);
+    assert.equal(state.bookingAttempts.at(-1)?.requestedStaff, undefined, phrase);
+    assert.equal(state.bookingAttempts.at(-1)?.normalizedRequest.serviceClarificationReason, "unsupported_service", phrase);
+    assert.doesNotMatch(result.body.data.lexResponse.sessionAttributes.activeServiceNames, /Gel Manicure/, phrase);
+    assert.doesNotMatch(result.body.data.lexResponse.sessionAttributes.activeDtmfOptionsJson, /Gel Manicure/, phrase);
+    assert.match(result.body.data.lexResponse.message, /available services|Press 1/i, phrase);
+    assert.equal(state.appointments.length, 0, phrase);
+  }
+});
+
+test("generic gel asks before selecting the one active gel-related alternative", async () => {
+  state.services.push({
+    id: "20000000-0000-4000-8000-000000000006",
+    salonId: ids.salonA,
+    name: "Builder Gel Fill Update",
+    durationMinutes: 80,
+    priceCents: 7000,
+    isActive: true,
+    createdAt: new Date("2026-01-06T00:00:00.000Z")
+  });
+
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      amazonConnectContactId: "connect-gel-builder-clarify",
+      currentTurnTranscript: "I want gel",
+      transcript: "I want gel",
+      attributes: {
+        customerName: "Lee",
+        customerPhone: "+17325956266"
+      }
+    })
+  );
+
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, undefined);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceSuggestionName, "Builder Gel Fill Update");
+  assert.match(result.body.data.lexResponse.message, /Did you mean Builder Gel Fill Update/i);
+  assert.equal(state.appointments.length, 0);
+});
+
 test("current food set wins over stale placeholder service", async () => {
   const result = await postInternalAppointment(
     bookingPayload({
@@ -2371,6 +2576,7 @@ test("unclear staff keeps asking instead of defaulting to first available", asyn
   assert.equal(second.body.data.lexResponse.sessionAttributes.staffPreference, undefined);
   assert.equal(second.body.data.lexResponse.sessionAttributes.staffId, undefined);
   assert.match(second.body.data.lexResponse.message, /Which staff would you like, Trang, Amy, Kelly, or first available/i);
+  assert.equal(second.body.data.lexResponse.sessionAttributes.staffMenuWasSpoken, undefined);
   assert.equal(state.appointments.length, 0);
 });
 
@@ -3131,6 +3337,96 @@ test("invalid staff DTMF repeats staff options without booking", async () => {
   assert.equal(state.appointments.length, 0);
 });
 
+test("staff DTMF mapping stays stable across failed speech retries", async () => {
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  const first = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Pedicure",
+      requestedDate,
+      requestedTime: "2 PM",
+      staffPreference: undefined,
+      confirmationState: undefined,
+      amazonConnectContactId: "connect-staff-menu-stability",
+      currentTurnTranscript: "check",
+      transcript: "check",
+      attributes: {
+        lastAskedSlot: "staffPreference",
+        askedSlotsCount: "1",
+        activeDtmfMenu: "staff",
+        serviceName: "Pedicure",
+        requestedDate,
+        requestedTime: "2 PM",
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266"
+      }
+    })
+  );
+
+  assert.equal(first.body.data.lexResponse.dialogAction.slotToElicit, "staffPreference");
+  assert.equal(first.body.data.lexResponse.sessionAttributes.staffMenuWasSpoken, undefined);
+  assert.match(first.body.data.lexResponse.message, /Which staff would you like, Trang, Amy, Kelly, or first available/i);
+  const firstOptions = first.body.data.lexResponse.sessionAttributes.activeDtmfOptionsJson;
+  const parsedOptions = JSON.parse(firstOptions);
+  const trangDigit = Object.entries(parsedOptions).find(([, value]) => value === "Trang")?.[0];
+  assert.ok(trangDigit);
+
+  const second = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Pedicure",
+      requestedDate,
+      requestedTime: "2 PM",
+      staffPreference: undefined,
+      confirmationState: undefined,
+      amazonConnectContactId: "connect-staff-menu-stability",
+      currentTurnTranscript: "ten",
+      transcript: "ten",
+      attributes: first.body.data.lexResponse.sessionAttributes
+    })
+  );
+
+  assert.equal(second.body.data.lexResponse.sessionAttributes.activeDtmfOptionsJson, firstOptions);
+  assert.equal(second.body.data.lexResponse.sessionAttributes.staffMenuWasSpoken, "true");
+  assert.match(second.body.data.lexResponse.message, /press 1 for Trang/i);
+  assert.match(second.body.data.lexResponse.message, /press 4 for first available/i);
+
+  const third = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Pedicure",
+      requestedDate,
+      requestedTime: "2 PM",
+      staffPreference: undefined,
+      confirmationState: undefined,
+      amazonConnectContactId: "connect-staff-menu-stability",
+      currentTurnTranscript: "check",
+      transcript: "check",
+      attributes: second.body.data.lexResponse.sessionAttributes
+    })
+  );
+
+  assert.equal(third.body.data.lexResponse.sessionAttributes.activeDtmfOptionsJson, firstOptions);
+  assert.doesNotMatch(third.body.data.lexResponse.message, /press 1.*press 2.*press 3/i);
+  assert.match(third.body.data.lexResponse.message, /Please say a listed staff name or press one of the numbers/i);
+
+  const selected = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Pedicure",
+      requestedDate,
+      requestedTime: "2 PM",
+      staffPreference: undefined,
+      confirmationState: undefined,
+      amazonConnectContactId: "connect-staff-menu-stability",
+      currentTurnTranscript: trangDigit,
+      transcript: trangDigit,
+      attributes: third.body.data.lexResponse.sessionAttributes
+    })
+  );
+
+  assert.equal(selected.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(selected.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
+  assert.equal(selected.body.data.lexResponse.sessionAttributes.staffId, ids.trang);
+  assert.equal(state.appointments.length, 0);
+});
+
 test("no active staff does not crash the AI booking flow", async () => {
   state.staff = state.staff.filter((member) => member.salonId !== ids.salonA);
 
@@ -3211,7 +3507,8 @@ test("busy requested staff returns deduped alternatives", async () => {
     new Set(result.body.data.alternatives.map((slot: { staffName: string }) => slot.staffName)),
     new Set(["Amy", "Trang"])
   );
-  assert.match(result.body.data.lexResponse.message, /Trang is not available at 5 PM/i);
+  assert.equal(state.bookingAttempts.at(-1)?.normalizedRequest.availabilityReasonCode, "APPOINTMENT_OVERLAP");
+  assert.match(result.body.data.lexResponse.message, /Trang already has an appointment at 5 PM/i);
   assert.match(result.body.data.lexResponse.message, /press 1 for .* with Amy/i);
   assert.match(result.body.data.lexResponse.message, /press 2 for .* with Trang/i);
   assert.equal(state.appointments.length, 0);
@@ -3728,6 +4025,151 @@ test("specific Alex conflict reports overlap and does not create another appoint
   assert.equal(state.bookingAttempts[0].status, BookingAttemptStatus.NO_AVAILABILITY);
   assert.equal(state.bookingAttempts[0].appointmentId, undefined);
   assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "requestedTime");
+});
+
+test("staff prompt scoped dang resolves to Trang and generic words do not", async () => {
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  const dang = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Full Set",
+      requestedDate,
+      requestedTime: "1 PM",
+      staffPreference: undefined,
+      confirmationState: undefined,
+      amazonConnectContactId: "connect-dang-trang",
+      currentTurnTranscript: "dang",
+      transcript: "dang",
+      attributes: {
+        lastAskedSlot: "staffPreference",
+        activeDtmfMenu: "staff",
+        serviceName: "Full Set",
+        requestedDate,
+        requestedTime: "1 PM",
+        customerName: "Lee",
+        customerPhone: "+17325956266"
+      }
+    })
+  );
+
+  assert.equal(dang.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(dang.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
+  assert.equal(dang.body.data.lexResponse.sessionAttributes.staffId, ids.trang);
+  assert.doesNotMatch(dang.body.data.lexResponse.message, /didn't find that technician/i);
+  assert.equal(state.appointments.length, 0);
+
+  for (const phrase of ["change it to two PM", "check", "ten"]) {
+    const result = await postInternalAppointment(
+      bookingPayload({
+        serviceName: "Full Set",
+        requestedDate,
+        requestedTime: "1 PM",
+        staffPreference: undefined,
+        confirmationState: undefined,
+        amazonConnectContactId: `connect-staff-no-trang-${phrase.replace(/\s+/g, "-")}`,
+        currentTurnTranscript: phrase,
+        transcript: phrase,
+        attributes: {
+          lastAskedSlot: "staffPreference",
+          activeDtmfMenu: "staff",
+          serviceName: "Full Set",
+          requestedDate,
+          requestedTime: "1 PM",
+          customerName: "Lee",
+          customerPhone: "+17325956266"
+        }
+      })
+    );
+
+    assert.equal(result.body.data.outcome, "MISSING_INFO", phrase);
+    assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "staffPreference", phrase);
+    assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, undefined, phrase);
+    assert.equal(result.body.data.lexResponse.sessionAttributes.staffId, undefined, phrase);
+    assert.doesNotMatch(result.body.data.lexResponse.message, /with Trang/i, phrase);
+  }
+});
+
+test("Trang overlap from dang returns overlap reason and canceled overlap does not block", async () => {
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  const start = DateTime.fromISO(`${requestedDate}T13:00:00`, { zone: "America/New_York" }).toUTC();
+  state.appointments.push({
+    id: "existing-trang-overlap",
+    salonId: ids.salonA,
+    customerId: ids.kietCustomer,
+    staffId: ids.trang,
+    serviceId: ids.fullSet,
+    startTime: start.toJSDate(),
+    endTime: start.plus({ minutes: 100 }).toJSDate(),
+    status: AppointmentStatus.CONFIRMED,
+    source: AppointmentSource.DASHBOARD
+  });
+
+  const overlap = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Full Set",
+      requestedDate,
+      requestedTime: "1 PM",
+      staffPreference: undefined,
+      confirmationState: undefined,
+      amazonConnectContactId: "connect-trang-dang-overlap",
+      currentTurnTranscript: "dang",
+      transcript: "dang",
+      attributes: {
+        lastAskedSlot: "staffPreference",
+        activeDtmfMenu: "staff",
+        serviceName: "Full Set",
+        requestedDate,
+        requestedTime: "1 PM",
+        customerName: "Lee",
+        customerPhone: "+17325956266"
+      }
+    })
+  );
+
+  assert.equal(overlap.body.data.outcome, "NO_AVAILABILITY");
+  assert.equal(state.appointments.length, 1);
+  assert.equal(state.validationStaffIds[0], ids.trang);
+  assert.equal(state.bookingAttempts.at(-1)?.normalizedRequest.availabilityReasonCode, "APPOINTMENT_OVERLAP");
+  assert.match(overlap.body.data.lexResponse.message, /Trang already has an appointment/i);
+  assert.doesNotMatch(overlap.body.data.lexResponse.message, /didn't find that technician|staff not found/i);
+
+  resetMockState();
+  const canceledStart = DateTime.fromISO(`${requestedDate}T13:00:00`, { zone: "America/New_York" }).toUTC();
+  state.appointments.push({
+    id: "canceled-trang-overlap",
+    salonId: ids.salonA,
+    customerId: ids.kietCustomer,
+    staffId: ids.trang,
+    serviceId: ids.fullSet,
+    startTime: canceledStart.toJSDate(),
+    endTime: canceledStart.plus({ minutes: 100 }).toJSDate(),
+    status: AppointmentStatus.CANCELED,
+    source: AppointmentSource.DASHBOARD
+  });
+  const booked = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Full Set",
+      requestedDate,
+      requestedTime: "1 PM",
+      staffPreference: "dang",
+      confirmationState: "Confirmed",
+      amazonConnectContactId: "connect-trang-dang-canceled-overlap",
+      currentTurnTranscript: "dang",
+      transcript: "dang",
+      attributes: {
+        lastAskedSlot: "staffPreference",
+        activeDtmfMenu: "staff",
+        serviceName: "Full Set",
+        requestedDate,
+        requestedTime: "1 PM",
+        customerName: "Lee",
+        customerPhone: "+17325956266"
+      }
+    })
+  );
+
+  assert.equal(booked.body.data.outcome, "BOOKED");
+  assert.equal(state.appointments.length, 2);
+  assert.equal(state.appointments.at(-1)?.staffId, ids.trang);
 });
 
 test("canceled Alex overlap does not block booking", async () => {

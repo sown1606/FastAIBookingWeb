@@ -736,7 +736,7 @@ const classifyFinalBookingConfirmation = (
   const hasStaffChangeRequest =
     /\b(?:change|switch)\s+(?:the\s+)?(?:person|staff|technician|tech)\b/.test(normalized) ||
     /\b(?:someone else|different person|different staff|different technician|different tech)\b/.test(normalized) ||
-    /\bnot\s+(?!correct\b|right\b|book\b|it\b|that\b)[a-z][a-z\s'-]{1,40}\b/.test(normalized) ||
+    /\bnot\s+(?!correct\b|right\b|book\b|it\b|that\b|my\b|me\b|name\b)[a-z][a-z\s'-]{1,40}\b/.test(normalized) ||
     /\bwith\s+[a-z][a-z\s'-]{1,40}\s+instead\b/.test(normalized);
   const hasNewBookingValue =
     hasStaticServiceAliasInText(value) ||
@@ -907,12 +907,31 @@ const extractBareCustomerNameAnswer = (value?: string | null): string | undefine
   return candidate;
 };
 
+const extractExplicitCustomerNameCorrection = (value?: string | null): string | undefined => {
+  const raw = value?.trim();
+  if (!raw) {
+    return undefined;
+  }
+  const match = raw.match(
+    /(?:my\s+name\s+is|name\s+is|call\s+me|use)\s+(\p{L}[\p{L}'-]*(?:\s+\p{L}[\p{L}'-]*){0,3})(?=\s*(?:[,.!?;]|$|for\s+(?:the\s+)?appointment))/iu
+  );
+  const candidate = collapseSpokenNameSpelling(match?.[1]);
+  return isAcceptableCustomerName(candidate) ? candidate : undefined;
+};
+
+const rejectsRecognizedCustomerName = (value?: string | null): boolean => {
+  const normalized = normalizeForMatch(value);
+  return /\b(?:that s not my name|that is not my name|that isn t my name|that is not me|that isn t me|that s not me|not my name|not me)\b/.test(
+    normalized
+  );
+};
+
 const isReusableCallerName = (value?: string | null): value is string => {
   return Boolean(extractBareCustomerNameAnswer(value));
 };
 
 const STAFF_ALIAS_PHRASES: Record<string, string[]> = {
-  trang: ["trang", "chang", "train", "trangg"],
+  trang: ["trang", "chang", "train", "trangg", "dang"],
   amy: ["amy", "amie", "emmy", "emmie", "a me"],
   kelly: ["kelly", "kelley", "keli", "ke li"]
 };
@@ -958,7 +977,101 @@ const isNegatedStaffAlias = (normalizedText: string, matchIndex: number): boolea
   return /\bnot(?:\s+(?:the|that|this|one|staff|technician|tech))?$/.test(before);
 };
 
-const normalizeScopedStaffCandidatePhrase = (value?: string | null): string | undefined => {
+type StaffPhraseContext = {
+  lastAskedSlot?: string;
+  activeDtmfMenu?: string;
+};
+
+const staffPhraseContextFromAttributes = (
+  attributes?: Record<string, unknown>
+): StaffPhraseContext => ({
+  lastAskedSlot: readStringAttribute(attributes, ["lastAskedSlot"]),
+  activeDtmfMenu: readStringAttribute(attributes, ["activeDtmfMenu"])
+});
+
+const hasExplicitStaffContextCue = (
+  normalizedText: string,
+  context: StaffPhraseContext = {}
+): boolean =>
+  Boolean(
+    context.lastAskedSlot === "staffPreference" ||
+      context.activeDtmfMenu === "staff" ||
+      /\b(?:with|use|i said|technician|staff|tech)\b/.test(normalizedText) ||
+      /\b(?:change|switch)\s+(?:the\s+)?(?:person|staff|technician|tech)\b/.test(normalizedText) ||
+      /\b(?:someone else|different person|different staff|different technician|different tech)\b/.test(
+        normalizedText
+      ) ||
+      /\binstead\b/.test(normalizedText)
+  );
+
+const isScopedDangAliasAllowed = (
+  normalizedText: string,
+  context: StaffPhraseContext = {}
+): boolean =>
+  Boolean(
+    context.lastAskedSlot === "staffPreference" ||
+      context.activeDtmfMenu === "staff" ||
+      /\b(?:with|use|staff|technician|tech)\s+dang\b/.test(normalizedText) ||
+      /\b(?:no\s+)?i\s+want(?:\s+to\s+book)?\s+dang\b/.test(normalizedText) ||
+      /\b(?:change|switch)\s+(?:the\s+)?(?:person|staff|technician|tech)(?:\s+(?:to|into))?\s+dang\b/.test(
+        normalizedText
+      ) ||
+      /\bdang\s+instead\b/.test(normalizedText)
+  );
+
+const shouldSkipStaffAlias = (
+  staffName: string,
+  alias: string,
+  normalizedText: string,
+  context: StaffPhraseContext = {}
+): boolean =>
+  normalizeForMatch(staffName) === "trang" &&
+  normalizeForMatch(alias) === "dang" &&
+  !isScopedDangAliasAllowed(normalizedText, context);
+
+const isUnsupportedServiceRequestPhrase = (value?: string | null): boolean => {
+  const normalized = normalizeForMatch(value);
+  return Boolean(
+    normalized &&
+      /\b(?:haircut|hair cut|facial|polish|gel|gel nails|gel service|gel manicure|jell manicure)\b/.test(
+        normalized
+      )
+  );
+};
+
+type UnsupportedServiceRequest = {
+  heardServiceName: string;
+  displayServiceName: string;
+  category: "gel" | "unsupported";
+};
+
+const detectUnsupportedServiceRequest = (value?: string | null): UnsupportedServiceRequest | null => {
+  const normalized = normalizeForMatch(value);
+  if (!normalized) {
+    return null;
+  }
+  if (/\b(?:gel|gel nails|gel service|gel manicure|jell manicure)\b/.test(normalized)) {
+    return {
+      heardServiceName: "gel",
+      displayServiceName: "Gel Manicure",
+      category: "gel"
+    };
+  }
+  const match = normalized.match(/\b(haircut|hair cut|facial|polish)\b/);
+  if (!match) {
+    return null;
+  }
+  return {
+    heardServiceName: match[1] ?? "service",
+    displayServiceName: toCustomerNameCase(match[1] ?? "service"),
+    category: "unsupported"
+  };
+};
+
+const normalizeScopedStaffCandidatePhrase = (
+  value?: string | null,
+  context: StaffPhraseContext = {}
+): string | undefined => {
   const normalized = normalizeForMatch(value);
   if (!normalized) {
     return undefined;
@@ -979,6 +1092,33 @@ const normalizeScopedStaffCandidatePhrase = (value?: string | null): string | un
   }
   if (Array.from(ANY_STAFF_PHRASES).some((phrase) => textContainsStaffAlias(normalized, phrase))) {
     return "any staff";
+  }
+  const wantMatch = normalized.match(/^(?:no\s+)?i\s+want(?:\s+to\s+book)?\s+(.+)$/);
+  const staffContext = hasExplicitStaffContextCue(normalized, context);
+  const containsKnownStaffAlias = (text: string): boolean => {
+    const normalizedText = normalizeForMatch(text);
+    if (!normalizedText) {
+      return false;
+    }
+    return Object.entries(STAFF_ALIAS_PHRASES).some(([canonical, aliases]) =>
+      [canonical, ...aliases].some(
+        (alias) =>
+          !shouldSkipStaffAlias(canonical, alias, normalizedText, context) &&
+          staffAliasMatchesInText(normalizedText, alias).length > 0
+      )
+    );
+  };
+  const hasKnownStaticStaffAlias =
+    containsKnownStaffAlias(normalized) ||
+    Boolean(wantMatch?.[1] && containsKnownStaffAlias(wantMatch[1]));
+  if (!staffContext && !hasKnownStaticStaffAlias) {
+    return undefined;
+  }
+  if (wantMatch && !staffContext && !containsKnownStaffAlias(wantMatch[1])) {
+    return undefined;
+  }
+  if (isUnsupportedServiceRequestPhrase(normalized)) {
+    return undefined;
   }
 
   let candidate = normalized
@@ -1019,6 +1159,7 @@ const normalizeScopedStaffCandidatePhrase = (value?: string | null): string | un
   }
   if (
     hasStaticServiceAliasInText(candidate) ||
+    isUnsupportedServiceRequestPhrase(candidate) ||
     new RegExp(DATE_PHRASE_PATTERN, "i").test(candidate) ||
     Boolean(extractTimeCandidate(candidate))
   ) {
@@ -1027,23 +1168,27 @@ const normalizeScopedStaffCandidatePhrase = (value?: string | null): string | un
   return candidate;
 };
 
-const hasExplicitStaffPhrase = (value?: string | null): boolean => {
+const hasExplicitStaffPhrase = (
+  value?: string | null,
+  context: StaffPhraseContext = {}
+): boolean => {
   const normalized = normalizeForMatch(value);
   return Boolean(
     normalized &&
-      (normalizeScopedStaffCandidatePhrase(value) ||
-        /\bnot\s+(?!today\b|tomorrow\b|monday\b|tuesday\b|wednesday\b|thursday\b|friday\b|saturday\b|sunday\b|correct\b|right\b|book\b|it\b|that\b|this\b)[a-z][a-z'-]{1,40}\b/.test(normalized))
+      (normalizeScopedStaffCandidatePhrase(value, context) ||
+        /\bnot\s+(?!today\b|tomorrow\b|monday\b|tuesday\b|wednesday\b|thursday\b|friday\b|saturday\b|sunday\b|correct\b|right\b|book\b|it\b|that\b|this\b|my\b|me\b|name\b)[a-z][a-z'-]{1,40}\b/.test(normalized))
   );
 };
 
-const hasStaffCuePhrase = (value?: string | null): boolean => {
+const hasStaffCuePhrase = (
+  value?: string | null,
+  context: StaffPhraseContext = {}
+): boolean => {
   const normalized = normalizeForMatch(value);
   return Boolean(
     normalized &&
-      (/\b(?:with|use|i said|technician|staff|tech)\b/.test(normalized) ||
-        /\b(?:no\s+)?i\s+want(?:\s+to\s+book)?\b/.test(normalized) ||
-        /\binstead\b/.test(normalized) ||
-        /\bnot\s+(?!today\b|tomorrow\b|monday\b|tuesday\b|wednesday\b|thursday\b|friday\b|saturday\b|sunday\b|correct\b|right\b|book\b|it\b|that\b|this\b)[a-z][a-z'-]{1,40}\b/.test(normalized))
+      (hasExplicitStaffContextCue(normalized, context) ||
+        /\bnot\s+(?!today\b|tomorrow\b|monday\b|tuesday\b|wednesday\b|thursday\b|friday\b|saturday\b|sunday\b|correct\b|right\b|book\b|it\b|that\b|this\b|my\b|me\b|name\b)[a-z][a-z'-]{1,40}\b/.test(normalized))
   );
 };
 
@@ -1085,6 +1230,9 @@ const isClearlyInvalidStaffPreference = (value?: string | null): boolean => {
     return true;
   }
   if (hasStaticServiceAliasInText(normalized)) {
+    return true;
+  }
+  if (isUnsupportedServiceRequestPhrase(normalized)) {
     return true;
   }
   if (normalized.split(/\s+/).length > 3) {
@@ -2622,7 +2770,8 @@ const findServiceMentionInText = async (
 
 const findStaffMentionInText = async (
   salonId: string,
-  text?: string
+  text?: string,
+  context: StaffPhraseContext = {}
 ): Promise<string | undefined> => {
   const normalizedText = normalizeForMatch(text);
   if (!normalizedText) {
@@ -2637,16 +2786,18 @@ const findStaffMentionInText = async (
   }
 
   const staff = await getStaffCandidates({ salonId });
-  const scopedCandidate = normalizeScopedStaffCandidatePhrase(text);
+  const scopedCandidate = normalizeScopedStaffCandidatePhrase(text, context);
   const searchText = scopedCandidate && scopedCandidate !== "any staff" ? scopedCandidate : normalizedText;
   const aliasMatches = staff.flatMap((member) => {
     const aliases = new Set(getStaffAliasPhrases(member.fullName).map((alias) => normalizeForMatch(alias)));
     return Array.from(aliases.values()).flatMap((alias) =>
-      staffAliasMatchesInText(searchText, alias).map((index) => ({
-        member,
-        index,
-        negated: isNegatedStaffAlias(searchText, index)
-      }))
+      shouldSkipStaffAlias(member.fullName, alias, searchText, context)
+        ? []
+        : staffAliasMatchesInText(searchText, alias).map((index) => ({
+            member,
+            index,
+            negated: isNegatedStaffAlias(searchText, index)
+          }))
     );
   });
   const positiveMatches = aliasMatches.filter((match) => !match.negated);
@@ -2662,7 +2813,7 @@ const findStaffMentionInText = async (
   }
 
   if (scopedCandidate && scopedCandidate !== "any staff") {
-    const candidateResolution = resolveStaffPreferenceFromCandidates(staff, scopedCandidate);
+    const candidateResolution = resolveStaffPreferenceFromCandidates(staff, scopedCandidate, context);
     if (candidateResolution.status === "matched") {
       return candidateResolution.matchedStaff.fullName;
     }
@@ -2843,11 +2994,12 @@ const getMappedActiveBookableStaffForService = async (input: {
 
 const resolveStaffPreferenceFromCandidates = (
   staff: StaffCandidate[],
-  requestedStaffName?: string
+  requestedStaffName?: string,
+  context: StaffPhraseContext = {}
 ): StaffPreferenceResolution => {
   const allStaff = orderStaffForPrompt(dedupeStaffById(staff));
   const rawStaffPreference = requestedStaffName?.trim();
-  const scopedStaffPreference = normalizeScopedStaffCandidatePhrase(rawStaffPreference);
+  const scopedStaffPreference = normalizeScopedStaffCandidatePhrase(rawStaffPreference, context);
   const requested = normalizeForMatch(scopedStaffPreference ?? rawStaffPreference);
 
   if (!requested) {
@@ -2883,7 +3035,10 @@ const resolveStaffPreferenceFromCandidates = (
       normalizeForMatch(member.fullName.split(/\s+/)[0]),
       ...getStaffAliasPhrases(member.fullName).map((alias) => normalizeForMatch(alias))
     ]);
-    return aliases.has(requested);
+    return Array.from(aliases).some(
+      (alias) =>
+        alias === requested && !shouldSkipStaffAlias(member.fullName, alias, requested, context)
+    );
   });
 
   if (exactMatches.length === 1) {
@@ -2913,6 +3068,7 @@ const resolveStaffPreferenceFromCandidates = (
     ].filter(Boolean);
     return aliases.some(
       (alias) =>
+        !shouldSkipStaffAlias(member.fullName, alias, requested, context) &&
         requested.length >= 3 &&
         (alias.includes(requested) ||
           requested.includes(alias) ||
@@ -2946,7 +3102,7 @@ const resolveStaffPreferenceFromCandidates = (
         normalizeForMatch(member.fullName),
         normalizeForMatch(member.fullName.split(/\s+/)[0]),
         ...getStaffAliasPhrases(member.fullName).map((alias) => normalizeForMatch(alias))
-      ].filter(Boolean);
+      ].filter((alias) => alias && !shouldSkipStaffAlias(member.fullName, alias, requested, context));
       const score = Math.max(...aliases.map((alias) => similarityScore(alias, requested)));
       const editDistanceMatch = aliases.some((alias) =>
         isConservativeStaffFuzzyMatch(alias, requested)
@@ -2989,6 +3145,7 @@ const resolveStaffCandidates = async (input: {
   salonId: string;
   requestedStaffName?: string;
   staffId?: string;
+  attributes?: Record<string, unknown>;
 }): Promise<StaffPreferenceResolution> => {
   const allStaff = await getActiveBookableStaff(input.salonId);
   const matchedById = await getActiveBookableStaffById(input.salonId, input.staffId);
@@ -3001,7 +3158,11 @@ const resolveStaffCandidates = async (input: {
       matchedStaff: matchedById
     };
   }
-  return resolveStaffPreferenceFromCandidates(allStaff, input.requestedStaffName);
+  return resolveStaffPreferenceFromCandidates(
+    allStaff,
+    input.requestedStaffName,
+    staffPhraseContextFromAttributes(input.attributes)
+  );
 };
 
 const getStaffCandidates = async (input: {
@@ -4017,12 +4178,31 @@ const buildStaffDtmfPromptText = (staff: StaffCandidate[]): string => {
   )}, or first available?`;
 };
 
+const buildStaffNumberedDtmfPromptText = (staff: StaffCandidate[]): string => {
+  const { options } = buildStaffDtmfOptionMaps(staff);
+  const optionPhrases = Object.entries(options).map(
+    ([digit, staffName]) =>
+      normalizeForMatch(staffName) === "any staff"
+        ? `press ${digit} for first available`
+        : `press ${digit} for ${staffName}`
+  );
+  return optionPhrases.length
+    ? `${optionPhrases.join(", ")}, or press 0 for an operator.`
+    : buildStaffDtmfPromptText(staff);
+};
+
 const buildStaffPromptSessionAttributes = (staff: StaffCandidate[]): Record<string, string> => {
   const { options, staffIds } = buildStaffDtmfOptionMaps(staff);
+  const staffMenuFingerprint = createHash("sha1")
+    .update(JSON.stringify({ options, staffIds }))
+    .digest("hex")
+    .slice(0, 12);
   return {
     staffDtmfOptions: JSON.stringify(options),
     staffDtmfStaffIds: JSON.stringify(staffIds),
     staffDtmfPromptText: buildStaffDtmfPromptText(staff),
+    staffMenuFingerprint,
+    menuFingerprint: staffMenuFingerprint,
     activeDtmfMenu: "staff",
     activeDtmfOptionsJson: JSON.stringify({
       ...options,
@@ -4098,6 +4278,7 @@ const buildServicePromptSessionAttributes = (services: ServiceMenuCandidate[]): 
     serviceDtmfPromptText: buildServiceDtmfPromptText(services),
     serviceMenuSource: "active_services",
     serviceMenuVersion,
+    menuFingerprint: serviceMenuVersion,
     activeServiceIds: JSON.stringify(activeServiceIds),
     activeServiceNames: JSON.stringify(activeServiceNames),
     activeDtmfMenu: "service",
@@ -4518,9 +4699,16 @@ const buildLexMessage = (input: {
   staffName?: string;
   staffOptions?: StaffCandidate[];
   servicePromptText?: string;
+  staffMenuPromptText?: string;
+  staffMenuAlreadySpoken?: boolean;
+  knownCallerAcknowledgementName?: string;
+  unsupportedServiceRequest?: UnsupportedServiceRequest & {
+    suggestedServiceName?: string;
+  };
   requestedStaffName?: string;
   alternatives?: SuggestedSlot[];
   failureReason?: string;
+  availabilityReasonCode?: string;
   knownFields?: {
     customerName?: string;
     customerPhone?: string;
@@ -4571,6 +4759,9 @@ const buildLexMessage = (input: {
 
   if (input.outcome === "MISSING_INFO") {
     const isRetry = (input.attemptCount ?? 1) > 1;
+    const knownCallerIntro = input.knownCallerAcknowledgementName
+      ? `Welcome back, ${escapeSsml(input.knownCallerAcknowledgementName)}. `
+      : "";
     const intro = input.invalidStaffDtmfSelection
       ? "I didn't find that option. Please choose from the list."
       : input.unmatchedStaffPreference
@@ -4579,16 +4770,20 @@ const buildLexMessage = (input: {
           ? "Sorry, I did not catch that."
           : "Got it.";
     if (input.missingFields?.includes("staffPreference")) {
-      const prompt = buildStaffDtmfPromptText(input.staffOptions ?? []);
+      const prompt =
+        input.staffMenuPromptText ??
+        (input.staffMenuAlreadySpoken
+          ? "Please say a listed staff name or press one of the numbers."
+          : buildStaffDtmfPromptText(input.staffOptions ?? []));
       const serviceIntro = input.knownFields?.serviceName
         ? `Got it, ${escapeSsml(input.knownFields.serviceName)}. `
         : "";
       return speak(
         input.invalidStaffDtmfSelection
-          ? `${intro} <break time="300ms"/> ${prompt}`
+          ? `${knownCallerIntro}${intro} <break time="300ms"/> ${prompt}`
           : input.unmatchedStaffPreference
-            ? `${intro} <break time="300ms"/> ${prompt}`
-            : `${serviceIntro}${prompt}`
+            ? `${knownCallerIntro}${intro} <break time="300ms"/> ${prompt}`
+            : `${knownCallerIntro}${serviceIntro}${prompt}`
       );
     }
     if (input.missingFields?.includes("customerName")) {
@@ -4623,6 +4818,15 @@ const buildLexMessage = (input: {
       );
     }
     if (input.missingFields?.includes("serviceName")) {
+      if (input.unsupportedServiceRequest) {
+        const prompt = input.servicePromptText ?? SERVICE_DTMF_OPTIONS_PROMPT;
+        const suggestion = input.unsupportedServiceRequest.suggestedServiceName;
+        return speak(
+          suggestion
+            ? `${knownCallerIntro}We don't currently have ${escapeSsml(input.unsupportedServiceRequest.displayServiceName)} listed. <break time="300ms"/> Did you mean ${escapeSsml(suggestion)}? You can say yes, no, or choose from the service menu. <break time="300ms"/> ${prompt}`
+            : `${knownCallerIntro}We don't currently have ${escapeSsml(input.unsupportedServiceRequest.displayServiceName)} listed. I can tell you the available services. <break time="300ms"/> ${prompt}`
+        );
+      }
       if (input.partialBookingFragment) {
         return speak(SERVICE_FIRST_RETRY_PROMPT);
       }
@@ -4631,18 +4835,22 @@ const buildLexMessage = (input: {
         ? input.servicePromptText ?? SERVICE_DTMF_OPTIONS_PROMPT
         : SERVICE_FIRST_RETRY_PROMPT;
       return speak(
-        firstName && !isRetry
-          ? `Welcome back, ${escapeSsml(firstName)}. How may I help you today?`
-          : servicePrompt
+        knownCallerIntro && !isRetry
+          ? `${knownCallerIntro}How may I help you today?`
+          : knownCallerIntro
+            ? `${knownCallerIntro}${servicePrompt}`
+          : firstName && !isRetry
+            ? `Welcome back, ${escapeSsml(firstName)}. How may I help you today?`
+            : servicePrompt
       );
     }
     if (input.missingFields?.includes("preferredDateTime")) {
       return input.knownFields?.requestedDate
         ? speak(
-            `${intro} <break time="300ms"/> What time works best?`
+            `${knownCallerIntro}${intro} <break time="300ms"/> What time works best?`
           )
         : speak(
-            `${intro} <break time="300ms"/> What day would you like?`
+            `${knownCallerIntro}${intro} <break time="300ms"/> What day would you like?`
           );
     }
     return speak(
@@ -4662,16 +4870,26 @@ const buildLexMessage = (input: {
     const dedupedAlternatives = dedupeSuggestedSlots(alternatives).slice(0, 2);
     if (input.requestedStaffName && input.appointmentStartTime) {
       const requestedTime = formatLocalTimeForSpeech(input.appointmentStartTime, timezone);
+      const requestedStaffUnavailableText =
+        input.availabilityReasonCode === "APPOINTMENT_OVERLAP"
+          ? `${escapeSsml(input.requestedStaffName)} already has an appointment at ${escapeSsml(requestedTime)}.`
+          : input.availabilityReasonCode === "STAFF_NOT_MAPPED"
+            ? `${escapeSsml(input.requestedStaffName)} doesn't provide ${escapeSsml(input.serviceName ?? "that service")}.`
+            : input.availabilityReasonCode === "OUTSIDE_BUSINESS_HOURS"
+              ? `That time is outside business hours.`
+              : input.availabilityReasonCode === "SALON_CLOSED"
+                ? `The salon is closed then.`
+                : `${escapeSsml(input.requestedStaffName)} is not available at ${escapeSsml(requestedTime)}.`;
       if (dedupedAlternatives.length === 1) {
         const [alternative] = dedupedAlternatives;
         const alternativeTime = formatLocalTimeForSpeech(alternative.startTime, timezone);
         return speak(
-          `${escapeSsml(input.requestedStaffName)} is not available at ${escapeSsml(requestedTime)}. <break time="300ms"/> ${escapeSsml(alternative.staffName)} is available at ${escapeSsml(alternativeTime)}. Would you like ${escapeSsml(alternativeTime)} with ${escapeSsml(alternative.staffName)}?`
+          `${requestedStaffUnavailableText} <break time="300ms"/> ${escapeSsml(alternative.staffName)} is available at ${escapeSsml(alternativeTime)}. Would you like ${escapeSsml(alternativeTime)} with ${escapeSsml(alternative.staffName)}?`
         );
       }
       const formattedChoices = formatAlternativeChoicePrompt(dedupedAlternatives, timezone);
       return speak(
-        `${escapeSsml(input.requestedStaffName)} is not available at ${escapeSsml(requestedTime)}. <break time="300ms"/> ${escapeSsml(formattedChoices)}`
+        `${requestedStaffUnavailableText} <break time="300ms"/> ${escapeSsml(formattedChoices)}`
       );
     }
     if (dedupedAlternatives.length === 1) {
@@ -5242,6 +5460,31 @@ export const createAmazonConnectAIAppointment = async (
   const actorUserId = await resolveActionActorUserId(salon.id);
   const activeServiceMenuServices = await getActiveServiceMenuServices(salon.id);
   const servicePromptSessionAttributes = buildServicePromptSessionAttributes(activeServiceMenuServices);
+  const rawUnsupportedServiceRequest = detectUnsupportedServiceRequest(
+    normalized.currentTurnTranscript ?? normalized.transcriptText
+  );
+  const activeExactUnsupportedService = rawUnsupportedServiceRequest
+    ? activeServiceMenuServices.find(
+        (service) =>
+          normalizeForMatch(service.name) === normalizeForMatch(rawUnsupportedServiceRequest.displayServiceName)
+      )
+    : undefined;
+  const unsupportedServiceRequest = activeExactUnsupportedService
+    ? null
+    : rawUnsupportedServiceRequest;
+  const unsupportedServiceSuggestionName =
+    unsupportedServiceRequest?.category === "gel"
+      ? (() => {
+          const gelAlternatives = activeServiceMenuServices.filter((service) => {
+            const normalizedName = normalizeForMatch(service.name);
+            return normalizedName.includes("gel") && normalizedName !== "gel manicure";
+          });
+          return gelAlternatives.length === 1 ? gelAlternatives[0]!.name : undefined;
+        })()
+      : undefined;
+  if (activeExactUnsupportedService && !normalized.serviceName) {
+    normalized.serviceName = activeExactUnsupportedService.name;
+  }
   const callSession = await upsertAmazonConnectCallSession({
     salonId: salon.id,
     contactId: normalized.contactId,
@@ -5318,10 +5561,17 @@ export const createAmazonConnectAIAppointment = async (
     normalized.currentTurnTranscript,
     normalized.transcriptText
   );
+  if (unsupportedServiceRequest) {
+    normalized.serviceName = undefined;
+  }
 
-  const explicitCustomerName = normalized.transcriptText
-    ? extractCustomerNameFromText(normalized.transcriptText)
-    : undefined;
+  const nameCorrectionText = normalized.currentTurnTranscript ?? normalized.transcriptText;
+  const explicitCustomerNameCorrection = extractExplicitCustomerNameCorrection(nameCorrectionText);
+  const rejectedRecognizedCustomerName = rejectsRecognizedCustomerName(nameCorrectionText);
+  const explicitCustomerName = explicitCustomerNameCorrection ??
+    (normalized.transcriptText
+      ? extractCustomerNameFromText(normalized.transcriptText)
+      : undefined);
   const bareCustomerName =
     !explicitCustomerName && readStringAttribute(normalized.attributes, ["lastAskedSlot"]) === "customerName"
       ? extractBareCustomerNameAnswer(normalized.transcriptText)
@@ -5357,10 +5607,11 @@ export const createAmazonConnectAIAppointment = async (
     ? getReusableCustomerDisplayName(recognizedCustomer)
     : undefined;
   if (recognizedCustomer) {
-    normalized.customerName =
-      currentTurnAcceptedCustomerName ||
-      recognizedCustomerReusableName ||
-      trustedCustomerNameBeforeLookup;
+    normalized.customerName = rejectedRecognizedCustomerName && !currentTurnAcceptedCustomerName
+      ? undefined
+      : currentTurnAcceptedCustomerName ||
+        recognizedCustomerReusableName ||
+        trustedCustomerNameBeforeLookup;
     if (normalized.customerName && !isAcceptableCustomerName(normalized.customerName)) {
       normalized.customerName = undefined;
     }
@@ -5368,6 +5619,9 @@ export const createAmazonConnectAIAppointment = async (
     if (currentTurnAcceptedCustomerName && normalized.customerName) {
       customerNameSourceOverride = "current_turn_explicit";
       customerNameNeedsReview = false;
+    } else if (rejectedRecognizedCustomerName) {
+      customerNameSourceOverride = "current_turn_rejected_profile";
+      customerNameNeedsReview = true;
     } else if (recognizedCustomerReusableName) {
       customerNameSourceOverride = undefined;
       customerNameNeedsReview = false;
@@ -5420,6 +5674,17 @@ export const createAmazonConnectAIAppointment = async (
     : knownCallerMemory
       ? knownCallerMemory.source ?? "caller_memory"
       : customerNameSourceOverride ?? "current_request";
+  const recognizedCustomerNameForSession =
+    rejectedRecognizedCustomerName && !currentTurnAcceptedCustomerName
+      ? undefined
+      : recognizedCustomerReusableName;
+  const knownCallerAlreadyAcknowledged =
+    readStringAttribute(normalized.attributes, ["knownCallerAcknowledged"]) === "true";
+  const shouldAcknowledgeKnownCaller =
+    Boolean(recognizedCustomerNameForSession) &&
+    !knownCallerAlreadyAcknowledged &&
+    !currentTurnAcceptedCustomerName &&
+    !rejectedRecognizedCustomerName;
 
   const transcript =
     callSession && normalized.transcriptText
@@ -5457,7 +5722,7 @@ export const createAmazonConnectAIAppointment = async (
     normalized.requestedTime = currentTurnExplicitTime;
   }
 
-  if (!normalized.serviceName && normalized.transcriptText) {
+  if (!unsupportedServiceRequest && !normalized.serviceName && normalized.transcriptText) {
     const serviceMention = await findServiceMentionInText(salon.id, normalized.transcriptText);
     if (serviceMention) {
       normalized.serviceName = getCustomerFacingServiceName(serviceMention.service.name);
@@ -5479,8 +5744,9 @@ export const createAmazonConnectAIAppointment = async (
   const finalConfirmationText = normalized.currentTurnTranscript ?? normalized.transcriptText;
   const finalConfirmationOnlyPhrase =
     awaitingFinalBookingConfirmation && isFinalConfirmationOnlyPhrase(finalConfirmationText);
+  const staffPhraseContext = staffPhraseContextFromAttributes(normalized.attributes);
   const currentTurnStaffMention = normalized.currentTurnTranscript && !customerNameTurnOwnsTranscript && !finalConfirmationOnlyPhrase
-    ? await findStaffMentionInText(salon.id, normalized.currentTurnTranscript)
+    ? await findStaffMentionInText(salon.id, normalized.currentTurnTranscript, staffPhraseContext)
     : undefined;
   const currentTurnAllowsUnmatchedStaff =
     Boolean(normalized.currentTurnTranscript) &&
@@ -5488,13 +5754,12 @@ export const createAmazonConnectAIAppointment = async (
     !finalConfirmationOnlyPhrase &&
     (readStringAttribute(normalized.attributes, ["lastAskedSlot"]) === "staffPreference" ||
       readStringAttribute(normalized.attributes, ["activeDtmfMenu"]) === "staff" ||
-      awaitingFinalBookingConfirmation ||
-      hasStaffCuePhrase(normalized.currentTurnTranscript));
+      hasStaffCuePhrase(normalized.currentTurnTranscript, staffPhraseContext));
   const currentTurnStaffCandidate = currentTurnAllowsUnmatchedStaff
-    ? normalizeScopedStaffCandidatePhrase(normalized.currentTurnTranscript)
+    ? normalizeScopedStaffCandidatePhrase(normalized.currentTurnTranscript, staffPhraseContext)
     : undefined;
   const currentTurnHasExplicitStaffPhrase = currentTurnAllowsUnmatchedStaff
-    ? hasExplicitStaffPhrase(normalized.currentTurnTranscript)
+    ? hasExplicitStaffPhrase(normalized.currentTurnTranscript, staffPhraseContext)
     : false;
   if (currentTurnStaffMention) {
     const previousStaffPreference = normalized.staffPreference;
@@ -5512,7 +5777,11 @@ export const createAmazonConnectAIAppointment = async (
         : undefined;
     normalized.staffId = undefined;
   } else if (!normalized.staffPreference && normalized.transcriptText) {
-    normalized.staffPreference = await findStaffMentionInText(salon.id, normalized.transcriptText);
+    normalized.staffPreference = await findStaffMentionInText(
+      salon.id,
+      normalized.transcriptText,
+      staffPhraseContext
+    );
   }
 
   let finalConfirmationRequiresStaffSelection = false;
@@ -5537,7 +5806,7 @@ export const createAmazonConnectAIAppointment = async (
       /\b(?:someone else|different person|different staff|different technician|different tech)\b/.test(
         normalizeForMatch(finalConfirmationText)
       ) ||
-      (!clearedDate && /\bnot\s+(?!correct\b|right\b|book\b|it\b|that\b)[a-z][a-z\s'-]{1,40}\b/.test(
+      (!clearedDate && /\bnot\s+(?!correct\b|right\b|book\b|it\b|that\b|my\b|me\b|name\b)[a-z][a-z\s'-]{1,40}\b/.test(
         normalizeForMatch(finalConfirmationText)
       )) ||
       /\bwith\s+[a-z][a-z\s'-]{1,40}\s+instead\b/.test(normalizeForMatch(finalConfirmationText));
@@ -5563,7 +5832,7 @@ export const createAmazonConnectAIAppointment = async (
         );
       const changedStaff = genericStaffChangeWithoutName
         ? undefined
-        : currentTurnStaffMention ?? await findStaffMentionInText(salon.id, finalConfirmationText);
+        : currentTurnStaffMention ?? await findStaffMentionInText(salon.id, finalConfirmationText, staffPhraseContext);
       if (changedStaff) {
         normalized.staffPreference = changedStaff;
         normalized.staffId = undefined;
@@ -5648,7 +5917,8 @@ export const createAmazonConnectAIAppointment = async (
   let staffResolution = await resolveStaffCandidates({
     salonId: salon.id,
     requestedStaffName: normalized.staffPreference,
-    staffId: normalized.staffId
+    staffId: normalized.staffId,
+    attributes: normalized.attributes
   });
   if (staffResolution.status === "matched") {
     normalized.staffPreference = staffResolution.matchedStaff.fullName;
@@ -5909,6 +6179,27 @@ export const createAmazonConnectAIAppointment = async (
         responsePayloadBase.confirmationOutcome ??
         responsePayloadBase.errorCode ??
         inputForInteraction.outcome,
+      recognizedCustomerSource: customerProfileSource,
+      knownCallerAcknowledged:
+        inferredResponseSessionAttributes.knownCallerAcknowledged ?? knownCallerAlreadyAcknowledged,
+      currentTurnSemanticType:
+        responsePayloadBase.currentTurnSemanticType ??
+        (responsePayloadBase.serviceClarificationReason ? "SERVICE_REQUEST" : undefined) ??
+        (responsePayloadBase.confirmationOutcome ? "CONFIRMATION" : undefined),
+      staffRecognitionSource:
+        responsePayloadBase.staffRecognitionSource ??
+        (normalized.staffId ? "matched_staff" : undefined),
+      staffRecognitionAlias: responsePayloadBase.staffRecognitionAlias,
+      availabilityReasonCode: responsePayloadBase.availabilityReasonCode,
+      serviceClarificationReason: responsePayloadBase.serviceClarificationReason,
+      menuFingerprint:
+        inferredResponseSessionAttributes.menuFingerprint ??
+        inferredResponseSessionAttributes.serviceMenuVersion ??
+        inferredResponseSessionAttributes.staffMenuFingerprint,
+      menuWasSpoken:
+        responsePayloadBase.menuWasSpoken ??
+        inferredResponseSessionAttributes.menuWasSpoken ??
+        inferredResponseSessionAttributes.staffMenuWasSpoken,
       currentTurnEntities: pickNormalizedAppointmentDebug(normalized),
       groundedChanges:
         responsePayloadBase.groundedChanges ??
@@ -6021,10 +6312,14 @@ export const createAmazonConnectAIAppointment = async (
         spokenCustomerName,
         persistedCustomerFirstName: recognizedCustomer?.firstName,
         persistedCustomerLastName: recognizedCustomer?.lastName,
-        recognizedCustomerName: recognizedCustomerReusableName ?? knownCallerMemory?.customerName,
-        customerNameSource: recognizedCustomerReusableName
-          ? "customer"
-          : customerNameSourceOverride ?? knownCallerMemory?.source,
+        recognizedCustomerName: recognizedCustomerNameForSession ?? knownCallerMemory?.customerName,
+        knownCallerAcknowledged:
+          recognizedCustomerNameForSession && (knownCallerAlreadyAcknowledged || shouldAcknowledgeKnownCaller)
+            ? "true"
+            : undefined,
+        customerNameSource:
+          customerNameSourceOverride ??
+          (recognizedCustomerNameForSession ? "customer" : knownCallerMemory?.source),
         customerProfileSource,
 	        customerNameNeedsReview: customerNameNeedsReview ? "true" : undefined,
 	        customerName: normalized.customerName,
@@ -6374,7 +6669,8 @@ export const createAmazonConnectAIAppointment = async (
       const nextStaffResolution = await resolveStaffCandidates({
         salonId: salon.id,
         requestedStaffName: requestedRescheduleStaffName,
-        staffId: storedRescheduleStaffId
+        staffId: storedRescheduleStaffId,
+        attributes: normalized.attributes
       });
       if (nextStaffResolution.status !== "matched") {
         const staffOptions = await getMappedActiveBookableStaffForService({
@@ -6912,6 +7208,30 @@ export const createAmazonConnectAIAppointment = async (
         : shouldPromptStaff
           ? await getStaffCandidates({ salonId: salon.id })
           : [];
+    const existingStaffMenuWasSpoken =
+      readStringAttribute(normalized.attributes, ["staffMenuWasSpoken"]) === "true";
+    const wasStaffSelectionTurn =
+      readStringAttribute(normalized.attributes, ["lastAskedSlot"]) === "staffPreference" ||
+      readStringAttribute(normalized.attributes, ["activeDtmfMenu"]) === "staff";
+    const currentStaffTurnText = (
+      normalized.currentTurnTranscript ??
+      normalized.transcriptText ??
+      ""
+    ).trim();
+    const hasFailedStaffRecognitionThisTurn =
+      shouldPromptStaff &&
+      Boolean(currentStaffTurnText) &&
+      (staffResolution.status === "unmatched_specific" ||
+        staffResolution.status === "invalid_noise" ||
+        Boolean(normalized.invalidStaffDtmfSelection) ||
+        (wasStaffSelectionTurn && staffResolution.status === "missing"));
+    const staffRecognitionFailureCount = hasFailedStaffRecognitionThisTurn
+      ? parseAttemptCount(readStringAttribute(normalized.attributes, ["staffRecognitionFailureCount"])) + 1
+      : parseAttemptCount(readStringAttribute(normalized.attributes, ["staffRecognitionFailureCount"]));
+    const shouldSpeakNumberedStaffMenu =
+      shouldPromptStaff &&
+      staffRecognitionFailureCount >= 2 &&
+      !existingStaffMenuWasSpoken;
 
     const message = buildLexMessage({
       outcome: "MISSING_INFO",
@@ -6921,6 +7241,19 @@ export const createAmazonConnectAIAppointment = async (
       salonTimezone: salon.timezone,
       attemptCount: elicitDecision.attemptCount,
       servicePromptText: servicePromptSessionAttributes.serviceDtmfPromptText,
+      staffMenuPromptText: shouldSpeakNumberedStaffMenu
+        ? buildStaffNumberedDtmfPromptText(staffPromptOptions)
+        : undefined,
+      staffMenuAlreadySpoken: existingStaffMenuWasSpoken,
+      knownCallerAcknowledgementName: shouldAcknowledgeKnownCaller
+        ? recognizedCustomerNameForSession
+        : undefined,
+      unsupportedServiceRequest: unsupportedServiceRequest
+        ? {
+            ...unsupportedServiceRequest,
+            suggestedServiceName: unsupportedServiceSuggestionName
+          }
+        : undefined,
       invalidStaffDtmfSelection: normalized.invalidStaffDtmfSelection,
       unmatchedStaffPreference: staffResolution.status === "unmatched_specific",
       partialBookingFragment: isPartialBookingFragment(
@@ -6936,7 +7269,13 @@ export const createAmazonConnectAIAppointment = async (
         )
     });
     const staffPromptAttributes = shouldPromptStaff
-      ? buildStaffPromptSessionAttributes(staffPromptOptions)
+      ? {
+          ...buildStaffPromptSessionAttributes(staffPromptOptions),
+          staffRecognitionFailureCount:
+            staffRecognitionFailureCount > 0 ? String(staffRecognitionFailureCount) : undefined,
+          staffMenuWasSpoken: shouldSpeakNumberedStaffMenu || existingStaffMenuWasSpoken ? "true" : undefined,
+          menuWasSpoken: shouldSpeakNumberedStaffMenu ? "true" : undefined
+        }
       : {};
     const unresolvedStaffAttributes = shouldPromptStaff
       ? {
@@ -6945,6 +7284,14 @@ export const createAmazonConnectAIAppointment = async (
           selectedStaffId: undefined,
           confirmedStaffId: undefined,
           confirmedStaffName: undefined
+        }
+      : {};
+    const unsupportedServiceAttributes = unsupportedServiceRequest
+      ? {
+          serviceClarificationReason: "unsupported_service",
+          serviceClarificationHeard: unsupportedServiceRequest.heardServiceName,
+          serviceSuggestionName: unsupportedServiceSuggestionName,
+          menuWasSpoken: "true"
         }
       : {};
     const parsed = buildInternalParsedIntent({
@@ -6961,10 +7308,14 @@ export const createAmazonConnectAIAppointment = async (
       status: BookingAttemptStatus.NEEDS_INPUT,
       failureReason: `Missing fields: ${Array.from(missingFields.values()).join(", ")}`,
       normalizedRequest: {
-        requestedDateTimeText
+        requestedDateTimeText,
+        serviceClarificationReason: unsupportedServiceRequest ? "unsupported_service" : undefined,
+        unsupportedServiceRequest,
+        suggestedServiceName: unsupportedServiceSuggestionName
       }
     });
     const lexSessionAttributes = buildKnownSessionAttributes({
+      ...unsupportedServiceAttributes,
       ...unresolvedStaffAttributes,
       ...elicitDecision.sessionAttributes,
       ...staffPromptAttributes
@@ -6978,6 +7329,9 @@ export const createAmazonConnectAIAppointment = async (
         missingFields: Array.from(missingFields.values()),
         promptMissingFields: elicitDecision.promptMissingFields,
         slotToElicit: elicitDecision.slotToElicit,
+        serviceClarificationReason: unsupportedServiceRequest ? "unsupported_service" : undefined,
+        unsupportedServiceRequest,
+        suggestedServiceName: unsupportedServiceSuggestionName,
         sessionAttributes: lexSessionAttributes
       },
       isValid: true
@@ -7209,7 +7563,8 @@ export const createAmazonConnectAIAppointment = async (
       : await resolveStaffCandidates({
           salonId: salon.id,
           requestedStaffName: normalized.staffPreference,
-          staffId: normalized.staffId
+          staffId: normalized.staffId,
+          attributes: normalized.attributes
         });
 
   if (staffResolution.status === "ambiguous") {
@@ -7342,6 +7697,7 @@ export const createAmazonConnectAIAppointment = async (
         serviceName: callerServiceName,
         invalidStaffId,
         invalidStaffName,
+        availabilityReasonCode: "STAFF_NOT_MAPPED",
         mappedStaffIds: mappedStaffCandidates.map((staff) => staff.id),
         startTimeIso: requestedStartTime.toISOString(),
         timezone: salon.timezone
@@ -7354,6 +7710,7 @@ export const createAmazonConnectAIAppointment = async (
       bookingAttemptId: bookingAttempt.id,
       responsePayload: {
         errorCode: "STAFF_NOT_MAPPED",
+        availabilityReasonCode: "STAFF_NOT_MAPPED",
         invalidStaffId,
         invalidStaffName,
         serviceId: service.id,
@@ -7406,6 +7763,8 @@ export const createAmazonConnectAIAppointment = async (
     durationMinutes: service.durationMinutes
   });
   if (!businessHoursDecision.allowed) {
+    const availabilityReasonCode =
+      businessHoursDecision.reason === "closed" ? "SALON_CLOSED" : "OUTSIDE_BUSINESS_HOURS";
     const message = businessHoursDecision.message ?? speak(
       "That time is outside our business hours. <break time=\"300ms\"/> What other time works for you?"
     );
@@ -7445,6 +7804,7 @@ export const createAmazonConnectAIAppointment = async (
         staffPreference: normalized.staffPreference,
         startTimeIso: requestedStartTime.toISOString(),
         timezone: salon.timezone,
+        availabilityReasonCode,
         businessHoursDecision: businessHoursDecision.debug
       },
       alternativeSlots: []
@@ -7456,6 +7816,7 @@ export const createAmazonConnectAIAppointment = async (
       bookingAttemptId: bookingAttempt.id,
       responsePayload: {
         alternatives: [],
+        availabilityReasonCode,
         businessHoursDecision: businessHoursDecision.debug,
         sessionAttributes: lexSessionAttributes
       },
@@ -7643,6 +8004,12 @@ export const createAmazonConnectAIAppointment = async (
 
   let chosenStaff: { id: string; fullName: string } | null = null;
   const rejectedReasons: string[] = [];
+  const rejectedReasonDetails: Array<{
+    staffId: string;
+    staffName: string;
+    reason?: string;
+    reasonCode?: string;
+  }> = [];
   for (const staff of preferredStaffCandidates) {
     try {
       const slotValidation = await validateAppointmentSlot({
@@ -7656,9 +8023,21 @@ export const createAmazonConnectAIAppointment = async (
         break;
       }
       rejectedReasons.push(slotValidation.reason ?? `Staff ${staff.fullName} is unavailable.`);
+      rejectedReasonDetails.push({
+        staffId: staff.id,
+        staffName: staff.fullName,
+        reason: slotValidation.reason,
+        reasonCode: slotValidation.reasonCode
+      });
     } catch (error) {
       if (error instanceof AppError && error.statusCode < 500) {
         rejectedReasons.push(error.message);
+        rejectedReasonDetails.push({
+          staffId: staff.id,
+          staffName: staff.fullName,
+          reason: error.message,
+          reasonCode: error.code
+        });
         continue;
       }
       throw error;
@@ -7709,12 +8088,18 @@ export const createAmazonConnectAIAppointment = async (
       : normalized.staffPreference
       ? preferredStaffCandidates[0]?.fullName ?? normalized.staffPreference
       : undefined;
+    const primaryRejectedReason = requestedSpecificStaff
+      ? rejectedReasonDetails.find((reason) => reason.staffId === preferredStaffCandidates[0]?.id) ??
+        rejectedReasonDetails[0]
+      : rejectedReasonDetails[0];
     const message = buildLexMessage({
       outcome: "NO_AVAILABILITY",
       alternatives,
       salonTimezone: salon.timezone,
       appointmentStartTime: requestedStartTime,
-      requestedStaffName: requestedStaffDisplayName
+      serviceName: normalized.serviceName,
+      requestedStaffName: requestedStaffDisplayName,
+      availabilityReasonCode: primaryRejectedReason?.reasonCode
     });
     const parsed = buildInternalParsedIntent({
       intentType: "BOOK_APPOINTMENT",
@@ -7737,6 +8122,8 @@ export const createAmazonConnectAIAppointment = async (
         serviceId: service.id,
         serviceName: normalized.serviceName,
         staffPreference: normalized.staffPreference,
+        availabilityReasonCode: primaryRejectedReason?.reasonCode,
+        availabilityRejectedReasons: rejectedReasonDetails,
         alternativeOfferId: createHash("sha256")
           .update(`${salon.id}|${service.id}|${requestedStartTime.toISOString()}|${normalized.staffPreference ?? "ANY"}`)
           .digest("hex")
@@ -7756,6 +8143,8 @@ export const createAmazonConnectAIAppointment = async (
       bookingAttemptId: bookingAttempt.id,
       responsePayload: {
         alternatives,
+        availabilityReasonCode: primaryRejectedReason?.reasonCode,
+        availabilityRejectedReasons: rejectedReasonDetails,
         alternativeOfferId,
         anchorRequestedDate: normalized.requestedDate,
         anchorRequestedTime: normalized.requestedTime,

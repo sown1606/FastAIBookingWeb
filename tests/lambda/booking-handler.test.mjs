@@ -1722,6 +1722,147 @@ test("DialogCodeHook known caller lookup avoids asking name", async () => {
   assert.equal(response.sessionState.sessionAttributes.transferToQueue, "false");
 });
 
+test("DialogCodeHook preserves backend known-caller acknowledgement while eliciting next slot", async () => {
+  const handler = await loadHandler();
+  installFetchMock(() =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "MISSING_INFO",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "InProgress",
+          message: '<speak>Welcome back, Lee. Got it. <break time="300ms"/> What time works best?</speak>',
+          messageContentType: "SSML",
+          dialogAction: {
+            type: "ElicitSlot",
+            slotToElicit: "requestedTime"
+          },
+          sessionAttributes: {
+            customerName: "Lee",
+            recognizedCustomerName: "Lee",
+            knownCallerAcknowledged: "true",
+            customerNameSource: "customer",
+            customerPhone: "+84798171999",
+            serviceName: "Pedicure",
+            confirmedServiceName: "Pedicure",
+            requestedDate: usEasternDate(1),
+            forceHumanEscalation: "false",
+            transferToQueue: "false"
+          }
+        },
+        missingFields: ["preferredDateTime"]
+      })
+    )
+  );
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "I want pedicure tomorrow",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+84798171999",
+          AmazonConnectContactId: "connect-known-caller-welcome"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          slots: {
+            serviceName: slot("Pedicure"),
+            requestedDate: slot("tomorrow")
+          }
+        }
+      }
+    })
+  );
+
+  assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "requestedTime");
+  assert.match(response.messages[0].content, /Welcome back, Lee/i);
+  assert.equal(response.sessionState.sessionAttributes.knownCallerAcknowledged, "true");
+  assert.equal(response.sessionState.sessionAttributes.customerName, "Lee");
+  assert.notEqual(response.sessionState.dialogAction.slotToElicit, "customerName");
+});
+
+test("Fulfillment preserves dynamic service DTMF options from backend", async () => {
+  const handler = await loadHandler();
+  installFetchMock(() =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "MISSING_INFO",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "InProgress",
+          message:
+            "We don't currently have Gel Manicure listed. Press 1 for Full Set, press 2 for Builder Gel Fill Update, or 0 for a person.",
+          messageContentType: "PlainText",
+          dialogAction: {
+            type: "ElicitSlot",
+            slotToElicit: "serviceName"
+          },
+          sessionAttributes: {
+            activeDtmfMenu: "service",
+            activeDtmfOptionsJson: JSON.stringify({
+              "1": "Full Set",
+              "2": "Builder Gel Fill Update",
+              "0": "__operator__"
+            }),
+            serviceDtmfOptions: JSON.stringify({
+              "1": "Full Set",
+              "2": "Builder Gel Fill Update"
+            }),
+            serviceDtmfServiceIds: JSON.stringify({
+              "1": "service-full-set",
+              "2": "service-builder-gel"
+            }),
+            serviceClarificationReason: "unsupported_service"
+          }
+        },
+        missingFields: ["serviceName"]
+      })
+    )
+  );
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "FulfillmentCodeHook",
+      inputTranscript: "I want gel",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+84798171999",
+          AmazonConnectContactId: "connect-gel-service-menu",
+          customerName: "Lee",
+          recognizedCustomerName: "Lee",
+          customerNameSource: "phone_lookup",
+          customerPhone: "+84798171999"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          confirmationState: "Confirmed",
+          slots: {
+            serviceName: slot("gel")
+          }
+        }
+      }
+    })
+  );
+
+  const activeOptions = JSON.parse(response.sessionState.sessionAttributes.activeDtmfOptionsJson);
+  assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName");
+  assert.equal(response.sessionState.sessionAttributes.activeDtmfMenu, "service");
+  assert.equal(activeOptions["1"], "Full Set");
+  assert.equal(activeOptions["2"], "Builder Gel Fill Update");
+  assert.equal(activeOptions["0"], "__operator__");
+  assert.equal(response.sessionState.sessionAttributes.staffPreference, undefined);
+  assert.equal(response.sessionState.sessionAttributes.staffId, undefined);
+});
+
 test("Fulfillment backend missing service does not ask service after Full Set confirmed", async () => {
   const handler = await loadHandler();
   installFetchMock(() =>
@@ -3461,6 +3602,80 @@ test("DialogCodeHook canonicalizes with emmy to Amy while staffPreference is bei
   assert.equal(response.sessionState.sessionAttributes.discardedStaleStaff, "with emmy");
 });
 
+test("DialogCodeHook maps scoped dang to Trang only in staff context", async () => {
+  const handler = await loadHandler();
+  globalThis.fetch = async () => {
+    throw new Error("fetch should not be called for local staff alias recovery");
+  };
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "dang",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+84978634886",
+          AmazonConnectContactId: "connect-dang-trang",
+          customerName: "Jane",
+          customerPhone: "+84978634886",
+          serviceName: "Full Set",
+          confirmedServiceName: "Full Set",
+          requestedDate: usEasternDate(1),
+          requestedTime: "1 PM",
+          lastAskedSlot: "staffPreference",
+          activeDtmfMenu: "staff",
+          ...dynamicStaffAttributes()
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          confirmationState: "None",
+          slots: {
+            serviceName: slot("Full Set"),
+            requestedDate: slot("tomorrow"),
+            requestedTime: slot("1 PM"),
+            staffPreference: slot("dang"),
+            customerName: slot("Jane"),
+            customerPhone: slot("+84978634886")
+          }
+        }
+      }
+    })
+  );
+
+  assert.equal(response.sessionState.dialogAction.type, "Delegate");
+  assert.equal(response.sessionState.intent.slots.staffPreference.value.interpretedValue, "Trang");
+  assert.equal(response.sessionState.sessionAttributes.staffPreference, "Trang");
+  assert.equal(response.sessionState.sessionAttributes.confirmedStaffName, "Trang");
+  assert.equal(response.sessionState.sessionAttributes.staffId, undefined);
+  assert.notEqual(response.sessionState.sessionAttributes.staffPreference, "dang");
+
+  const outsideStaffContext = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "dang",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+84978634886",
+          AmazonConnectContactId: "connect-dang-not-scoped"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          confirmationState: "None",
+          slots: {}
+        }
+      }
+    })
+  );
+
+  assert.notEqual(outsideStaffContext.sessionState.sessionAttributes.staffPreference, "Trang");
+});
+
 test("DialogCodeHook final confirmation correction no i want emmy not chang replaces stale Trang", async () => {
   const handler = await loadHandler();
   const fetchCalls = installFetchMock((_url, _options, body) =>
@@ -3686,6 +3901,43 @@ test("DialogCodeHook maps p t q to Pedicure in booking context and not staff", a
   assert.equal(response.sessionState.sessionAttributes.staffPreference, undefined);
   assert.equal(response.sessionState.intent.slots.serviceName.value.interpretedValue, "Pedicure");
   assert.equal(response.sessionState.intent.slots.staffPreference, undefined);
+});
+
+test("DialogCodeHook unsupported service words do not become staff", async () => {
+  const handler = await loadHandler();
+  globalThis.fetch = async () => {
+    throw new Error("fetch should not be called before required slots are complete");
+  };
+
+  for (const phrase of ["I want haircut", "I want gel", "I want gel nails", "I want a facial"]) {
+    const response = await handler(
+      baseEvent({
+        invocationSource: "DialogCodeHook",
+        inputTranscript: phrase,
+        sessionState: {
+          ...baseEvent().sessionState,
+          sessionAttributes: {
+            salonId: "salon-explicit",
+            CalledNumber: "+18483487681",
+            CustomerEndpointAddress: "+84798171999",
+            AmazonConnectContactId: `connect-unsupported-${phrase.replace(/\W+/g, "-")}`
+          },
+          intent: {
+            ...baseEvent().sessionState.intent,
+            confirmationState: "None",
+            slots: {}
+          }
+        }
+      })
+    );
+
+    assert.equal(response.sessionState.dialogAction.type, "ElicitSlot", phrase);
+    assert.notEqual(response.sessionState.sessionAttributes.staffPreference, "haircut", phrase);
+    assert.notEqual(response.sessionState.sessionAttributes.staffPreference, "gel", phrase);
+    assert.equal(response.sessionState.sessionAttributes.staffId, undefined, phrase);
+    assert.equal(response.sessionState.sessionAttributes.selectedStaffId, undefined, phrase);
+    assert.equal(response.sessionState.sessionAttributes.confirmedStaffId, undefined, phrase);
+  }
 });
 
 test("DialogCodeHook customer name turn preserves accepted Pedicure service", async () => {

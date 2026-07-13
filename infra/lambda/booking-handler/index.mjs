@@ -205,7 +205,7 @@ const CUSTOMER_NAME_NOISE = new Set([
   "timed out"
 ]);
 const STAFF_ALIAS_GROUPS = {
-  Trang: ["trang", "chang", "train", "trangg"],
+  Trang: ["trang", "chang", "train", "trangg", "dang"],
   Amy: ["amy", "amie", "emmy", "emmie", "a me"],
   Kelly: ["kelly", "kelley", "keli", "ke li"]
 };
@@ -633,7 +633,107 @@ function isNegatedStaffAlias(normalizedText, matchIndex) {
   return /\bnot(?:\s+(?:the|that|this|one|staff|technician|tech))?$/.test(before);
 }
 
-function normalizeScopedStaffCandidatePhrase(text) {
+function hasExplicitStaffContextCue(normalizedText, sessionAttributes = {}) {
+  return Boolean(
+    sessionAttributes?.lastAskedSlot === "staffPreference" ||
+      sessionAttributes?.activeDtmfMenu === "staff" ||
+      /\b(?:with|use|i said|technician|staff|tech)\b/.test(normalizedText) ||
+      /\b(?:change|switch)\s+(?:the\s+)?(?:person|staff|technician|tech)\b/.test(normalizedText) ||
+      /\b(?:someone else|different person|different staff|different technician|different tech)\b/.test(
+        normalizedText
+      ) ||
+      /\binstead\b/.test(normalizedText)
+  );
+}
+
+function isScopedDangAliasAllowed(normalizedText, sessionAttributes = {}) {
+  return Boolean(
+    sessionAttributes?.lastAskedSlot === "staffPreference" ||
+      sessionAttributes?.activeDtmfMenu === "staff" ||
+      /\b(?:with|use|staff|technician|tech)\s+dang\b/.test(normalizedText) ||
+      /\b(?:no\s+)?i\s+want(?:\s+to\s+book)?\s+dang\b/.test(normalizedText) ||
+      /\b(?:change|switch)\s+(?:the\s+)?(?:person|staff|technician|tech)(?:\s+(?:to|into))?\s+dang\b/.test(
+        normalizedText
+      ) ||
+      /\bdang\s+instead\b/.test(normalizedText)
+  );
+}
+
+function shouldSkipStaffAlias(staffName, alias, normalizedText, sessionAttributes = {}) {
+  return (
+    normalizeForMatch(staffName) === "trang" &&
+    normalizeForMatch(alias) === "dang" &&
+    !isScopedDangAliasAllowed(normalizedText, sessionAttributes)
+  );
+}
+
+function isExactKnownStaffAliasText(value, sessionAttributes = {}) {
+  const normalized = normalizeForMatch(value);
+  if (!normalized) {
+    return false;
+  }
+  for (const [staffName, aliases] of Object.entries(STAFF_ALIAS_GROUPS)) {
+    const candidates = [staffName, ...aliases];
+    if (
+      candidates.some(
+        (alias) =>
+          normalizeForMatch(alias) === normalized &&
+          !shouldSkipStaffAlias(staffName, alias, normalized, sessionAttributes)
+      )
+    ) {
+      return true;
+    }
+  }
+  return Object.values(getStaffDtmfOptions(sessionAttributes)).some((staffName) => {
+    const fullName = normalizeForMatch(staffName);
+    const firstName = normalizeForMatch(String(staffName).split(/\s+/)[0]);
+    return normalized === fullName || normalized === firstName;
+  });
+}
+
+function containsKnownStaffAliasText(value, sessionAttributes = {}) {
+  const normalized = normalizeForMatch(value);
+  if (!normalized) {
+    return false;
+  }
+  for (const [staffName, aliases] of Object.entries(STAFF_ALIAS_GROUPS)) {
+    for (const alias of [staffName, ...aliases]) {
+      if (
+        !shouldSkipStaffAlias(staffName, alias, normalized, sessionAttributes) &&
+        staffAliasMatchesInText(normalized, alias).length
+      ) {
+        return true;
+      }
+    }
+  }
+  return Object.values(getStaffDtmfOptions(sessionAttributes)).some((staffName) => {
+    const fullName = normalizeForMatch(staffName);
+    const firstName = normalizeForMatch(String(staffName).split(/\s+/)[0]);
+    return textContainsStaffAlias(normalized, fullName) || textContainsStaffAlias(normalized, firstName);
+  });
+}
+
+function isUnsupportedServiceRequestPhrase(value) {
+  const normalized = normalizeForMatch(value);
+  return Boolean(
+    normalized &&
+      /\b(?:haircut|hair cut|facial|polish|gel|gel nails|gel service|gel manicure|jell manicure)\b/.test(
+        normalized
+      )
+  );
+}
+
+function isServiceMenuRequestPhrase(value) {
+  const normalized = normalizeForMatch(value);
+  return Boolean(
+    normalized &&
+      /\b(?:what services|which services|services do you|services you have|service list|list(?: the)? services|available services|what do you offer)\b/.test(
+        normalized
+      )
+  );
+}
+
+function normalizeScopedStaffCandidatePhrase(text, sessionAttributes = {}) {
   const normalized = normalizeForMatch(text);
   if (!normalized) {
     return "";
@@ -650,6 +750,24 @@ function normalizeScopedStaffCandidatePhrase(text) {
     ) ||
     /\b(?:do not|don t|dont)\s+book\b|\bcancel it\b|\bwait no\b|\bno that is wrong\b/.test(normalized)
   ) {
+    return "";
+  }
+  const wantMatch = normalized.match(/^(?:no\s+)?i\s+want(?:\s+to\s+book)?\s+(.+)$/);
+  const staffContext = hasExplicitStaffContextCue(normalized, sessionAttributes);
+  const hasKnownStaffAlias =
+    isExactKnownStaffAliasText(normalized, sessionAttributes) ||
+    Boolean(wantMatch?.[1] && containsKnownStaffAliasText(wantMatch[1], sessionAttributes));
+  if (!staffContext && !hasKnownStaffAlias) {
+    return "";
+  }
+  if (
+    wantMatch &&
+    !staffContext &&
+    !containsKnownStaffAliasText(wantMatch[1], sessionAttributes)
+  ) {
+    return "";
+  }
+  if (isUnsupportedServiceRequestPhrase(normalized)) {
     return "";
   }
 
@@ -694,6 +812,7 @@ function normalizeScopedStaffCandidatePhrase(text) {
   }
   if (
     extractServiceFromTranscript(candidate) ||
+    isUnsupportedServiceRequestPhrase(candidate) ||
     hasCurrentTurnDatePhrase(candidate) ||
     hasCurrentTurnTimePhrase(candidate)
   ) {
@@ -708,7 +827,11 @@ function collectStaffAliasMatches(normalizedText, sessionAttributes = {}) {
     const seenAliases = new Set();
     for (const alias of aliases) {
       const normalizedAlias = normalizeForMatch(alias);
-      if (!normalizedAlias || seenAliases.has(normalizedAlias)) {
+      if (
+        !normalizedAlias ||
+        seenAliases.has(normalizedAlias) ||
+        shouldSkipStaffAlias(staffName, alias, normalizedText, sessionAttributes)
+      ) {
         continue;
       }
       seenAliases.add(normalizedAlias);
@@ -743,7 +866,7 @@ function extractStaffFromTranscript(text, sessionAttributes = {}) {
   if (ANY_STAFF_ALIASES.some((alias) => normalizedText.includes(normalizeForMatch(alias)))) {
     return "Any staff";
   }
-  const scopedCandidate = normalizeScopedStaffCandidatePhrase(text);
+  const scopedCandidate = normalizeScopedStaffCandidatePhrase(text, sessionAttributes);
   const searchText = scopedCandidate && normalizeForMatch(scopedCandidate) !== "any staff"
     ? scopedCandidate
     : normalizedText;
@@ -761,11 +884,11 @@ function hasExplicitStaffPhrase(text, sessionAttributes = {}) {
   if (!normalized) {
     return false;
   }
-  if (normalizeScopedStaffCandidatePhrase(text)) {
+  if (normalizeScopedStaffCandidatePhrase(text, sessionAttributes)) {
     return true;
   }
   const matches = collectStaffAliasMatches(normalized, sessionAttributes);
-  return matches.length > 0 || /\bnot\s+(?!today\b|tomorrow\b|monday\b|tuesday\b|wednesday\b|thursday\b|friday\b|saturday\b|sunday\b|correct\b|right\b|book\b|it\b|that\b|this\b)[a-z][a-z'-]{1,40}\b/.test(normalized);
+  return matches.length > 0 || /\bnot\s+(?!today\b|tomorrow\b|monday\b|tuesday\b|wednesday\b|thursday\b|friday\b|saturday\b|sunday\b|correct\b|right\b|book\b|it\b|that\b|this\b|my\b|me\b|name\b)[a-z][a-z'-]{1,40}\b/.test(normalized);
 }
 
 function readDtmfDigit(value) {
@@ -1017,13 +1140,35 @@ function parseDtmfOptionsJson(value) {
   return Object.keys(parsed).length ? parsed : {};
 }
 
+function withOperatorDtmfOption(options = {}) {
+  return {
+    ...options,
+    "0": "__operator__"
+  };
+}
+
+function getServiceDtmfOptions(sessionAttributes = {}) {
+  const serviceOptions = parseDtmfRecord(sessionAttributes.serviceDtmfOptions);
+  if (Object.keys(serviceOptions).length) {
+    return withOperatorDtmfOption(serviceOptions);
+  }
+  const activeOptions =
+    sessionAttributes.activeDtmfMenu === "service"
+      ? parseDtmfOptionsJson(sessionAttributes.activeDtmfOptionsJson)
+      : {};
+  if (Object.keys(activeOptions).some((digit) => digit !== "0")) {
+    return withOperatorDtmfOption(activeOptions);
+  }
+  return SERVICE_DTMF_OPTIONS;
+}
+
 function getActiveDtmfOptions(sessionAttributes = {}, activeDtmfMenu = sessionAttributes.activeDtmfMenu) {
   const activeOptions = parseDtmfOptionsJson(sessionAttributes.activeDtmfOptionsJson);
+  if (activeDtmfMenu === "service") {
+    return getServiceDtmfOptions(sessionAttributes);
+  }
   if (Object.keys(activeOptions).length) {
     return activeOptions;
-  }
-  if (activeDtmfMenu === "service") {
-    return SERVICE_DTMF_OPTIONS;
   }
   if (activeDtmfMenu === "staff") {
     return getStaffDtmfOptions(sessionAttributes);
@@ -1430,8 +1575,14 @@ function isKnownStaffPreference(value, sessionAttributes = {}) {
   if (normalizeForMatch(value) === "any staff") {
     return true;
   }
-  for (const aliases of Object.values(STAFF_ALIAS_GROUPS)) {
-    if (aliases.some((alias) => normalized === normalizeForMatch(alias))) {
+  for (const [staffName, aliases] of Object.entries(STAFF_ALIAS_GROUPS)) {
+    if (
+      aliases.some(
+        (alias) =>
+          normalized === normalizeForMatch(alias) &&
+          !shouldSkipStaffAlias(staffName, alias, normalized, sessionAttributes)
+      )
+    ) {
       return true;
     }
   }
@@ -1449,7 +1600,14 @@ function isExactKnownStaffPreference(value, sessionAttributes = {}) {
   }
   for (const [staffName, aliases] of Object.entries(STAFF_ALIAS_GROUPS)) {
     const canonical = normalizeForMatch(staffName);
-    if (normalized === canonical || aliases.some((alias) => normalized === normalizeForMatch(alias))) {
+    if (
+      normalized === canonical ||
+      aliases.some(
+        (alias) =>
+          normalized === normalizeForMatch(alias) &&
+          !shouldSkipStaffAlias(staffName, alias, normalized, sessionAttributes)
+      )
+    ) {
       return true;
     }
   }
@@ -1531,11 +1689,12 @@ function getCurrentTurnBookingDetails(event) {
 }
 
 function currentTurnRecognizedService(event) {
+  const previous = event.sessionState?.sessionAttributes || {};
   const slots = event.sessionState?.intent?.slots || {};
   const transcriptService = currentTurnServiceMention(event) || getCurrentTurnBookingDetails(event).serviceName;
   const slotService = normalizeServiceName(getSlotValue(slots, slotNames.serviceName, { preferOriginal: true }));
   const candidate = normalizeServiceName(transcriptService || slotService);
-  return DEMO_SERVICE_NAMES.includes(candidate) ? candidate : "";
+  return DEMO_SERVICE_NAMES.includes(candidate) || isDynamicServiceName(candidate, previous) ? candidate : "";
 }
 
 function analyzeLexTurnSanitization(event) {
@@ -2561,11 +2720,37 @@ function isHumanAvailabilityBlocked(event) {
   return isNegativeAvailabilityValue(businessHours);
 }
 
-function isRecognizedService(value) {
+function getDynamicServiceNames(sessionAttributes = {}) {
+  const names = Object.values(parseDtmfRecord(sessionAttributes.serviceDtmfOptions));
+  try {
+    const activeNames = JSON.parse(String(sessionAttributes.activeServiceNames || "[]"));
+    if (Array.isArray(activeNames)) {
+      names.push(...activeNames.filter((name) => typeof name === "string"));
+    }
+  } catch {
+    // Ignore malformed dynamic menu attributes and fall back to static aliases.
+  }
+  return names.filter(Boolean);
+}
+
+function isDynamicServiceName(value, sessionAttributes = {}) {
+  const normalized = normalizeForMatch(value);
+  return Boolean(
+    normalized &&
+      getDynamicServiceNames(sessionAttributes).some(
+        (serviceName) => normalizeForMatch(serviceName) === normalized
+      )
+  );
+}
+
+function isRecognizedService(value, sessionAttributes = {}) {
   if (isClearlyInvalidServiceName(value)) {
     return false;
   }
   const serviceName = normalizeServiceName(value);
+  if (isDynamicServiceName(serviceName, sessionAttributes)) {
+    return true;
+  }
   if (!DEMO_SERVICE_NAMES.includes(serviceName)) {
     return false;
   }
@@ -2581,7 +2766,7 @@ function getConfirmedRecognizedService(sessionAttributes = {}) {
     sessionAttributes.confirmedServiceName ||
       getSessionAttribute(sessionAttributes, slotNames.serviceName)
   );
-  return serviceName && isRecognizedService(serviceName) ? serviceName : "";
+  return serviceName && isRecognizedService(serviceName, sessionAttributes) ? serviceName : "";
 }
 
 function isBookingFallbackIntent(intentName) {
@@ -2662,7 +2847,7 @@ function shouldPromptForServiceFallback(event, intentName) {
   if (!serviceName || normalizePedicureService(serviceName) === "Pedicure") {
     return false;
   }
-  if (isRecognizedService(serviceName)) {
+  if (isRecognizedService(serviceName, previous)) {
     return false;
   }
   return isBookingLikeUtterance(`${transcript} ${serviceName}`);
@@ -2734,7 +2919,7 @@ function classifyFinalBookingConfirmation(value) {
   const hasStaffChangeRequest =
     /\b(?:change|switch)\s+(?:the\s+)?(?:person|staff|technician|tech)\b/.test(normalized) ||
     /\b(?:someone else|different person|different staff|different technician|different tech)\b/.test(normalized) ||
-    /\bnot\s+(?!correct\b|right\b|book\b|it\b|that\b)[a-z][a-z\s'-]{1,40}\b/.test(normalized) ||
+    /\bnot\s+(?!correct\b|right\b|book\b|it\b|that\b|my\b|me\b|name\b)[a-z][a-z\s'-]{1,40}\b/.test(normalized) ||
     /\bwith\s+[a-z][a-z\s'-]{1,40}\s+instead\b/.test(normalized);
   const hasNewBookingValue =
     extractServiceFromTranscript(value) ||
@@ -3117,14 +3302,14 @@ function buildKnownBookingSessionAttributes(event) {
   const recovered = extractBookingDetailsFromText(recoveryTranscript, timeZone);
   const normalizedKnownService = normalizeServiceName(rawKnownService);
   const knownService =
-    normalizedKnownService && !isClearlyInvalidServiceName(normalizedKnownService)
+    normalizedKnownService && isRecognizedService(normalizedKnownService, previous)
       ? normalizedKnownService
       : "";
   const previousService = normalizeServiceName(
     previous.confirmedServiceName || getSessionAttribute(previous, slotNames.serviceName)
   );
   const stablePreviousService =
-    previousService && !isClearlyInvalidServiceName(previousService) ? previousService : "";
+    previousService && isRecognizedService(previousService, previous) ? previousService : "";
   const amazonConnectCustomerPhone = getAttribute(event, attributeNames.customerNumber);
   const protectedCustomerName =
     previous.recognizedCustomerName ||
@@ -3329,7 +3514,10 @@ function getBookingSlotToElicit(event) {
   if (!serviceName) {
     return "serviceName";
   }
-  if (normalizePedicureService(serviceName) !== "Pedicure" && !isRecognizedService(serviceName)) {
+  if (
+    normalizePedicureService(serviceName) !== "Pedicure" &&
+    !isRecognizedService(serviceName, sessionAttributes)
+  ) {
     return "serviceName";
   }
 
@@ -3620,6 +3808,44 @@ function buildBookServiceElicitResponse(event) {
       serviceFallbackOffered: "true"
     },
     SERVICE_KEYPAD_PROMPT
+  );
+}
+
+function shouldRequestDynamicServiceMenu(event) {
+  const serviceSlot = getKnownField(event, "serviceName", { preferOriginal: true });
+  const text = [
+    event.inputTranscript,
+    getAttribute(event, attributeNames.transcript),
+    serviceSlot
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return isUnsupportedServiceRequestPhrase(text) || isServiceMenuRequestPhrase(text);
+}
+
+async function buildDynamicServiceElicitResponse(event, intentName) {
+  const result = await postInternalAppointment(
+    buildInternalPayload(event, intentName, {
+      currentTurnSemanticType: "SERVICE_REQUEST"
+    }),
+    {
+      operationName: "service_dtmf_options_generation",
+      waitPrompt: WAIT_PROMPTS.availability_lookup,
+      mechanism: "Lambda unsupported service menu handoff"
+    }
+  );
+  if (!result.ok) {
+    console.error("Appointment API rejected dynamic service prompt request", result.code);
+    return buildBookServiceElicitResponse(event);
+  }
+
+  const data = extractResultPayload(result);
+  return buildLexResponse(
+    event,
+    data.lexResponse?.message || SERVICE_DTMF_SHORT_PROMPT,
+    data.lexResponse?.fulfillmentState || "InProgress",
+    buildSessionAttributesFromResult(data),
+    data.lexResponse
   );
 }
 
@@ -4001,20 +4227,65 @@ async function buildKnownCallerLookupResponse(event, intentName) {
 
   const data = extractResultPayload(result);
   const resultAttributes = buildSessionAttributesFromResult(data);
-  const customerName = resultAttributes.customerName || resultAttributes.recognizedCustomerName;
+  const isServiceDtmfSelection = Boolean(
+    readScopedDtmfSelection(
+      event,
+      "serviceName",
+      getActiveDtmfOptions(event.sessionState?.sessionAttributes || {}, "service")
+    )
+  );
+  const safeResultAttributes = { ...resultAttributes };
+  if (isServiceDtmfSelection) {
+    delete safeResultAttributes.requestedDate;
+    delete safeResultAttributes.requestedTime;
+    delete safeResultAttributes.staffPreference;
+    delete safeResultAttributes.staffId;
+    delete safeResultAttributes.selectedStaffId;
+    delete safeResultAttributes.confirmedStaffId;
+    delete safeResultAttributes.confirmedStaffName;
+  }
+  const customerName = safeResultAttributes.customerName || safeResultAttributes.recognizedCustomerName;
   if (!customerName) {
     return null;
   }
+  const safeLexResponse = {
+    ...(data.lexResponse || {}),
+    sessionAttributes: {
+      ...((data.lexResponse || {}).sessionAttributes || {}),
+      ...safeResultAttributes
+    }
+  };
+  if (isServiceDtmfSelection) {
+    delete safeLexResponse.sessionAttributes.requestedDate;
+    delete safeLexResponse.sessionAttributes.requestedTime;
+    delete safeLexResponse.sessionAttributes.staffPreference;
+    delete safeLexResponse.sessionAttributes.staffId;
+    delete safeLexResponse.sessionAttributes.selectedStaffId;
+    delete safeLexResponse.sessionAttributes.confirmedStaffId;
+    delete safeLexResponse.sessionAttributes.confirmedStaffName;
+  }
 
   const enrichedEvent = withSessionAttributes(event, {
-    ...resultAttributes,
+    ...safeResultAttributes,
     customerName,
-    recognizedCustomerName: resultAttributes.recognizedCustomerName || customerName,
-    customerNameSource: resultAttributes.customerNameSource || "phone_lookup"
+    recognizedCustomerName: safeResultAttributes.recognizedCustomerName || customerName,
+    customerNameSource: safeResultAttributes.customerNameSource || "phone_lookup"
   });
   const nextSlot = getBookingSlotToElicit(enrichedEvent);
   if (nextSlot) {
-    return buildElicitSlotResponse(enrichedEvent, nextSlot);
+    return buildLexResponse(
+      enrichedEvent,
+      safeLexResponse.message || getServiceAwareElicitPrompt(enrichedEvent, nextSlot, 1),
+      safeLexResponse.fulfillmentState || "InProgress",
+      safeResultAttributes,
+      {
+        ...safeLexResponse,
+        dialogAction: safeLexResponse.dialogAction || {
+          type: "ElicitSlot",
+          slotToElicit: nextSlot
+        }
+      }
+    );
   }
   return buildDelegateResponse(enrichedEvent);
 }
@@ -4264,7 +4535,7 @@ function applyActiveDtmfMenuAttributes(sessionAttributes = {}, slotName = "") {
   const next = { ...sessionAttributes };
   if (slotName === "serviceName") {
     next.activeDtmfMenu = "service";
-    next.activeDtmfOptionsJson = JSON.stringify(SERVICE_DTMF_OPTIONS);
+    next.activeDtmfOptionsJson = JSON.stringify(getServiceDtmfOptions(next));
   } else if (slotName === "staffPreference") {
     next.activeDtmfMenu = "staff";
     next.activeDtmfOptionsJson = JSON.stringify({
@@ -4318,7 +4589,7 @@ function commitDialogState(response, options = {}) {
     }
   } else if (slotToElicit === "serviceName") {
     sessionAttributes.activeDtmfMenu = "service";
-    sessionAttributes.activeDtmfOptionsJson = JSON.stringify(SERVICE_DTMF_OPTIONS);
+    sessionAttributes.activeDtmfOptionsJson = JSON.stringify(getServiceDtmfOptions(sessionAttributes));
   } else if (slotToElicit === "staffPreference") {
     sessionAttributes.activeDtmfMenu = "staff";
     sessionAttributes.activeDtmfOptionsJson = JSON.stringify({
@@ -4859,6 +5130,9 @@ async function handleLexEvent(event, analysis = {}) {
         }
         if (slotToElicit === "staffPreference") {
           return await buildDynamicStaffElicitResponse(event, intentName);
+        }
+        if (slotToElicit === "serviceName" && shouldRequestDynamicServiceMenu(event)) {
+          return await buildDynamicServiceElicitResponse(event, intentName);
         }
         const response = buildElicitSlotResponse(event, slotToElicit);
         const rawDtmfTurn =

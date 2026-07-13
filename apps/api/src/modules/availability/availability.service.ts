@@ -13,9 +13,20 @@ interface SlotValidationInput {
   excludeAppointmentId?: string;
 }
 
+export type SlotValidationReasonCode =
+  | "AVAILABLE"
+  | "SALON_CLOSED"
+  | "OUTSIDE_BUSINESS_HOURS"
+  | "STAFF_NOT_FOUND"
+  | "STAFF_NOT_BOOKABLE"
+  | "STAFF_NOT_MAPPED"
+  | "APPOINTMENT_OVERLAP"
+  | "SERVICE_UNAVAILABLE";
+
 interface SlotValidationResult {
   valid: boolean;
   reason?: string;
+  reasonCode?: SlotValidationReasonCode;
   endTime: Date;
   durationMinutes: number;
 }
@@ -103,11 +114,9 @@ export const validateAppointmentSlot = async (
     prisma.staff.findFirst({
       where: {
         id: input.staffId,
-        salonId: input.salonId,
-        status: StaffStatus.ACTIVE,
-        isBookable: true
+        salonId: input.salonId
       },
-      select: { id: true }
+      select: { id: true, status: true, isBookable: true, deletedAt: true }
     })
   ]);
 
@@ -117,8 +126,14 @@ export const validateAppointmentSlot = async (
   if (services.length !== requestedServiceIds.length) {
     throw new AppError("Service not found or inactive.", 400, "SERVICE_UNAVAILABLE");
   }
-  if (!staff) {
-    throw new AppError("Staff not found or not bookable.", 400, "STAFF_UNAVAILABLE");
+  if (!staff || staff.deletedAt) {
+    throw new AppError("Staff not found.", 400, "STAFF_NOT_FOUND");
+  }
+  if (
+    (staff.status !== undefined && staff.status !== StaffStatus.ACTIVE) ||
+    staff.isBookable === false
+  ) {
+    throw new AppError("Staff is not active or bookable.", 400, "STAFF_NOT_BOOKABLE");
   }
 
   for (const serviceId of requestedServiceIds) {
@@ -133,6 +148,7 @@ export const validateAppointmentSlot = async (
     return {
       valid: false,
       reason: "Salon is closed for the selected time.",
+      reasonCode: "SALON_CLOSED",
       endTime,
       durationMinutes
     };
@@ -161,6 +177,7 @@ export const validateAppointmentSlot = async (
     return {
       valid: false,
       reason: "Requested slot is outside business hours.",
+      reasonCode: "OUTSIDE_BUSINESS_HOURS",
       endTime,
       durationMinutes
     };
@@ -190,6 +207,7 @@ export const validateAppointmentSlot = async (
     return {
       valid: false,
       reason: "Requested slot overlaps with an existing booking.",
+      reasonCode: "APPOINTMENT_OVERLAP",
       endTime,
       durationMinutes
     };
@@ -197,6 +215,7 @@ export const validateAppointmentSlot = async (
 
   return {
     valid: true,
+    reasonCode: "AVAILABLE",
     endTime,
     durationMinutes
   };
