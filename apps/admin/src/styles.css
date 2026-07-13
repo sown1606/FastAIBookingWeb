@@ -304,6 +304,41 @@ p {
   flex-wrap: wrap;
 }
 
+.bulk-debug-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 253, 248, 0.96);
+  padding: 10px 12px;
+  box-shadow: var(--shadow-sm);
+}
+
+.bulk-debug-toolbar__count {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.bulk-debug-toolbar__count strong {
+  color: var(--primary-strong);
+}
+
+.bulk-debug-toolbar__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .filters {
   display: flex;
   gap: 12px;
@@ -575,6 +610,14 @@ tbody tr:hover {
   background: #fffaf0;
 }
 
+tbody tr.is-selected {
+  background: #fff6df;
+}
+
+tbody tr.is-selected:hover {
+  background: #fff1c9;
+}
+
 tbody tr:last-child td {
   border-bottom: none;
 }
@@ -592,6 +635,25 @@ tbody tr:last-child td {
 .table-meta span {
   color: var(--muted);
   font-size: 0.84rem;
+}
+
+.table-checkbox-column {
+  width: 44px;
+  min-width: 44px;
+  padding-left: 10px;
+  padding-right: 8px;
+  text-align: center;
+}
+
+.row-checkbox {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+.row-checkbox:disabled {
+  cursor: not-allowed;
 }
 
 .pagination {

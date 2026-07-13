@@ -78,6 +78,10 @@ import {
   updateSalonForAdmin,
   updateSalonSettingsForAdmin
 } from "./admin.service";
+import {
+  getAIInteractionsDebugExportForAdmin,
+  getCallsDebugExportForAdmin
+} from "./admin-debug-export.service";
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -386,6 +390,10 @@ const adminAiQuerySchema = z.object({
 const adminAiReceptionCallLogsQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20)
+});
+
+const adminDebugExportSchema = z.object({
+  ids: z.array(z.string().uuid()).min(1).max(50)
 });
 
 const createCallCenterAgentSchema = z.object({
@@ -1062,6 +1070,18 @@ adminRouter.get(
   })
 );
 
+adminRouter.post(
+  "/calls/debug-export",
+  validate(adminDebugExportSchema),
+  asyncHandler(async (req, res) => {
+    const { ids } = req.body as z.infer<typeof adminDebugExportSchema>;
+    const result = await getCallsDebugExportForAdmin(ids);
+    return sendSuccess(res, {
+      data: result
+    });
+  })
+);
+
 adminRouter.get(
   "/calls/:id",
   validate(idSchema, "params"),
@@ -1106,6 +1126,18 @@ adminRouter.get(
       "salonId" | "taskType" | "callSessionId" | "contactId" | "callerPhone" | "q" | "includeSynthetic"
     >;
     const result = await exportAIInteractionsForAdmin(query);
+    return sendSuccess(res, {
+      data: result
+    });
+  })
+);
+
+adminRouter.post(
+  "/ai-logs/debug-export",
+  validate(adminDebugExportSchema),
+  asyncHandler(async (req, res) => {
+    const { ids } = req.body as z.infer<typeof adminDebugExportSchema>;
+    const result = await getAIInteractionsDebugExportForAdmin(ids);
     return sendSuccess(res, {
       data: result
     });

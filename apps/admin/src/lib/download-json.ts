@@ -1,12 +1,15 @@
 const SENSITIVE_KEY_PARTS = [
   "authorization",
+  "cookie",
+  "setcookie",
   "accesstoken",
   "refreshtoken",
-  "password",
+  "apikey",
   "secret",
-  "cookie",
+  "password",
   "sessiontoken",
-  "privatekey"
+  "privatekey",
+  "clientsecret"
 ];
 
 const normalizeKey = (key: string) => key.replace(/[^a-z0-9]/gi, "").toLowerCase();
@@ -26,11 +29,15 @@ export const sanitizeJsonExport = (value: unknown): unknown => {
   }
 
   return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>)
-      .filter(([key]) => !isSensitiveKey(key))
-      .map(([key, nestedValue]) => [key, sanitizeJsonExport(nestedValue)])
+    Object.entries(value as Record<string, unknown>).map(([key, nestedValue]) => [
+      key,
+      isSensitiveKey(key) ? "[REDACTED]" : sanitizeJsonExport(nestedValue)
+    ])
   );
 };
+
+export const stringifyJsonExport = (payload: unknown) =>
+  JSON.stringify(sanitizeJsonExport(payload), null, 2);
 
 export const toUtcTimestampForFilename = (date = new Date()) =>
   date.toISOString().replace(/[:.]/g, "-");
@@ -41,7 +48,7 @@ export const safeFilenamePart = (value: string | null | undefined, fallback: str
 };
 
 export const downloadJsonFile = (filename: string, payload: unknown) => {
-  const json = JSON.stringify(sanitizeJsonExport(payload), null, 2);
+  const json = stringifyJsonExport(payload);
   const blob = new Blob([json], { type: "application/json;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");

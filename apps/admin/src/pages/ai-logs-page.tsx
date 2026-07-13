@@ -1,10 +1,20 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { apiGet, extractErrorMessage } from "../lib/api";
+import { apiGet, apiPost, extractErrorMessage } from "../lib/api";
+import { DebugBulkActions } from "../components/debug-bulk-actions";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
+import { useToast } from "../components/toast";
 import type { Pagination } from "../types";
+import { copyTextToClipboard } from "../lib/clipboard";
+import {
+  buildBulkDebugBundle,
+  stringifyDebugJson,
+  type BulkDebugExportResponse
+} from "../lib/debug-export";
+import { downloadJsonFile, toUtcTimestampForFilename } from "../lib/download-json";
 import { formatDateTime } from "../lib/format";
 import { useI18n } from "../lib/i18n";
+import { useRowSelection } from "../lib/use-row-selection";
 
 interface AiLogItem {
   id: string;
@@ -36,6 +46,12 @@ interface AiLogItem {
 interface AiLogsResponse {
   items: AiLogItem[];
   pagination: Pagination;
+}
+
+interface PreparedBulkBundle {
+  key: string;
+  payload: unknown;
+  response: BulkDebugExportResponse;
 }
 
 interface AiLogCallGroup {
@@ -117,6 +133,7 @@ const groupAiLogsByCall = (items: AiLogItem[]): AiLogCallGroup[] => {
 
 export const AiLogsPage = () => {
   const { t } = useI18n();
+  const { notify } = useToast();
   const [taskType, setTaskType] = useState("");
   const [salonId, setSalonId] = useState("");
   const [querySalonId, setQuerySalonId] = useState("");
@@ -126,6 +143,46 @@ export const AiLogsPage = () => {
   const [data, setData] = useState<AiLogsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [bulkActionLoading, setBulkActionLoading] = useState(false);
+  const [preparedBundle, setPreparedBundle] = useState<PreparedBulkBundle | null>(null);
+  const groupedItems = useMemo(() => groupAiLogsByCall(data?.items ?? []), [data]);
+  const visibleIds = useMemo(() => groupedItems.map((group) => group.latest.id), [groupedItems]);
+  const {
+    selectedIds,
+    toggleOne,
+    selectAllVisible,
+    clearAll,
+    allVisibleSelected,
+    someVisibleSelected
+  } = useRowSelection(visibleIds);
+  const selectAllRef = useRef<HTMLInputElement | null>(null);
+  const selectedVisibleIds = useMemo(
+    () => visibleIds.filter((id) => selectedIds.has(id)),
+    [visibleIds, selectedIds]
+  );
+  const selectionKey = useMemo(
+    () =>
+      [
+        "ai-logs",
+        selectedVisibleIds.join("|"),
+        visibleIds.join("|"),
+        taskType,
+        salonId,
+        search,
+        String(includeSynthetic)
+      ].join("::"),
+    [selectedVisibleIds, visibleIds, taskType, salonId, search, includeSynthetic]
+  );
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = someVisibleSelected && !allVisibleSelected;
+    }
+  }, [someVisibleSelected, allVisibleSelected]);
+
+  useEffect(() => {
+    setPreparedBundle(null);
+  }, [selectionKey]);
 
   const load = async () => {
     setError("");
@@ -166,6 +223,94 @@ export const AiLogsPage = () => {
     setSearch(querySearch.trim());
   };
 
+  const prepareSelectedDebugBundle = async (): Promise<PreparedBulkBundle | null> => {
+    if (!selectedVisibleIds.length) {
+      notify("error", t("debugBulk.noRecordsSelected"));
+      return null;
+    }
+    if (preparedBundle?.key === selectionKey) {
+      return preparedBundle;
+    }
+
+    setBulkActionLoading(true);
+    try {
+      const response = await apiPost<BulkDebugExportResponse, { ids: string[] }>(
+        "/api/v1/admin/ai-logs/debug-export",
+        {
+          ids: selectedVisibleIds
+        }
+      );
+      const payload = buildBulkDebugBundle(response, {
+        sourcePage: "ai_logs",
+        selection: {
+          selectedCount: selectedVisibleIds.length,
+          visibleCount: visibleIds.length,
+          filters: {
+            taskType,
+            salonId,
+            search,
+            includeSynthetic
+          }
+        }
+      });
+      const nextPreparedBundle = {
+        key: selectionKey,
+        payload,
+        response
+      };
+      setPreparedBundle(nextPreparedBundle);
+      if (response.notFoundIds.length > 0) {
+        notify("info", t("debugBulk.someNotFound"));
+      }
+      return nextPreparedBundle;
+    } finally {
+      setBulkActionLoading(false);
+    }
+  };
+
+  const copySelectedDebug = async () => {
+    let prepared: PreparedBulkBundle | null;
+    try {
+      prepared = await prepareSelectedDebugBundle();
+    } catch (copyError) {
+      notify("error", extractErrorMessage(copyError));
+      return;
+    }
+    if (!prepared) {
+      return;
+    }
+
+    try {
+      await copyTextToClipboard(stringifyDebugJson(prepared.payload));
+      notify("success", t("debugBulk.copied"));
+    } catch {
+      notify("error", t("debugBulk.copyTooLarge"));
+    }
+  };
+
+  const exportSelectedDebug = async () => {
+    let prepared: PreparedBulkBundle | null;
+    try {
+      prepared = await prepareSelectedDebugBundle();
+    } catch (exportError) {
+      notify("error", extractErrorMessage(exportError));
+      return;
+    }
+    if (!prepared) {
+      return;
+    }
+    if (prepared.response.recordCount === 0) {
+      notify("error", t("debugBulk.someNotFound"));
+      return;
+    }
+
+    const filename = `fastaibooking-ai-debug-${prepared.response.recordCount}-calls-${toUtcTimestampForFilename(
+      new Date(prepared.response.exportedAt)
+    )}.json`;
+    downloadJsonFile(filename, prepared.payload);
+    notify("success", t("debugBulk.exported"));
+  };
+
   if (loading) {
     return <LoadingBlock />;
   }
@@ -173,8 +318,6 @@ export const AiLogsPage = () => {
   if (error) {
     return <ErrorBlock message={error} onRetry={load} />;
   }
-
-  const groupedItems = groupAiLogsByCall(data?.items ?? []);
 
   return (
     <section className="card">
@@ -222,10 +365,30 @@ export const AiLogsPage = () => {
         </button>
       </form>
       {groupedItems.length ? (
+        <>
+        <DebugBulkActions
+          selectedCount={selectedVisibleIds.length}
+          totalVisible={visibleIds.length}
+          busy={bulkActionLoading}
+          onCopy={copySelectedDebug}
+          onExport={exportSelectedDebug}
+          onClear={clearAll}
+        />
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
+                <th className="table-checkbox-column">
+                  <input
+                    ref={selectAllRef}
+                    className="row-checkbox"
+                    type="checkbox"
+                    checked={allVisibleSelected}
+                    disabled={!visibleIds.length || bulkActionLoading}
+                    onChange={selectAllVisible}
+                    aria-label={t("debugBulk.selectAllVisible")}
+                  />
+                </th>
                 <th>{t("aiLogs.created")}</th>
                 <th>{t("aiLogs.salon")}</th>
                 <th>{t("aiLogs.linkedCall")}</th>
@@ -240,13 +403,27 @@ export const AiLogsPage = () => {
               {groupedItems.map((group) => {
                 const item = group.latest;
                 return (
-                <tr key={group.key}>
+                <tr key={group.key} className={selectedIds.has(item.id) ? "is-selected" : undefined}>
+                  <td className="table-checkbox-column">
+                    <input
+                      className="row-checkbox"
+                      type="checkbox"
+                      checked={selectedIds.has(item.id)}
+                      disabled={bulkActionLoading}
+                      onClick={(event) => event.stopPropagation()}
+                      onChange={() => toggleOne(item.id)}
+                      aria-label={`${t("debugBulk.selectRow")} ${readContactId(item)}`}
+                    />
+                  </td>
                   <td>
                     <div>{formatDateTime(group.lastTurnAt)}</div>
                     <small className="muted">
                       {group.turnCount > 1
-                        ? `${group.turnCount} AI turns since ${formatDateTime(group.firstTurnAt)}`
-                        : "1 AI turn"}
+                        ? t("aiLogs.turnsSince", {
+                            count: group.turnCount,
+                            time: formatDateTime(group.firstTurnAt)
+                          })
+                        : t("aiLogs.oneTurn")}
                     </small>
                   </td>
                   <td>{item.salon?.name ?? t("common.none")}</td>
@@ -270,6 +447,7 @@ export const AiLogsPage = () => {
             </tbody>
           </table>
         </div>
+        </>
       ) : (
         <EmptyBlock message={t("aiLogs.empty")} />
       )}

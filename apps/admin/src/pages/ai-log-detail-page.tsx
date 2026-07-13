@@ -4,6 +4,8 @@ import { apiGet, extractErrorMessage } from "../lib/api";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
 import { useToast } from "../components/toast";
 import { downloadJsonFile, safeFilenamePart, toUtcTimestampForFilename } from "../lib/download-json";
+import { copyTextToClipboard } from "../lib/clipboard";
+import { stringifyDebugJson } from "../lib/debug-export";
 import { formatDateTime } from "../lib/format";
 import { getStatusLabel, useI18n } from "../lib/i18n";
 
@@ -148,7 +150,7 @@ export const AiLogDetailPage = () => {
     setCopyStatus("");
     try {
       const response = await apiGet<unknown>(`/api/v1/admin/ai-logs/${id}/debug`);
-      await navigator.clipboard.writeText(JSON.stringify(response, null, 2));
+      await copyTextToClipboard(stringifyDebugJson(response));
       setCopyStatus(t("aiLogs.debugCopied"));
     } catch (copyError) {
       setCopyStatus(extractErrorMessage(copyError));

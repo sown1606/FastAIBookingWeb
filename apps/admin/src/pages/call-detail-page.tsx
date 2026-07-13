@@ -4,10 +4,17 @@ import { apiGet, extractErrorMessage } from "../lib/api";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
 import { useToast } from "../components/toast";
 import { downloadJsonFile, safeFilenamePart, toUtcTimestampForFilename } from "../lib/download-json";
+import { copyTextToClipboard } from "../lib/clipboard";
+import {
+  buildAiTurnDebug,
+  buildCallDebugPayload,
+  stringifyDebugJson,
+  type CallDebugSource
+} from "../lib/debug-export";
 import { formatDateTime } from "../lib/format";
 import { getStatusLabel, useI18n } from "../lib/i18n";
 
-interface CallDetail {
+interface CallDetail extends CallDebugSource {
   id: string;
   provider: string;
   providerCallId: string;
@@ -91,135 +98,6 @@ const routingLabelKeyByValue = {
   QUEUED: "routing.QUEUED"
 } as const;
 
-const asRecord = (value: unknown): Record<string, unknown> =>
-  value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
-
-const readNestedRecord = (value: unknown, key: string): Record<string, unknown> => asRecord(asRecord(value)[key]);
-
-const SENSITIVE_DEBUG_KEY_PATTERNS = [
-  "authorization",
-  "cookie",
-  "set-cookie",
-  "accesstoken",
-  "refreshtoken",
-  "apikey",
-  "secret",
-  "password"
-];
-
-const isSensitiveDebugKey = (key: string): boolean => {
-  const normalized = key.toLowerCase();
-  return SENSITIVE_DEBUG_KEY_PATTERNS.some((pattern) => normalized === pattern || normalized.includes(pattern));
-};
-
-const sanitizeDebugJsonValue = (value: unknown): unknown => {
-  if (Array.isArray(value)) {
-    return value.map(sanitizeDebugJsonValue);
-  }
-  if (!value || typeof value !== "object") {
-    return value;
-  }
-  return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
-      key,
-      isSensitiveDebugKey(key) ? "[REDACTED]" : sanitizeDebugJsonValue(entry)
-    ])
-  );
-};
-
-const buildAiTurnDebug = (item: CallDetail["aiInteractions"][number]) => {
-  const requestPayload = asRecord(item.requestPayload);
-  const responsePayload = asRecord(item.responsePayload);
-  const requestAttributes = readNestedRecord(requestPayload, "attributes");
-  const requestDebug = asRecord(requestAttributes.lexTurnDebug);
-  const responseDebug = readNestedRecord(responsePayload, "lexTurnDebug");
-  const debug = Object.keys(responseDebug).length ? responseDebug : requestDebug;
-  return {
-    currentTurnTranscript:
-      responsePayload.currentTurnTranscript ??
-      debug.currentTurnTranscript ??
-      requestPayload.currentTurnTranscript ??
-      item.requestText,
-    aggregatedTranscript:
-      responsePayload.aggregatedBookingTranscript ??
-      requestPayload.aggregatedBookingTranscript ??
-      requestPayload.transcript,
-    contactId:
-      debug.contactId ??
-      requestPayload.amazonConnectContactId ??
-      requestPayload.contactId ??
-      requestAttributes.AmazonConnectContactId,
-    lastAskedSlotBefore: debug.lastAskedSlotBefore,
-    lastAskedSlotAfter: debug.lastAskedSlotAfter ?? asRecord(debug.sessionAttributesAfter).lastAskedSlot,
-    activeDtmfMenuBefore: debug.activeDtmfMenuBefore,
-    activeDtmfMenuAfter: debug.activeDtmfMenuAfter ?? asRecord(debug.sessionAttributesAfter).activeDtmfMenu,
-    dtmfDiagnostics: debug.dtmfDiagnostics,
-    dtmfRouting: debug.dtmfRouting,
-    slotDecisions: debug.slotDecisions,
-    trustedSlotsBefore: debug.trustedSlotsBefore,
-    trustedSlotsAfter: debug.trustedSlotsAfter
-  };
-};
-
-const buildCallDebugPayload = (call: CallDetail, exportedAt: string) =>
-  sanitizeDebugJsonValue({
-    schemaVersion: 1,
-    exportedAt,
-    exportType: "call_debug",
-    callSession: {
-      id: call.id,
-      provider: call.provider,
-      providerCallId: call.providerCallId,
-      status: call.status,
-      routingOutcome: call.routingOutcome,
-      callerPhone: call.callerPhone,
-      dialedPhone: call.dialedPhone,
-      trackingNumber: call.trackingNumber,
-      sourceName: call.sourceName,
-      campaignName: call.campaignName,
-      startedAt: call.startedAt,
-      endedAt: call.endedAt,
-      durationSeconds: call.durationSeconds,
-      recordingUrl: call.recordingUrl,
-      transcriptSummary: call.transcriptSummary,
-      aiSummary: call.aiSummary,
-      failureReason: call.failureReason,
-      finalResolution: call.finalResolution,
-      salon: call.salon
-    },
-    events: call.events,
-    transcripts: call.transcripts,
-    bookingAttempts: call.bookingAttempts,
-    aiInteractions: call.aiInteractions,
-    turnHistories: call.aiInteractions.map((item, index) => ({
-      aiInteractionId: item.id,
-      index: index + 1,
-      ...buildAiTurnDebug(item)
-    })),
-    escalationRecords: call.callEscalations,
-    finalResolution: call.finalResolution
-  });
-
-const copyTextToClipboard = async (text: string) => {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text);
-    return;
-  }
-
-  const textArea = document.createElement("textarea");
-  textArea.value = text;
-  textArea.setAttribute("readonly", "true");
-  textArea.style.position = "fixed";
-  textArea.style.left = "-9999px";
-  document.body.appendChild(textArea);
-  textArea.select();
-  const copied = document.execCommand("copy");
-  document.body.removeChild(textArea);
-  if (!copied) {
-    throw new Error("Clipboard API unavailable.");
-  }
-};
-
 export const CallDetailPage = () => {
   const { t } = useI18n();
   const { notify } = useToast();
@@ -272,12 +150,13 @@ export const CallDetailPage = () => {
 
     try {
       const exportedAt = new Date().toISOString();
+      const payload = buildCallDebugPayload(call, exportedAt);
       const filename = `fastaibooking-call-${safeFilenamePart(
         call.providerCallId || call.id,
         "unknown-contact"
       )}-${toUtcTimestampForFilename(new Date(exportedAt))}.json`;
 
-      downloadJsonFile(filename, buildCallDebugPayload(call, exportedAt));
+      downloadJsonFile(filename, payload);
       notify("success", t("calls.exported"));
     } catch (exportError) {
       notify("error", extractErrorMessage(exportError));
@@ -289,7 +168,7 @@ export const CallDetailPage = () => {
 
     try {
       const payload = buildCallDebugPayload(call, new Date().toISOString());
-      await copyTextToClipboard(JSON.stringify(payload, null, 2));
+      await copyTextToClipboard(stringifyDebugJson(payload));
       notify("success", t("calls.debugJsonCopied"));
     } catch (copyError) {
       notify("error", extractErrorMessage(copyError));

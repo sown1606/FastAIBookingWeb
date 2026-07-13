@@ -1,14 +1,25 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { apiGet, extractErrorMessage } from "../lib/api";
+import { apiGet, apiPost, extractErrorMessage } from "../lib/api";
+import { DebugBulkActions } from "../components/debug-bulk-actions";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
+import { useToast } from "../components/toast";
 import type { Pagination } from "../types";
+import { copyTextToClipboard } from "../lib/clipboard";
+import {
+  buildBulkDebugBundle,
+  stringifyDebugJson,
+  type BulkDebugExportResponse
+} from "../lib/debug-export";
+import { downloadJsonFile, toUtcTimestampForFilename } from "../lib/download-json";
 import { formatDateTime } from "../lib/format";
 import { getStatusLabel, useI18n } from "../lib/i18n";
+import { useRowSelection } from "../lib/use-row-selection";
 
 interface CallItem {
   id: string;
   provider: string;
+  providerCallId: string;
   status: string;
   routingOutcome: string | null;
   finalResolution: string | null;
@@ -31,6 +42,12 @@ interface CallsResponse {
   pagination: Pagination;
 }
 
+interface PreparedBulkBundle {
+  key: string;
+  payload: unknown;
+  response: BulkDebugExportResponse;
+}
+
 const routingLabelKeyByValue = {
   SALON_RING: "routing.SALON_RING",
   AI_RECEPTION: "routing.AI_RECEPTION",
@@ -45,12 +62,50 @@ const callStatuses = ["", "RECEIVED", "RINGING", "IN_PROGRESS", "COMPLETED", "FA
 
 export const CallsPage = () => {
   const { t } = useI18n();
+  const { notify } = useToast();
   const [status, setStatus] = useState("");
   const [salonId, setSalonId] = useState("");
   const [querySalon, setQuerySalon] = useState("");
   const [data, setData] = useState<CallsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [bulkActionLoading, setBulkActionLoading] = useState(false);
+  const [preparedBundle, setPreparedBundle] = useState<PreparedBulkBundle | null>(null);
+  const visibleIds = useMemo(() => data?.items.map((item) => item.id) ?? [], [data]);
+  const {
+    selectedIds,
+    toggleOne,
+    selectAllVisible,
+    clearAll,
+    allVisibleSelected,
+    someVisibleSelected
+  } = useRowSelection(visibleIds);
+  const selectAllRef = useRef<HTMLInputElement | null>(null);
+  const selectedVisibleIds = useMemo(
+    () => visibleIds.filter((id) => selectedIds.has(id)),
+    [visibleIds, selectedIds]
+  );
+  const selectionKey = useMemo(
+    () =>
+      [
+        "calls",
+        selectedVisibleIds.join("|"),
+        visibleIds.join("|"),
+        status,
+        salonId
+      ].join("::"),
+    [selectedVisibleIds, visibleIds, status, salonId]
+  );
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = someVisibleSelected && !allVisibleSelected;
+    }
+  }, [someVisibleSelected, allVisibleSelected]);
+
+  useEffect(() => {
+    setPreparedBundle(null);
+  }, [selectionKey]);
 
   const translateStatus = (value: string) => {
     const key = getStatusLabel(value);
@@ -105,6 +160,92 @@ export const CallsPage = () => {
       withAi: items.filter((item) => item._count.transcripts > 0 || item._count.bookingAttempts > 0).length
     };
   }, [data]);
+
+  const prepareSelectedDebugBundle = async (): Promise<PreparedBulkBundle | null> => {
+    if (!selectedVisibleIds.length) {
+      notify("error", t("debugBulk.noRecordsSelected"));
+      return null;
+    }
+    if (preparedBundle?.key === selectionKey) {
+      return preparedBundle;
+    }
+
+    setBulkActionLoading(true);
+    try {
+      const response = await apiPost<BulkDebugExportResponse, { ids: string[] }>(
+        "/api/v1/admin/calls/debug-export",
+        {
+          ids: selectedVisibleIds
+        }
+      );
+      const payload = buildBulkDebugBundle(response, {
+        sourcePage: "call_logs",
+        selection: {
+          selectedCount: selectedVisibleIds.length,
+          visibleCount: visibleIds.length,
+          filters: {
+            status,
+            salonId
+          }
+        }
+      });
+      const nextPreparedBundle = {
+        key: selectionKey,
+        payload,
+        response
+      };
+      setPreparedBundle(nextPreparedBundle);
+      if (response.notFoundIds.length > 0) {
+        notify("info", t("debugBulk.someNotFound"));
+      }
+      return nextPreparedBundle;
+    } finally {
+      setBulkActionLoading(false);
+    }
+  };
+
+  const copySelectedDebug = async () => {
+    let prepared: PreparedBulkBundle | null;
+    try {
+      prepared = await prepareSelectedDebugBundle();
+    } catch (copyError) {
+      notify("error", extractErrorMessage(copyError));
+      return;
+    }
+    if (!prepared) {
+      return;
+    }
+
+    try {
+      await copyTextToClipboard(stringifyDebugJson(prepared.payload));
+      notify("success", t("debugBulk.copied"));
+    } catch {
+      notify("error", t("debugBulk.copyTooLarge"));
+    }
+  };
+
+  const exportSelectedDebug = async () => {
+    let prepared: PreparedBulkBundle | null;
+    try {
+      prepared = await prepareSelectedDebugBundle();
+    } catch (exportError) {
+      notify("error", extractErrorMessage(exportError));
+      return;
+    }
+    if (!prepared) {
+      return;
+    }
+    if (prepared.response.recordCount === 0) {
+      notify("error", t("debugBulk.someNotFound"));
+      return;
+    }
+
+    const filename = `fastaibooking-call-debug-${prepared.response.recordCount}-records-${toUtcTimestampForFilename(
+      new Date(prepared.response.exportedAt)
+    )}.json`;
+    downloadJsonFile(filename, prepared.payload);
+    notify("success", t("debugBulk.exported"));
+  };
 
   if (loading) {
     return <LoadingBlock />;
@@ -169,10 +310,30 @@ export const CallsPage = () => {
         </form>
 
         {data?.items.length ? (
+          <>
+          <DebugBulkActions
+            selectedCount={selectedVisibleIds.length}
+            totalVisible={visibleIds.length}
+            busy={bulkActionLoading}
+            onCopy={copySelectedDebug}
+            onExport={exportSelectedDebug}
+            onClear={clearAll}
+          />
           <div className="table-wrap">
             <table>
               <thead>
                 <tr>
+                  <th className="table-checkbox-column">
+                    <input
+                      ref={selectAllRef}
+                      className="row-checkbox"
+                      type="checkbox"
+                      checked={allVisibleSelected}
+                      disabled={!visibleIds.length || bulkActionLoading}
+                      onChange={selectAllVisible}
+                      aria-label={t("debugBulk.selectAllVisible")}
+                    />
+                  </th>
                   <th>{t("calls.created")}</th>
                   <th>{t("calls.salon")}</th>
                   <th>{t("calls.provider")}</th>
@@ -186,7 +347,18 @@ export const CallsPage = () => {
               </thead>
               <tbody>
                 {data.items.map((item) => (
-                  <tr key={item.id}>
+                  <tr key={item.id} className={selectedIds.has(item.id) ? "is-selected" : undefined}>
+                    <td className="table-checkbox-column">
+                      <input
+                        className="row-checkbox"
+                        type="checkbox"
+                        checked={selectedIds.has(item.id)}
+                        disabled={bulkActionLoading}
+                        onClick={(event) => event.stopPropagation()}
+                        onChange={() => toggleOne(item.id)}
+                        aria-label={`${t("debugBulk.selectRow")} ${item.providerCallId || item.id}`}
+                      />
+                    </td>
                     <td>{formatDateTime(item.createdAt)}</td>
                     <td>{item.salon?.name ?? t("common.none")}</td>
                     <td>{item.provider}</td>
@@ -203,6 +375,7 @@ export const CallsPage = () => {
               </tbody>
             </table>
           </div>
+          </>
         ) : (
           <EmptyBlock message={t("calls.empty")} />
         )}

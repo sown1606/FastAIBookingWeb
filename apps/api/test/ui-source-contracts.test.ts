@@ -40,13 +40,18 @@ test("admin salon list uses shared delete dialog and preview endpoint", () => {
 
 test("admin call detail copy and download share sanitized debug payload", () => {
   const source = readRepoFile("apps/admin/src/pages/call-detail-page.tsx");
+  const debugSource = readRepoFile("apps/admin/src/lib/debug-export.ts");
+  const downloadSource = readRepoFile("apps/admin/src/lib/download-json.ts");
+  const clipboardSource = readRepoFile("apps/admin/src/lib/clipboard.ts");
   const i18nSource = readRepoFile("apps/admin/src/lib/i18n.tsx");
 
-  assert.match(source, /const buildCallDebugPayload/);
-  assert.match(source, /downloadJsonFile\(filename,\s*buildCallDebugPayload\(call,\s*exportedAt\)\)/);
-  assert.match(source, /copyTextToClipboard\(JSON\.stringify\(payload,\s*null,\s*2\)\)/);
-  assert.match(source, /navigator\.clipboard\?\.writeText/);
-  assert.match(source, /document\.execCommand\("copy"\)/);
+  assert.match(debugSource, /export const buildCallDebugPayload/);
+  assert.match(source, /const payload = buildCallDebugPayload\(call,\s*exportedAt\)/);
+  assert.match(source, /downloadJsonFile\(filename,\s*payload\)/);
+  assert.match(source, /copyTextToClipboard\(stringifyDebugJson\(payload\)\)/);
+  assert.match(clipboardSource, /navigator\.clipboard\?\.writeText/);
+  assert.match(clipboardSource, /document\.execCommand\("copy"\)/);
+  assert.match(downloadSource, /isSensitiveKey\(key\) \? "\[REDACTED\]"/);
   for (const key of [
     "authorization",
     "cookie",
@@ -55,14 +60,82 @@ test("admin call detail copy and download share sanitized debug payload", () => 
     "refreshtoken",
     "apikey",
     "secret",
-    "password"
+    "password",
+    "sessiontoken",
+    "privatekey",
+    "clientsecret"
   ]) {
-    assert.match(source, new RegExp(`"${key}"`));
+    assert.match(downloadSource, new RegExp(`"${key.replace("-", "")}"`));
   }
   assert.match(source, /calls\.copyDebugJson/);
   assert.match(source, /calls\.debugJsonCopied/);
   assert.match(i18nSource, /"calls\.copyDebugJson": "Copy debug JSON"/);
   assert.match(i18nSource, /"calls\.debugJsonCopied": "Debug JSON copied"/);
+});
+
+test("admin debug list pages support multi-select bulk debug export", () => {
+  const callsSource = readRepoFile("apps/admin/src/pages/calls-page.tsx");
+  const aiLogsSource = readRepoFile("apps/admin/src/pages/ai-logs-page.tsx");
+  const hookSource = readRepoFile("apps/admin/src/lib/use-row-selection.ts");
+  const bulkActionsSource = readRepoFile("apps/admin/src/components/debug-bulk-actions.tsx");
+  const debugSource = readRepoFile("apps/admin/src/lib/debug-export.ts");
+  const downloadSource = readRepoFile("apps/admin/src/lib/download-json.ts");
+
+  for (const source of [callsSource, aiLogsSource]) {
+    assert.match(source, /useRowSelection\(visibleIds\)/);
+    assert.match(source, /selectAllRef\.current\.indeterminate/);
+    assert.match(source, /DebugBulkActions/);
+    assert.match(source, /copySelectedDebug/);
+    assert.match(source, /exportSelectedDebug/);
+    assert.match(source, /copyTextToClipboard\(stringifyDebugJson\(prepared\.payload\)\)/);
+    assert.match(source, /downloadJsonFile\(filename,\s*prepared\.payload\)/);
+    assert.match(source, /buildBulkDebugBundle/);
+    assert.match(source, /className="row-checkbox"/);
+    assert.match(source, /aria-label=\{t\("debugBulk\.selectAllVisible"\)\}/);
+  }
+
+  assert.match(callsSource, /\/api\/v1\/admin\/calls\/debug-export/);
+  assert.match(callsSource, /sourcePage: "call_logs"/);
+  assert.match(callsSource, /fastaibooking-call-debug-\$\{prepared\.response\.recordCount\}-records/);
+  assert.match(aiLogsSource, /groupAiLogsByCall/);
+  assert.match(aiLogsSource, /groupedItems\.map\(\(group\) => group\.latest\.id\)/);
+  assert.match(aiLogsSource, /\/api\/v1\/admin\/ai-logs\/debug-export/);
+  assert.match(aiLogsSource, /sourcePage: "ai_logs"/);
+  assert.match(aiLogsSource, /fastaibooking-ai-debug-\$\{prepared\.response\.recordCount\}-calls/);
+  assert.match(hookSource, /selectedIds/);
+  assert.match(hookSource, /toggleOne/);
+  assert.match(hookSource, /selectAllVisible/);
+  assert.match(hookSource, /clearAll/);
+  assert.match(hookSource, /allVisibleSelected/);
+  assert.match(hookSource, /someVisibleSelected/);
+  assert.match(hookSource, /reconcileVisibleIds/);
+  assert.match(bulkActionsSource, /debugBulk\.copyJson/);
+  assert.match(bulkActionsSource, /debugBulk\.exportJson/);
+  assert.match(debugSource, /sanitizeDebugJsonValue/);
+  assert.match(downloadSource, /stringifyJsonExport/);
+});
+
+test("admin API exposes authenticated bulk debug endpoints with server-side sanitization", () => {
+  const routesSource = readRepoFile("apps/api/src/modules/admin/admin.routes.ts");
+  const serviceSource = readRepoFile("apps/api/src/modules/admin/admin-debug-export.service.ts");
+  const aiServiceSource = readRepoFile("apps/api/src/modules/ai/ai.service.ts");
+
+  assert.match(routesSource, /adminRouter\.use\(authenticate, requireRoles\(Role\.PLATFORM_ADMIN\)\)/);
+  assert.match(routesSource, /"\/calls\/debug-export"/);
+  assert.match(routesSource, /"\/ai-logs\/debug-export"/);
+  assert.match(routesSource, /ids:\s*z\.array\(z\.string\(\)\.uuid\(\)\)\.min\(1\)\.max\(50\)/);
+  assert.match(serviceSource, /getCallsDebugExportForAdmin/);
+  assert.match(serviceSource, /getAIInteractionsDebugExportForAdmin/);
+  assert.match(serviceSource, /exportType: "multi_call_debug"/);
+  assert.match(serviceSource, /exportType: "multi_ai_call_debug"/);
+  assert.match(serviceSource, /deduplicatedCount/);
+  assert.match(serviceSource, /notFoundIds/);
+  assert.match(serviceSource, /SENSITIVE_DEBUG_KEY_PARTS/);
+  assert.match(serviceSource, /"\[REDACTED\]"/);
+  assert.match(serviceSource, /callSession\.findMany/);
+  assert.match(serviceSource, /aiInteractionLog\.findMany/);
+  assert.match(aiServiceSource, /export const buildAdminDebugTimelineItems/);
+  assert.match(aiServiceSource, /export const buildAIInteractionCallDebugForAdminPayload/);
 });
 
 test("call-center CCP is embedded-first with collapsed technical details", () => {

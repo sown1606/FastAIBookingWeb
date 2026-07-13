@@ -9967,7 +9967,7 @@ const buildAdminDebugTimelineItem = (
   };
 };
 
-const buildAdminDebugTimelineItems = (
+export const buildAdminDebugTimelineItems = (
   interaction: Awaited<ReturnType<typeof prisma.aiInteractionLog.findMany>>[number],
   index: number
 ): Array<ReturnType<typeof buildAdminDebugTimelineItem>> => {
@@ -10029,6 +10029,52 @@ const buildAdminDebugTimelineItems = (
   });
 };
 
+export const buildAIInteractionCallDebugForAdminPayload = (
+  interaction: any,
+  callSession: any | null
+) => {
+  if (!interaction) {
+    throw new AppError("AI interaction log not found.", 404, "AI_INTERACTION_NOT_FOUND");
+  }
+
+  const aiInteractions: any[] = callSession?.aiInteractions ?? [interaction];
+  const contactIds = compactValues([
+    callSession?.providerCallId,
+    ...aiInteractions.flatMap((item: any) => {
+      const requestPayload = asRecord(item.requestPayload);
+      const responsePayload = asRecord(item.responsePayload);
+      const requestAttributes = readNestedRecord(requestPayload, "attributes");
+      return [
+        requestPayload.amazonConnectContactId,
+        requestPayload.contactId,
+        requestAttributes.amazonConnectContactId,
+        requestAttributes.AmazonConnectContactId,
+        requestAttributes.contactId,
+        readNestedValue(responsePayload, ["lexTurnDebug", "contactId"])
+      ];
+    })
+  ]);
+  const timeline = aiInteractions.flatMap((item: any, index: number) =>
+    buildAdminDebugTimelineItems(item, index)
+  );
+
+  return {
+    callSession,
+    aiInteractions,
+    bookingAttempts:
+      callSession?.bookingAttempts ?? (interaction.bookingAttempt ? [interaction.bookingAttempt] : []),
+    transcripts: callSession?.transcripts ?? (interaction.transcript ? [interaction.transcript] : []),
+    events: callSession?.events ?? [],
+    escalationRecords: callSession?.callEscalations ?? [],
+    finalResolution: callSession?.finalResolution ?? null,
+    contactIds,
+    callerPhone: callSession?.callerPhone ?? interaction.bookingAttempt?.customerPhone ?? null,
+    calledNumber: callSession?.dialedPhone ?? callSession?.trackingNumber ?? null,
+    timeline,
+    turnHistories: timeline
+  };
+};
+
 export const getAIInteractionCallDebugForAdmin = async (interactionId: string) => {
   const interaction = await prisma.aiInteractionLog.findUnique({
     where: { id: interactionId },
@@ -10053,6 +10099,9 @@ export const getAIInteractionCallDebugForAdmin = async (interactionId: string) =
     ? await prisma.callSession.findUnique({
         where: { id: callSessionId },
         include: {
+          events: {
+            orderBy: { receivedAt: "asc" }
+          },
           transcripts: {
             orderBy: { createdAt: "asc" }
           },
@@ -10061,39 +10110,15 @@ export const getAIInteractionCallDebugForAdmin = async (interactionId: string) =
           },
           aiInteractions: {
             orderBy: { createdAt: "asc" }
+          },
+          callEscalations: {
+            orderBy: { createdAt: "asc" }
           }
         }
       })
     : null;
 
-  const aiInteractions = callSession?.aiInteractions ?? [interaction];
-  const contactIds = compactValues([
-    callSession?.providerCallId,
-    ...aiInteractions.flatMap((item) => {
-      const requestPayload = asRecord(item.requestPayload);
-      const responsePayload = asRecord(item.responsePayload);
-      const requestAttributes = readNestedRecord(requestPayload, "attributes");
-      return [
-        requestPayload.amazonConnectContactId,
-        requestPayload.contactId,
-        requestAttributes.amazonConnectContactId,
-        requestAttributes.AmazonConnectContactId,
-        requestAttributes.contactId,
-        readNestedValue(responsePayload, ["lexTurnDebug", "contactId"])
-      ];
-    })
-  ]);
-
-  return {
-    callSession,
-    aiInteractions,
-    bookingAttempts: callSession?.bookingAttempts ?? (interaction.bookingAttempt ? [interaction.bookingAttempt] : []),
-    transcripts: callSession?.transcripts ?? (interaction.transcript ? [interaction.transcript] : []),
-    contactIds,
-    callerPhone: callSession?.callerPhone ?? interaction.bookingAttempt?.customerPhone ?? null,
-    calledNumber: callSession?.dialedPhone ?? callSession?.trackingNumber ?? null,
-    timeline: aiInteractions.flatMap((item, index) => buildAdminDebugTimelineItems(item, index))
-  };
+  return buildAIInteractionCallDebugForAdminPayload(interaction, callSession);
 };
 
 export const listAIInteractionsForAdmin = async (input: {
