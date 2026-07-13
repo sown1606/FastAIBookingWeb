@@ -34,6 +34,8 @@ fi
 "${COMPOSE[@]}" run --rm --no-deps api npm run prisma:migrate:deploy
 
 "${COMPOSE[@]}" up -d --remove-orphans
+"${COMPOSE[@]}" up -d --force-recreate --no-deps nginx
+"${COMPOSE[@]}" exec -T nginx nginx -t
 "${COMPOSE[@]}" exec -T nginx nginx -s reload
 
 "${COMPOSE[@]}" ps

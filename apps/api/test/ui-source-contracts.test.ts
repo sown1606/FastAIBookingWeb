@@ -87,8 +87,16 @@ test("admin debug list pages support multi-select bulk debug export", () => {
     assert.match(source, /DebugBulkActions/);
     assert.match(source, /copySelectedDebug/);
     assert.match(source, /exportSelectedDebug/);
-    assert.match(source, /copyTextToClipboard\(stringifyDebugJson\(prepared\.payload\)\)/);
-    assert.match(source, /downloadJsonFile\(filename,\s*prepared\.payload\)/);
+    assert.match(source, /copyTextToClipboard\(prepared\.json\)/);
+    assert.match(source, /downloadPreparedJson\(filename,\s*prepared\.json\)/);
+    assert.match(source, /stringifyServerDebugBundle\(payload\)/);
+    assert.match(source, /getJsonByteSize\(json\)/);
+    assert.match(source, /timeout:\s*DEBUG_EXPORT_TIMEOUT_MS/);
+    assert.match(source, /mode:\s*"compact"/);
+    assert.match(source, /mode:\s*"full"/);
+    assert.match(source, /apiPostBlob/);
+    assert.match(source, /download=true/);
+    assert.match(source, /event\.nativeEvent instanceof MouseEvent && event\.nativeEvent\.shiftKey/);
     assert.match(source, /buildBulkDebugBundle/);
     assert.match(source, /className="row-checkbox"/);
     assert.match(source, /aria-label=\{t\("debugBulk\.selectAllVisible"\)\}/);
@@ -103,16 +111,39 @@ test("admin debug list pages support multi-select bulk debug export", () => {
   assert.match(aiLogsSource, /sourcePage: "ai_logs"/);
   assert.match(aiLogsSource, /fastaibooking-ai-debug-\$\{prepared\.response\.recordCount\}-calls/);
   assert.match(hookSource, /selectedIds/);
+  assert.match(hookSource, /anchorId/);
+  assert.match(hookSource, /getVisibleRangeIds/);
+  assert.match(hookSource, /options\.shiftKey/);
   assert.match(hookSource, /toggleOne/);
   assert.match(hookSource, /selectAllVisible/);
   assert.match(hookSource, /clearAll/);
   assert.match(hookSource, /allVisibleSelected/);
   assert.match(hookSource, /someVisibleSelected/);
   assert.match(hookSource, /reconcileVisibleIds/);
-  assert.match(bulkActionsSource, /debugBulk\.copyJson/);
-  assert.match(bulkActionsSource, /debugBulk\.exportJson/);
+  assert.match(bulkActionsSource, /debugBulk\.copyCompactJson/);
+  assert.match(bulkActionsSource, /debugBulk\.exportCompactJson/);
+  assert.match(bulkActionsSource, /debugBulk\.selectAllVisible/);
+  assert.match(bulkActionsSource, /debugBulk\.shiftHint/);
   assert.match(debugSource, /sanitizeDebugJsonValue/);
   assert.match(downloadSource, /stringifyJsonExport/);
+  assert.match(downloadSource, /downloadPreparedJson/);
+  assert.match(downloadSource, /downloadBlobFile/);
+});
+
+test("admin row selection hook supports Shift-click visible range behavior", () => {
+  const hookSource = readRepoFile("apps/admin/src/lib/use-row-selection.ts");
+  const aiLogsSource = readRepoFile("apps/admin/src/pages/ai-logs-page.tsx");
+
+  assert.match(hookSource, /const anchorIndex = visibleIds\.indexOf\(anchorId\)/);
+  assert.match(hookSource, /const targetIndex = visibleIds\.indexOf\(targetId\)/);
+  assert.match(hookSource, /visibleIds\.slice\(start,\s*end \+ 1\)/);
+  assert.match(hookSource, /rangeIds\.forEach\(\(rangeId\) => next\.add\(rangeId\)\)/);
+  assert.match(hookSource, /setAnchorId\(id\)/);
+  assert.match(hookSource, /setAnchorId\(\(current\) => \(current && nextVisibleIdSet\.has\(current\) \? current : null\)\)/);
+  assert.match(hookSource, /setAnchorId\(null\)/);
+  assert.match(hookSource, /visibleIdSet\.has\(id\)/);
+  assert.match(hookSource, /visibleIds\.every\(\(id\) => current\.has\(id\)\)/);
+  assert.match(aiLogsSource, /groupedItems\.map\(\(group\) => group\.latest\.id\)/);
 });
 
 test("admin API exposes authenticated bulk debug endpoints with server-side sanitization", () => {
@@ -124,18 +155,43 @@ test("admin API exposes authenticated bulk debug endpoints with server-side sani
   assert.match(routesSource, /"\/calls\/debug-export"/);
   assert.match(routesSource, /"\/ai-logs\/debug-export"/);
   assert.match(routesSource, /ids:\s*z\.array\(z\.string\(\)\.uuid\(\)\)\.min\(1\)\.max\(50\)/);
+  assert.match(routesSource, /mode:\s*z\.enum\(\["compact", "full"\]\)\.default\("compact"\)/);
+  assert.match(routesSource, /req\.query\.download === "true"/);
+  assert.match(routesSource, /Content-Disposition/);
+  assert.match(routesSource, /X-Debug-Export-Mode/);
   assert.match(serviceSource, /getCallsDebugExportForAdmin/);
   assert.match(serviceSource, /getAIInteractionsDebugExportForAdmin/);
   assert.match(serviceSource, /exportType: "multi_call_debug"/);
   assert.match(serviceSource, /exportType: "multi_ai_call_debug"/);
+  assert.match(serviceSource, /schemaVersion: 2/);
+  assert.match(serviceSource, /call_debug_compact/);
+  assert.match(serviceSource, /OMITTED_DUPLICATE_FIELDS/);
+  assert.match(serviceSource, /pruneResponsePayloadForExport/);
+  assert.match(serviceSource, /responsePayload\.turnHistory/);
   assert.match(serviceSource, /deduplicatedCount/);
   assert.match(serviceSource, /notFoundIds/);
+  assert.match(serviceSource, /serializationDurationMs/);
+  assert.match(serviceSource, /responseBytes/);
   assert.match(serviceSource, /SENSITIVE_DEBUG_KEY_PARTS/);
   assert.match(serviceSource, /"\[REDACTED\]"/);
   assert.match(serviceSource, /callSession\.findMany/);
   assert.match(serviceSource, /aiInteractionLog\.findMany/);
   assert.match(aiServiceSource, /export const buildAdminDebugTimelineItems/);
   assert.match(aiServiceSource, /export const buildAIInteractionCallDebugForAdminPayload/);
+  assert.match(aiServiceSource, /turnHistories/);
+});
+
+test("edge nginx config enables gzip for API JSON responses", () => {
+  const plainConfig = readRepoFile("infra/nginx/default.conf");
+  const sslConfig = readRepoFile("infra/nginx/default-ssl.conf");
+
+  for (const source of [plainConfig, sslConfig]) {
+    assert.match(source, /server_name api-new-nail\.kendemo\.com/);
+    assert.match(source, /gzip on;/);
+    assert.match(source, /gzip_comp_level 5;/);
+    assert.match(source, /gzip_min_length 1024;/);
+    assert.match(source, /gzip_types application\/json application\/problem\+json text\/plain;/);
+  }
 });
 
 test("call-center CCP is embedded-first with collapsed technical details", () => {

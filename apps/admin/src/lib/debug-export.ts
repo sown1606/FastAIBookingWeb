@@ -78,10 +78,13 @@ export interface BulkDebugExportResponse {
   schemaVersion: number;
   exportedAt: string;
   exportType: string;
+  exportMode?: "compact" | "full";
   requestedCount: number;
   recordCount: number;
   deduplicatedCount?: number;
   notFoundIds: string[];
+  approximateJsonBytes?: number;
+  omittedDuplicateFields?: string[];
   records: unknown[];
 }
 
@@ -173,8 +176,24 @@ export const buildBulkDebugBundle = (
     selection: Record<string, unknown>;
   }
 ) =>
-  sanitizeDebugJsonValue({
+  ({
     ...response,
     sourcePage: options.sourcePage,
     selection: options.selection
   });
+
+export const stringifyServerDebugBundle = (payload: unknown) => JSON.stringify(payload, null, 2);
+
+export const getJsonByteSize = (json: string) => new Blob([json]).size;
+
+export const formatDebugByteSize = (bytes: number) => {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  const kib = bytes / 1024;
+  if (kib < 1024) {
+    return `${kib.toFixed(kib >= 10 ? 0 : 1)} KB`;
+  }
+  const mib = kib / 1024;
+  return `${mib.toFixed(mib >= 10 ? 1 : 2)} MB`;
+};

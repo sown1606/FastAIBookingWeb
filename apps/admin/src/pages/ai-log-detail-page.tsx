@@ -74,6 +74,7 @@ interface AiLogDebugTimelineItem {
 interface AiLogCallDebug {
   contactIds?: string[];
   timeline?: AiLogDebugTimelineItem[];
+  turnHistories?: AiLogDebugTimelineItem[];
 }
 
 const routingLabelKeyByValue = {
@@ -138,12 +139,12 @@ export const AiLogDetailPage = () => {
     void load();
   }, [id]);
 
+  const debugTurns = callDebug?.turnHistories ?? callDebug?.timeline ?? [];
   const selectedDebugTurn = log
-    ? [...(callDebug?.timeline ?? [])].reverse().find((item) => item.aiInteractionId === log.id)
+    ? [...debugTurns].reverse().find((item) => item.aiInteractionId === log.id)
     : undefined;
-  const selectedTurnIndex =
-    callDebug?.timeline?.findIndex((item) => item === selectedDebugTurn) ?? -1;
-  const turnCount = callDebug?.timeline?.length ?? 0;
+  const selectedTurnIndex = debugTurns.findIndex((item) => item === selectedDebugTurn);
+  const turnCount = debugTurns.length;
 
   const copyFullDebug = async () => {
     if (!id) return;
@@ -366,7 +367,7 @@ export const AiLogDetailPage = () => {
         </article>
       </section>
 
-      {callDebug?.timeline?.length ? (
+      {debugTurns.length ? (
         <section className="card">
           <h3>Turn history</h3>
           <div className="table-wrap">
@@ -382,7 +383,7 @@ export const AiLogDetailPage = () => {
                 </tr>
               </thead>
               <tbody>
-                {callDebug.timeline.map((turn, index) => (
+                {debugTurns.map((turn, index) => (
                   <tr key={`${String(turn.aiInteractionId)}-${index}`}>
                     <td>{index + 1}</td>
                     <td>{displayDebugValue(turn.currentTurnTranscript)}</td>

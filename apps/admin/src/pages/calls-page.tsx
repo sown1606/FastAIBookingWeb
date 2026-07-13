@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { apiGet, apiPost, extractErrorMessage } from "../lib/api";
+import { apiGet, apiPost, apiPostBlob, extractErrorMessage } from "../lib/api";
 import { DebugBulkActions } from "../components/debug-bulk-actions";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
 import { useToast } from "../components/toast";
@@ -8,10 +8,16 @@ import type { Pagination } from "../types";
 import { copyTextToClipboard } from "../lib/clipboard";
 import {
   buildBulkDebugBundle,
-  stringifyDebugJson,
+  formatDebugByteSize,
+  getJsonByteSize,
+  stringifyServerDebugBundle,
   type BulkDebugExportResponse
 } from "../lib/debug-export";
-import { downloadJsonFile, toUtcTimestampForFilename } from "../lib/download-json";
+import {
+  downloadBlobFile,
+  downloadPreparedJson,
+  toUtcTimestampForFilename
+} from "../lib/download-json";
 import { formatDateTime } from "../lib/format";
 import { getStatusLabel, useI18n } from "../lib/i18n";
 import { useRowSelection } from "../lib/use-row-selection";
@@ -45,6 +51,8 @@ interface CallsResponse {
 interface PreparedBulkBundle {
   key: string;
   payload: unknown;
+  json: string;
+  byteSize: number;
   response: BulkDebugExportResponse;
 }
 
@@ -59,6 +67,19 @@ const routingLabelKeyByValue = {
 } as const;
 
 const callStatuses = ["", "RECEIVED", "RINGING", "IN_PROGRESS", "COMPLETED", "FAILED", "MISSED", "VOICEMAIL"];
+const DEBUG_EXPORT_TIMEOUT_MS = 120_000;
+
+const isTimeoutError = (error: unknown) =>
+  /timeout|exceeded/i.test(extractErrorMessage(error)) ||
+  (typeof error === "object" && error !== null && (error as { code?: unknown }).code === "ECONNABORTED");
+
+const readContentDispositionFilename = (value: unknown, fallback: string) => {
+  if (typeof value !== "string") {
+    return fallback;
+  }
+  const filenameMatch = value.match(/filename\*?=(?:UTF-8''|")?([^";]+)/i);
+  return filenameMatch?.[1] ? decodeURIComponent(filenameMatch[1].replace(/^"|"$/g, "")) : fallback;
+};
 
 export const CallsPage = () => {
   const { t } = useI18n();
@@ -172,10 +193,14 @@ export const CallsPage = () => {
 
     setBulkActionLoading(true);
     try {
-      const response = await apiPost<BulkDebugExportResponse, { ids: string[] }>(
+      const response = await apiPost<BulkDebugExportResponse, { ids: string[]; mode: "compact" }>(
         "/api/v1/admin/calls/debug-export",
         {
-          ids: selectedVisibleIds
+          ids: selectedVisibleIds,
+          mode: "compact"
+        },
+        {
+          timeout: DEBUG_EXPORT_TIMEOUT_MS
         }
       );
       const payload = buildBulkDebugBundle(response, {
@@ -189,9 +214,12 @@ export const CallsPage = () => {
           }
         }
       });
+      const json = stringifyServerDebugBundle(payload);
       const nextPreparedBundle = {
         key: selectionKey,
         payload,
+        json,
+        byteSize: getJsonByteSize(json),
         response
       };
       setPreparedBundle(nextPreparedBundle);
@@ -209,7 +237,7 @@ export const CallsPage = () => {
     try {
       prepared = await prepareSelectedDebugBundle();
     } catch (copyError) {
-      notify("error", extractErrorMessage(copyError));
+      notify("error", isTimeoutError(copyError) ? t("debugBulk.timeout") : extractErrorMessage(copyError));
       return;
     }
     if (!prepared) {
@@ -217,7 +245,7 @@ export const CallsPage = () => {
     }
 
     try {
-      await copyTextToClipboard(stringifyDebugJson(prepared.payload));
+      await copyTextToClipboard(prepared.json);
       notify("success", t("debugBulk.copied"));
     } catch {
       notify("error", t("debugBulk.copyTooLarge"));
@@ -229,7 +257,7 @@ export const CallsPage = () => {
     try {
       prepared = await prepareSelectedDebugBundle();
     } catch (exportError) {
-      notify("error", extractErrorMessage(exportError));
+      notify("error", isTimeoutError(exportError) ? t("debugBulk.timeout") : extractErrorMessage(exportError));
       return;
     }
     if (!prepared) {
@@ -243,8 +271,38 @@ export const CallsPage = () => {
     const filename = `fastaibooking-call-debug-${prepared.response.recordCount}-records-${toUtcTimestampForFilename(
       new Date(prepared.response.exportedAt)
     )}.json`;
-    downloadJsonFile(filename, prepared.payload);
+    downloadPreparedJson(filename, prepared.json);
     notify("success", t("debugBulk.exported"));
+  };
+
+  const exportSelectedFullDebug = async () => {
+    if (!selectedVisibleIds.length) {
+      notify("error", t("debugBulk.noRecordsSelected"));
+      return;
+    }
+
+    setBulkActionLoading(true);
+    notify("info", t("debugBulk.fullExportWarning"));
+    try {
+      const response = await apiPostBlob<{ ids: string[]; mode: "full" }>(
+        "/api/v1/admin/calls/debug-export?download=true",
+        {
+          ids: selectedVisibleIds,
+          mode: "full"
+        },
+        {
+          timeout: DEBUG_EXPORT_TIMEOUT_MS
+        }
+      );
+      const fallbackFilename = `fastaibooking-call-debug-${selectedVisibleIds.length}-records-${toUtcTimestampForFilename()}.json`;
+      const filename = readContentDispositionFilename(response.headers["content-disposition"], fallbackFilename);
+      downloadBlobFile(filename, response.data);
+      notify("success", t("debugBulk.exported"));
+    } catch (exportError) {
+      notify("error", isTimeoutError(exportError) ? t("debugBulk.timeout") : extractErrorMessage(exportError));
+    } finally {
+      setBulkActionLoading(false);
+    }
   };
 
   if (loading) {
@@ -315,8 +373,13 @@ export const CallsPage = () => {
             selectedCount={selectedVisibleIds.length}
             totalVisible={visibleIds.length}
             busy={bulkActionLoading}
+            preparedByteSize={
+              preparedBundle?.key === selectionKey ? formatDebugByteSize(preparedBundle.byteSize) : undefined
+            }
+            onSelectAllVisible={selectAllVisible}
             onCopy={copySelectedDebug}
             onExport={exportSelectedDebug}
+            onExportFull={exportSelectedFullDebug}
             onClear={clearAll}
           />
           <div className="table-wrap">
@@ -355,7 +418,12 @@ export const CallsPage = () => {
                         checked={selectedIds.has(item.id)}
                         disabled={bulkActionLoading}
                         onClick={(event) => event.stopPropagation()}
-                        onChange={() => toggleOne(item.id)}
+                        onChange={(event) =>
+                          toggleOne(item.id, {
+                            shiftKey:
+                              event.nativeEvent instanceof MouseEvent && event.nativeEvent.shiftKey
+                          })
+                        }
                         aria-label={`${t("debugBulk.selectRow")} ${item.providerCallId || item.id}`}
                       />
                     </td>

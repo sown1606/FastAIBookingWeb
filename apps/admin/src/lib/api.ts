@@ -146,6 +146,16 @@ export const apiPost = async <T, B = unknown>(
   return unwrap(response);
 };
 
+export const apiPostBlob = async <B = unknown>(
+  url: string,
+  body?: B,
+  config?: AxiosRequestConfig
+): Promise<AxiosResponse<Blob>> =>
+  http.post<Blob>(url, body, {
+    ...config,
+    responseType: "blob"
+  });
+
 export const apiPatch = async <T, B = unknown>(
   url: string,
   body?: B,

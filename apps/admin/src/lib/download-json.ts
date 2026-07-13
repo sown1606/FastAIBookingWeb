@@ -49,7 +49,15 @@ export const safeFilenamePart = (value: string | null | undefined, fallback: str
 
 export const downloadJsonFile = (filename: string, payload: unknown) => {
   const json = stringifyJsonExport(payload);
+  downloadPreparedJson(filename, json);
+};
+
+export const downloadPreparedJson = (filename: string, json: string) => {
   const blob = new Blob([json], { type: "application/json;charset=utf-8" });
+  downloadBlobFile(filename, blob);
+};
+
+export const downloadBlobFile = (filename: string, blob: Blob) => {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
 

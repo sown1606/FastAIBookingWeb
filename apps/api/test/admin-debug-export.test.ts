@@ -32,19 +32,24 @@ const ids = {
   salon: "99999999-9999-4999-8999-999999999999",
   call1: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   call2: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  heavyCall: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
   missingCall: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
   ai1: "11111111-1111-4111-8111-111111111111",
   ai2: "22222222-2222-4222-8222-222222222222",
   ai3: "33333333-3333-4333-8333-333333333333",
+  heavyAi: "99999999-9999-4999-8999-999999999991",
   ai4: "45454545-4545-4545-8545-454545454545",
   ai5: "56565656-5656-4565-8565-565656565656",
   missingAi: "44444444-4444-4444-8444-444444444444",
   transcript1: "55555555-5555-4555-8555-555555555555",
   transcript2: "66666666-6666-4666-8666-666666666666",
+  heavyTranscript: "99999999-9999-4999-8999-999999999992",
   booking1: "77777777-7777-4777-8777-777777777777",
   booking2: "88888888-8888-4888-8888-888888888888",
+  heavyBooking: "99999999-9999-4999-8999-999999999993",
   appointment1: "12121212-1212-4212-8212-121212121212",
-  appointment2: "34343434-3434-4434-8434-343434343434"
+  appointment2: "34343434-3434-4434-8434-343434343434",
+  heavyAppointment: "99999999-9999-4999-8999-999999999994"
 };
 
 const patch = (target: Record<string, unknown>, key: string, value: unknown) => {
@@ -98,6 +103,20 @@ const requestJson = async (
     body: (await response.json()) as any
   };
 };
+
+const requestRaw = async (
+  path: string,
+  body: unknown,
+  token = tokenForRole(Role.PLATFORM_ADMIN)
+) =>
+  fetch(`${baseUrl}${path}`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify(body)
+  });
 
 const now = new Date("2026-07-13T10:30:00.000Z");
 const later = new Date("2026-07-13T10:31:00.000Z");
@@ -243,6 +262,147 @@ const ai3 = buildAiInteraction({
   contactId: "contact-2",
   createdAt: later
 });
+
+const buildHeavyAiInteraction = () => {
+  const base = buildAiInteraction({
+    id: ids.heavyAi,
+    callSessionId: ids.heavyCall,
+    bookingAttemptId: ids.heavyBooking,
+    transcriptId: ids.heavyTranscript,
+    contactId: "heavy-contact-15",
+    createdAt: now
+  });
+  const sessionAttributesBefore = Object.fromEntries(
+    Array.from({ length: 18 }, (_value, index) => [`beforeSlot${index}`, `before-value-${index}`])
+  );
+  const sessionAttributesAfter = Object.fromEntries(
+    Array.from({ length: 18 }, (_value, index) => [`afterSlot${index}`, `after-value-${index}`])
+  );
+  const turnHistory = Array.from({ length: 15 }, (_value, index) => ({
+    index: index + 1,
+    createdAt: new Date(now.getTime() + index * 1000).toISOString(),
+    currentTurnTranscript: `Turn ${index + 1}: caller asked for gel pedicure with Amy at 3 pm`,
+    aggregatedBookingTranscript: `Aggregated transcript through turn ${index + 1}`,
+    contactId: "heavy-contact-15",
+    intentName: "BookAppointment",
+    inputMode: index % 3 === 0 ? "DTMF" : "Speech",
+    responseText: `Turn ${index + 1}: normalized response`,
+    slotToElicit: index < 14 ? "requestedTime" : undefined,
+    missingFields: index < 14 ? ["requestedTime"] : [],
+    dtmfDiagnostics: {
+      digit: String((index % 9) + 1),
+      menu: "service",
+      matched: index % 2 === 0
+    },
+    dtmfRouting: {
+      route: index % 2 === 0 ? "service_menu" : "staff_menu"
+    },
+    slotDecisions: {
+      serviceName: "Gel pedicure",
+      staffPreference: "Amy",
+      preferredTime: "3 pm"
+    },
+    trustedSlotsBefore: {
+      serviceName: index > 2 ? "Gel pedicure" : undefined,
+      staffPreference: index > 7 ? "Amy" : undefined
+    },
+    trustedSlotsAfter: {
+      serviceName: "Gel pedicure",
+      staffPreference: index > 7 ? "Amy" : undefined,
+      requestedTime: index > 12 ? "3 pm" : undefined
+    },
+    sessionAttributesBefore,
+    sessionAttributesAfter,
+    activeDtmfMenuBefore: index % 2 === 0 ? "service" : "staff",
+    activeDtmfMenuAfter: index % 2 === 0 ? "staff" : "time",
+    ignoredUngroundedSlots: ["randomColor"],
+    ignoredPollutedSlots: ["staffId"],
+    ignoredNoiseFields: ["backgroundNoise"]
+  }));
+
+  return {
+    ...base,
+    requestText: "Production-shaped 15-turn appointment request",
+    requestPayload: {
+      contactId: "heavy-contact-15",
+      amazonConnectContactId: "heavy-contact-15",
+      callSessionId: ids.heavyCall,
+      intentName: "BookAppointment",
+      inputMode: "Speech",
+      currentTurnTranscript: "Turn 15 final confirmation",
+      aggregatedBookingTranscript: "Large aggregated booking transcript".repeat(120),
+      attributes: {
+        AmazonConnectContactId: "heavy-contact-15",
+        lexTurnDebug: {
+          contactId: "heavy-contact-15",
+          slotDecisions: {
+            serviceName: "Gel pedicure",
+            staffPreference: "Amy",
+            requestedDate: "2026-07-14",
+            requestedTime: "3 pm"
+          },
+          sessionAttributesBefore,
+          sessionAttributesAfter
+        }
+      }
+    },
+    responsePayload: {
+      lexTurnDebug: {
+        contactId: "heavy-contact-15",
+        currentTurnTranscript: "Turn 15 final confirmation",
+        aggregatedBookingTranscript: "Large aggregated booking transcript".repeat(120),
+        intentName: "BookAppointment",
+        inputMode: "Speech",
+        responseText: "Booked for 3 pm.",
+        slotToElicit: null,
+        missingFields: [],
+        dtmfDiagnostics: {
+          finalDigit: "1"
+        },
+        dtmfRouting: {
+          route: "confirmation"
+        },
+        slotDecisions: {
+          serviceName: "Gel pedicure",
+          staffPreference: "Amy",
+          requestedDate: "2026-07-14",
+          requestedTime: "3 pm"
+        },
+        trustedSlotsBefore: {
+          serviceName: "Gel pedicure",
+          staffPreference: "Amy"
+        },
+        trustedSlotsAfter: {
+          serviceName: "Gel pedicure",
+          staffPreference: "Amy",
+          requestedDate: "2026-07-14",
+          requestedTime: "3 pm"
+        },
+        sessionAttributesBefore,
+        sessionAttributesAfter,
+        activeDtmfMenuBefore: "confirmation",
+        activeDtmfMenuAfter: null,
+        sanitization: {
+          ignoredUngroundedSlots: ["randomColor"],
+          ignoredPollutedSlots: ["staffId"],
+          ignoredNoiseFields: ["backgroundNoise"]
+        }
+      },
+      lexResponse: {
+        dialogAction: {
+          type: "Close"
+        },
+        sessionAttributes: sessionAttributesAfter
+      },
+      turnHistory,
+      timeline: turnHistory,
+      bookingOutcome: {
+        status: "BOOKED",
+        appointmentId: ids.heavyAppointment
+      }
+    }
+  };
+};
 
 const buildDetachedAiInteraction = (id: string, contactId: string, createdAt: Date) => {
   const interaction = buildAiInteraction({
@@ -509,8 +669,11 @@ test("calls export accepts one valid call ID", async () => {
   const response = await requestJson("/api/v1/admin/calls/debug-export", { ids: [ids.call1] });
 
   assert.equal(response.status, 200);
+  assert.equal(response.body.data.schemaVersion, 2);
   assert.equal(response.body.data.exportType, "multi_call_debug");
+  assert.equal(response.body.data.exportMode, "compact");
   assert.equal(response.body.data.recordCount, 1);
+  assert.equal(response.body.data.records[0].exportType, "call_debug_compact");
   assert.equal(response.body.data.records[0].callSession.id, ids.call1);
 });
 
@@ -538,6 +701,7 @@ test("calls export deduplicates duplicate IDs", async () => {
   assert.equal(response.status, 200);
   assert.equal(response.body.data.requestedCount, 2);
   assert.equal(response.body.data.recordCount, 1);
+  assert.equal(response.body.data.deduplicatedCount, 1);
 });
 
 test("calls export reports missing IDs under notFoundIds", async () => {
@@ -598,6 +762,21 @@ test("calls export records include linked call debug data", async () => {
   assert.equal(record.aiInteractions.length, 2);
   assert.ok(record.turnHistories.length >= 2);
   assert.equal(record.escalationRecords[0].resolution, "BOOKED");
+  assert.equal(record.appointmentReferences, undefined);
+});
+
+test("compact call export omits duplicate raw turn payloads and appointment references", async () => {
+  setupAdminDebugMocks();
+
+  const response = await requestJson("/api/v1/admin/calls/debug-export", { ids: [ids.call1] });
+  const record = response.body.data.records[0];
+
+  assert.equal(record.turnHistories[0].requestPayload, undefined);
+  assert.equal(record.turnHistories[0].responsePayload, undefined);
+  assert.equal(record.appointmentReferences, undefined);
+  assert.equal(record.aiInteractions[0].responsePayload.turnHistory, undefined);
+  assert.equal(record.aiInteractions[0].responsePayload.timeline, undefined);
+  assert.equal(record.bookingAttempts[0].appointment.id, ids.appointment1);
 });
 
 test("calls export redacts sensitive keys without removing useful debug IDs", async () => {
@@ -621,8 +800,10 @@ test("AI logs export returns linked call debug for one AI interaction", async ()
 
   assert.equal(response.status, 200);
   assert.equal(response.body.data.exportType, "multi_ai_call_debug");
+  assert.equal(response.body.data.exportMode, "compact");
   assert.equal(response.body.data.recordCount, 1);
-  assert.equal(response.body.data.records[0].aiCallDebug.callSession.id, ids.call1);
+  assert.equal(response.body.data.records[0].callSession.id, ids.call1);
+  assert.deepEqual(response.body.data.records[0].selectedFrom.selectedAiInteractionIds, [ids.ai1]);
 });
 
 test("AI logs export deduplicates multiple interactions from the same call", async () => {
@@ -635,6 +816,7 @@ test("AI logs export deduplicates multiple interactions from the same call", asy
   assert.equal(response.status, 200);
   assert.equal(response.body.data.recordCount, 1);
   assert.equal(response.body.data.deduplicatedCount, 1);
+  assert.deepEqual(response.body.data.records[0].selectedFrom.selectedAiInteractionIds, [ids.ai1, ids.ai2]);
 });
 
 test("AI logs export deduplicates interactions that share only ContactId", async () => {
@@ -664,7 +846,7 @@ test("AI logs export returns multiple records for multiple calls", async () => {
   assert.equal(response.status, 200);
   assert.equal(response.body.data.recordCount, 2);
   assert.deepEqual(
-    response.body.data.records.map((record: any) => record.callSessionId),
+    response.body.data.records.map((record: any) => record.callSession.id),
     [ids.call1, ids.call2]
   );
 });
@@ -704,13 +886,161 @@ test("AI logs export redacts sensitive keys", async () => {
   assert.doesNotMatch(serialized, /unit-session-token/);
 });
 
-test("AI logs export preserves timeline and Amazon Connect ContactId", async () => {
+test("compact AI logs export uses one canonical call record and one turnHistories array", async () => {
+  setupAdminDebugMocks();
+
+  const response = await requestJson("/api/v1/admin/ai-logs/debug-export", { ids: [ids.ai1] });
+  const record = response.body.data.records[0];
+  const serialized = JSON.stringify(record);
+
+  assert.equal(record.aiCallDebug, undefined);
+  assert.equal(record.fullCallDebug, undefined);
+  assert.equal(record.timeline, undefined);
+  assert.ok(record.turnHistories.length >= 1);
+  assert.equal(record.turnHistories[0].requestPayload, undefined);
+  assert.equal(record.turnHistories[0].responsePayload, undefined);
+  assert.equal(record.aiInteractions[0].responsePayload.turnHistory, undefined);
+  assert.equal((serialized.match(/"turnHistories"/g) ?? []).length, 1);
+});
+
+test("full mode remains available through JSON response and direct download", async () => {
+  setupAdminDebugMocks();
+
+  const response = await requestJson("/api/v1/admin/calls/debug-export", {
+    ids: [ids.call1],
+    mode: "full"
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.data.exportMode, "full");
+  assert.equal(response.body.data.records[0].exportType, "call_debug_full");
+  assert.equal(response.body.data.records[0].callSession.rawPayload.Authorization, "[REDACTED]");
+
+  const downloadResponse = await requestRaw("/api/v1/admin/calls/debug-export?download=true", {
+    ids: [ids.call1],
+    mode: "full"
+  });
+  const downloadBody = await downloadResponse.json();
+
+  assert.equal(downloadResponse.status, 200);
+  assert.equal(downloadResponse.headers.get("x-debug-export-mode"), "full");
+  assert.equal(downloadResponse.headers.get("x-debug-export-records"), "1");
+  assert.match(downloadResponse.headers.get("content-disposition") ?? "", /fastaibooking-call-debug-1-records/);
+  assert.equal(downloadBody.exportMode, "full");
+});
+
+test("AI logs export preserves normalized turn histories and Amazon Connect ContactId", async () => {
   setupAdminDebugMocks();
 
   const response = await requestJson("/api/v1/admin/ai-logs/debug-export", { ids: [ids.ai1] });
   const record = response.body.data.records[0];
 
   assert.match(record.contactIds.join(" "), /contact-1/);
-  assert.ok(record.aiCallDebug.timeline.length >= 1);
-  assert.match(JSON.stringify(record.aiCallDebug.timeline), /contact-1/);
+  assert.ok(record.turnHistories.length >= 1);
+  assert.match(JSON.stringify(record.turnHistories), /contact-1/);
+});
+
+test("compact export is substantially smaller for a synthetic 15-turn production-shaped call", async () => {
+  const state = setupAdminDebugMocks();
+  const heavyInteraction = buildHeavyAiInteraction();
+  const heavyCall = buildCall({
+    id: ids.heavyCall,
+    providerCallId: "heavy-contact-15",
+    transcriptId: ids.heavyTranscript,
+    bookingAttemptId: ids.heavyBooking,
+    appointmentId: ids.heavyAppointment,
+    aiInteractions: [heavyInteraction]
+  });
+  heavyCall.rawPayload = {
+    Authorization: "Bearer heavy-call-secret",
+    diagnosticBlob: "raw-call-debug".repeat(300)
+  };
+  heavyCall.events[0].payload = {
+    apiKey: "heavy-api-key",
+    diagnosticBlob: "event-debug".repeat(300)
+  };
+  heavyCall.transcripts[0].rawPayload = {
+    clientSecret: "heavy-client-secret",
+    diagnosticBlob: "transcript-debug".repeat(300)
+  };
+  heavyCall.bookingAttempts[0].rawInput = {
+    attributes: {
+      lexTurnDebug: heavyInteraction.responsePayload.lexTurnDebug
+    },
+    normalizedRequest: {
+      serviceName: "Gel pedicure",
+      staffName: "Amy",
+      requestedTime: "3 pm"
+    },
+    sourceMetadata: "booking-debug".repeat(300)
+  };
+  state.calls.push(heavyCall);
+  state.aiInteractions.push(heavyInteraction);
+
+  const compactResponse = await requestJson("/api/v1/admin/calls/debug-export", {
+    ids: [ids.heavyCall],
+    mode: "compact"
+  });
+  const fullResponse = await requestJson("/api/v1/admin/calls/debug-export", {
+    ids: [ids.heavyCall],
+    mode: "full"
+  });
+  const turnHistory = heavyInteraction.responsePayload.turnHistory;
+  const oldDuplicatedRepresentation = {
+    records: [
+      {
+        callSession: heavyCall,
+        appointmentReferences: heavyCall.bookingAttempts.map((attempt) => attempt.appointment),
+        aiInteractions: heavyCall.aiInteractions,
+        turnHistories: turnHistory.map((turn: any, index: number) => ({
+          ...turn,
+          index,
+          requestPayload: heavyInteraction.requestPayload,
+          responsePayload: heavyInteraction.responsePayload
+        }))
+      }
+    ]
+  };
+  const compactJson = JSON.stringify(compactResponse.body.data);
+  const fullJson = JSON.stringify(fullResponse.body.data);
+  const oldDuplicatedJson = JSON.stringify(oldDuplicatedRepresentation);
+  const record = compactResponse.body.data.records[0];
+  const firstTurn = record.turnHistories[0];
+
+  assert.equal(compactResponse.status, 200);
+  assert.equal(fullResponse.status, 200);
+  assert.equal(record.turnHistories.length, 15);
+  assert.ok(compactJson.length < fullJson.length);
+  assert.ok(compactJson.length < oldDuplicatedJson.length * 0.35);
+  assert.equal(firstTurn.requestPayload, undefined);
+  assert.equal(firstTurn.responsePayload, undefined);
+  assert.equal(record.aiInteractions[0].responsePayload.turnHistory, undefined);
+  assert.equal(record.aiInteractions[0].responsePayload.timeline, undefined);
+  assert.equal(record.appointmentReferences, undefined);
+
+  for (const field of [
+    "currentTurnTranscript",
+    "aggregatedTranscript",
+    "contactId",
+    "intentName",
+    "inputMode",
+    "responseText",
+    "slotToElicit",
+    "missingFields",
+    "dtmfDiagnostics",
+    "dtmfRouting",
+    "slotDecisions",
+    "trustedSlotsBefore",
+    "trustedSlotsAfter",
+    "sessionAttributesBefore",
+    "sessionAttributesAfter",
+    "activeDtmfMenuBefore",
+    "activeDtmfMenuAfter",
+    "ignoredUngroundedSlots",
+    "ignoredPollutedSlots",
+    "ignoredNoiseFields",
+    "createdAt"
+  ]) {
+    assert.notEqual(firstTurn[field], undefined, `expected compact turn field ${field}`);
+  }
 });

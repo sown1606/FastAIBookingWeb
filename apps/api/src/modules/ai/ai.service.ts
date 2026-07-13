@@ -9885,6 +9885,11 @@ const buildAdminDebugTimelineItem = (
       debug.inputTranscript ??
       requestPayload.currentTurnTranscript ??
       requestPayload.text,
+    aggregatedTranscript:
+      responsePayload.aggregatedBookingTranscript ??
+      requestPayload.aggregatedBookingTranscript ??
+      requestPayload.transcript ??
+      interaction.requestText,
     aggregatedRequestText:
       responsePayload.aggregatedBookingTranscript ??
       requestPayload.aggregatedBookingTranscript ??
@@ -9960,10 +9965,7 @@ const buildAdminDebugTimelineItem = (
     escalationReason:
       asRecord(sessionAttributesAfter).escalationReason ??
       asRecord(responsePayload.sessionAttributes).escalationReason ??
-      asRecord(lexResponse.sessionAttributes).escalationReason,
-    parsedOutput: interaction.parsedOutput,
-    requestPayload: interaction.requestPayload,
-    responsePayload: interaction.responsePayload
+      asRecord(lexResponse.sessionAttributes).escalationReason
   };
 };
 
@@ -9993,6 +9995,10 @@ export const buildAdminDebugTimelineItems = (
       aiInteractionId: interaction.id,
       createdAt: turnCreatedAt,
       currentTurnTranscript: turn.currentTurnTranscript,
+      aggregatedTranscript:
+        typeof turn.aggregatedBookingTranscript === "string"
+          ? turn.aggregatedBookingTranscript
+          : base.aggregatedTranscript,
       aggregatedRequestText:
         typeof turn.aggregatedBookingTranscript === "string"
           ? turn.aggregatedBookingTranscript
@@ -10018,13 +10024,13 @@ export const buildAdminDebugTimelineItems = (
       ignoredNoiseFields: turn.ignoredNoiseFields,
       sessionAttributesBefore,
       sessionAttributesAfter,
+      dtmfDiagnostics: turn.dtmfDiagnostics ?? base.dtmfDiagnostics,
+      slotDecisions: turn.slotDecisions ?? base.slotDecisions,
       slotToElicit: turn.slotToElicit,
       missingFields: turn.missingFields,
       promptMissingFields: turn.promptMissingFields,
       transferToQueue: turn.transferToQueue,
-      forceHumanEscalation: turn.forceHumanEscalation,
-      requestPayload: interaction.requestPayload,
-      responsePayload: interaction.responsePayload
+      forceHumanEscalation: turn.forceHumanEscalation
     };
   });
 };
@@ -10054,7 +10060,7 @@ export const buildAIInteractionCallDebugForAdminPayload = (
       ];
     })
   ]);
-  const timeline = aiInteractions.flatMap((item: any, index: number) =>
+  const turnHistories = aiInteractions.flatMap((item: any, index: number) =>
     buildAdminDebugTimelineItems(item, index)
   );
 
@@ -10070,8 +10076,7 @@ export const buildAIInteractionCallDebugForAdminPayload = (
     contactIds,
     callerPhone: callSession?.callerPhone ?? interaction.bookingAttempt?.customerPhone ?? null,
     calledNumber: callSession?.dialedPhone ?? callSession?.trackingNumber ?? null,
-    timeline,
-    turnHistories: timeline
+    turnHistories
   };
 };
 

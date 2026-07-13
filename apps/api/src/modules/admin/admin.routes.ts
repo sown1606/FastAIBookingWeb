@@ -79,6 +79,7 @@ import {
   updateSalonSettingsForAdmin
 } from "./admin.service";
 import {
+  buildDebugExportDownloadFilename,
   getAIInteractionsDebugExportForAdmin,
   getCallsDebugExportForAdmin
 } from "./admin-debug-export.service";
@@ -393,7 +394,8 @@ const adminAiReceptionCallLogsQuerySchema = z.object({
 });
 
 const adminDebugExportSchema = z.object({
-  ids: z.array(z.string().uuid()).min(1).max(50)
+  ids: z.array(z.string().uuid()).min(1).max(50),
+  mode: z.enum(["compact", "full"]).default("compact")
 });
 
 const createCallCenterAgentSchema = z.object({
@@ -1074,10 +1076,22 @@ adminRouter.post(
   "/calls/debug-export",
   validate(adminDebugExportSchema),
   asyncHandler(async (req, res) => {
-    const { ids } = req.body as z.infer<typeof adminDebugExportSchema>;
-    const result = await getCallsDebugExportForAdmin(ids);
+    const { ids, mode } = req.body as z.infer<typeof adminDebugExportSchema>;
+    const result = await getCallsDebugExportForAdmin(ids, mode);
+    if (req.query.download === "true") {
+      const filename = buildDebugExportDownloadFilename(
+        "call_logs",
+        Number(result.bundle.recordCount ?? 0),
+        String(result.bundle.exportedAt)
+      );
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.setHeader("X-Debug-Export-Mode", mode);
+      res.setHeader("X-Debug-Export-Records", String(result.bundle.recordCount ?? 0));
+      return res.status(200).send(result.json);
+    }
     return sendSuccess(res, {
-      data: result
+      data: result.bundle
     });
   })
 );
@@ -1136,10 +1150,22 @@ adminRouter.post(
   "/ai-logs/debug-export",
   validate(adminDebugExportSchema),
   asyncHandler(async (req, res) => {
-    const { ids } = req.body as z.infer<typeof adminDebugExportSchema>;
-    const result = await getAIInteractionsDebugExportForAdmin(ids);
+    const { ids, mode } = req.body as z.infer<typeof adminDebugExportSchema>;
+    const result = await getAIInteractionsDebugExportForAdmin(ids, mode);
+    if (req.query.download === "true") {
+      const filename = buildDebugExportDownloadFilename(
+        "ai_logs",
+        Number(result.bundle.recordCount ?? 0),
+        String(result.bundle.exportedAt)
+      );
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.setHeader("X-Debug-Export-Mode", mode);
+      res.setHeader("X-Debug-Export-Records", String(result.bundle.recordCount ?? 0));
+      return res.status(200).send(result.json);
+    }
     return sendSuccess(res, {
-      data: result
+      data: result.bundle
     });
   })
 );
