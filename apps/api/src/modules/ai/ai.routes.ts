@@ -9,6 +9,7 @@ import { validate } from "../../middleware/validate";
 import { AppError } from "../../lib/errors";
 import { logger } from "../../lib/logger";
 import { sendSuccess } from "../../utils/response";
+import { recordOperatorQueueOutcome } from "../call-center/call-center.service";
 import {
   bookingFromTextRequestSchema,
   bookingFromTranscriptRequestSchema,
@@ -76,6 +77,15 @@ const createAIAppointmentSchema = z
     attributes: z.record(z.unknown()).optional()
   })
   .passthrough();
+
+const operatorQueueOutcomeSchema = z.object({
+  salonId: z.string().trim().min(1).optional(),
+  callSessionId: z.string().trim().min(1).max(160).optional(),
+  amazonConnectContactId: z.string().trim().min(1).max(160).optional(),
+  contactId: z.string().trim().min(1).max(160).optional(),
+  callerPhone: z.string().trim().min(3).max(40).optional(),
+  outcome: z.enum(["AGENTS_UNAVAILABLE", "AGENTS_BUSY", "QUEUE_WAIT_TIMEOUT", "CONNECT_FLOW_ERROR"])
+});
 
 const extractInternalToken = (authorizationHeader?: string, internalHeader?: string | string[]) => {
   const headerToken = Array.isArray(internalHeader) ? internalHeader[0] : internalHeader;
@@ -393,6 +403,35 @@ aiInternalRouter.post(
         missingFields: result.missingFields,
         alternatives: result.alternatives,
         salonResolutionSource: result.salonResolutionSource
+      }
+    });
+  })
+);
+
+aiInternalRouter.post(
+  "/operator-queue-outcome",
+  requireInternalApiToken,
+  validate(operatorQueueOutcomeSchema),
+  asyncHandler(async (req, res) => {
+    const payload = req.body as z.infer<typeof operatorQueueOutcomeSchema>;
+    const escalation = await recordOperatorQueueOutcome({
+      salonId: payload.salonId,
+      callSessionId: payload.callSessionId,
+      amazonConnectContactId: payload.amazonConnectContactId ?? payload.contactId,
+      callerPhone: payload.callerPhone,
+      operatorQueueOutcome: payload.outcome
+    });
+    return sendSuccess(res, {
+      data: {
+        escalationId: escalation.id,
+        status: escalation.status,
+        routingOutcome: escalation.routingOutcome,
+        operatorQueueOutcome:
+          escalation.metadata &&
+          typeof escalation.metadata === "object" &&
+          !Array.isArray(escalation.metadata)
+            ? (escalation.metadata as Record<string, unknown>).operatorQueueOutcome
+            : payload.outcome
       }
     });
   })

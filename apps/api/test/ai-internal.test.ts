@@ -32,6 +32,8 @@ let baseUrl = "";
 const originalInternalToken = env.FASTAIBOOKING_API_INTERNAL_TOKEN;
 const originalDefaultSalonId = env.DEFAULT_SALON_ID;
 const originalQueueId = env.AMAZON_CONNECT_QUEUE_ID_DEFAULT;
+const originalStaffedAgentsOverride = process.env.AMAZON_CONNECT_STAFFED_AGENTS_OVERRIDE;
+const originalAvailableAgentsOverride = process.env.AMAZON_CONNECT_AVAILABLE_AGENTS_OVERRIDE;
 
 const ids = {
   ownerA: "11111111-1111-4111-8111-111111111111",
@@ -634,10 +636,23 @@ const setupPrismaMock = () => {
     return state.callSessions.find((item) => item.id === args.where.id) ?? null;
   });
   patch(prisma.callSession as any, "findFirst", async (args: any) => {
+    const where = args.where ?? {};
     return (
-      state.callSessions.find(
-        (item) => item.id === args.where.id && item.salonId === args.where.salonId
-      ) ?? null
+      state.callSessions.find((item) => {
+        if (where.id && item.id !== where.id) {
+          return false;
+        }
+        if (where.salonId && item.salonId !== where.salonId) {
+          return false;
+        }
+        if (where.provider && item.provider !== where.provider) {
+          return false;
+        }
+        if (where.providerCallId && item.providerCallId !== where.providerCallId) {
+          return false;
+        }
+        return true;
+      }) ?? null
     );
   });
   patch(prisma.callSession as any, "findMany", async (args: any) => {
@@ -893,6 +908,27 @@ const postInternalAppointment = async (payload: Record<string, unknown>, token =
   };
 };
 
+const postOperatorQueueOutcome = async (
+  payload: Record<string, unknown>,
+  token = env.FASTAIBOOKING_API_INTERNAL_TOKEN
+) => {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json"
+  };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  const response = await fetch(`${baseUrl}/api/v1/internal/ai/operator-queue-outcome`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(payload)
+  });
+  return {
+    response,
+    body: await response.json()
+  };
+};
+
 const bookingPayload = (overrides: Record<string, unknown> = {}) => ({
   salonId: ids.salonA,
   intentName: "BookAppointmentIntent",
@@ -976,12 +1012,24 @@ before(async () => {
 
 beforeEach(() => {
   resetMockState();
+  process.env.AMAZON_CONNECT_STAFFED_AGENTS_OVERRIDE = "1";
+  process.env.AMAZON_CONNECT_AVAILABLE_AGENTS_OVERRIDE = "1";
 });
 
 after(async () => {
   env.FASTAIBOOKING_API_INTERNAL_TOKEN = originalInternalToken;
   env.DEFAULT_SALON_ID = originalDefaultSalonId;
   env.AMAZON_CONNECT_QUEUE_ID_DEFAULT = originalQueueId;
+  if (originalStaffedAgentsOverride === undefined) {
+    delete process.env.AMAZON_CONNECT_STAFFED_AGENTS_OVERRIDE;
+  } else {
+    process.env.AMAZON_CONNECT_STAFFED_AGENTS_OVERRIDE = originalStaffedAgentsOverride;
+  }
+  if (originalAvailableAgentsOverride === undefined) {
+    delete process.env.AMAZON_CONNECT_AVAILABLE_AGENTS_OVERRIDE;
+  } else {
+    process.env.AMAZON_CONNECT_AVAILABLE_AGENTS_OVERRIDE = originalAvailableAgentsOverride;
+  }
   for (const item of patches.reverse()) {
     item.target[item.key] = item.original;
   }
@@ -1228,6 +1276,101 @@ test("known caller acknowledgement is spoken once and can be corrected for curre
   assert.equal(correction.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
   assert.equal(correction.body.data.lexResponse.sessionAttributes.staffId, ids.trang);
   assert.equal(state.customers.find((customer) => customer.id === "customer-lee-known")?.firstName, "Lee");
+});
+
+test("known caller initial booking turn skips name and preserves all booking fields", async () => {
+  state.customers.push({
+    id: "customer-lee-initial",
+    salonId: ids.salonA,
+    firstName: "Lee",
+    lastName: "Stored",
+    phone: "84798171999",
+    createdAt: new Date("2026-01-10T00:00:00.000Z")
+  } as any);
+
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  const result = await postInternalAppointment(
+    bookingPayload({
+      customerName: undefined,
+      customerPhone: undefined,
+      callerPhone: "+84798171999",
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      amazonConnectContactId: "connect-known-lee-initial",
+      currentTurnTranscript: "I want to book a Pedicure tomorrow at 2 PM with any staff.",
+      transcript: "I want to book a Pedicure tomorrow at 2 PM with any staff.",
+      attributes: {
+        CustomerEndpointAddress: "+84798171999"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.doesNotMatch(result.body.data.lexResponse.message, /may i have your name|what name/i);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.customerName, "Lee");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.customerNameSource, "phone_lookup");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.customerProfileSource, "active_customer");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.knownCallerLookupAttempted, "true");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.knownCallerLookupStatus, "FOUND");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Pedicure");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.requestedDate, requestedDate);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "14:00");
+});
+
+test("production g p s transcript resolves Full Set, 3 PM, Trang, and known caller", async () => {
+  state.customers.push({
+    id: "customer-lee-gps",
+    salonId: ids.salonA,
+    firstName: "Lee",
+    lastName: "Stored",
+    phone: "84798171999",
+    createdAt: new Date("2026-01-10T00:00:00.000Z")
+  } as any);
+
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  const result = await postInternalAppointment(
+    bookingPayload({
+      customerName: undefined,
+      customerPhone: undefined,
+      callerPhone: "+84798171999",
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      amazonConnectContactId: "connect-known-lee-gps",
+      currentTurnTranscript: "book full set tomorrow at g p s with chang",
+      transcript: "book full set tomorrow at g p s with chang",
+      attributes: {
+        CustomerEndpointAddress: "+84798171999"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.doesNotMatch(result.body.data.lexResponse.message, /what time|may i have your name|what name/i);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.customerName, "Lee");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.requestedDate, requestedDate);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "15:00");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffId, ids.trang);
+
+  const negative = await postInternalAppointment(
+    bookingPayload({
+      requestedTime: undefined,
+      confirmationState: undefined,
+      currentTurnTranscript: "Tell me about GPS",
+      transcript: "Tell me about GPS"
+    })
+  );
+
+  assert.notEqual(negative.body.data.lexResponse.sessionAttributes.requestedTime, "15:00");
 });
 
 test("known caller rejection without a new name asks for name and preserves booking fields", async () => {
@@ -3309,6 +3452,97 @@ test("missing staff asks once, then first available resolves before confirmation
   assert.match(second.body.data.lexResponse.message, /I found Trang available/i);
   assert.match(second.body.data.lexResponse.message, /just to confirm: Pedicure .* with Trang/i);
   assert.equal(state.appointments.length, 0);
+});
+
+test("Any staff exact phrase and live ASR variants never persist raw unmatched staff", async () => {
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  const exact = await postInternalAppointment(
+    bookingPayload({
+      staffPreference: undefined,
+      requestedDate,
+      requestedTime: "14:00",
+      confirmationState: undefined,
+      currentTurnTranscript: "I want to book a Pedicure tomorrow at 2 PM. Any staff is fine.",
+      transcript: "I want to book a Pedicure tomorrow at 2 PM. Any staff is fine."
+    })
+  );
+
+  assert.equal(exact.response.status, 200);
+  assert.equal(exact.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.doesNotMatch(exact.body.data.lexResponse.message, /didn.t find that technician/i);
+  assert.notEqual(state.bookingAttempts.at(-1)?.requestedStaff, "anystop");
+
+  for (const phrase of [
+    "any stop",
+    "anystop",
+    "any stop if i",
+    "any stuff",
+    "any star",
+    "first available",
+    "first avaiable",
+    "available"
+  ]) {
+    resetMockState();
+    process.env.AMAZON_CONNECT_STAFFED_AGENTS_OVERRIDE = "1";
+    process.env.AMAZON_CONNECT_AVAILABLE_AGENTS_OVERRIDE = "1";
+    const result = await postInternalAppointment(
+      bookingPayload({
+        staffPreference: undefined,
+        requestedDate,
+        requestedTime: "14:00",
+        confirmationState: undefined,
+        currentTurnTranscript: phrase,
+        transcript: phrase,
+        attributes: {
+          lastAskedSlot: "staffPreference",
+          activeDtmfMenu: "staff",
+          staffRecognitionFailureCount: "2",
+          invalidStaffPreferenceIgnored: "true",
+          serviceName: "Pedicure",
+          requestedDate,
+          requestedTime: "14:00",
+          customerName: "Kiet Nguyen",
+          customerPhone: "+17325956266"
+        }
+      })
+    );
+
+    assert.equal(result.response.status, 200, phrase);
+    assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent", phrase);
+    assert.doesNotMatch(result.body.data.lexResponse.message, /didn.t find that technician/i, phrase);
+    assert.notEqual(result.body.data.lexResponse.sessionAttributes.staffPreference, phrase, phrase);
+    assert.notEqual(state.bookingAttempts.at(-1)?.requestedStaff, "anystop", phrase);
+    assert.notEqual(state.bookingAttempts.at(-1)?.normalizedRequest.staffPreference, "anystop", phrase);
+  }
+});
+
+test("Any time is fine does not infer Any staff and invalid raw staff is diagnostic only", async () => {
+  const negative = await postInternalAppointment(
+    bookingPayload({
+      staffPreference: undefined,
+      requestedTime: undefined,
+      confirmationState: undefined,
+      currentTurnTranscript: "I want a Pedicure tomorrow afternoon. Any time is fine.",
+      transcript: "I want a Pedicure tomorrow afternoon. Any time is fine."
+    })
+  );
+
+  assert.equal(negative.response.status, 200);
+  assert.notEqual(negative.body.data.lexResponse.sessionAttributes.staffPreference, "Any staff");
+
+  const invalid = await postInternalAppointment(
+    bookingPayload({
+      staffPreference: "anystop",
+      confirmationState: undefined,
+      currentTurnTranscript: "anystop",
+      transcript: "anystop"
+    })
+  );
+
+  assert.equal(invalid.response.status, 200);
+  assert.equal(invalid.body.data.lexResponse.sessionAttributes.staffPreference, undefined);
+  assert.equal(state.bookingAttempts.at(-1)?.requestedStaff, undefined);
+  assert.equal(state.bookingAttempts.at(-1)?.normalizedRequest.unrecognizedStaffUtterance, "anystop");
 });
 
 test("invalid staff DTMF repeats staff options without booking", async () => {
@@ -5456,12 +5690,43 @@ test("explicit human intent creates queued escalation with queue id", async () =
 
   assert.equal(result.response.status, 200);
   assert.equal(result.body.data.outcome, "HUMAN_ESCALATION");
-  assert.equal(result.body.data.lexResponse.message, "Please wait while I connect you.");
+  assert.equal(result.body.data.lexResponse.message, "Let me check for an available operator.");
   assert.equal(result.body.data.lexResponse.sessionAttributes.transferToQueue, "true");
   assert.equal(result.body.data.lexResponse.sessionAttributes.queueId, "queue-default");
   assert.equal(state.escalations[0].status, CallEscalationStatus.QUEUED);
   assert.equal(state.escalations[0].routingOutcome, CallRoutingOutcome.QUEUED);
   assert.equal(state.escalations[0].queueId, "queue-default");
+  assert.equal(state.escalations[0].messageToCaller, "Let me check for an available operator.");
+});
+
+test("operator queue timeout callback closes the existing escalation once", async () => {
+  const contactId = "connect-queue-timeout";
+  const queued = await postInternalAppointment(
+    bookingPayload({
+      intentName: "HumanEscalationIntent",
+      amazonConnectContactId: contactId,
+      transcript: "I want to speak to a real person."
+    })
+  );
+
+  assert.equal(queued.response.status, 200);
+  assert.equal(state.escalations.length, 1);
+  assert.equal(state.escalations[0].status, CallEscalationStatus.QUEUED);
+
+  const callback = await postOperatorQueueOutcome({
+    salonId: ids.salonA,
+    contactId,
+    outcome: "QUEUE_WAIT_TIMEOUT"
+  });
+
+  assert.equal(callback.response.status, 200);
+  assert.equal(state.escalations.length, 1);
+  assert.equal(callback.body.data.status, CallEscalationStatus.CLOSED);
+  assert.equal(state.escalations[0].status, CallEscalationStatus.CLOSED);
+  assert.equal(state.escalations[0].routingOutcome, CallRoutingOutcome.CALL_CENTER_ESCALATION);
+  assert.equal(state.escalations[0].messageToCaller, "All of our operators are currently busy. Please call back later.");
+  assert.equal(state.escalations[0].metadata.operatorQueueOutcome, "QUEUE_WAIT_TIMEOUT");
+  assert.equal(state.callSessions[0].finalResolution, "All of our operators are currently busy. Please call back later.");
 });
 
 test("cancel and reschedule intents use upcoming appointment context without transfer", async () => {
@@ -5543,13 +5808,48 @@ test("explicit human intent does not transfer when no agents are assigned", asyn
 
   assert.equal(result.response.status, 200);
   assert.equal(result.body.data.outcome, "HUMAN_ESCALATION");
-  assert.equal(result.body.data.lexResponse.message, "No agents available.");
+  assert.equal(result.body.data.lexResponse.message, "All of our operators are currently busy. Please call back later.");
   assert.equal(result.body.data.lexResponse.sessionAttributes.transferToQueue, "false");
   assert.equal(result.body.data.lexResponse.sessionAttributes.forceHumanEscalation, "false");
   assert.equal(result.body.data.lexResponse.sessionAttributes.queueId, undefined);
-  assert.equal(state.escalations[0].status, CallEscalationStatus.CALLBACK_REQUESTED);
-  assert.equal(state.escalations[0].routingOutcome, CallRoutingOutcome.CALLBACK_REQUEST);
-  assert.equal(state.escalations[0].messageToCaller, "No agents available.");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.conversationComplete, "true");
+  assert.equal(state.escalations[0].status, CallEscalationStatus.CLOSED);
+  assert.equal(state.escalations[0].routingOutcome, CallRoutingOutcome.CALL_CENTER_ESCALATION);
+  assert.equal(state.escalations[0].messageToCaller, "All of our operators are currently busy. Please call back later.");
+  assert.equal(state.escalations[0].metadata.operatorQueueOutcome, "NO_ASSIGNED_AGENTS");
+});
+
+test("press 0 and voice human request do not transfer with no staffed Connect agents", async () => {
+  process.env.AMAZON_CONNECT_STAFFED_AGENTS_OVERRIDE = "0";
+  process.env.AMAZON_CONNECT_AVAILABLE_AGENTS_OVERRIDE = "0";
+
+  for (const [transcript, intentName] of [
+    ["0", "BookAppointmentIntent"],
+    ["I want to speak with a real person.", "HumanEscalationIntent"]
+  ] as const) {
+    resetMockState();
+    process.env.AMAZON_CONNECT_STAFFED_AGENTS_OVERRIDE = "0";
+    process.env.AMAZON_CONNECT_AVAILABLE_AGENTS_OVERRIDE = "0";
+    const result = await postInternalAppointment(
+      bookingPayload({
+        intentName,
+        amazonConnectContactId: `connect-no-staffed-${intentName}`,
+        transcript,
+        currentTurnTranscript: transcript
+      })
+    );
+
+    assert.equal(result.response.status, 200, transcript);
+    assert.equal(result.body.data.outcome, "HUMAN_ESCALATION", transcript);
+    assert.equal(result.body.data.lexResponse.message, "All of our operators are currently busy. Please call back later.", transcript);
+    assert.equal(result.body.data.lexResponse.sessionAttributes.transferToQueue, "false", transcript);
+    assert.equal(result.body.data.lexResponse.sessionAttributes.forceHumanEscalation, "false", transcript);
+    assert.equal(result.body.data.lexResponse.sessionAttributes.conversationComplete, "true", transcript);
+    assert.equal(state.escalations.length, 1, transcript);
+    assert.equal(state.escalations[0].status, CallEscalationStatus.CLOSED, transcript);
+    assert.equal(state.escalations[0].routingOutcome, CallRoutingOutcome.CALL_CENTER_ESCALATION, transcript);
+    assert.equal(state.escalations[0].metadata.operatorQueueOutcome, "AGENTS_UNAVAILABLE", transcript);
+  }
 });
 
 test("backend errors and timeouts return safe Lex reprompts without auto transfer", async () => {

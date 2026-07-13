@@ -428,6 +428,18 @@ const ANY_STAFF_PHRASES = new Set([
   "whoever's available",
   "who is available"
 ]);
+const CONTEXTUAL_ANY_STAFF_PHRASES = new Set([
+  "any stop",
+  "anystop",
+  "any stop if i",
+  "any stuff",
+  "any stuff is fine",
+  "any star",
+  "any star is fine",
+  "available"
+]);
+const OPERATOR_TRANSFER_PROMPT = "Let me check for an available operator.";
+const OPERATOR_BUSY_PROMPT = "All of our operators are currently busy. Please call back later.";
 
 const SERVICE_DTMF_OPTIONS: Record<string, string> = {
   "0": "__operator__"
@@ -813,9 +825,25 @@ const readServiceDtmfOptions = (
   return SERVICE_DTMF_OPTIONS;
 };
 
-const isAnyStaffPreference = (value?: string | null): boolean => {
+const isAnyStaffPreference = (
+  value?: string | null,
+  context: { lastAskedSlot?: string; activeDtmfMenu?: string } = {}
+): boolean => {
   const normalized = normalizeForMatch(value);
-  return Boolean(normalized && ANY_STAFF_PHRASES.has(normalized));
+  if (!normalized || /\bany\s+time\b/.test(normalized)) {
+    return false;
+  }
+  if (ANY_STAFF_PHRASES.has(normalized)) {
+    return true;
+  }
+  const contextual = normalized.replace(
+    /\s+(?:is\s+(?:fine|okay|ok)|works\s+for\s+me|if\s+i|please)$/,
+    ""
+  );
+  return Boolean(
+    (context.lastAskedSlot === "staffPreference" || context.activeDtmfMenu === "staff") &&
+      CONTEXTUAL_ANY_STAFF_PHRASES.has(contextual)
+  );
 };
 
 const parseJsonStringRecord = (value?: string): Record<string, string> => {
@@ -1004,6 +1032,62 @@ const hasExplicitStaffContextCue = (
       /\binstead\b/.test(normalizedText)
   );
 
+const isStaffSelectionContext = (
+  normalizedText: string,
+  context: StaffPhraseContext = {}
+): boolean =>
+  Boolean(
+    context.lastAskedSlot === "staffPreference" ||
+      context.activeDtmfMenu === "staff" ||
+      /\b(?:staff|technician|tech)\b/.test(normalizedText) ||
+      /\b(?:any\s+staff|any\s+technician|any\s+tech|first\s+avai?lable|the\s+first\s+available|for\s+available)\b/.test(
+        normalizedText
+      )
+  );
+
+const stripAnyStaffTrailingFiller = (normalizedText: string): string => {
+  let stripped = normalizedText;
+  while (/\s+(?:is\s+(?:fine|okay|ok)|works\s+for\s+me|if\s+i|please)$/.test(stripped)) {
+    stripped = stripped.replace(/\s+(?:is\s+(?:fine|okay|ok)|works\s+for\s+me|if\s+i|please)$/, "").trim();
+  }
+  return stripped;
+};
+
+const normalizeAnyStaffPhrase = (
+  value?: string | null,
+  context: StaffPhraseContext = {}
+): "Any staff" | undefined => {
+  const normalized = normalizeForMatch(value);
+  if (!normalized) {
+    return undefined;
+  }
+
+  if (
+    Array.from(ANY_STAFF_PHRASES).some((phrase) => {
+      const normalizedPhrase = normalizeForMatch(phrase);
+      return normalized === normalizedPhrase || textContainsStaffAlias(normalized, normalizedPhrase);
+    })
+  ) {
+    return "Any staff";
+  }
+  if (/\bany\s+time\b/.test(normalized)) {
+    return undefined;
+  }
+
+  if (!isStaffSelectionContext(normalized, context)) {
+    return undefined;
+  }
+
+  const contextualCandidate = stripAnyStaffTrailingFiller(normalized);
+  const contextualCompact = compactForMatch(contextualCandidate);
+  return Array.from(CONTEXTUAL_ANY_STAFF_PHRASES).some((phrase) => {
+    const normalizedPhrase = normalizeForMatch(phrase);
+    return contextualCandidate === normalizedPhrase || contextualCompact === compactForMatch(phrase);
+  })
+    ? "Any staff"
+    : undefined;
+};
+
 const isScopedDangAliasAllowed = (
   normalizedText: string,
   context: StaffPhraseContext = {}
@@ -1079,7 +1163,7 @@ const normalizeScopedStaffCandidatePhrase = (
   if (isFinalConfirmationOnlyPhrase(normalized)) {
     return undefined;
   }
-  if (isAnyStaffPreference(normalized)) {
+  if (normalizeAnyStaffPhrase(value, context)) {
     return "any staff";
   }
   if (
@@ -1090,7 +1174,7 @@ const normalizeScopedStaffCandidatePhrase = (
   ) {
     return undefined;
   }
-  if (Array.from(ANY_STAFF_PHRASES).some((phrase) => textContainsStaffAlias(normalized, phrase))) {
+  if (normalizeAnyStaffPhrase(value, context)) {
     return "any staff";
   }
   const wantMatch = normalized.match(/^(?:no\s+)?i\s+want(?:\s+to\s+book)?\s+(.+)$/);
@@ -1517,7 +1601,48 @@ const normalizeHourMinuteTimeExpression = (value?: string | null): string => {
   });
 };
 
-const parseLocalTimeText = (value: string): { hour: number; minute: number; ambiguous: boolean } | null => {
+type TimePhraseContext = {
+  lastAskedSlot?: string;
+  currentTurnSemanticType?: string;
+  semanticType?: string;
+};
+
+const hasGpsTimeContext = (value?: string | null, context: TimePhraseContext = {}): boolean => {
+  const normalized = normalizeForMatch(value);
+  return Boolean(
+    /\bat\s+g\s+p(?:\s+s)?\b/.test(normalized) ||
+      context.lastAskedSlot === "requestedTime" ||
+      context.currentTurnSemanticType === "TIME_REQUEST" ||
+      context.semanticType === "TIME_REQUEST"
+  );
+};
+
+const normalizeGpsTimePhrase = (
+  value?: string | null,
+  context: TimePhraseContext = {}
+): "3 PM" | undefined => {
+  const normalized = normalizeForMatch(value);
+  if (!normalized || !hasGpsTimeContext(value, context)) {
+    return undefined;
+  }
+  if (/\bat\s+g\s+p(?:\s+s)?\b/.test(normalized)) {
+    return "3 PM";
+  }
+  return /^(?:g\s+p(?:\s+s)?)$/.test(normalized) ? "3 PM" : undefined;
+};
+
+const parseLocalTimeText = (
+  value: string,
+  context: TimePhraseContext = {}
+): { hour: number; minute: number; ambiguous: boolean } | null => {
+  const gpsTime = normalizeGpsTimePhrase(value, context);
+  if (gpsTime) {
+    return {
+      hour: 15,
+      minute: 0,
+      ambiguous: false
+    };
+  }
   const normalized = normalizeSpokenNumbers(normalizeHourMinuteTimeExpression(value))
     .replace(/\b([ap])\s*\.?\s*m\.?\b/gi, "$1m")
     .replace(/\ba\.?m\.?\b/gi, "am")
@@ -1579,7 +1704,11 @@ const parseLocalTimeText = (value: string): { hour: number; minute: number; ambi
   return null;
 };
 
-const extractTimeCandidate = (value: string): string | undefined => {
+const extractTimeCandidate = (value: string, context: TimePhraseContext = {}): string | undefined => {
+  const gpsTime = normalizeGpsTimePhrase(value, context);
+  if (gpsTime) {
+    return gpsTime;
+  }
   const source = normalizeHourMinuteTimeExpression(value)
     .replace(/\b([ap])\s*\.?\s*m\.?\b/gi, "$1m")
     .trim();
@@ -1653,12 +1782,15 @@ const getPreferredDateCandidate = (
 const hasGroundedDatePhrase = (value?: string | null): boolean =>
   Boolean(value?.trim() && getPreferredDateCandidate(value));
 
-const hasGroundedTimePhrase = (value?: string | null): boolean => {
+const hasGroundedTimePhrase = (
+  value?: string | null,
+  context: TimePhraseContext = {}
+): boolean => {
   if (!value?.trim() || isDigitOnlyOrSequenceUtterance(value)) {
     return false;
   }
-  const timeCandidate = extractTimeCandidate(value);
-  const parsed = timeCandidate ? parseLocalTimeText(timeCandidate) : null;
+  const timeCandidate = extractTimeCandidate(value, context);
+  const parsed = timeCandidate ? parseLocalTimeText(timeCandidate, context) : null;
   return Boolean(parsed && !parsed.ambiguous);
 };
 
@@ -1674,12 +1806,15 @@ const extractExplicitDate = (value: string | undefined, timezone: string): strin
   return parsed?.isValid ? parsed.toFormat("yyyy-MM-dd") : undefined;
 };
 
-const extractExplicitTime = (value: string | undefined): string | undefined => {
+const extractExplicitTime = (
+  value: string | undefined,
+  context: TimePhraseContext = {}
+): string | undefined => {
   if (!value?.trim() || isDigitOnlyOrSequenceUtterance(value)) {
     return undefined;
   }
-  const timeCandidate = extractTimeCandidate(value);
-  const parsed = timeCandidate ? parseLocalTimeText(timeCandidate) : null;
+  const timeCandidate = extractTimeCandidate(value, context);
+  const parsed = timeCandidate ? parseLocalTimeText(timeCandidate, context) : null;
   if (!parsed || parsed.ambiguous) {
     return undefined;
   }
@@ -1708,7 +1843,8 @@ const localTimesEquivalent = (left?: string, right?: string): boolean => {
 
 const parseDateTimeText = (
   text: string,
-  timezone: string
+  timezone: string,
+  context: TimePhraseContext = {}
 ): { local: DateTime; sourceText: string; ambiguousTime: boolean } | null => {
   const raw = text.trim();
   const isoDateTimeMatch = raw.match(
@@ -1731,11 +1867,11 @@ const parseDateTimeText = (
     const afterDate = raw.slice(dateCandidate.index + dateCandidate.text.length);
     const beforeDate = raw.slice(0, dateCandidate.index);
     const timeCandidate =
-      extractTimeCandidate(afterDate) ??
-      extractTimeCandidate(beforeDate.split(/[!?;]/).at(-1) ?? "") ??
-      extractTimeCandidate(raw);
+      extractTimeCandidate(afterDate, context) ??
+      extractTimeCandidate(beforeDate.split(/[!?;]/).at(-1) ?? "", context) ??
+      extractTimeCandidate(raw, context);
     const localTime = timeCandidate
-      ? parseLocalTimeText(`${dateCandidate.text} ${timeCandidate}`)
+      ? parseLocalTimeText(`${dateCandidate.text} ${timeCandidate}`, context)
       : null;
 
     if (localDate && localTime) {
@@ -2778,10 +2914,7 @@ const findStaffMentionInText = async (
     return undefined;
   }
 
-  if (
-    isAnyStaffPreference(normalizedText) ||
-    Array.from(ANY_STAFF_PHRASES).some((phrase) => textContainsStaffAlias(normalizedText, phrase))
-  ) {
+  if (normalizeAnyStaffPhrase(text, context)) {
     return "Any staff";
   }
 
@@ -3010,7 +3143,7 @@ const resolveStaffPreferenceFromCandidates = (
       invalidReason: "missing"
     };
   }
-  if (isAnyStaffPreference(requested)) {
+  if (normalizeAnyStaffPhrase(scopedStaffPreference ?? rawStaffPreference, context)) {
     return {
       status: "explicit_any",
       candidates: allStaff,
@@ -3817,7 +3950,7 @@ const buildStructuredCallSummary = (input: {
     resolution: input.resolution,
     summaryText:
       input.parsed.intentType === "LIVE_PERSON_REQUEST"
-        ? input.escalation?.messageToCaller ?? "Please wait while I connect you."
+        ? input.escalation?.messageToCaller ?? OPERATOR_TRANSFER_PROMPT
         : input.resolution,
     updatedAt: new Date().toISOString()
   };
@@ -3851,6 +3984,9 @@ const hasTimeComponent = (value?: string): boolean => {
   if (!value) {
     return false;
   }
+  if (normalizeGpsTimePhrase(value)) {
+    return true;
+  }
   return /T\d{1,2}:\d{2}|[^\d]\d{1,2}:\d{2}|\b\d{1,2}\s?(?:a\.?\s?m\.?|p\.?\s?m\.?)\b|\b(one|two|three|tree|tri|four|five|fife|six|seven|eight|nine|ten|eleven|twelve)\s?(?:a\.?\s?m\.?|p\.?\s?m\.?)\b/i.test(
     value
   ) || new RegExp(
@@ -3866,6 +4002,10 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
   const attributes = input.attributes ?? {};
   const lastAskedSlot = readStringAttribute(attributes, ["lastAskedSlot"]);
   const activeDtmfMenu = readStringAttribute(attributes, ["activeDtmfMenu"]);
+  const timePhraseContext: TimePhraseContext = {
+    lastAskedSlot,
+    currentTurnSemanticType: readStringAttribute(attributes, ["currentTurnSemanticType"])
+  };
   const lexTurnDebug =
     input.attributes &&
     typeof input.attributes.lexTurnDebug === "object" &&
@@ -3963,7 +4103,7 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
     asTrimmedString(input.requestedDate) ?? asTrimmedString(input.preferredDateTime);
   const inputRequestedTime = asTrimmedString(input.requestedTime);
   const currentTurnHasDate = hasGroundedDatePhrase(transcriptText);
-  const currentTurnHasTime = hasGroundedTimePhrase(transcriptText);
+  const currentTurnHasTime = hasGroundedTimePhrase(transcriptText, timePhraseContext);
   const requestedDate =
     currentTurnIsDigitNoise && previousRequestedDate
       ? previousRequestedDate
@@ -4007,6 +4147,7 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
     staffDtmfDigit,
     invalidStaffDtmfSelection:
       Boolean(staffDtmfDigit) && !staffDtmfSelection && Boolean(Object.keys(readStaffDtmfOptions(attributes)).length),
+    unrecognizedStaffUtterance: undefined as string | undefined,
     confirmationState: asTrimmedString(input.confirmationState),
     source,
     contactId,
@@ -4753,7 +4894,7 @@ const buildLexMessage = (input: {
 
   if (input.outcome === "HUMAN_ESCALATION") {
     return speak(
-      `I'm having trouble getting that clearly. <break time="300ms"/> Please wait while I connect you.`
+      `I'm having trouble getting that clearly. <break time="300ms"/> ${OPERATOR_TRANSFER_PROMPT}`
     );
   }
 
@@ -5696,16 +5837,23 @@ export const createAmazonConnectAIAppointment = async (
 
   const transcriptDateTime =
     normalized.transcriptText && (!normalized.requestedDate || !normalized.requestedTime)
-      ? parseDateTimeText(normalized.transcriptText, salon.timezone)
+      ? parseDateTimeText(normalized.transcriptText, salon.timezone, {
+          lastAskedSlot: readStringAttribute(normalized.attributes, ["lastAskedSlot"]),
+          currentTurnSemanticType: readStringAttribute(normalized.attributes, ["currentTurnSemanticType"])
+        })
       : null;
   if (transcriptDateTime?.local.isValid && !transcriptDateTime.ambiguousTime) {
     normalized.requestedDate ??= transcriptDateTime.local.toFormat("yyyy-MM-dd");
     normalized.requestedTime ??= transcriptDateTime.local.toFormat("HH:mm");
   }
   if (normalized.transcriptText && normalized.requestedDate && !normalized.requestedTime) {
-    const transcriptTimeCandidate = extractTimeCandidate(normalized.transcriptText);
+    const timePhraseContext = {
+      lastAskedSlot: readStringAttribute(normalized.attributes, ["lastAskedSlot"]),
+      currentTurnSemanticType: readStringAttribute(normalized.attributes, ["currentTurnSemanticType"])
+    };
+    const transcriptTimeCandidate = extractTimeCandidate(normalized.transcriptText, timePhraseContext);
     const transcriptTime = transcriptTimeCandidate
-      ? parseLocalTimeText(transcriptTimeCandidate)
+      ? parseLocalTimeText(transcriptTimeCandidate, timePhraseContext)
       : null;
     if (transcriptTime && !transcriptTime.ambiguous) {
       normalized.requestedTime = `${String(transcriptTime.hour).padStart(2, "0")}:${String(
@@ -5714,7 +5862,10 @@ export const createAmazonConnectAIAppointment = async (
     }
   }
   const currentTurnExplicitDate = extractExplicitDate(normalized.currentTurnTranscript, salon.timezone);
-  const currentTurnExplicitTime = extractExplicitTime(normalized.currentTurnTranscript);
+  const currentTurnExplicitTime = extractExplicitTime(normalized.currentTurnTranscript, {
+    lastAskedSlot: readStringAttribute(normalized.attributes, ["lastAskedSlot"]),
+    currentTurnSemanticType: readStringAttribute(normalized.attributes, ["currentTurnSemanticType"])
+  });
   if (currentTurnExplicitDate) {
     normalized.requestedDate = currentTurnExplicitDate;
   }
@@ -5926,13 +6077,17 @@ export const createAmazonConnectAIAppointment = async (
   } else if (staffResolution.status === "explicit_any") {
     normalized.staffPreference = "Any staff";
     normalized.staffId = undefined;
+    normalized.unrecognizedStaffUtterance = undefined;
   } else if (normalized.invalidStaffDtmfSelection) {
+    normalized.unrecognizedStaffUtterance = normalized.staffPreference;
     normalized.staffPreference = undefined;
     normalized.staffId = undefined;
   } else if (staffResolution.status !== "ambiguous") {
-    normalized.staffPreference = staffResolution.status === "unmatched_specific"
-      ? staffResolution.rawStaffPreference
-      : undefined;
+    normalized.unrecognizedStaffUtterance =
+      staffResolution.status === "unmatched_specific"
+        ? staffResolution.rawStaffPreference
+        : normalized.unrecognizedStaffUtterance;
+    normalized.staffPreference = undefined;
     normalized.staffId = undefined;
   }
 
@@ -5991,6 +6146,7 @@ export const createAmazonConnectAIAppointment = async (
         staffPreference: normalized.staffPreference,
         staffId: normalized.staffId,
         selectedStaffId: normalized.staffId,
+        unrecognizedStaffUtterance: normalized.unrecognizedStaffUtterance,
         ...((inputForAttempt.normalizedRequest as Record<string, unknown> | undefined) ?? {})
       }),
       alternativeSlots:
@@ -6317,9 +6473,15 @@ export const createAmazonConnectAIAppointment = async (
           recognizedCustomerNameForSession && (knownCallerAlreadyAcknowledged || shouldAcknowledgeKnownCaller)
             ? "true"
             : undefined,
+        knownCallerLookupAttempted: normalized.customerPhone ? "true" : undefined,
+        knownCallerLookupStatus: normalized.customerPhone
+          ? recognizedCustomer
+            ? "FOUND"
+            : "NOT_FOUND"
+          : undefined,
         customerNameSource:
           customerNameSourceOverride ??
-          (recognizedCustomerNameForSession ? "customer" : knownCallerMemory?.source),
+          (recognizedCustomerNameForSession ? "phone_lookup" : knownCallerMemory?.source),
         customerProfileSource,
 	        customerNameNeedsReview: customerNameNeedsReview ? "true" : undefined,
 	        customerName: normalized.customerName,
@@ -6333,6 +6495,10 @@ export const createAmazonConnectAIAppointment = async (
         confirmedStaffId: normalized.staffId,
         confirmedServiceName: normalized.serviceName,
         confirmedStaffName: normalized.staffPreference,
+        staffResolutionStatus: isAnyStaffPreference(normalized.staffPreference) ? "explicit_any" : undefined,
+        staffRecognitionFailureCount: isAnyStaffPreference(normalized.staffPreference) ? "0" : undefined,
+        invalidStaffPreferenceIgnored: isAnyStaffPreference(normalized.staffPreference) ? "false" : undefined,
+        unrecognizedStaffUtterance: normalized.unrecognizedStaffUtterance,
         callSessionId: callSession?.id,
         amazonConnectContactId: normalized.contactId,
         ...extra
@@ -6349,14 +6515,20 @@ export const createAmazonConnectAIAppointment = async (
   ): Record<string, string> => {
     const canTransferToQueue = escalation?.routingOutcome === CallRoutingOutcome.QUEUED;
     return buildKnownSessionAttributes({
-      conversationState: canTransferToQueue ? "TRANSFER" : "RECOVERABLE_ERROR",
-      conversationOutcome: canTransferToQueue ? "NEEDS_INPUT" : "ERROR",
-      conversationComplete: "false",
+      conversationState: canTransferToQueue ? "TRANSFER" : "COMPLETE",
+      conversationOutcome: canTransferToQueue ? "NEEDS_INPUT" : "CALL_CENTER_ESCALATION",
+      conversationComplete: canTransferToQueue ? "false" : "true",
       forceHumanEscalation: canTransferToQueue ? "true" : "false",
       transferToQueue: canTransferToQueue ? "true" : "false",
       escalationReason: reason,
       fallbackMode: escalation?.routingOutcome ?? "operator_queue",
       queueId: canTransferToQueue ? escalation?.queueId : undefined,
+      operatorQueueOutcome:
+        escalation?.metadata &&
+        typeof escalation.metadata === "object" &&
+        !Array.isArray(escalation.metadata)
+          ? String((escalation.metadata as Record<string, unknown>).operatorQueueOutcome ?? "")
+          : undefined,
       ...extra
     });
   };
@@ -7065,7 +7237,7 @@ export const createAmazonConnectAIAppointment = async (
           requestedBy: "AMAZON_CONNECT_LEX",
           escalationReason: humanFailureReason,
           customerPhone: normalized.customerPhone ?? null,
-          messageToCaller: "Please wait while I connect you.",
+          messageToCaller: OPERATOR_TRANSFER_PROMPT,
           metadata: {
             bookingAttemptId: bookingAttempt.id,
             transcriptId: transcript?.id,
@@ -7076,8 +7248,8 @@ export const createAmazonConnectAIAppointment = async (
       : null;
     const message =
       escalation?.routingOutcome === CallRoutingOutcome.QUEUED
-        ? "Please wait while I connect you."
-        : "No agents available.";
+        ? OPERATOR_TRANSFER_PROMPT
+        : OPERATOR_BUSY_PROMPT;
     const parsed = buildInternalParsedIntent({
       intentType: "LIVE_PERSON_REQUEST",
       customerName: normalized.customerName,
@@ -7094,7 +7266,13 @@ export const createAmazonConnectAIAppointment = async (
       parsed,
       bookingAttemptId: bookingAttempt.id,
       responsePayload: {
-        escalationId: escalation?.id ?? null
+        escalationId: escalation?.id ?? null,
+        operatorQueueOutcome:
+          escalation?.metadata &&
+          typeof escalation.metadata === "object" &&
+          !Array.isArray(escalation.metadata)
+            ? (escalation.metadata as Record<string, unknown>).operatorQueueOutcome
+            : undefined
       },
       isValid: true
     });
@@ -8790,7 +8968,7 @@ export const bookingFromText = async (input: BookingFromTextInput) => {
       requestedBy: "AI_RECEPTION",
       escalationReason: "Caller requested a human operator.",
       customerPhone: normalized.customerPhone ?? parsed.parsedIntent.customer.phone ?? null,
-      messageToCaller: "Please wait while I connect you.",
+      messageToCaller: OPERATOR_TRANSFER_PROMPT,
       metadata: {
         transcriptId: input.transcriptId,
         interactionId: parsed.interaction.id
@@ -8829,7 +9007,7 @@ export const bookingFromText = async (input: BookingFromTextInput) => {
       finalResolution:
         escalation.routingOutcome === "QUEUED"
           ? "Waiting in the human operator queue."
-          : "Caller requested a human operator.",
+          : escalation.messageToCaller ?? OPERATOR_BUSY_PROMPT,
       language: "en"
     });
 

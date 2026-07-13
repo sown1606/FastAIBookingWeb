@@ -211,18 +211,39 @@ const STAFF_ALIAS_GROUPS = {
 };
 const ANY_STAFF_ALIASES = [
   "anyone",
+  "any one",
   "anybody",
   "any body",
+  "any available staff",
   "any staff",
+  "any technician",
+  "any tech",
   "no preference",
+  "no staff preference",
+  "no specific staff",
   "whoever is available",
   "who is available",
   "first available",
   "the first available",
   "for available",
   "first avaiable",
-  "first available one"
+  "first available one",
+  "someone available"
 ];
+const CONTEXTUAL_ANY_STAFF_ALIASES = [
+  "any stop",
+  "anystop",
+  "any stop if i",
+  "any stuff",
+  "any stuff is fine",
+  "any star",
+  "any star is fine",
+  "available"
+];
+const ANY_STAFF_TRAILING_FILLER_PATTERN =
+  "\\s+(?:is\\s+(?:fine|okay|ok)|works\\s+for\\s+me|if\\s+i|please)$";
+const OPERATOR_TRANSFER_PROMPT = "Let me check for an available operator.";
+const OPERATOR_BUSY_PROMPT = "All of our operators are currently busy. Please call back later.";
 const SERVICE_DTMF_PROMPT =
   "Hi, thanks for calling Kiet Nails. How can I help? You can say the service, day, time, and technician in one sentence. Press 0 for a person.";
 const SERVICE_KEYPAD_PROMPT =
@@ -244,7 +265,7 @@ const WAIT_PROMPTS = {
   appointment_creation: "Please wait while I create your appointment.",
   appointment_update: "Please wait while I look up your appointment.",
   notification_send: "Please wait while I create your appointment.",
-  operator_escalation: "Please wait while I connect you."
+  operator_escalation: OPERATOR_TRANSFER_PROMPT
 };
 
 const SERVICE_ALIAS_GROUPS = {
@@ -646,6 +667,58 @@ function hasExplicitStaffContextCue(normalizedText, sessionAttributes = {}) {
   );
 }
 
+function isStaffSelectionContext(normalizedText, sessionAttributes = {}) {
+  return Boolean(
+    sessionAttributes?.lastAskedSlot === "staffPreference" ||
+      sessionAttributes?.activeDtmfMenu === "staff" ||
+      /\b(?:staff|technician|tech)\b/.test(normalizedText) ||
+      /\b(?:any\s+staff|any\s+technician|any\s+tech|first\s+avai?lable|the\s+first\s+available|for\s+available)\b/.test(
+        normalizedText
+      )
+  );
+}
+
+function stripAnyStaffTrailingFiller(normalizedText) {
+  let stripped = normalizedText;
+  while (new RegExp(ANY_STAFF_TRAILING_FILLER_PATTERN).test(stripped)) {
+    stripped = stripped.replace(new RegExp(ANY_STAFF_TRAILING_FILLER_PATTERN), "").trim();
+  }
+  return stripped;
+}
+
+function normalizeAnyStaffPhrase(text, context = {}) {
+  const normalized = normalizeForMatch(text);
+  if (!normalized) {
+    return "";
+  }
+
+  const strongAlias = ANY_STAFF_ALIASES.find((alias) => {
+    const normalizedAlias = normalizeForMatch(alias);
+    return normalized === normalizedAlias || textContainsStaffAlias(normalized, normalizedAlias);
+  });
+  if (strongAlias) {
+    return "Any staff";
+  }
+  if (/\bany\s+time\b/.test(normalized)) {
+    return "";
+  }
+
+  const staffContext = isStaffSelectionContext(normalized, context);
+  if (!staffContext) {
+    return "";
+  }
+
+  const contextualCandidate = stripAnyStaffTrailingFiller(normalized);
+  const contextualCompact = compactForMatch(contextualCandidate);
+  return CONTEXTUAL_ANY_STAFF_ALIASES.some((alias) => {
+    const aliasNormalized = normalizeForMatch(alias);
+    const aliasCompact = compactForMatch(alias);
+    return contextualCandidate === aliasNormalized || contextualCompact === aliasCompact;
+  })
+    ? "Any staff"
+    : "";
+}
+
 function isScopedDangAliasAllowed(normalizedText, sessionAttributes = {}) {
   return Boolean(
     sessionAttributes?.lastAskedSlot === "staffPreference" ||
@@ -741,7 +814,7 @@ function normalizeScopedStaffCandidatePhrase(text, sessionAttributes = {}) {
   if (isFinalConfirmationOnlyPhrase(normalized)) {
     return "";
   }
-  if (ANY_STAFF_ALIASES.some((alias) => normalized.includes(normalizeForMatch(alias)))) {
+  if (normalizeAnyStaffPhrase(text, sessionAttributes)) {
     return "any staff";
   }
   if (
@@ -863,7 +936,7 @@ function extractStaffFromTranscript(text, sessionAttributes = {}) {
   if (!normalizedText) {
     return "";
   }
-  if (ANY_STAFF_ALIASES.some((alias) => normalizedText.includes(normalizeForMatch(alias)))) {
+  if (normalizeAnyStaffPhrase(text, sessionAttributes)) {
     return "Any staff";
   }
   const scopedCandidate = normalizeScopedStaffCandidatePhrase(text, sessionAttributes);
@@ -883,6 +956,9 @@ function hasExplicitStaffPhrase(text, sessionAttributes = {}) {
   const normalized = normalizeForMatch(text);
   if (!normalized) {
     return false;
+  }
+  if (normalizeAnyStaffPhrase(text, sessionAttributes)) {
+    return true;
   }
   if (normalizeScopedStaffCandidatePhrase(text, sessionAttributes)) {
     return true;
@@ -1027,7 +1103,7 @@ function isBareDigitUtterance(value) {
   return digitSequenceFromUtterance(value).length === 1;
 }
 
-function hasCurrentTurnTimePhrase(transcript) {
+function hasCurrentTurnTimePhrase(transcript, sessionAttributes = {}) {
   const raw = String(transcript || "");
   if (!raw.trim()) {
     return false;
@@ -1035,7 +1111,8 @@ function hasCurrentTurnTimePhrase(transcript) {
   if (isDigitOnlyOrSequenceUtterance(raw)) {
     return false;
   }
-  return Boolean(normalizeTimePhrase(extractTimeCandidate(raw)));
+  const timeCandidate = extractTimeCandidate(raw, sessionAttributes);
+  return Boolean(normalizeTimePhrase(timeCandidate, "", sessionAttributes));
 }
 
 function hasCurrentTurnDatePhrase(transcript) {
@@ -1469,8 +1546,8 @@ function buildSlotDecisionDebug(event, finalAttributes = {}) {
   ]
     .filter((value, index, values) => value && values.indexOf(value) === index)
     .join(" ");
-  const currentRecovered = extractBookingDetailsFromText(currentRecoveryTranscript, timeZone);
-  const recovered = extractBookingDetailsFromText(recoveryTranscript, timeZone);
+  const currentRecovered = extractBookingDetailsFromText(currentRecoveryTranscript, timeZone, previous);
+  const recovered = extractBookingDetailsFromText(recoveryTranscript, timeZone, previous);
   const decisions = {};
   for (const fieldName of [
     "serviceName",
@@ -1569,10 +1646,7 @@ function isKnownStaffPreference(value, sessionAttributes = {}) {
   if (!normalized) {
     return false;
   }
-  if (ANY_STAFF_ALIASES.some((alias) => normalized === normalizeForMatch(alias))) {
-    return true;
-  }
-  if (normalizeForMatch(value) === "any staff") {
+  if (normalizeAnyStaffPhrase(value, sessionAttributes)) {
     return true;
   }
   for (const [staffName, aliases] of Object.entries(STAFF_ALIAS_GROUPS)) {
@@ -1595,8 +1669,11 @@ function isKnownStaffPreference(value, sessionAttributes = {}) {
 
 function isExactKnownStaffPreference(value, sessionAttributes = {}) {
   const normalized = normalizeForMatch(value);
-  if (!normalized || normalizeForMatch(value) === "any staff") {
-    return normalized === "any staff";
+  if (!normalized) {
+    return false;
+  }
+  if (normalizeAnyStaffPhrase(value, sessionAttributes)) {
+    return true;
   }
   for (const [staffName, aliases] of Object.entries(STAFF_ALIAS_GROUPS)) {
     const canonical = normalizeForMatch(staffName);
@@ -1676,7 +1753,23 @@ function isInvalidStaffPreferenceNoise(value, sessionAttributes = {}) {
 }
 
 function sanitizeStaffPreferenceValue(value, sessionAttributes = {}) {
-  return isInvalidStaffPreferenceNoise(value, sessionAttributes) ? "" : value;
+  const anyStaff = normalizeAnyStaffPhrase(value, sessionAttributes);
+  if (anyStaff) {
+    return anyStaff;
+  }
+  if (!value || isInvalidStaffPreferenceNoise(value, sessionAttributes)) {
+    return "";
+  }
+  if (isExactKnownStaffPreference(value, sessionAttributes)) {
+    return value;
+  }
+  if (
+    previousStaffHasValidatedIdentity(sessionAttributes) &&
+    normalizeForMatch(value) === normalizeForMatch(sessionAttributes.staffPreference || sessionAttributes.confirmedStaffName)
+  ) {
+    return value;
+  }
+  return "";
 }
 
 function getCurrentTurnBookingDetails(event) {
@@ -1685,7 +1778,7 @@ function getCurrentTurnBookingDetails(event) {
   const transcript = getTranscriptCandidateValues(event)
     .filter((value) => !readDtmfDigit(value))
     .join(" ");
-  return extractBookingDetailsFromText(transcript, timeZone);
+  return extractBookingDetailsFromText(transcript, timeZone, previous);
 }
 
 function currentTurnRecognizedService(event) {
@@ -1882,7 +1975,7 @@ function analyzeLexTurnSanitization(event) {
 
     if (
       fieldName === "requestedTime" &&
-      (!hasCurrentTurnTimePhrase(currentTurnTranscript) || currentTurnDigitOnlyOrSequence) &&
+      (!hasCurrentTurnTimePhrase(currentTurnTranscript, previous) || currentTurnDigitOnlyOrSequence) &&
       !alreadyTrusted
     ) {
       delete sanitizedSlots[name];
@@ -1989,6 +2082,11 @@ function analyzeLexTurnSanitization(event) {
     delete sanitizedSlots[staffSlotName];
     fieldsToClear.add("staffPreference");
     ignoredPollutedSlots.push(staffSlotName);
+    changed = true;
+  }
+  if (staffSlot && currentTurnStaffMention === "Any staff") {
+    sanitizedSlots[staffSlotName || "staffPreference"] = buildLexSlot("Any staff");
+    staffSource = "current_turn_any_staff";
     changed = true;
   }
 
@@ -2111,11 +2209,16 @@ function sanitizeLexEvent(event, analysis) {
       delete sessionAttributes[name];
     }
     if (fieldName === "staffPreference") {
+      const previousUnrecognizedStaff =
+        sessionAttributes.staffPreference || sessionAttributes.confirmedStaffName || analysis.discardedStaleStaff;
       delete sessionAttributes.confirmedStaffName;
       delete sessionAttributes.staffId;
       delete sessionAttributes.selectedStaffId;
       delete sessionAttributes.confirmedStaffId;
       sessionAttributes.invalidStaffPreferenceIgnored = "true";
+      if (previousUnrecognizedStaff) {
+        sessionAttributes.unrecognizedStaffUtterance = previousUnrecognizedStaff;
+      }
     }
   }
   if (analysis.fieldsToClear?.length) {
@@ -2137,9 +2240,16 @@ function sanitizeLexEvent(event, analysis) {
       sessionAttributes.discardedStaleStaff = analysis.discardedStaleStaff;
     }
     if (normalizeForMatch(analysis.currentTurnStaffMention) === "any staff") {
+      sessionAttributes.staffPreference = "Any staff";
+      sessionAttributes.confirmedStaffName = "Any staff";
+      sessionAttributes.staffResolutionStatus = "explicit_any";
       delete sessionAttributes.staffId;
       delete sessionAttributes.selectedStaffId;
       delete sessionAttributes.confirmedStaffId;
+      delete sessionAttributes.staffRecognitionFailureCount;
+      delete sessionAttributes.invalidStaffPreferenceIgnored;
+      delete sessionAttributes.discardedStaleStaff;
+      delete sessionAttributes.unrecognizedStaffUtterance;
     }
   }
   if (analysis.discardedStaleStaff && !sessionAttributes.discardedStaleStaff) {
@@ -2434,7 +2544,32 @@ function normalizeHourMinuteTimeExpression(value) {
   });
 }
 
-function extractTimeCandidate(value) {
+function hasGpsTimeContext(value, context = {}) {
+  const normalized = normalizeForMatch(value);
+  return Boolean(
+    /\bat\s+g\s+p(?:\s+s)?\b/.test(normalized) ||
+      context?.lastAskedSlot === "requestedTime" ||
+      context?.currentTurnSemanticType === "TIME_REQUEST" ||
+      context?.semanticType === "TIME_REQUEST"
+  );
+}
+
+function normalizeGpsTimePhrase(value, context = {}) {
+  const normalized = normalizeForMatch(value);
+  if (!normalized || !hasGpsTimeContext(value, context)) {
+    return "";
+  }
+  if (/\bat\s+g\s+p(?:\s+s)?\b/.test(normalized)) {
+    return "3 PM";
+  }
+  return /^(?:g\s+p(?:\s+s)?)$/.test(normalized) ? "3 PM" : "";
+}
+
+function extractTimeCandidate(value, context = {}) {
+  const gpsTime = normalizeGpsTimePhrase(value, context);
+  if (gpsTime) {
+    return gpsTime;
+  }
   const source = normalizeHourMinuteTimeExpression(value)
     .replace(/\b([ap])\s*\.?\s*m\.?\b/gi, "$1m")
     .trim();
@@ -2495,15 +2630,19 @@ function getPreferredDateCandidate(raw) {
   return collect(DATE_PHRASE_PATTERN, "relative").sort((left, right) => left.index - right.index)[0] || null;
 }
 
-function normalizeTimePhrase(value, datePhrase = "") {
+function normalizeTimePhrase(value, datePhrase = "", context = {}) {
+  const gpsTime = normalizeGpsTimePhrase(value, context);
+  if (gpsTime) {
+    return gpsTime;
+  }
   const normalized = normalizeSpokenNumbers(normalizeHourMinuteTimeExpression(value))
     .replace(/\b([ap])\s*\.?\s*m\.?\b/gi, "$1m")
     .replace(/\ba\.?m\.?\b/gi, "am")
     .replace(/\bp\.?m\.?\b/gi, "pm")
     .trim();
-  const context = normalizeForMatch(`${datePhrase} ${value}`);
-  const hasMorningContext = /\bmorning\b/.test(context);
-  const hasAfternoonContext = /\b(afternoon|evening|tonight|night)\b/.test(context);
+  const contextText = normalizeForMatch(`${datePhrase} ${value}`);
+  const hasMorningContext = /\bmorning\b/.test(contextText);
+  const hasAfternoonContext = /\b(afternoon|evening|tonight|night)\b/.test(contextText);
   const periodMatch = normalized.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i);
   let hour;
   let minute = 0;
@@ -2583,7 +2722,7 @@ function isClearlyInvalidServiceName(value) {
   return false;
 }
 
-function extractBookingDetailsFromText(text, timeZone = DEFAULT_SALON_TIMEZONE) {
+function extractBookingDetailsFromText(text, timeZone = DEFAULT_SALON_TIMEZONE, context = {}) {
   const raw = String(text || "");
   const serviceName = extractServiceFromTranscript(raw);
   const dateMatch = getPreferredDateCandidate(raw);
@@ -2594,12 +2733,12 @@ function extractBookingDetailsFromText(text, timeZone = DEFAULT_SALON_TIMEZONE) 
     const afterDate = raw.slice(dateMatch.index + dateMatch.text.length);
     const beforeDate = raw.slice(0, dateMatch.index);
     const timeCandidate =
-      extractTimeCandidate(afterDate) ||
-      extractTimeCandidate(beforeDate.split(/[!?;]/).at(-1) || "") ||
-      extractTimeCandidate(raw);
-    requestedTime = normalizeTimePhrase(timeCandidate, dateMatch.text);
+      extractTimeCandidate(afterDate, context) ||
+      extractTimeCandidate(beforeDate.split(/[!?;]/).at(-1) || "", context) ||
+      extractTimeCandidate(raw, context);
+    requestedTime = normalizeTimePhrase(timeCandidate, dateMatch.text, context);
   } else {
-    requestedTime = normalizeTimePhrase(extractTimeCandidate(raw));
+    requestedTime = normalizeTimePhrase(extractTimeCandidate(raw, context), "", context);
   }
 
   return {
@@ -3337,7 +3476,7 @@ function buildKnownBookingSessionAttributes(event) {
     ? ""
     : extractStaffFromTranscript(transcript, previous);
   const currentTurnHasGroundedDate = hasCurrentTurnDatePhrase(event.inputTranscript);
-  const currentTurnHasGroundedTime = hasCurrentTurnTimePhrase(event.inputTranscript);
+  const currentTurnHasGroundedTime = hasCurrentTurnTimePhrase(event.inputTranscript, previous);
   const recoveredDateIsGrounded =
     Boolean(currentRecovered.requestedDate) && currentTurnHasGroundedDate;
   const recoveredTimeIsGrounded =
@@ -3431,12 +3570,28 @@ function buildKnownBookingSessionAttributes(event) {
     delete merged.selectedStaffId;
     delete merged.confirmedStaffId;
   }
+  if (normalizeForMatch(merged.staffPreference || merged.confirmedStaffName) === "any staff") {
+    merged.staffPreference = "Any staff";
+    merged.confirmedStaffName = "Any staff";
+    merged.staffResolutionStatus = "explicit_any";
+    delete merged.staffId;
+    delete merged.selectedStaffId;
+    delete merged.confirmedStaffId;
+    delete merged.staffRecognitionFailureCount;
+    delete merged.invalidStaffPreferenceIgnored;
+    delete merged.discardedStaleStaff;
+  }
   if (isInvalidStaffPreferenceNoise(merged.staffPreference || merged.confirmedStaffName, merged)) {
+    const unrecognizedStaffUtterance =
+      merged.staffPreference || merged.confirmedStaffName || getCurrentTurnTranscript(event);
     delete merged.staffPreference;
     delete merged.confirmedStaffName;
     delete merged.staffId;
     delete merged.selectedStaffId;
     delete merged.confirmedStaffId;
+    if (unrecognizedStaffUtterance) {
+      merged.unrecognizedStaffUtterance = unrecognizedStaffUtterance;
+    }
   }
   if (isClearlyInvalidServiceName(merged.serviceName || merged.confirmedServiceName)) {
     delete merged.serviceName;
@@ -3917,7 +4072,7 @@ function buildBackendFailureEscalationResponse(event, result) {
   const reason = normalizeBackendFailureReason(result?.code);
   return buildLexResponse(
     event,
-    "Please wait while I connect you.",
+    OPERATOR_TRANSFER_PROMPT,
     "Fulfilled",
     buildForceHumanEscalationAttributes(reason),
     {
@@ -3998,13 +4153,16 @@ function buildBackendFailureElicitResponse(event, result) {
 function buildNoAgentsAvailableResponse(event) {
   return buildLexResponse(
     event,
-    "No agents available.",
+    OPERATOR_BUSY_PROMPT,
     "Fulfilled",
     {
       forceHumanEscalation: "false",
       transferToQueue: "false",
       escalationReason: "agents_unavailable",
-      noAgentsAvailable: "true"
+      noAgentsAvailable: "true",
+      conversationState: "COMPLETE",
+      conversationOutcome: "CALL_CENTER_ESCALATION",
+      conversationComplete: "true"
     },
     {
       messageContentType: "PlainText"
@@ -4290,6 +4448,69 @@ async function buildKnownCallerLookupResponse(event, intentName) {
   return buildDelegateResponse(enrichedEvent);
 }
 
+async function applyKnownCallerLookupBeforePrompt(event, intentName) {
+  const previous = event.sessionState?.sessionAttributes || {};
+  const known = buildKnownBookingSessionAttributes(event);
+  const hasKnownName = Boolean(
+    known.customerName ||
+      known.recognizedCustomerName ||
+      known.customerNameSource === "phone_lookup" ||
+      known.customerNameSource === "active_customer"
+  );
+  if (
+    intentName !== "BookAppointmentIntent" ||
+    getInputMode(event) === "DTMF" ||
+    Boolean(readCurrentTurnDigit(event)) ||
+    previous.knownCallerLookupAttempted === "true" ||
+    !known.customerPhone ||
+    hasKnownName
+  ) {
+    return event;
+  }
+
+  const markerAttributes = {
+    knownCallerLookupAttempted: "true"
+  };
+  const result = await postInternalAppointment(
+    buildInternalPayload(event, intentName, markerAttributes),
+    {
+      operationName: "customer_lookup",
+      waitPrompt: WAIT_PROMPTS.customer_lookup,
+      mechanism: "Lambda customer lookup before missing-slot decision"
+    }
+  );
+  if (!result.ok) {
+    return withSessionAttributes(event, {
+      ...markerAttributes,
+      knownCallerLookupStatus: "ERROR"
+    });
+  }
+
+  const data = extractResultPayload(result);
+  const resultAttributes = buildSessionAttributesFromResult(data);
+  const customerName = resultAttributes.customerName || resultAttributes.recognizedCustomerName;
+  if (!customerName) {
+    return withSessionAttributes(event, {
+      ...markerAttributes,
+      knownCallerLookupStatus: "NOT_FOUND"
+    });
+  }
+
+  return withSessionAttributes(event, {
+    ...markerAttributes,
+    knownCallerLookupStatus: "FOUND",
+    customerId: resultAttributes.customerId || resultAttributes.recognizedCustomerId,
+    recognizedCustomerId: resultAttributes.recognizedCustomerId || resultAttributes.customerId,
+    customerName,
+    recognizedCustomerName: resultAttributes.recognizedCustomerName || customerName,
+    persistedCustomerFirstName: resultAttributes.persistedCustomerFirstName,
+    persistedCustomerLastName: resultAttributes.persistedCustomerLastName,
+    customerNameSource: "phone_lookup",
+    customerProfileSource: "active_customer",
+    customerPhone: resultAttributes.customerPhone || known.customerPhone
+  });
+}
+
 function getCallOrSessionIdFromPayload(payload = {}) {
   return (
     payload.amazonConnectContactId ||
@@ -4394,6 +4615,92 @@ async function postInternalAppointment(payload, coverage = {}) {
   };
   logApiWaitCoverage(payload, waitCoverage, startedAt, result);
   return result;
+}
+
+async function postInternalOperatorQueueOutcome(payload) {
+  if (!API_BASE_URL || !INTERNAL_TOKEN) {
+    return {
+      ok: false,
+      code: "backend_not_configured"
+    };
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/v1/internal/ai/operator-queue-outcome`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${INTERNAL_TOKEN}`,
+        "X-FastAIBooking-Wait-Operation": "operator_queue_outcome",
+        "X-FastAIBooking-Wait-Prompt": OPERATOR_BUSY_PROMPT,
+        Connection: "keep-alive"
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      return {
+        ok: false,
+        code: "backend_error",
+        message: await response.text()
+      };
+    }
+    return {
+      ok: true,
+      data: await response.json()
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      code: error?.name === "AbortError" ? "backend_timeout" : "backend_unreachable",
+      message: error?.message
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function isOperatorQueueOutcomeEvent(event) {
+  return Boolean(
+    event?.Details?.Name === "ContactFlowEvent" &&
+      event.Details.Parameters?.fastAiOperatorQueueOutcome
+  );
+}
+
+async function handleOperatorQueueOutcomeEvent(event) {
+  const contactData = event.Details?.ContactData || {};
+  const parameters = event.Details?.Parameters || {};
+  const attributes = contactData.Attributes || {};
+  const outcome = String(parameters.fastAiOperatorQueueOutcome || "CONNECT_FLOW_ERROR");
+  const payload = {
+    salonId: parameters.salonId || attributes.salonId || DEFAULT_SALON_ID,
+    callSessionId: parameters.callSessionId || attributes.callSessionId,
+    amazonConnectContactId:
+      parameters.amazonConnectContactId ||
+      parameters.contactId ||
+      attributes.AmazonConnectContactId ||
+      attributes.contactId ||
+      contactData.ContactId,
+    callerPhone:
+      parameters.callerPhone ||
+      attributes.callerPhone ||
+      contactData.CustomerEndpoint?.Address,
+    outcome
+  };
+  const result = await postInternalOperatorQueueOutcome(payload);
+  if (!result.ok) {
+    console.error("Operator queue outcome callback failed", {
+      code: result.code,
+      contactId: payload.amazonConnectContactId
+    });
+  }
+  return {
+    operatorQueueOutcomeRecorded: result.ok ? "true" : "false",
+    operatorQueueOutcome: outcome,
+    messageToCaller: OPERATOR_BUSY_PROMPT
+  };
 }
 
 function buildInternalPayload(event, intentName, extraAttributes = {}) {
@@ -4878,7 +5185,7 @@ async function handleLexEvent(event, analysis = {}) {
     ) {
       return buildLexResponse(
         event,
-        "Please wait while I connect you.",
+        OPERATOR_TRANSFER_PROMPT,
         "Fulfilled",
         buildForceHumanEscalationAttributes("caller_confirmed_human_after_no_input", {
           awaitingNoInputHumanConfirmation: "false"
@@ -4914,7 +5221,7 @@ async function handleLexEvent(event, analysis = {}) {
     ) {
       return buildLexResponse(
         event,
-        "Please wait while I connect you.",
+        OPERATOR_TRANSFER_PROMPT,
         "Fulfilled",
         buildForceHumanEscalationAttributes("caller_confirmed_existing_appointment_handoff", {
           awaitingExistingAppointmentHumanConfirmation: "false"
@@ -5116,6 +5423,7 @@ async function handleLexEvent(event, analysis = {}) {
     }
 
     if (!shouldEscalate && intentName === "BookAppointmentIntent") {
+      event = await applyKnownCallerLookupBeforePrompt(event, intentName);
       const staffDtmfSelection = readScopedStaffDtmfSelection(event);
       if (staffDtmfSelection?.invalid) {
         return buildInvalidStaffDtmfResponse(event);
@@ -5185,7 +5493,7 @@ async function handleLexEvent(event, analysis = {}) {
       const data = extractResultPayload(result);
       return buildLexResponse(
         event,
-        data.lexResponse?.message || "Please wait while I connect you.",
+        data.lexResponse?.message || OPERATOR_TRANSFER_PROMPT,
         data.lexResponse?.fulfillmentState || "Fulfilled",
         buildSessionAttributesFromResult(data),
         data.lexResponse
@@ -5206,7 +5514,7 @@ async function handleLexEvent(event, analysis = {}) {
       return buildLexResponse(
         event,
         data.lexResponse?.message ||
-          "Please wait while I connect you.",
+          OPERATOR_TRANSFER_PROMPT,
         data.lexResponse?.fulfillmentState || "Fulfilled",
         buildSessionAttributesFromResult(data),
         data.lexResponse
@@ -5227,7 +5535,7 @@ async function handleLexEvent(event, analysis = {}) {
       return buildLexResponse(
         event,
         data.lexResponse?.message ||
-          "Please wait while I connect you.",
+          OPERATOR_TRANSFER_PROMPT,
         data.lexResponse?.fulfillmentState || "Fulfilled",
         buildSessionAttributesFromResult(data),
         data.lexResponse
@@ -5265,7 +5573,7 @@ async function handleLexEvent(event, analysis = {}) {
       return buildLexResponse(
         event,
         data.lexResponse?.message ||
-          "Please wait while I connect you.",
+          OPERATOR_TRANSFER_PROMPT,
         data.lexResponse?.fulfillmentState || "Fulfilled",
         buildSessionAttributesFromResult(data),
         data.lexResponse
@@ -5313,7 +5621,7 @@ async function handleLexEvent(event, analysis = {}) {
     }
     return buildLexResponse(
       event,
-      '<speak>Something went wrong while creating the appointment. <break time="300ms"/> Please wait while I connect you.</speak>',
+      `<speak>Something went wrong while creating the appointment. <break time="300ms"/> ${OPERATOR_TRANSFER_PROMPT}</speak>`,
       "Failed",
       buildForceHumanEscalationAttributes("backend_error")
     );
@@ -5321,6 +5629,9 @@ async function handleLexEvent(event, analysis = {}) {
 }
 
 export const handler = async (event) => {
+  if (isOperatorQueueOutcomeEvent(event)) {
+    return handleOperatorQueueOutcomeEvent(event);
+  }
   const analysis = analyzeLexTurnSanitization(event);
   const sanitizedEvent = sanitizeLexEvent(event, analysis);
   const response = await handleLexEvent(sanitizedEvent, analysis);

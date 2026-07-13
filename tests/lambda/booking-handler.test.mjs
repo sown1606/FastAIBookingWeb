@@ -305,7 +305,7 @@ test("Lex fulfillment progress updates cover slow booking, appointment changes, 
       update: "I’m still checking the schedule."
     },
     HumanEscalationIntent: {
-      start: "Please wait while I connect you.",
+      start: "Let me check for an available operator.",
       update: "Still connecting you. Please wait a moment."
     },
     CancelAppointmentIntent: {
@@ -389,7 +389,7 @@ test("Lex customerName failure path invokes the booking dialog hook instead of F
   }
 });
 
-test("Connect human escalation flow speaks before queue transfer", () => {
+test("Connect human escalation flow transfers without duplicate wait prompt", () => {
   const humanEscalationFlow = JSON.parse(
     readFileSync(path.join(connectRoot, "human-escalation.json"), "utf8")
   );
@@ -397,18 +397,54 @@ test("Connect human escalation flow speaks before queue transfer", () => {
     humanEscalationFlow.Actions.map((action) => [action.Identifier, action])
   );
   const startAction = actionsById.get(humanEscalationFlow.StartAction);
-  const waitPrompt = actionsById.get(startAction.Transitions.NextAction);
-  const queueUpdate = actionsById.get(waitPrompt.Transitions.NextAction);
-  const customerQueueHook = actionsById.get(queueUpdate.Transitions.NextAction);
+  const queueUpdate = actionsById.get(startAction.Transitions.NextAction);
+  const staffingCheck = actionsById.get(queueUpdate.Transitions.NextAction);
+  const staffedBranch = staffingCheck.Transitions.Conditions.find((condition) =>
+    condition.Condition.Operands.includes("0")
+  );
+  const customerQueueHook = actionsById.get(staffedBranch.NextAction);
   const queueTransfer = actionsById.get(customerQueueHook.Transitions.NextAction);
+  const noAgentCallback = actionsById.get(staffingCheck.Transitions.NextAction);
+  const noAgentMessage = actionsById.get(noAgentCallback.Transitions.NextAction);
 
   assert.equal(startAction.Type, "UpdateContactTextToSpeechVoice");
-  assert.equal(waitPrompt.Type, "MessageParticipant");
-  assert.match(waitPrompt.Parameters.Text, /^Please wait while I connect you\./);
   assert.equal(queueUpdate.Type, "UpdateContactTargetQueue");
+  assert.equal(staffingCheck.Type, "CheckMetricData");
+  assert.equal(staffingCheck.Parameters.MetricType, "NumberOfAgentsAvailable");
   assert.equal(customerQueueHook.Type, "UpdateContactEventHooks");
   assert.match(customerQueueHook.Parameters.EventHooks.CustomerQueue, /contact-flow\/6bdf546e-4e3a-4bf5-954f-fb78fa6a3d5b$/);
   assert.equal(queueTransfer.Type, "TransferContactToQueue");
+  assert.equal(noAgentCallback.Type, "InvokeLambdaFunction");
+  assert.equal(noAgentCallback.Parameters.LambdaInvocationAttributes.fastAiOperatorQueueOutcome, "AGENTS_UNAVAILABLE");
+  assert.equal(noAgentMessage.Parameters.Text, "All of our operators are currently busy. Please call back later.");
+  assert.equal(
+    humanEscalationFlow.Actions.some(
+      (action) => action.Type === "MessageParticipant" && /Please wait while I connect you/i.test(action.Parameters?.Text || "")
+    ),
+    false
+  );
+});
+
+test("Connect customer queue flow has bounded wait timeout and disconnect fallback", () => {
+  const queueFlow = JSON.parse(
+    readFileSync(path.join(connectRoot, "customer-queue-timeout.json"), "utf8")
+  );
+  const actionsById = new Map(queueFlow.Actions.map((action) => [action.Identifier, action]));
+  const loop = actionsById.get(queueFlow.StartAction);
+  const timeoutActionId = loop.Transitions.Conditions.find(
+    (condition) => condition.Condition.Operands.includes("MessagesInterrupted")
+  )?.NextAction;
+  const timeoutCallback = actionsById.get(timeoutActionId);
+  const timeoutMessage = actionsById.get(timeoutCallback.Transitions.NextAction);
+  const disconnect = actionsById.get(timeoutMessage.Transitions.NextAction);
+
+  assert.equal(loop.Type, "MessageParticipantIteratively");
+  assert.equal(loop.Parameters.InterruptFrequencySeconds, "21");
+  assert.equal(timeoutCallback.Type, "InvokeLambdaFunction");
+  assert.equal(timeoutCallback.Parameters.LambdaInvocationAttributes.fastAiOperatorQueueOutcome, "QUEUE_WAIT_TIMEOUT");
+  assert.equal(timeoutMessage.Type, "MessageParticipant");
+  assert.equal(timeoutMessage.Parameters.Text, "All of our operators are currently busy. Please call back later.");
+  assert.equal(disconnect.Type, "DisconnectParticipant");
 });
 
 const collectReachableActions = (flow) => {
@@ -1267,7 +1303,7 @@ test("yes after no-input human offer transfers only after confirmation", async (
     })
   );
 
-  assert.equal(response.messages[0].content, "Please wait while I connect you.");
+  assert.equal(response.messages[0].content, "Let me check for an available operator.");
   assert.equal(response.sessionState.sessionAttributes.transferToQueue, "true");
   assert.equal(response.sessionState.sessionAttributes.awaitingNoInputHumanConfirmation, "false");
 });
@@ -1719,10 +1755,10 @@ test("DialogCodeHook known caller lookup avoids asking name", async () => {
 
   assert.equal(response.sessionState.sessionAttributes.customerName, "Thuyet");
   assert.notEqual(response.sessionState.dialogAction.slotToElicit, "customerName");
-  assert.equal(response.sessionState.sessionAttributes.transferToQueue, "false");
+  assert.notEqual(response.sessionState.sessionAttributes.transferToQueue, "true");
 });
 
-test("DialogCodeHook preserves backend known-caller acknowledgement while eliciting next slot", async () => {
+test("DialogCodeHook known caller enrichment elicits next slot without asking name", async () => {
   const handler = await loadHandler();
   installFetchMock(() =>
     jsonResponse(
@@ -1780,9 +1816,9 @@ test("DialogCodeHook preserves backend known-caller acknowledgement while elicit
 
   assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
   assert.equal(response.sessionState.dialogAction.slotToElicit, "requestedTime");
-  assert.match(response.messages[0].content, /Welcome back, Lee/i);
-  assert.equal(response.sessionState.sessionAttributes.knownCallerAcknowledged, "true");
   assert.equal(response.sessionState.sessionAttributes.customerName, "Lee");
+  assert.equal(response.sessionState.sessionAttributes.customerNameSource, "phone_lookup");
+  assert.equal(response.sessionState.sessionAttributes.knownCallerLookupStatus, "FOUND");
   assert.notEqual(response.sessionState.dialogAction.slotToElicit, "customerName");
 });
 
@@ -4779,7 +4815,7 @@ test("press 0 from service prompt escalates to operator", async () => {
         appointment: null,
         lexResponse: {
           fulfillmentState: "Fulfilled",
-          message: "Please wait while I connect you.",
+          message: "Let me check for an available operator.",
           messageContentType: "PlainText",
           sessionAttributes: {
             transferToQueue: "true",
@@ -4994,7 +5030,7 @@ test("press 0 from staff prompt escalates to operator", async () => {
         appointment: null,
         lexResponse: {
           fulfillmentState: "Fulfilled",
-          message: "Please wait while I connect you.",
+          message: "Let me check for an available operator.",
           messageContentType: "PlainText",
           sessionAttributes: {
             transferToQueue: "true",
@@ -5198,7 +5234,7 @@ test("HumanEscalationIntent returns the exact handoff message", async () => {
         appointment: null,
         lexResponse: {
           fulfillmentState: "Fulfilled",
-          message: "Please wait while I connect you.",
+          message: "Let me check for an available operator.",
           messageContentType: "PlainText",
           sessionAttributes: {
             forceHumanEscalation: "true",
@@ -5224,7 +5260,7 @@ test("HumanEscalationIntent returns the exact handoff message", async () => {
     })
   );
 
-  assert.equal(response.messages[0].content, "Please wait while I connect you.");
+  assert.equal(response.messages[0].content, "Let me check for an available operator.");
   assert.equal(response.messages[0].contentType, "PlainText");
   assert.equal(response.sessionState.sessionAttributes.transferToQueue, "true");
 });
@@ -5252,7 +5288,7 @@ test("HumanEscalationIntent returns no-agent message when availability is blocke
     })
   );
 
-  assert.equal(response.messages[0].content, "No agents available.");
+  assert.equal(response.messages[0].content, "All of our operators are currently busy. Please call back later.");
   assert.equal(response.messages[0].contentType, "PlainText");
   assert.equal(response.sessionState.sessionAttributes.transferToQueue, "false");
   assert.equal(response.sessionState.sessionAttributes.noAgentsAvailable, "true");
@@ -5267,7 +5303,7 @@ test("explicit human utterance transfers even when Lex intent is booking", async
         appointment: null,
         lexResponse: {
           fulfillmentState: "Fulfilled",
-          message: "Please wait while I connect you.",
+          message: "Let me check for an available operator.",
           messageContentType: "PlainText",
           sessionAttributes: {
             transferToQueue: "true",
@@ -5305,7 +5341,7 @@ test("BookAppointmentIntent backend human escalation response is suppressed with
         appointment: null,
         lexResponse: {
           fulfillmentState: "Fulfilled",
-          message: "Please wait while I connect you.",
+          message: "Let me check for an available operator.",
           messageContentType: "PlainText",
           sessionAttributes: {
             forceHumanEscalation: "true",
@@ -5451,7 +5487,7 @@ test("yes after existing appointment handoff offer transfers only after confirma
     })
   );
 
-  assert.equal(response.messages[0].content, "Please wait while I connect you.");
+  assert.equal(response.messages[0].content, "Let me check for an available operator.");
   assert.equal(response.messages[0].contentType, "PlainText");
   assert.equal(response.sessionState.sessionAttributes.transferToQueue, "true");
   assert.equal(
@@ -5607,6 +5643,265 @@ test("BookAppointmentIntent backend not configured reprompts with wait prompt an
   assert.equal(response.sessionState.sessionAttributes.backendFailureReason, "backend_not_configured");
   assert.match(response.messages[0].content, /I still have Pedicure/i);
   assert.doesNotMatch(response.messages[0].content, /goodbye/i);
+});
+
+test("DialogCodeHook accepts exact Any staff phrase without staff prompt", async () => {
+  const handler = await loadHandler();
+  globalThis.fetch = async () => {
+    throw new Error("fetch should not be called for local Any staff recovery");
+  };
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "I want to book a Pedicure tomorrow at 2 PM. Any staff is fine.",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: "connect-any-staff-exact",
+          customerName: "Kiet Nguyen",
+          customerPhone: "7325956266"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          slots: {}
+        }
+      }
+    })
+  );
+
+  assert.equal(response.sessionState.sessionAttributes.staffPreference, "Any staff");
+  assert.equal(response.sessionState.sessionAttributes.staffResolutionStatus, "explicit_any");
+  assert.equal(response.sessionState.sessionAttributes.staffId, undefined);
+  assert.notEqual(response.sessionState.dialogAction.slotToElicit, "staffPreference");
+});
+
+test("DialogCodeHook accepts live Any staff ASR variants only in staff context", async () => {
+  const variants = [
+    "any stop",
+    "anystop",
+    "any stop if i",
+    "any stuff",
+    "any star",
+    "first available",
+    "first avaiable",
+    "available"
+  ];
+
+  for (const phrase of variants) {
+    const handler = await loadHandler();
+    globalThis.fetch = async () => {
+      throw new Error(`fetch should not be called for ${phrase}`);
+    };
+
+    const response = await handler(
+      baseEvent({
+        invocationSource: "DialogCodeHook",
+        inputTranscript: phrase,
+        sessionId: `connect-any-staff-${phrase.replace(/\W+/g, "-")}`,
+        sessionState: {
+          ...baseEvent().sessionState,
+          sessionAttributes: {
+            salonId: "salon-explicit",
+            CalledNumber: "+18483487681",
+            CustomerEndpointAddress: "+17325956266",
+            AmazonConnectContactId: `connect-any-staff-${phrase.replace(/\W+/g, "-")}`,
+            lastAskedSlot: "staffPreference",
+            activeDtmfMenu: "staff",
+            staffRecognitionFailureCount: "2",
+            invalidStaffPreferenceIgnored: "true",
+            discardedStaleStaff: "anystop",
+            customerName: "Kiet Nguyen",
+            customerPhone: "7325956266",
+            serviceName: "Pedicure",
+            requestedDate: usEasternDate(1),
+            requestedTime: "2 PM",
+            ...dynamicStaffAttributes()
+          },
+          intent: {
+            ...baseEvent().sessionState.intent,
+            slots: {
+              staffPreference: slotWith({
+                originalValue: phrase,
+                interpretedValue: phrase.replace(/\s+/g, ""),
+                resolvedValues: [phrase.replace(/\s+/g, "")]
+              })
+            }
+          }
+        }
+      })
+    );
+
+    assert.equal(response.sessionState.sessionAttributes.staffPreference, "Any staff", phrase);
+    assert.equal(response.sessionState.sessionAttributes.confirmedStaffName, "Any staff", phrase);
+    assert.equal(response.sessionState.sessionAttributes.staffResolutionStatus, "explicit_any", phrase);
+    assert.equal(response.sessionState.sessionAttributes.staffId, undefined, phrase);
+    assert.equal(response.sessionState.sessionAttributes.selectedStaffId, undefined, phrase);
+    assert.equal(response.sessionState.sessionAttributes.confirmedStaffId, undefined, phrase);
+    assert.equal(response.sessionState.sessionAttributes.staffRecognitionFailureCount, undefined, phrase);
+    assert.equal(response.sessionState.sessionAttributes.invalidStaffPreferenceIgnored, undefined, phrase);
+    assert.equal(response.sessionState.sessionAttributes.discardedStaleStaff, undefined, phrase);
+    assert.doesNotMatch(response.messages?.[0]?.content || "", /didn.t find that technician/i, phrase);
+    assert.notEqual(response.sessionState.dialogAction.slotToElicit, "staffPreference", phrase);
+  }
+});
+
+test("DialogCodeHook does not convert any time is fine into Any staff", async () => {
+  const handler = await loadHandler();
+  globalThis.fetch = async () => {
+    throw new Error("fetch should not be called for negative Any time guard");
+  };
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "I want a Pedicure tomorrow afternoon. Any time is fine.",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: "connect-any-time-negative",
+          customerName: "Kiet Nguyen",
+          customerPhone: "7325956266"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          slots: {}
+        }
+      }
+    })
+  );
+
+  assert.equal(response.sessionState.sessionAttributes.serviceName, "Pedicure");
+  assert.equal(response.sessionState.sessionAttributes.requestedDate, usEasternDate(1));
+  assert.notEqual(response.sessionState.sessionAttributes.staffPreference, "Any staff");
+});
+
+test("DialogCodeHook known caller lookup runs before first name prompt", async () => {
+  const handler = await loadHandler();
+  const fetchCalls = installFetchMock(() =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "MISSING_INFO",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "InProgress",
+          message: "Please say yes to confirm, or tell me what you would like to change.",
+          messageContentType: "PlainText",
+          sessionAttributes: {
+            customerId: "customer-lee",
+            recognizedCustomerId: "customer-lee",
+            customerName: "Lee",
+            recognizedCustomerName: "Lee",
+            customerNameSource: "phone_lookup",
+            customerProfileSource: "active_customer",
+            customerPhone: "+84798171999",
+            forceHumanEscalation: "false",
+            transferToQueue: "false"
+          }
+        },
+        missingFields: []
+      })
+    )
+  );
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "I want to book a Pedicure tomorrow at 2 PM with any staff.",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+84798171999",
+          AmazonConnectContactId: "connect-known-caller-initial"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          slots: {}
+        }
+      }
+    })
+  );
+
+  assert.equal(fetchCalls[0].body.serviceName, "Pedicure");
+  assert.equal(fetchCalls[0].body.requestedTime, "2 PM");
+  assert.equal(fetchCalls[0].body.staffPreference, "Any staff");
+  assert.equal(response.sessionState.sessionAttributes.customerName, "Lee");
+  assert.equal(response.sessionState.sessionAttributes.knownCallerLookupAttempted, "true");
+  assert.equal(response.sessionState.sessionAttributes.knownCallerLookupStatus, "FOUND");
+  assert.notEqual(response.sessionState.dialogAction.slotToElicit, "customerName");
+  assert.doesNotMatch(response.messages?.[0]?.content || "", /name/i);
+});
+
+test("DialogCodeHook recovers g p s as 3 PM only in time context", async () => {
+  const handler = await loadHandler();
+  globalThis.fetch = async () => {
+    throw new Error("fetch should not be called for local g p s recovery");
+  };
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "book full set tomorrow at g p s with chang",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+84798171999",
+          AmazonConnectContactId: "connect-gps-time",
+          customerName: "Lee",
+          recognizedCustomerName: "Lee",
+          customerNameSource: "phone_lookup",
+          customerPhone: "+84798171999"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          slots: {}
+        }
+      }
+    })
+  );
+
+  assert.equal(response.sessionState.sessionAttributes.serviceName, "Full Set");
+  assert.equal(response.sessionState.sessionAttributes.confirmedServiceName, "Full Set");
+  assert.equal(response.sessionState.sessionAttributes.requestedDate, usEasternDate(1));
+  assert.equal(response.sessionState.sessionAttributes.requestedTime, "3 PM");
+  assert.equal(response.sessionState.sessionAttributes.staffPreference, "Trang");
+  assert.notEqual(response.sessionState.dialogAction.slotToElicit, "requestedTime");
+
+  const negative = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "Tell me about GPS",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: "connect-gps-negative",
+          customerName: "Kiet Nguyen",
+          customerPhone: "7325956266",
+          serviceName: "Pedicure",
+          requestedDate: usEasternDate(1)
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          slots: {}
+        }
+      }
+    })
+  );
+
+  assert.notEqual(negative.sessionState.sessionAttributes.requestedTime, "3 PM");
 });
 
 test("Lex exports route first-turn service digits through BookAppointmentIntent", () => {

@@ -18,12 +18,6 @@
           }
         }
       },
-      "01253de2-7cc9-4992-945d-63910b9eb695": {
-        "position": {
-          "x": 420,
-          "y": 40
-        }
-      },
       "8b1827c6-e89a-4794-87ad-3894cb4e2982": {
         "position": {
           "x": 640,
@@ -48,6 +42,32 @@
             "CustomerQueue": {
               "displayName": "Default customer queue"
             }
+          }
+        }
+      },
+      "check-operator-available": {
+        "position": {
+          "x": 800,
+          "y": 40
+        },
+        "parameters": {
+          "MetricType": "NumberOfAgentsAvailable",
+          "QueueId": {
+            "displayName": "FastAIBooking Operator Queue"
+          }
+        },
+        "queue": {
+          "text": "FastAIBooking Operator Queue"
+        }
+      },
+      "record-no-agent-unavailable": {
+        "position": {
+          "x": 800,
+          "y": 280
+        },
+        "parameters": {
+          "LambdaFunctionARN": {
+            "displayName": "fastaibooking-booking-handler"
           }
         }
       },
@@ -80,23 +100,6 @@
       "Identifier": "1e4ddb16-2022-43cd-adef-1b263b08bcb4",
       "Type": "UpdateContactTextToSpeechVoice",
       "Transitions": {
-        "NextAction": "01253de2-7cc9-4992-945d-63910b9eb695",
-        "Errors": [
-          {
-            "NextAction": "8b1827c6-e89a-4794-87ad-3894cb4e2982",
-            "ErrorType": "NoMatchingError"
-          }
-        ]
-      }
-    },
-    {
-      "Parameters": {
-        "SkipWhenDTMFBufferEnabled": "false",
-        "Text": "Please wait while I connect you."
-      },
-      "Identifier": "01253de2-7cc9-4992-945d-63910b9eb695",
-      "Type": "MessageParticipant",
-      "Transitions": {
         "NextAction": "8b1827c6-e89a-4794-87ad-3894cb4e2982",
         "Errors": [
           {
@@ -113,7 +116,64 @@
       "Identifier": "8b1827c6-e89a-4794-87ad-3894cb4e2982",
       "Type": "UpdateContactTargetQueue",
       "Transitions": {
-        "NextAction": "set-customer-queue-flow",
+        "NextAction": "check-operator-available",
+        "Errors": [
+          {
+            "NextAction": "queue-fallback-message",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "check-operator-available",
+      "Type": "CheckMetricData",
+      "Parameters": {
+        "MetricType": "NumberOfAgentsAvailable",
+        "QueueId": "arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/queue/d0f2a5d8-e983-4609-9bbc-efb0881a465d"
+      },
+      "Transitions": {
+        "NextAction": "record-no-agent-unavailable",
+        "Conditions": [
+          {
+            "NextAction": "set-customer-queue-flow",
+            "Condition": {
+              "Operator": "NumberGreaterThan",
+              "Operands": [
+                "0"
+              ]
+            }
+          }
+        ],
+        "Errors": [
+          {
+            "NextAction": "record-no-agent-unavailable",
+            "ErrorType": "NoMatchingCondition"
+          },
+          {
+            "NextAction": "record-no-agent-unavailable",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "record-no-agent-unavailable",
+      "Type": "InvokeLambdaFunction",
+      "Parameters": {
+        "LambdaFunctionARN": "arn:aws:lambda:us-east-1:197452633989:function:fastaibooking-booking-handler",
+        "InvocationTimeLimitSeconds": 3,
+        "InvocationType": "SYNCHRONOUS",
+        "LambdaInvocationAttributes": {
+          "fastAiOperatorQueueOutcome": "AGENTS_UNAVAILABLE",
+          "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147"
+        },
+        "ResponseValidation": {
+          "ResponseType": "STRING_MAP"
+        }
+      },
+      "Transitions": {
+        "NextAction": "queue-fallback-message",
         "Errors": [
           {
             "NextAction": "queue-fallback-message",
@@ -170,7 +230,7 @@
       "Type": "MessageParticipant",
       "Parameters": {
         "SkipWhenDTMFBufferEnabled": "false",
-        "Text": "No agents are available right now. Please call back later or leave a message if voicemail is enabled."
+        "Text": "All of our operators are currently busy. Please call back later."
       },
       "Transitions": {
         "NextAction": "eab531ca-686c-470f-9ed2-426e5ead1400",

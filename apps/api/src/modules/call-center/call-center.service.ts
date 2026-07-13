@@ -3,10 +3,12 @@ import {
   AppointmentStatus,
   CallEscalationStatus,
   CallRoutingOutcome,
+  CallSessionStatus,
   ExternalProvider,
   Prisma,
   Role
 } from "@prisma/client";
+import { ConnectClient, GetCurrentMetricDataCommand } from "@aws-sdk/client-connect";
 import { env } from "../../config/env";
 import { prisma } from "../../db/prisma";
 import { AppError } from "../../lib/errors";
@@ -31,6 +33,97 @@ const toJson = (value: unknown): Prisma.InputJsonValue => {
 };
 
 const AMAZON_CONNECT_OPERATOR_QUEUE_NAME = "FastAIBooking Operator Queue";
+const OPERATOR_TRANSFER_PROMPT = "Let me check for an available operator.";
+const OPERATOR_BUSY_PROMPT = "All of our operators are currently busy. Please call back later.";
+
+type OperatorQueueMetrics = {
+  staffedAgents: number;
+  availableAgents: number;
+  onlineAgents?: number;
+  source: "amazon_connect_current_metrics" | "test_override" | "not_configured" | "error";
+  errorMessage?: string;
+};
+
+const readMetricOverride = (name: string): number | undefined => {
+  const value = process.env[name];
+  if (value === undefined || value === "") {
+    return undefined;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const readMetricCollectionValue = (
+  collections: Array<{ Metric?: { Name?: string }; Value?: number }> | undefined,
+  metricName: string
+): number => {
+  const value = collections?.find((entry) => entry.Metric?.Name === metricName)?.Value;
+  return Number.isFinite(value) ? Number(value) : 0;
+};
+
+const getOperatorQueueMetrics = async (): Promise<OperatorQueueMetrics> => {
+  const staffedOverride = readMetricOverride("AMAZON_CONNECT_STAFFED_AGENTS_OVERRIDE");
+  const availableOverride = readMetricOverride("AMAZON_CONNECT_AVAILABLE_AGENTS_OVERRIDE");
+  if (staffedOverride !== undefined || availableOverride !== undefined) {
+    return {
+      staffedAgents: staffedOverride ?? 0,
+      availableAgents: availableOverride ?? 0,
+      source: "test_override"
+    };
+  }
+
+  const instanceId = env.AMAZON_CONNECT_INSTANCE_ID;
+  const queueId = env.AMAZON_CONNECT_QUEUE_ID_DEFAULT;
+  const region = env.AWS_REGION ?? "us-east-1";
+  if (!instanceId || !queueId) {
+    return {
+      staffedAgents: 0,
+      availableAgents: 0,
+      source: "not_configured",
+      errorMessage: "Amazon Connect instance or queue id is not configured."
+    };
+  }
+
+  try {
+    const client = new ConnectClient({ region });
+    const output = await client.send(
+      new GetCurrentMetricDataCommand({
+        InstanceId: instanceId,
+        Filters: {
+          Queues: [queueId],
+          Channels: ["VOICE"]
+        },
+        CurrentMetrics: [
+          { Name: "AGENTS_STAFFED", Unit: "COUNT" },
+          { Name: "AGENTS_AVAILABLE", Unit: "COUNT" },
+          { Name: "AGENTS_ONLINE", Unit: "COUNT" }
+        ] as never
+      })
+    );
+    const collections = output.MetricResults?.[0]?.Collections;
+    return {
+      staffedAgents: readMetricCollectionValue(collections, "AGENTS_STAFFED"),
+      availableAgents: readMetricCollectionValue(collections, "AGENTS_AVAILABLE"),
+      onlineAgents: readMetricCollectionValue(collections, "AGENTS_ONLINE"),
+      source: "amazon_connect_current_metrics"
+    };
+  } catch (error) {
+    logger.error(
+      {
+        error: error instanceof Error ? error.message : String(error),
+        instanceId,
+        queueId
+      },
+      "Amazon Connect operator queue metrics check failed."
+    );
+    return {
+      staffedAgents: 0,
+      availableAgents: 0,
+      source: "error",
+      errorMessage: error instanceof Error ? error.message : String(error)
+    };
+  }
+};
 
 interface CallCenterWorkspaceActor {
   userId: string;
@@ -451,6 +544,8 @@ export const createOrUpdateCallEscalation = async (input: {
   escalationReason: string;
   customerPhone?: string | null;
   messageToCaller?: string;
+  operatorQueueOutcome?: string | null;
+  suppressAlert?: boolean;
   metadata?: unknown;
 }) => {
   const salon = await prisma.salon.findUnique({
@@ -472,46 +567,74 @@ export const createOrUpdateCallEscalation = async (input: {
   const settings = salon.settings;
   const callCenterEnabled = settings?.callCenterEnabled ?? false;
   const hasAssignedAgents = salon.callCenterAssignments.length > 0;
-  const callbackRequestEnabled = settings?.callbackRequestEnabled ?? true;
-  const smsFallbackEnabled = settings?.smsFallbackEnabled ?? false;
-  const voicemailEnabled = settings?.voicemailEnabled ?? true;
 
   let status: CallEscalationStatus = CallEscalationStatus.PENDING;
   let routingOutcome: CallRoutingOutcome = CallRoutingOutcome.CALL_CENTER_ESCALATION;
   let finalResolution = "Escalation created.";
   let queuedAt: Date | null = null;
+  let closedAt: Date | null = null;
   let callbackPhone: string | null = null;
   let smsRecipientPhone: string | null = null;
+  let operatorQueueOutcome = "CONFIG_UNAVAILABLE";
+  let connectMetrics: OperatorQueueMetrics | null = null;
 
-  if (callCenterEnabled && hasAssignedAgents) {
+  if (input.operatorQueueOutcome) {
+    operatorQueueOutcome = input.operatorQueueOutcome;
+  } else if (callCenterEnabled && hasAssignedAgents) {
+    connectMetrics = await getOperatorQueueMetrics();
+    if (connectMetrics.source === "error") {
+      operatorQueueOutcome = "CONNECT_METRICS_DEFERRED_TO_CONNECT_FLOW";
+    } else if (connectMetrics.source === "not_configured") {
+      operatorQueueOutcome = "CONNECT_METRICS_NOT_CONFIGURED";
+    } else if (connectMetrics.staffedAgents > 0 && connectMetrics.availableAgents > 0) {
+      operatorQueueOutcome = "AGENT_AVAILABLE";
+    } else if (connectMetrics.staffedAgents <= 0) {
+      operatorQueueOutcome = "AGENTS_UNAVAILABLE";
+    } else if (connectMetrics.availableAgents <= 0) {
+      operatorQueueOutcome = "AGENTS_BUSY";
+    } else {
+      operatorQueueOutcome = "CONNECT_METRICS_ERROR";
+    }
+  } else if (!callCenterEnabled) {
+    operatorQueueOutcome = "CALL_CENTER_DISABLED";
+  } else if (!hasAssignedAgents) {
+    operatorQueueOutcome = "NO_ASSIGNED_AGENTS";
+  }
+
+  if (
+    operatorQueueOutcome === "AGENT_AVAILABLE" ||
+    operatorQueueOutcome === "CONNECT_METRICS_DEFERRED_TO_CONNECT_FLOW"
+  ) {
     status = CallEscalationStatus.QUEUED;
     routingOutcome = CallRoutingOutcome.QUEUED;
     finalResolution = "Waiting in the human operator queue.";
     queuedAt = new Date();
-  } else if (callbackRequestEnabled && input.customerPhone) {
-    status = CallEscalationStatus.CALLBACK_REQUESTED;
-    routingOutcome = CallRoutingOutcome.CALLBACK_REQUEST;
-    finalResolution = "Callback request created because no operator was available.";
-    callbackPhone = input.customerPhone;
-  } else if (smsFallbackEnabled && input.customerPhone) {
-    status = CallEscalationStatus.SMS_SENT;
-    routingOutcome = CallRoutingOutcome.SMS_FALLBACK;
-    finalResolution = "SMS fallback sent because no operator was available.";
-    smsRecipientPhone = input.customerPhone;
-    await sendSms({
-      to: input.customerPhone,
-      body: "We missed your call. Reply with your preferred time and we will call you back.",
-      reason: "CALL_CENTER_SMS_FALLBACK"
-    });
-  } else if (voicemailEnabled) {
-    status = CallEscalationStatus.PENDING;
-    routingOutcome = CallRoutingOutcome.VOICEMAIL;
-    finalResolution = "Voicemail fallback is enabled for this salon.";
+  } else {
+    status = CallEscalationStatus.CLOSED;
+    routingOutcome = CallRoutingOutcome.CALL_CENTER_ESCALATION;
+    finalResolution = OPERATOR_BUSY_PROMPT;
+    closedAt = new Date();
   }
   const messageToCaller =
     routingOutcome === CallRoutingOutcome.QUEUED
-      ? input.messageToCaller ?? "Please wait while I connect you."
-      : "No agents available.";
+      ? input.messageToCaller ?? OPERATOR_TRANSFER_PROMPT
+      : OPERATOR_BUSY_PROMPT;
+  const metadata =
+    input.metadata && typeof input.metadata === "object" && !Array.isArray(input.metadata)
+      ? {
+          ...(input.metadata as Record<string, unknown>),
+          operatorQueueOutcome,
+          connectMetrics,
+          callCenterEnabled,
+          assignedAgentCount: salon.callCenterAssignments.length
+        }
+      : {
+          operatorQueueOutcome,
+          connectMetrics,
+          callCenterEnabled,
+          assignedAgentCount: salon.callCenterAssignments.length,
+          originalMetadata: input.metadata
+        };
   const previousEscalation = await prisma.callEscalation.findUnique({
     where: {
       callSessionId: input.callSessionId
@@ -539,7 +662,8 @@ export const createOrUpdateCallEscalation = async (input: {
       callbackPhone,
       smsRecipientPhone,
       queuedAt,
-      metadata: input.metadata === undefined ? undefined : toJson(input.metadata)
+      closedAt,
+      metadata: toJson(metadata)
     },
     update: {
       status,
@@ -555,7 +679,8 @@ export const createOrUpdateCallEscalation = async (input: {
       callbackPhone,
       smsRecipientPhone,
       queuedAt,
-      metadata: input.metadata === undefined ? undefined : toJson(input.metadata)
+      closedAt,
+      metadata: toJson(metadata)
     }
   });
 
@@ -564,28 +689,30 @@ export const createOrUpdateCallEscalation = async (input: {
     finalResolution
   });
 
-  await createSalonAlert({
-    salonId: input.salonId,
-    alertType: "CALL_ESCALATION_CREATED",
-    title: "Human escalation created",
-    message:
-      status === CallEscalationStatus.QUEUED
-        ? "A caller requested a human. The call is waiting in the operator queue."
-        : finalResolution,
-    priority: "URGENT",
-    metadata: {
-      callSessionId: input.callSessionId,
-      escalationId: escalation.id,
-      status,
-      routingOutcome,
-      customerPhone: input.customerPhone,
-      requestedBy: input.requestedBy,
-      escalationReason: input.escalationReason,
-      messageToCaller,
-      salonName: salon.name
-    },
-    sendSms: false
-  });
+  if (!input.suppressAlert) {
+    await createSalonAlert({
+      salonId: input.salonId,
+      alertType: "CALL_ESCALATION_CREATED",
+      title: "Human escalation created",
+      message:
+        status === CallEscalationStatus.QUEUED
+          ? "A caller requested a human. The call is waiting in the operator queue."
+          : finalResolution,
+      priority: "URGENT",
+      metadata: {
+        callSessionId: input.callSessionId,
+        escalationId: escalation.id,
+        status,
+        routingOutcome,
+        customerPhone: input.customerPhone,
+        requestedBy: input.requestedBy,
+        escalationReason: input.escalationReason,
+        messageToCaller,
+        salonName: salon.name
+      },
+      sendSms: false
+    });
+  }
 
   if (
     status === CallEscalationStatus.QUEUED &&
@@ -600,6 +727,79 @@ export const createOrUpdateCallEscalation = async (input: {
   }
 
   return escalation;
+};
+
+export const recordOperatorQueueOutcome = async (input: {
+  salonId?: string | null;
+  callSessionId?: string | null;
+  amazonConnectContactId?: string | null;
+  callerPhone?: string | null;
+  operatorQueueOutcome: "AGENTS_UNAVAILABLE" | "AGENTS_BUSY" | "QUEUE_WAIT_TIMEOUT" | "CONNECT_FLOW_ERROR";
+}) => {
+  const contactId = input.amazonConnectContactId?.trim();
+  const callSession = input.callSessionId
+    ? await prisma.callSession.findUnique({
+        where: { id: input.callSessionId }
+      })
+    : contactId
+      ? await prisma.callSession.findFirst({
+          where: {
+            provider: ExternalProvider.AMAZON_CONNECT,
+            providerCallId: contactId
+          },
+          orderBy: {
+            createdAt: "desc"
+          }
+        })
+      : null;
+
+  const salonId = input.salonId?.trim() || callSession?.salonId || env.DEFAULT_SALON_ID;
+  if (!salonId) {
+    throw new AppError("Salon is required for operator queue outcome.", 400, "SALON_REQUIRED");
+  }
+
+  const existingCallSession =
+    callSession ??
+    (contactId
+      ? await prisma.callSession.create({
+          data: {
+            salonId,
+            provider: ExternalProvider.AMAZON_CONNECT,
+            providerCallId: contactId,
+            callerPhone: input.callerPhone ?? null,
+            status: CallSessionStatus.COMPLETED,
+            routingOutcome: CallRoutingOutcome.CALL_CENTER_ESCALATION,
+            finalResolution: OPERATOR_BUSY_PROMPT,
+            rawPayload: toJson({
+              source: "amazon_connect_operator_queue_outcome",
+              operatorQueueOutcome: input.operatorQueueOutcome
+            })
+          }
+        })
+      : null);
+
+  if (!existingCallSession) {
+    throw new AppError("Call session or Amazon Connect ContactId is required.", 400, "CALL_SESSION_REQUIRED");
+  }
+
+  return createOrUpdateCallEscalation({
+    salonId,
+    callSessionId: existingCallSession.id,
+    requestedBy: "AMAZON_CONNECT_FLOW",
+    escalationReason:
+      input.operatorQueueOutcome === "QUEUE_WAIT_TIMEOUT"
+        ? "Operator queue wait timed out."
+        : "No operator was available in Amazon Connect.",
+    customerPhone: input.callerPhone ?? existingCallSession.callerPhone ?? null,
+    messageToCaller: OPERATOR_BUSY_PROMPT,
+    operatorQueueOutcome: input.operatorQueueOutcome,
+    suppressAlert: true,
+    metadata: {
+      source: "amazon_connect_flow",
+      contactId,
+      operatorQueueOutcome: input.operatorQueueOutcome
+    }
+  });
 };
 
 export const getCallCenterRuntime = async (actor: CallCenterWorkspaceActor) => {
