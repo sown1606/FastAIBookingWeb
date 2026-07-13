@@ -395,7 +395,7 @@ const adminAiReceptionCallLogsQuerySchema = z.object({
 
 const adminDebugExportSchema = z.object({
   ids: z.array(z.string().uuid()).min(1).max(50),
-  mode: z.enum(["compact", "full"]).default("compact")
+  mode: z.enum(["compact", "full", "gpt"]).default("compact")
 });
 
 const createCallCenterAgentSchema = z.object({

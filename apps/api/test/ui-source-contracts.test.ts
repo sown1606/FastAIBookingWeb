@@ -92,7 +92,9 @@ test("admin debug list pages support multi-select bulk debug export", () => {
     assert.match(source, /stringifyServerDebugBundle\(payload\)/);
     assert.match(source, /getJsonByteSize\(json\)/);
     assert.match(source, /timeout:\s*DEBUG_EXPORT_TIMEOUT_MS/);
-    assert.match(source, /mode:\s*"compact"/);
+    assert.match(source, /type DebugExportMode = "compact" \| "gpt"/);
+    assert.match(source, /mode,\s*payload,\s*json,/);
+    assert.match(source, /prepareSelectedDebugBundle\("gpt"\)/);
     assert.match(source, /mode:\s*"full"/);
     assert.match(source, /apiPostBlob/);
     assert.match(source, /download=true/);
@@ -155,7 +157,7 @@ test("admin API exposes authenticated bulk debug endpoints with server-side sani
   assert.match(routesSource, /"\/calls\/debug-export"/);
   assert.match(routesSource, /"\/ai-logs\/debug-export"/);
   assert.match(routesSource, /ids:\s*z\.array\(z\.string\(\)\.uuid\(\)\)\.min\(1\)\.max\(50\)/);
-  assert.match(routesSource, /mode:\s*z\.enum\(\["compact", "full"\]\)\.default\("compact"\)/);
+  assert.match(routesSource, /mode:\s*z\.enum\(\["compact", "full", "gpt"\]\)\.default\("compact"\)/);
   assert.match(routesSource, /req\.query\.download === "true"/);
   assert.match(routesSource, /Content-Disposition/);
   assert.match(routesSource, /X-Debug-Export-Mode/);

@@ -434,6 +434,11 @@ const CONTEXTUAL_ANY_STAFF_PHRASES = new Set([
   "any stop if i",
   "any stuff",
   "any stuff is fine",
+  "and the staff is fine",
+  "and the staff",
+  "and staff is fine",
+  "and staff",
+  "staff is fine",
   "any star",
   "any star is fine",
   "available"
@@ -497,7 +502,7 @@ const CUSTOMER_NAME_NOISE = new Set([
   "timed out"
 ]);
 const SERVICE_DTMF_PROMPT =
-  "Hi, thanks for calling Kiet Nails. How can I help? You can say the service, day, time, and technician in one sentence. Press 0 for a person.";
+  "Hi, thanks for calling Kiet Nails. What would you like to book? You can say everything in one sentence, or press 0 for a person.";
 const SERVICE_DTMF_OPTIONS_PROMPT =
   "I can list the services once. Please say the service name, or press 0 for a person.";
 const SERVICE_FIRST_RETRY_PROMPT = "Sure. Which service would you like?";
@@ -870,14 +875,21 @@ const readStaffDtmfOptions = (
   attributes: Record<string, unknown> | undefined
 ): Record<string, string> => {
   const dynamicOptions = parseJsonStringRecord(readStringAttribute(attributes, ["staffDtmfOptions"]));
-  return Object.keys(dynamicOptions).length ? dynamicOptions : STAFF_DTMF_OPTIONS;
+  if (Object.keys(dynamicOptions).length) {
+    return dynamicOptions;
+  }
+  const activeOptions = parseJsonStringRecord(readStringAttribute(attributes, ["activeDtmfOptionsJson"]));
+  const staffOptions = Object.fromEntries(
+    Object.entries(activeOptions).filter(([, value]) => value !== "__operator__")
+  );
+  return Object.keys(staffOptions).length ? staffOptions : STAFF_DTMF_OPTIONS;
 };
 
 const readStaffDtmfStaffIds = (
   attributes: Record<string, unknown> | undefined
 ): Record<string, string> => {
   return parseJsonStringRecord(
-    readStringAttribute(attributes, ["staffDtmfStaffIds", "staffDtmfOptionStaffIds"])
+    readStringAttribute(attributes, ["staffDtmfStaffIds", "staffDtmfOptionStaffIds", "activeDtmfOptionStaffIds"])
   );
 };
 
@@ -1002,7 +1014,9 @@ const staffAliasMatchesInText = (normalizedText: string, alias: string): number[
 
 const isNegatedStaffAlias = (normalizedText: string, matchIndex: number): boolean => {
   const before = normalizedText.slice(0, matchIndex).trim();
-  return /\bnot(?:\s+(?:the|that|this|one|staff|technician|tech))?$/.test(before);
+  return /\b(?:not|except|but\s+not|don\s+t\s+want|dont\s+want|do\s+not\s+want)(?:\s+(?:the|that|this|one|staff|technician|tech))?$/.test(
+    before
+  );
 };
 
 type StaffPhraseContext = {
@@ -1163,6 +1177,9 @@ const normalizeScopedStaffCandidatePhrase = (
   if (isFinalConfirmationOnlyPhrase(normalized)) {
     return undefined;
   }
+  if (readDtmfDigit(normalized)) {
+    return undefined;
+  }
   if (normalizeAnyStaffPhrase(value, context)) {
     return "any staff";
   }
@@ -1206,7 +1223,7 @@ const normalizeScopedStaffCandidatePhrase = (
   }
 
   let candidate = normalized
-    .replace(/\b(?:technician|tech|staff|please|actually|instead)\b/g, " ")
+    .replace(/\b(?:technician|tech|staff|please|actually|instead|just)\b/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 
@@ -1227,7 +1244,7 @@ const normalizeScopedStaffCandidatePhrase = (
 
   candidate = normalizeForMatch(
     candidate.replace(
-      /\b(?:with|book|use|i|want|to|said|change|switch|it|instead|no|please|actually|technician|staff|tech|the|a|an)\b/g,
+      /\b(?:with|book|use|i|want|to|said|change|switch|it|instead|just|no|please|actually|technician|staff|tech|the|a|an)\b/g,
       " "
     )
   );
@@ -1284,6 +1301,7 @@ const STAFF_FUZZY_STOP_TOKENS = new Set([
   "switch",
   "move",
   "make",
+  "just",
   "into",
   "instead"
 ]);
@@ -1631,6 +1649,32 @@ const normalizeGpsTimePhrase = (
   return /^(?:g\s+p(?:\s+s)?)$/.test(normalized) ? "3 PM" : undefined;
 };
 
+const hasRequestedTimeContext = (context: TimePhraseContext = {}): boolean =>
+  context.lastAskedSlot === "requestedTime" ||
+  context.currentTurnSemanticType === "TIME_REQUEST" ||
+  context.semanticType === "TIME_REQUEST";
+
+const normalizeBareRequestedTimeAnswer = (value?: string | null): string => {
+  const normalized = normalizeSpokenNumbers(normalizeHourMinuteTimeExpression(value ?? ""))
+    .replace(/\b([ap])\s*\.?\s*m\.?\b/gi, "$1m")
+    .trim()
+    .toLowerCase();
+  return normalizeForMatch(normalized)
+    .replace(/^(?:and\s+)?(?:it\s+is|its|it's)\s+/, "")
+    .trim();
+};
+
+const isBareRequestedTimeAnswer = (
+  value?: string | null,
+  context: TimePhraseContext = {}
+): boolean => {
+  if (!hasRequestedTimeContext(context)) {
+    return false;
+  }
+  const normalized = normalizeBareRequestedTimeAnswer(value);
+  return /^([1-9]|1[0-2])(?::[0-5]\d)?$/.test(normalized);
+};
+
 const parseLocalTimeText = (
   value: string,
   context: TimePhraseContext = {}
@@ -1650,7 +1694,9 @@ const parseLocalTimeText = (
     .trim();
   const normalizedWords = normalizeForMatch(normalized);
   const hasMorningContext = /\bmorning\b/.test(normalizedWords);
-  const hasAfternoonContext = /\b(afternoon|evening|tonight|night)\b/.test(normalizedWords);
+  const hasAtHourCue = /^at\s+\d{1,2}(?::\d{2})?/.test(normalizedWords);
+  const hasOclockCue = /\b(?:o\s+clock|oclock)\b/.test(normalizedWords);
+  const requestedTimeAnswer = isBareRequestedTimeAnswer(value, context);
 
   const periodMatch = normalized.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i);
   if (periodMatch) {
@@ -1680,24 +1726,25 @@ const parseLocalTimeText = (
     if (hasMorningContext) {
       return { hour: hour === 12 ? 0 : hour, ambiguous: false };
     }
-    if (hasAfternoonContext) {
-      return { hour: hour < 12 ? hour + 12 : hour, ambiguous: false };
-    }
-    if (hour >= 1 && hour <= 7) {
-      return { hour: hour + 12, ambiguous: false };
+    if (hasAtHourCue || hasOclockCue || requestedTimeAnswer) {
+      return { hour: hour >= 1 && hour <= 7 ? hour + 12 : hour, ambiguous: false };
     }
     return { hour, ambiguous: true };
   };
 
-  const bareHourMatch = normalized.match(/\b(\d{1,2})\b/);
+  const bareHourMatch = normalized.match(/^(?:at\s+)?(\d{1,2})(?::(\d{2}))?(?:\s*(?:o\s*'?clock|oclock))?$/i);
   if (bareHourMatch) {
     const hour = Number(bareHourMatch[1]);
+    const minute = Number(bareHourMatch[2] ?? 0);
+    if (minute > 59) {
+      return null;
+    }
     if (hour >= 1 && hour <= 12) {
       const contextual = applyContext(hour);
-      return { hour: contextual.hour, minute: 0, ambiguous: contextual.ambiguous };
+      return { hour: contextual.hour, minute, ambiguous: contextual.ambiguous };
     }
     if (hour >= 13 && hour <= 23) {
-      return { hour, minute: 0, ambiguous: false };
+      return { hour, minute, ambiguous: false };
     }
   }
 
@@ -1712,7 +1759,7 @@ const extractTimeCandidate = (value: string, context: TimePhraseContext = {}): s
   const source = normalizeHourMinuteTimeExpression(value)
     .replace(/\b([ap])\s*\.?\s*m\.?\b/gi, "$1m")
     .trim();
-  const searchable = source.replace(/^\s*(?:at|around|about|for|by)\s+/i, "");
+  const searchable = source;
   const segment = searchable
     .split(/[,.!?;]/)[0]
     ?.trim();
@@ -1730,24 +1777,31 @@ const extractTimeCandidate = (value: string, context: TimePhraseContext = {}): s
     return explicitMatch[0];
   }
 
+  const oclockMatch = searchable.match(
+    new RegExp(
+      `\\b((?:${SPOKEN_HOUR_PATTERN}|\\d{1,2})(?::\\d{2})?\\s*(?:o\\s*'?clock|oclock))\\b`,
+      "i"
+    )
+  );
+  if (oclockMatch?.[1]) {
+    return oclockMatch[1];
+  }
+
   const markedBareMatch = searchable.match(
     new RegExp(
-      `\\b(?:at|around|about|for|by)\\s+((?:${SPOKEN_HOUR_PATTERN}|\\d{1,2})(?::\\d{2})?)\\b`,
+      `\\bat\\s+((?:${SPOKEN_HOUR_PATTERN}|\\d{1,2})(?::\\d{2})?)\\b`,
       "i"
     )
   );
   if (markedBareMatch?.[1]) {
-    return markedBareMatch[1];
+    return `at ${markedBareMatch[1]}`;
   }
 
   if (!segment) {
     return undefined;
   }
 
-  const leadingBareMatch = segment.match(
-    new RegExp(`^\\s*((?:${SPOKEN_HOUR_PATTERN}|\\d{1,2})(?::\\d{2})?)\\b`, "i")
-  );
-  return leadingBareMatch?.[1];
+  return isBareRequestedTimeAnswer(segment, context) ? normalizeBareRequestedTimeAnswer(segment) : undefined;
 };
 
 const getPreferredDateCandidate = (
@@ -1870,9 +1924,7 @@ const parseDateTimeText = (
       extractTimeCandidate(afterDate, context) ??
       extractTimeCandidate(beforeDate.split(/[!?;]/).at(-1) ?? "", context) ??
       extractTimeCandidate(raw, context);
-    const localTime = timeCandidate
-      ? parseLocalTimeText(`${dateCandidate.text} ${timeCandidate}`, context)
-      : null;
+    const localTime = timeCandidate ? parseLocalTimeText(timeCandidate, context) : null;
 
     if (localDate && localTime) {
       return {
@@ -2440,13 +2492,13 @@ const buildAmazonConnectTurnHistoryItem = (input: {
     ignoredNoiseFields:
       sanitization.ignoredNoiseFields ?? responsePayload.ignoredNoiseFields ?? [],
     slotToElicit: slotToElicit ?? null,
-	    missingFields: responsePayload.missingFields ?? null,
-	    promptMissingFields: responsePayload.promptMissingFields ?? null,
-	    errorCode: responsePayload.errorCode ?? responseDebug.errorCode ?? null,
-	    callerSafeResponseText:
-	      responsePayload.callerSafeResponseText ?? responseDebug.responseMessage ?? null,
-	    isValid: input.interactionInput.isValid,
-	    transferToQueue:
+    missingFields: responsePayload.missingFields ?? null,
+    promptMissingFields: responsePayload.promptMissingFields ?? null,
+    errorCode: responsePayload.errorCode ?? responseDebug.errorCode ?? null,
+    callerSafeResponseText:
+      responsePayload.callerSafeResponseText ?? responseDebug.responseMessage ?? null,
+    isValid: input.interactionInput.isValid,
+    transferToQueue:
       sessionAttributesAfter.transferToQueue ?? responsePayload.transferToQueue ?? null,
     forceHumanEscalation:
       sessionAttributesAfter.forceHumanEscalation ?? responsePayload.forceHumanEscalation ?? null
@@ -2972,6 +3024,185 @@ const findStaffMentionInText = async (
   })?.fullName;
 };
 
+const parseStringArrayAttribute = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value
+      .filter((item): item is string => typeof item === "string" && Boolean(item.trim()))
+      .map((item) => item.trim());
+  }
+  if (typeof value !== "string" || !value.trim()) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) {
+      return parsed
+        .filter((item): item is string => typeof item === "string" && Boolean(item.trim()))
+        .map((item) => item.trim());
+    }
+  } catch {
+    // Fall back to comma-separated attributes.
+  }
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+};
+
+const readStringArrayAttribute = (
+  attributes: Record<string, unknown> | undefined,
+  names: string[]
+): string[] => {
+  for (const name of names) {
+    const values = parseStringArrayAttribute(attributes?.[name]);
+    if (values.length) {
+      return values;
+    }
+  }
+  return [];
+};
+
+const staffAliasTexts = (member: StaffCandidate): string[] =>
+  Array.from(
+    new Set([
+      member.fullName,
+      member.fullName.split(/\s+/)[0] ?? "",
+      ...getStaffAliasPhrases(member.fullName)
+    ].map((value) => normalizeForMatch(value)).filter(Boolean))
+  );
+
+const staffMatchesName = (member: StaffCandidate, value?: string | null): boolean => {
+  const normalized = normalizeForMatch(value);
+  if (!normalized) {
+    return false;
+  }
+  return staffAliasTexts(member).some((alias) => alias === normalized);
+};
+
+const staffIsExcluded = (
+  member: StaffCandidate,
+  excludedStaffIds: Set<string>,
+  excludedStaffNames: Set<string>
+): boolean =>
+  excludedStaffIds.has(member.id) ||
+  staffAliasTexts(member).some((alias) => excludedStaffNames.has(alias));
+
+const filterExcludedStaff = (
+  staff: StaffCandidate[],
+  excludedStaffIds: Set<string>,
+  excludedStaffNames: Set<string>
+): StaffCandidate[] =>
+  staff.filter((member) => !staffIsExcluded(member, excludedStaffIds, excludedStaffNames));
+
+const readStaffExclusionState = (attributes: Record<string, unknown> | undefined) => ({
+  ids: new Set(readStringArrayAttribute(attributes, ["excludedStaffIds"])),
+  names: new Set(
+    readStringArrayAttribute(attributes, ["excludedStaffNames"]).map((name) => normalizeForMatch(name))
+  )
+});
+
+const serializeStaffExclusionState = (input: {
+  ids: Set<string>;
+  names: Set<string>;
+}) => ({
+  excludedStaffIds: input.ids.size ? JSON.stringify(Array.from(input.ids.values())) : undefined,
+  excludedStaffNames: input.names.size ? JSON.stringify(Array.from(input.names.values())) : undefined
+});
+
+const applyStaffExclusionStateToAttributes = (
+  attributes: Record<string, unknown>,
+  state: { ids: Set<string>; names: Set<string> }
+) => {
+  const serialized = serializeStaffExclusionState(state);
+  if (serialized.excludedStaffIds) {
+    attributes.excludedStaffIds = serialized.excludedStaffIds;
+  } else {
+    delete attributes.excludedStaffIds;
+  }
+  if (serialized.excludedStaffNames) {
+    attributes.excludedStaffNames = serialized.excludedStaffNames;
+  } else {
+    delete attributes.excludedStaffNames;
+  }
+};
+
+const addStaffToExclusionState = (
+  state: { ids: Set<string>; names: Set<string> },
+  member: StaffCandidate
+) => {
+  state.ids.add(member.id);
+  state.names.add(normalizeForMatch(member.fullName));
+};
+
+const removeStaffFromExclusionState = (
+  state: { ids: Set<string>; names: Set<string> },
+  member: StaffCandidate
+) => {
+  state.ids.delete(member.id);
+  staffAliasTexts(member).forEach((alias) => state.names.delete(alias));
+};
+
+const parseStaffExclusionRequest = (input: {
+  text?: string | null;
+  staff: StaffCandidate[];
+  currentStaffId?: string;
+  currentStaffName?: string;
+  context?: StaffPhraseContext;
+}) => {
+  const normalized = normalizeForMatch(input.text);
+  const excludedStaff: StaffCandidate[] = [];
+  if (!normalized) {
+    return {
+      excludedStaff,
+      hasExclusion: false,
+      requestsAnyStaff: false,
+      genericChange: false
+    };
+  }
+
+  for (const member of input.staff) {
+    const aliases = staffAliasTexts(member);
+    const hasExcludedAlias = aliases.some((alias) => {
+      const aliasPattern = escapeRegExp(alias);
+      return (
+        new RegExp(`\\b(?:but\\s+not|except|not)\\s+(?:the\\s+)?(?:(?:staff|technician|tech)\\s+)?${aliasPattern}\\b`).test(normalized) ||
+        new RegExp(`\\b(?:don\\s+t|dont|do\\s+not)\\s+want\\s+(?:the\\s+)?(?:(?:staff|technician|tech)\\s+)?${aliasPattern}\\b`).test(normalized) ||
+        new RegExp(`\\b${aliasPattern}\\b\\s+is\\s+not\\s+(?:ok|okay|fine)\\b`).test(normalized)
+      );
+    });
+    if (hasExcludedAlias) {
+      excludedStaff.push(member);
+    }
+  }
+
+  const genericChange =
+    /\b(?:someone else|another person|another technician|another tech|different person|different staff|different technician|different tech)\b/.test(
+      normalized
+    ) ||
+    /\b(?:change|switch)\s+(?:the\s+)?(?:person|staff|technician|tech)\b/.test(normalized);
+  if (genericChange) {
+    const currentStaff = input.staff.find(
+      (member) =>
+        (input.currentStaffId && member.id === input.currentStaffId) ||
+        staffMatchesName(member, input.currentStaffName)
+    );
+    if (currentStaff && !excludedStaff.some((member) => member.id === currentStaff.id)) {
+      excludedStaff.push(currentStaff);
+    }
+  }
+
+  return {
+    excludedStaff: dedupeStaffById(excludedStaff),
+    hasExclusion: excludedStaff.length > 0 || genericChange,
+    requestsAnyStaff:
+      Boolean(normalizeAnyStaffPhrase(input.text, input.context)) ||
+      /\b(?:first\s+avai?lable|available|anyone|anybody|any\s+staff|any\s+technician|any\s+tech)\b/.test(
+        normalized
+      ),
+    genericChange
+  };
+};
+
 const resolveCustomer = async (input: {
   salonId: string;
   actorUserId: string;
@@ -3279,10 +3510,25 @@ const resolveStaffCandidates = async (input: {
   requestedStaffName?: string;
   staffId?: string;
   attributes?: Record<string, unknown>;
+  excludedStaffIds?: Set<string> | string[];
+  excludedStaffNames?: Set<string> | string[];
 }): Promise<StaffPreferenceResolution> => {
-  const allStaff = await getActiveBookableStaff(input.salonId);
+  const attributeExclusions = readStaffExclusionState(input.attributes);
+  const excludedStaffIds = new Set([
+    ...attributeExclusions.ids,
+    ...(input.excludedStaffIds instanceof Set ? Array.from(input.excludedStaffIds) : input.excludedStaffIds ?? [])
+  ]);
+  const excludedStaffNames = new Set([
+    ...attributeExclusions.names,
+    ...(input.excludedStaffNames instanceof Set
+      ? Array.from(input.excludedStaffNames)
+      : input.excludedStaffNames ?? []
+    ).map((name) => normalizeForMatch(name))
+  ]);
+  const activeStaff = await getActiveBookableStaff(input.salonId);
+  const allStaff = filterExcludedStaff(activeStaff, excludedStaffIds, excludedStaffNames);
   const matchedById = await getActiveBookableStaffById(input.salonId, input.staffId);
-  if (matchedById) {
+  if (matchedById && !staffIsExcluded(matchedById, excludedStaffIds, excludedStaffNames)) {
     return {
       status: "matched",
       candidates: [matchedById],
@@ -4104,6 +4350,11 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
   const inputRequestedTime = asTrimmedString(input.requestedTime);
   const currentTurnHasDate = hasGroundedDatePhrase(transcriptText);
   const currentTurnHasTime = hasGroundedTimePhrase(transcriptText, timePhraseContext);
+  const shouldRejectUngroundedInputTime =
+    Boolean(inputRequestedTime) &&
+    currentTurnTranscriptWasProvided &&
+    !currentTurnHasTime &&
+    hasRequestedTimeContext(timePhraseContext);
   const requestedDate =
     currentTurnIsDigitNoise && previousRequestedDate
       ? previousRequestedDate
@@ -4115,9 +4366,11 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
   const requestedTime =
     currentTurnIsDigitNoise && previousRequestedTime
       ? previousRequestedTime
+      : shouldRejectUngroundedInputTime
+        ? previousRequestedTime
       : inputRequestedTime && previousRequestedTime && !currentTurnHasTime
         ? previousRequestedTime
-        : currentTurnIsDigitNoise
+      : currentTurnIsDigitNoise
           ? previousRequestedTime
           : inputRequestedTime ?? previousRequestedTime;
   const contactId =
@@ -5355,6 +5608,14 @@ export const createAmazonConnectAIRecoverableFailure = async (
   normalized.customerPhone ??=
     asTrimmedString(activeBookingAttempt?.customerPhone ?? undefined) ??
     readStringAttribute(activeNormalizedRequest, ["customerPhone"]);
+  const currentTurnServiceAnswer =
+    readStringAttribute(normalized.attributes, ["lastAskedSlot"]) === "serviceName" &&
+    normalized.currentTurnTranscript
+      ? await findServiceMentionInText(salon.id, normalized.currentTurnTranscript)
+      : null;
+  if (currentTurnServiceAnswer) {
+    normalized.serviceName = getCustomerFacingServiceName(currentTurnServiceAnswer.service.name);
+  }
   normalized.serviceName ??=
     getCustomerFacingServiceName(activeBookingAttempt?.requestedService ?? undefined) ??
     getCustomerFacingServiceName(
@@ -5676,12 +5937,16 @@ export const createAmazonConnectAIAppointment = async (
   normalized.staffId ??= readStringAttribute(activeNormalizedRequest, ["staffId", "selectedStaffId"]);
 
   if (normalized.staffDtmfDigit && (!normalized.staffPreference || !normalized.staffId)) {
+    const savedStaffOptions = readStaffDtmfOptions(normalized.attributes);
+    const savedStaffIds = readStaffDtmfStaffIds(normalized.attributes);
     const currentStaff = await getActiveBookableStaff(salon.id);
     const currentStaffOptions = buildStaffDtmfOptionMaps(currentStaff);
-    const selectedStaffName = currentStaffOptions.options[normalized.staffDtmfDigit];
+    const selectedStaffName =
+      savedStaffOptions[normalized.staffDtmfDigit] ?? currentStaffOptions.options[normalized.staffDtmfDigit];
     if (selectedStaffName) {
       normalized.staffPreference = selectedStaffName;
-      normalized.staffId = currentStaffOptions.staffIds[normalized.staffDtmfDigit];
+      normalized.staffId =
+        savedStaffIds[normalized.staffDtmfDigit] ?? currentStaffOptions.staffIds[normalized.staffDtmfDigit];
       normalized.invalidStaffDtmfSelection = false;
       if (normalized.staffDtmfDigit === "0") {
         normalized.staffId = undefined;
@@ -5935,10 +6200,56 @@ export const createAmazonConnectAIAppointment = async (
     );
   }
 
-  let finalConfirmationRequiresStaffSelection = false;
+  const staffExclusionState = readStaffExclusionState(normalized.attributes);
+  const allBookableStaffForExclusion = await getActiveBookableStaff(salon.id);
+  const explicitlySelectedStaff =
+    currentTurnStaffMention && currentTurnStaffMention !== "Any staff"
+      ? allBookableStaffForExclusion.find((member) => staffMatchesName(member, currentTurnStaffMention))
+      : undefined;
+  if (explicitlySelectedStaff) {
+    removeStaffFromExclusionState(staffExclusionState, explicitlySelectedStaff);
+  }
+  const currentStaffIdForExclusion =
+    normalized.staffId ??
+    readStringAttribute(normalized.attributes, ["selectedStaffId", "confirmedStaffId", "staffId"]);
+  const currentStaffNameForExclusion =
+    normalized.staffPreference ??
+    readStringAttribute(normalized.attributes, ["confirmedStaffName", "staffPreference"]);
+  const staffExclusionRequest = parseStaffExclusionRequest({
+    text: finalConfirmationText,
+    staff: allBookableStaffForExclusion,
+    currentStaffId: currentStaffIdForExclusion,
+    currentStaffName: currentStaffNameForExclusion,
+    context: staffPhraseContext
+  });
+  staffExclusionRequest.excludedStaff.forEach((member) => addStaffToExclusionState(staffExclusionState, member));
+  const hasActiveStaffExclusions =
+    staffExclusionState.ids.size > 0 || staffExclusionState.names.size > 0;
+  const normalizedStaffMember = allBookableStaffForExclusion.find(
+    (member) =>
+      (normalized.staffId && member.id === normalized.staffId) ||
+      staffMatchesName(member, normalized.staffPreference)
+  );
+  const normalizedStaffIsExcluded =
+    normalizedStaffMember && staffIsExcluded(normalizedStaffMember, staffExclusionState.ids, staffExclusionState.names);
+  if (staffExclusionRequest.hasExclusion || normalizedStaffIsExcluded) {
+    if (staffExclusionRequest.requestsAnyStaff || currentTurnStaffMention === "Any staff") {
+      normalized.staffPreference = "Any staff";
+    } else if (normalizedStaffIsExcluded || staffExclusionRequest.genericChange) {
+      normalized.staffPreference = undefined;
+    }
+    normalized.staffId = undefined;
+    normalized.confirmationState = undefined;
+  }
+  applyStaffExclusionStateToAttributes(normalized.attributes, staffExclusionState);
+
+  let finalConfirmationRequiresStaffSelection =
+    awaitingFinalBookingConfirmation &&
+    staffExclusionRequest.hasExclusion &&
+    !staffExclusionRequest.requestsAnyStaff;
   const finalConfirmationOutcome = awaitingFinalBookingConfirmation
     ? classifyFinalBookingConfirmation(finalConfirmationText, {
-        hasExplicitStaffChange: Boolean(currentTurnStaffMention)
+        hasExplicitStaffChange: Boolean(currentTurnStaffMention || staffExclusionRequest.hasExclusion)
       })
     : "UNKNOWN";
   if (awaitingFinalBookingConfirmation && finalConfirmationOutcome === "AFFIRMED") {
@@ -5981,12 +6292,19 @@ export const createAmazonConnectAIAppointment = async (
         /\b(?:someone else|different person|different staff|different technician|different tech)\b/.test(
           normalizeForMatch(finalConfirmationText)
         );
+      const currentTurnDesiredStaffCandidate =
+        currentTurnStaffCandidate && currentTurnStaffCandidate !== "any staff"
+          ? currentTurnStaffCandidate
+          : undefined;
       const changedStaff = genericStaffChangeWithoutName
         ? undefined
-        : currentTurnStaffMention ?? await findStaffMentionInText(salon.id, finalConfirmationText, staffPhraseContext);
+        : currentTurnStaffMention ??
+          currentTurnDesiredStaffCandidate ??
+          await findStaffMentionInText(salon.id, finalConfirmationText, staffPhraseContext);
       if (changedStaff) {
         normalized.staffPreference = changedStaff;
         normalized.staffId = undefined;
+        finalConfirmationRequiresStaffSelection = false;
       } else if (requestsStaffChange) {
         normalized.staffPreference = undefined;
         normalized.staffId = undefined;
@@ -6069,7 +6387,9 @@ export const createAmazonConnectAIAppointment = async (
     salonId: salon.id,
     requestedStaffName: normalized.staffPreference,
     staffId: normalized.staffId,
-    attributes: normalized.attributes
+    attributes: normalized.attributes,
+    excludedStaffIds: staffExclusionState.ids,
+    excludedStaffNames: staffExclusionState.names
   });
   if (staffResolution.status === "matched") {
     normalized.staffPreference = staffResolution.matchedStaff.fullName;
@@ -6118,11 +6438,11 @@ export const createAmazonConnectAIAppointment = async (
       transcriptId: transcript?.id,
       appointmentId: inputForAttempt.appointmentId,
       status: inputForAttempt.status,
-	      source: normalized.source,
-	      customerName: normalized.customerName,
-	      customerPhone:
-	        normalizeCustomerPhone(normalized.customerPhone) ??
-	        normalizePhoneForMatching(normalized.customerPhone),
+      source: normalized.source,
+      customerName: normalized.customerName,
+      customerPhone:
+        normalizeCustomerPhone(normalized.customerPhone) ??
+        normalizePhoneForMatching(normalized.customerPhone),
       requestedService: normalized.serviceName,
       requestedStaff: normalized.staffPreference,
       requestedDateTimeText:
@@ -6130,17 +6450,17 @@ export const createAmazonConnectAIAppointment = async (
       normalizedRequest: toJson({
         salonId: salon.id,
         salonResolutionSource: resolutionSource,
-	        customerId: recognizedCustomer?.id,
-	        recognizedCustomerId: recognizedCustomer?.id,
-	        spokenCustomerName,
-	        persistedCustomerFirstName: recognizedCustomer?.firstName,
-	        persistedCustomerLastName: recognizedCustomer?.lastName,
-	        customerName: normalized.customerName,
-	        customerPhone: normalized.customerPhone,
-	        customerNameSource: customerNameSourceOverride,
-	        customerProfileSource,
-	        customerNameNeedsReview: customerNameNeedsReview || undefined,
-	        serviceName: normalized.serviceName,
+        customerId: recognizedCustomer?.id,
+        recognizedCustomerId: recognizedCustomer?.id,
+        spokenCustomerName,
+        persistedCustomerFirstName: recognizedCustomer?.firstName,
+        persistedCustomerLastName: recognizedCustomer?.lastName,
+        customerName: normalized.customerName,
+        customerPhone: normalized.customerPhone,
+        customerNameSource: customerNameSourceOverride,
+        customerProfileSource,
+        customerNameNeedsReview: customerNameNeedsReview || undefined,
+        serviceName: normalized.serviceName,
         requestedDate: normalized.requestedDate,
         requestedTime: normalized.requestedTime,
         staffPreference: normalized.staffPreference,
@@ -6483,8 +6803,8 @@ export const createAmazonConnectAIAppointment = async (
           customerNameSourceOverride ??
           (recognizedCustomerNameForSession ? "phone_lookup" : knownCallerMemory?.source),
         customerProfileSource,
-	        customerNameNeedsReview: customerNameNeedsReview ? "true" : undefined,
-	        customerName: normalized.customerName,
+        customerNameNeedsReview: customerNameNeedsReview ? "true" : undefined,
+        customerName: normalized.customerName,
         customerPhone: normalized.customerPhone,
         serviceName: normalized.serviceName,
         requestedDate: normalized.requestedDate,
@@ -6499,6 +6819,8 @@ export const createAmazonConnectAIAppointment = async (
         staffRecognitionFailureCount: isAnyStaffPreference(normalized.staffPreference) ? "0" : undefined,
         invalidStaffPreferenceIgnored: isAnyStaffPreference(normalized.staffPreference) ? "false" : undefined,
         unrecognizedStaffUtterance: normalized.unrecognizedStaffUtterance,
+        excludedStaffIds: readStringAttribute(normalized.attributes, ["excludedStaffIds"]),
+        excludedStaffNames: readStringAttribute(normalized.attributes, ["excludedStaffNames"]),
         callSessionId: callSession?.id,
         amazonConnectContactId: normalized.contactId,
         ...extra
@@ -7742,7 +8064,9 @@ export const createAmazonConnectAIAppointment = async (
           salonId: salon.id,
           requestedStaffName: normalized.staffPreference,
           staffId: normalized.staffId,
-          attributes: normalized.attributes
+          attributes: normalized.attributes,
+          excludedStaffIds: staffExclusionState.ids,
+          excludedStaffNames: staffExclusionState.names
         });
 
   if (staffResolution.status === "ambiguous") {
@@ -7835,11 +8159,105 @@ export const createAmazonConnectAIAppointment = async (
     normalized.staffId = staffResolution.matchedStaff.id;
   }
 
-  const mappedStaffCandidates = await getMappedActiveBookableStaffForService({
-    salonId: salon.id,
-    serviceId: service.id
-  });
+  const mappedStaffCandidates = filterExcludedStaff(
+    await getMappedActiveBookableStaffForService({
+      salonId: salon.id,
+      serviceId: service.id
+    }),
+    staffExclusionState.ids,
+    staffExclusionState.names
+  );
   const mappedStaffIds = new Set(mappedStaffCandidates.map((staff) => staff.id));
+
+  if (hasActiveStaffExclusions && !mappedStaffCandidates.length) {
+    normalized.staffPreference = undefined;
+    normalized.staffId = undefined;
+    const message = speak(
+      `I don't see another technician for ${escapeSsml(callerServiceName)} right now. Which technician would you like instead, or press 0 for a person?`
+    );
+    const parsed = buildInternalParsedIntent({
+      intentType: "BOOK_APPOINTMENT",
+      customerName: normalized.customerName,
+      customerPhone: normalized.customerPhone,
+      serviceName: callerServiceName,
+      staffPreference: undefined,
+      requestedDateTime: requestedStartTime.toISOString(),
+      missingFields: ["staffPreference"],
+      isReadyToBook: false
+    });
+    const lexSessionAttributes = buildKnownSessionAttributes({
+      staffPreference: undefined,
+      staffId: undefined,
+      selectedStaffId: undefined,
+      confirmedStaffId: undefined,
+      confirmedStaffName: undefined,
+      lastAskedSlot: "staffPreference",
+      askedSlotsCount: "1",
+      fallbackCount: "1",
+      errorCount: "1",
+      ...buildStaffPromptSessionAttributes(mappedStaffCandidates)
+    });
+    const bookingAttempt = await createAttempt({
+      status: BookingAttemptStatus.NEEDS_INPUT,
+      requestedStartTime,
+      failureReason: "No non-excluded technician is mapped to the requested service.",
+      normalizedRequest: {
+        serviceId: service.id,
+        serviceName: callerServiceName,
+        excludedStaffIds: Array.from(staffExclusionState.ids.values()),
+        excludedStaffNames: Array.from(staffExclusionState.names.values()),
+        startTimeIso: requestedStartTime.toISOString(),
+        timezone: salon.timezone
+      }
+    });
+    const aiInteraction = await createInteraction({
+      outcome: "MISSING_INFO",
+      message,
+      parsed,
+      bookingAttemptId: bookingAttempt.id,
+      responsePayload: {
+        missingFields: ["staffPreference"],
+        promptMissingFields: ["staffPreference"],
+        excludedStaffIds: Array.from(staffExclusionState.ids.values()),
+        excludedStaffNames: Array.from(staffExclusionState.names.values()),
+        slotToElicit: "staffPreference",
+        sessionAttributes: lexSessionAttributes
+      },
+      isValid: true
+    });
+    await finalizeCall({
+      outcome: "MISSING_INFO",
+      bookingAttemptId: bookingAttempt.id,
+      bookingStatus: bookingAttempt.status,
+      parsed,
+      message,
+      failureReason: bookingAttempt.failureReason ?? undefined
+    });
+
+    return {
+      outcome: "MISSING_INFO" as const,
+      message,
+      lexResponse: {
+        fulfillmentState: "InProgress",
+        message,
+        messageContentType: "SSML",
+        dialogAction: {
+          type: "ElicitSlot",
+          slotToElicit: "staffPreference"
+        },
+        sessionAttributes: lexSessionAttributes
+      },
+      appointment: null,
+      bookingAttempt,
+      callSession,
+      transcript,
+      aiInteraction,
+      escalation: null,
+      alternatives: [],
+      missingFields: ["staffPreference"],
+      salonResolutionSource: resolutionSource
+    };
+  }
 
   if (staffResolution.status === "matched" && !mappedStaffIds.has(staffResolution.matchedStaff.id)) {
     const invalidStaffName = staffResolution.matchedStaff.fullName;
@@ -9972,7 +10390,7 @@ const buildAdminDebugTimelineItem = (
 export const buildAdminDebugTimelineItems = (
   interaction: Awaited<ReturnType<typeof prisma.aiInteractionLog.findMany>>[number],
   index: number
-): Array<ReturnType<typeof buildAdminDebugTimelineItem>> => {
+): Array<Record<string, unknown>> => {
   const responsePayload = asRecord(interaction.responsePayload);
   const turnHistory = Array.isArray(responsePayload.turnHistory)
     ? responsePayload.turnHistory.map((turn) => asRecord(turn))
@@ -9981,16 +10399,14 @@ export const buildAdminDebugTimelineItems = (
     return [buildAdminDebugTimelineItem(interaction, index)];
   }
 
-  const base = buildAdminDebugTimelineItem(interaction, index);
-  return turnHistory.map((turn, turnIndex): ReturnType<typeof buildAdminDebugTimelineItem> => {
+  return turnHistory.map((turn, turnIndex): Record<string, unknown> => {
     const sessionAttributesBefore = turn.sessionAttributesBefore;
     const sessionAttributesAfter = turn.sessionAttributesAfter;
     const turnCreatedAt =
       typeof turn.createdAt === "string" && !Number.isNaN(new Date(turn.createdAt).getTime())
         ? new Date(turn.createdAt)
-        : base.createdAt;
+        : interaction.createdAt;
     return {
-      ...base,
       index: Number(turn.index ?? turnIndex + 1) - 1,
       aiInteractionId: interaction.id,
       createdAt: turnCreatedAt,
@@ -9998,16 +10414,19 @@ export const buildAdminDebugTimelineItems = (
       aggregatedTranscript:
         typeof turn.aggregatedBookingTranscript === "string"
           ? turn.aggregatedBookingTranscript
-          : base.aggregatedTranscript,
+          : undefined,
       aggregatedRequestText:
         typeof turn.aggregatedBookingTranscript === "string"
           ? turn.aggregatedBookingTranscript
-          : base.aggregatedRequestText,
-      requestText: interaction.requestText,
+          : undefined,
+      requestText: undefined,
       responseText:
-        typeof turn.responseText === "string" ? turn.responseText : interaction.responseText,
-      intentName: turn.intentName ?? base.intentName,
-      inputMode: turn.inputMode ?? base.inputMode,
+        typeof turn.responseText === "string" ? turn.responseText : undefined,
+      contactId: turn.contactId,
+      internalCallSessionId: interaction.callSessionId,
+      amazonConnectContactId: turn.contactId,
+      intentName: turn.intentName,
+      inputMode: turn.inputMode,
       lastAskedSlotBefore: turn.lastAskedSlotBefore,
       lastAskedSlotAfter: turn.lastAskedSlotAfter,
       activeDtmfMenuBefore: turn.activeDtmfMenuBefore,
@@ -10024,13 +10443,18 @@ export const buildAdminDebugTimelineItems = (
       ignoredNoiseFields: turn.ignoredNoiseFields,
       sessionAttributesBefore,
       sessionAttributesAfter,
-      dtmfDiagnostics: turn.dtmfDiagnostics ?? base.dtmfDiagnostics,
-      slotDecisions: turn.slotDecisions ?? base.slotDecisions,
+      dtmfDiagnostics: turn.dtmfDiagnostics,
+      slotDecisions: turn.slotDecisions,
       slotToElicit: turn.slotToElicit,
       missingFields: turn.missingFields,
       promptMissingFields: turn.promptMissingFields,
       transferToQueue: turn.transferToQueue,
-      forceHumanEscalation: turn.forceHumanEscalation
+      forceHumanEscalation: turn.forceHumanEscalation,
+      fallbackCount: turn.fallbackCount,
+      errorCount: turn.errorCount,
+      askedSlotsCount: turn.askedSlotsCount,
+      escalationReason: turn.escalationReason,
+      dialogAction: turn.dialogAction
     };
   });
 };

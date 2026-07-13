@@ -211,7 +211,7 @@
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference": "1600",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:customerName": "2000"
         },
-        "Text": "Hi, thanks for calling Kiet Nails. How can I help? You can say the service, day, time, and technician in one sentence. Press 0 for a person."
+        "Text": "Hi, thanks for calling Kiet Nails. What would you like to book? You can say everything in one sentence, or press 0 for a person."
       },
       "Identifier": "3b2877ca-bc16-4019-a8e6-04200c0ded06",
       "Type": "ConnectParticipantWithLexBot",

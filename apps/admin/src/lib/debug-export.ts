@@ -78,7 +78,7 @@ export interface BulkDebugExportResponse {
   schemaVersion: number;
   exportedAt: string;
   exportType: string;
-  exportMode?: "compact" | "full";
+  exportMode?: "compact" | "full" | "gpt";
   requestedCount: number;
   recordCount: number;
   deduplicatedCount?: number;
@@ -182,7 +182,8 @@ export const buildBulkDebugBundle = (
     selection: options.selection
   });
 
-export const stringifyServerDebugBundle = (payload: unknown) => JSON.stringify(payload, null, 2);
+export const stringifyServerDebugBundle = (payload: unknown) =>
+  JSON.stringify(payload, null, asRecord(payload).exportMode === "gpt" ? 0 : 2);
 
 export const getJsonByteSize = (json: string) => new Blob([json]).size;
 

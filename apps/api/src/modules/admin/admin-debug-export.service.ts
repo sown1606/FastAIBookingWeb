@@ -3,7 +3,7 @@ import { prisma } from "../../db/prisma";
 import { logger } from "../../lib/logger";
 import { buildAdminDebugTimelineItems } from "../ai/ai.service";
 
-export type DebugExportMode = "compact" | "full";
+export type DebugExportMode = "compact" | "full" | "gpt";
 export type DebugExportSourcePage = "call_logs" | "ai_logs";
 
 const SENSITIVE_DEBUG_KEY_PARTS = [
@@ -27,6 +27,15 @@ export const OMITTED_DUPLICATE_FIELDS = [
   "responsePayload.timeline",
   "appointmentReferences",
   "duplicate aiCallDebug/fullCallDebug"
+];
+
+const GPT_OMITTED_DUPLICATE_FIELDS = [
+  "heavy AI exchange payloads",
+  "full session attribute snapshots",
+  "raw booking input payloads",
+  "repeated appointment relation trees",
+  "repeated Lex diagnostic trees",
+  "duplicate adjacent transcript rows"
 ];
 
 const normalizeDebugKey = (key: string) => key.replace(/[^a-z0-9]/gi, "").toLowerCase();
@@ -73,6 +82,15 @@ const writeIfPresent = (
   if (value !== undefined && value !== null) {
     output[key] = value;
   }
+};
+
+const writeRecordIfPresent = (
+  output: Record<string, unknown>,
+  key: string,
+  value: unknown
+) => {
+  const record = readRecord(value);
+  output[key] = Object.keys(record).length ? record : null;
 };
 
 const omitDeepKeys = (value: unknown, keysToOmit: Set<string>): unknown => {
@@ -705,6 +723,253 @@ const normalizeEscalationForExport = (record: CallDebugSession["callEscalations"
   updatedAt: record.updatedAt
 });
 
+const isoStringOrNull = (value: unknown): string | null => {
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  if (typeof value === "string" && value.trim()) {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString();
+  }
+  return null;
+};
+
+const transcriptDedupeText = (value: unknown): string =>
+  typeof value === "string"
+    ? value
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}]+/gu, " ")
+        .trim()
+        .replace(/\s+/g, " ")
+    : "";
+
+const readTranscriptTimeMs = (transcript: {
+  createdAt?: unknown;
+  startedAt?: unknown;
+  endedAt?: unknown;
+}) => {
+  const timestamp =
+    isoStringOrNull(transcript.createdAt) ??
+    isoStringOrNull(transcript.startedAt) ??
+    isoStringOrNull(transcript.endedAt);
+  return timestamp ? new Date(timestamp).getTime() : 0;
+};
+
+const normalizeTranscriptForGpt = (
+  transcript: CallDebugSession["transcripts"][number] | NonNullable<AIInteractionDebugSource["transcript"]>
+) => ({
+  id: transcript.id,
+  source: transcript.transcriptSource,
+  timestamp: isoStringOrNull(transcript.createdAt) ?? isoStringOrNull(transcript.startedAt),
+  startedAt: transcript.startedAt,
+  endedAt: transcript.endedAt,
+  text: transcript.transcriptText,
+  summary: transcript.transcriptSummary
+});
+
+const dedupeAdjacentTranscriptsForGpt = <
+  T extends CallDebugSession["transcripts"][number] | NonNullable<AIInteractionDebugSource["transcript"]>
+>(
+  transcripts: T[]
+) => {
+  const sorted = [...transcripts].sort((left, right) => readTranscriptTimeMs(left) - readTranscriptTimeMs(right));
+  const result: T[] = [];
+  for (const transcript of sorted) {
+    const previous = result[result.length - 1];
+    const normalized = transcriptDedupeText(transcript.transcriptText);
+    const previousNormalized = previous ? transcriptDedupeText(previous.transcriptText) : "";
+    const closeInTime =
+      previous &&
+      normalized &&
+      normalized === previousNormalized &&
+      Math.abs(readTranscriptTimeMs(transcript) - readTranscriptTimeMs(previous)) <= 2_000;
+    if (!closeInTime) {
+      result.push(transcript);
+    }
+  }
+  return result.map(normalizeTranscriptForGpt);
+};
+
+const summarizeAppointmentForGpt = (
+  appointment: CallBookingAttempt["appointment"] | NonNullable<AIInteractionDebugSource["bookingAttempt"]>["appointment"]
+) =>
+  appointment
+    ? {
+        id: appointment.id,
+        status: appointment.status,
+        startTime: appointment.startTime,
+        endTime: appointment.endTime,
+        staffId: appointment.staffId,
+        staffName: appointment.staff?.fullName,
+        serviceId: appointment.serviceId,
+        serviceName: appointment.service?.name
+      }
+    : null;
+
+const summarizeBookingAttemptForGpt = (
+  attempt: CallBookingAttempt | NonNullable<AIInteractionDebugSource["bookingAttempt"]>
+) => ({
+  id: attempt.id,
+  callSessionId: attempt.callSessionId,
+  transcriptId: attempt.transcriptId,
+  appointmentId: attempt.appointmentId,
+  status: attempt.status,
+  source: attempt.source,
+  customerName: attempt.customerName,
+  customerPhone: attempt.customerPhone,
+  requestedService: attempt.requestedService,
+  requestedStaff: attempt.requestedStaff,
+  requestedDateTimeText: attempt.requestedDateTimeText,
+  normalizedRequest: attempt.normalizedRequest,
+  alternativeSlots: attempt.alternativeSlots,
+  failureReason: attempt.failureReason,
+  appointment: summarizeAppointmentForGpt(attempt.appointment),
+  createdAt: attempt.createdAt,
+  updatedAt: attempt.updatedAt
+});
+
+const summarizeEscalationForGpt = (record: CallDebugSession["callEscalations"][number]) => ({
+  id: record.id,
+  status: record.status,
+  routingOutcome: record.routingOutcome,
+  escalationReason: record.escalationReason,
+  requestedBy: record.requestedBy,
+  customerPhone: record.customerPhone,
+  queueName: record.queueName,
+  amazonConnectContactId: record.amazonConnectContactId,
+  messageToCaller: record.messageToCaller,
+  callbackPhone: record.callbackPhone,
+  smsRecipientPhone: record.smsRecipientPhone,
+  voicemailRecordingUrl: record.voicemailRecordingUrl,
+  resolution: record.resolution,
+  requestedAt: record.requestedAt,
+  queuedAt: record.queuedAt,
+  connectedAt: record.connectedAt,
+  closedAt: record.closedAt
+});
+
+const summarizeEscalationsForGpt = (records: CallDebugSession["callEscalations"]) => ({
+  count: records.length,
+  records: records.map(summarizeEscalationForGpt)
+});
+
+const normalizeTurnForGpt = (turn: Record<string, unknown>) => {
+  const item: Record<string, unknown> = {
+    index: turn.index,
+    timestamp: isoStringOrNull(turn.createdAt),
+    callerTranscript: turn.currentTurnTranscript ?? null,
+    aiResponse: turn.responseText ?? null,
+    lastAskedSlot: {
+      before: turn.lastAskedSlotBefore ?? null,
+      after: turn.lastAskedSlotAfter ?? null
+    },
+    slotDecisions: null,
+    trustedSlotsBefore: null,
+    trustedSlotsAfter: null,
+    dtmfRoute: readRecord(turn.dtmfRouting).route ?? null,
+    missingFields: turn.missingFields ?? null
+  };
+  writeRecordIfPresent(item, "slotDecisions", turn.slotDecisions);
+  writeRecordIfPresent(item, "trustedSlotsBefore", turn.trustedSlotsBefore);
+  writeRecordIfPresent(item, "trustedSlotsAfter", turn.trustedSlotsAfter);
+  writeIfPresent(item, "slotToElicit", turn.slotToElicit);
+  writeIfPresent(item, "promptMissingFields", turn.promptMissingFields);
+  writeIfPresent(item, "activeDtmfMenuBefore", turn.activeDtmfMenuBefore);
+  writeIfPresent(item, "activeDtmfMenuAfter", turn.activeDtmfMenuAfter);
+  return item;
+};
+
+const normalizeTurnHistoriesForGpt = (
+  interactions: Array<CallAiInteraction | AIInteractionDebugSource>
+) =>
+  interactions
+    .flatMap((interaction, index) => buildAdminDebugTimelineItems(interaction, index))
+    .map((turn) => normalizeTurnForGpt(readRecord(turn)))
+    .sort((left, right) => {
+      const leftTime = isoStringOrNull(left.timestamp);
+      const rightTime = isoStringOrNull(right.timestamp);
+      return (leftTime ? new Date(leftTime).getTime() : 0) - (rightTime ? new Date(rightTime).getTime() : 0);
+    });
+
+const buildGptCallSummary = (call: CallDebugSession) => ({
+  id: call.id,
+  provider: call.provider,
+  providerCallId: call.providerCallId,
+  contactId: call.providerCallId,
+  status: call.status,
+  routingOutcome: call.routingOutcome,
+  callerPhone: call.callerPhone,
+  originalPhoneNumber: call.originalPhoneNumber,
+  dialedPhone: call.dialedPhone,
+  trackingNumber: call.trackingNumber,
+  direction: call.direction,
+  sourceName: call.sourceName,
+  startedAt: call.startedAt,
+  answeredAt: call.answeredAt,
+  endedAt: call.endedAt,
+  durationSeconds: call.durationSeconds,
+  bookingResult: call.bookingResult,
+  failureReason: call.failureReason,
+  finalResolution: call.finalResolution
+});
+
+const buildGptCallDebugRecord = (
+  call: CallDebugSession,
+  exportedAt: string,
+  selectedFrom: SelectedFrom
+) => ({
+  schemaVersion: 2,
+  exportedAt,
+  exportType: "call_debug_gpt",
+  exportMode: "gpt",
+  selectedFrom,
+  contactIds: readCallContactIds(call),
+  call: buildGptCallSummary(call),
+  callerSummary: {
+    callerPhone: call.callerPhone,
+    originalPhoneNumber: call.originalPhoneNumber,
+    dialedPhone: call.dialedPhone,
+    trackingNumber: call.trackingNumber
+  },
+  salonSummary: call.salon,
+  transcripts: dedupeAdjacentTranscriptsForGpt(call.transcripts),
+  turnHistories: normalizeTurnHistoriesForGpt(call.aiInteractions),
+  bookingAttempts: call.bookingAttempts.map(summarizeBookingAttemptForGpt),
+  escalationSummary: summarizeEscalationsForGpt(call.callEscalations),
+  finalResolution: call.finalResolution ?? call.failureReason ?? call.bookingResult
+});
+
+const buildGptDetachedAIRecord = (
+  interactions: AIInteractionDebugSource[],
+  exportedAt: string,
+  selectedFrom: SelectedFrom
+) => {
+  const first = interactions[0];
+  const transcripts = uniqueById(interactions.map((interaction) => interaction.transcript));
+  const bookingAttempts = uniqueById(interactions.map((interaction) => interaction.bookingAttempt));
+  return {
+    schemaVersion: 2,
+    exportedAt,
+    exportType: "call_debug_gpt",
+    exportMode: "gpt",
+    selectedFrom,
+    contactIds: compactValues(interactions.flatMap(readAIInteractionContactIds)),
+    call: null,
+    callerSummary: {
+      callerPhone: first?.callSession?.callerPhone ?? null
+    },
+    salonSummary: first?.salon ?? null,
+    transcripts: dedupeAdjacentTranscriptsForGpt(transcripts),
+    turnHistories: normalizeTurnHistoriesForGpt(interactions),
+    bookingAttempts: bookingAttempts.map(summarizeBookingAttemptForGpt),
+    escalationSummary: {
+      count: 0,
+      records: []
+    },
+    finalResolution: null
+  };
+};
+
 const uniqueById = <T extends { id: string }>(items: Array<T | null | undefined>): T[] => {
   const seen = new Set<string>();
   const result: T[] = [];
@@ -732,8 +997,11 @@ const buildCanonicalCallDebugRecord = (
   exportedAt: string,
   mode: DebugExportMode,
   selectedFrom: SelectedFrom
-) =>
-  ({
+) => {
+  if (mode === "gpt") {
+    return buildGptCallDebugRecord(call, exportedAt, selectedFrom);
+  }
+  return {
     schemaVersion: 2,
     exportedAt,
     exportType: mode === "compact" ? "call_debug_compact" : "call_debug_full",
@@ -751,7 +1019,8 @@ const buildCanonicalCallDebugRecord = (
     ),
     escalationRecords: call.callEscalations.map(normalizeEscalationForExport),
     finalResolution: call.finalResolution
-  });
+  };
+};
 
 const buildDetachedAIRecord = (
   interactions: AIInteractionDebugSource[],
@@ -762,6 +1031,9 @@ const buildDetachedAIRecord = (
   const first = interactions[0];
   const transcripts = uniqueById(interactions.map((interaction) => interaction.transcript));
   const bookingAttempts = uniqueById(interactions.map((interaction) => interaction.bookingAttempt));
+  if (mode === "gpt") {
+    return buildGptDetachedAIRecord(interactions, exportedAt, selectedFrom);
+  }
   return {
     schemaVersion: 2,
     exportedAt,
@@ -795,7 +1067,7 @@ const finalizeDebugExportBundle = (
   }
 ): AdminDebugExportResult => {
   const serializationStartedAt = process.hrtime.bigint();
-  const json = JSON.stringify(bundle, null, 2);
+  const json = JSON.stringify(bundle, null, logContext.exportMode === "gpt" ? 0 : 2);
   const serializationDurationMs = roundMs(elapsedMs(serializationStartedAt));
   const responseBytes = Buffer.byteLength(json, "utf8");
   const timings: AdminDebugExportTimings = {
@@ -811,7 +1083,7 @@ const finalizeDebugExportBundle = (
     approximateJsonBytes: responseBytes,
     timings
   });
-  const jsonWithTimings = JSON.stringify(bundle, null, 2);
+  const jsonWithTimings = JSON.stringify(bundle, null, logContext.exportMode === "gpt" ? 0 : 2);
   const finalResponseBytes = Buffer.byteLength(jsonWithTimings, "utf8");
   timings.responseBytes = finalResponseBytes;
   bundle.approximateJsonBytes = finalResponseBytes;
@@ -878,11 +1150,11 @@ export const getCallsDebugExportForAdmin = async (
     exportMode: mode,
     requestedCount: ids.length,
     recordCount: records.length,
-    deduplicatedCount: ids.length - requestedIds.length,
-    notFoundIds: requestedIds.filter((id) => !byId.has(id)),
-    omittedDuplicateFields: OMITTED_DUPLICATE_FIELDS,
-    records
-  }) as Record<string, unknown>;
+	    deduplicatedCount: ids.length - requestedIds.length,
+	    notFoundIds: requestedIds.filter((id) => !byId.has(id)),
+	    omittedDuplicateFields: mode === "gpt" ? GPT_OMITTED_DUPLICATE_FIELDS : OMITTED_DUPLICATE_FIELDS,
+	    records
+	  }) as Record<string, unknown>;
 
   return finalizeDebugExportBundle(bundle, {
     adminDebugExportType: "calls",
@@ -1010,12 +1282,12 @@ export const getAIInteractionsDebugExportForAdmin = async (
     exportType: "multi_ai_call_debug",
     exportMode: mode,
     requestedCount: ids.length,
-    recordCount: records.length,
-    deduplicatedCount,
-    notFoundIds: requestedIds.filter((id) => !selectedById.has(id)),
-    omittedDuplicateFields: OMITTED_DUPLICATE_FIELDS,
-    records
-  }) as Record<string, unknown>;
+	    recordCount: records.length,
+	    deduplicatedCount,
+	    notFoundIds: requestedIds.filter((id) => !selectedById.has(id)),
+	    omittedDuplicateFields: mode === "gpt" ? GPT_OMITTED_DUPLICATE_FIELDS : OMITTED_DUPLICATE_FIELDS,
+	    records
+	  }) as Record<string, unknown>;
 
   return finalizeDebugExportBundle(bundle, {
     adminDebugExportType: "ai_logs",

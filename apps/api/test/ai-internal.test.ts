@@ -5095,7 +5095,16 @@ test("spoken minute final correction preserves Kevin and exact minutes", async (
 });
 
 test("first available ASR variants enter explicit-any flow without staff clarification", async () => {
-  for (const phrase of ["for available", "first avaiable"]) {
+  for (const phrase of [
+    "for available",
+    "first avaiable",
+    "any staff is fine",
+    "any stuff is fine",
+    "any stop is fine",
+    "and the staff is fine",
+    "first available",
+    "available"
+  ]) {
     resetMockState();
     const result = await postInternalAppointment(
       bookingPayload({
@@ -5125,6 +5134,324 @@ test("first available ASR variants enter explicit-any flow without staff clarifi
     assert.doesNotMatch(result.body.data.lexResponse.message, /didn't find that technician/i, phrase);
     assert.equal(state.appointments.length, 0, phrase);
   }
+});
+
+test("ungrounded thirty five ASR does not become 5 PM or Any staff", async () => {
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+
+  for (const phrase of ["and it's thirty five", "thirty five", "and its thirty five"]) {
+    resetMockState();
+    const result = await postInternalAppointment(
+      bookingPayload({
+        serviceName: "Pedicure",
+        requestedDate,
+        requestedTime: "5 PM",
+        staffPreference: undefined,
+        confirmationState: undefined,
+        amazonConnectContactId: `connect-ungrounded-${phrase.replace(/\W+/g, "-")}`,
+        currentTurnTranscript: phrase,
+        transcript: phrase,
+        attributes: {
+          lastAskedSlot: "requestedTime",
+          serviceName: "Pedicure",
+          requestedDate,
+          customerName: "Kiet Nguyen",
+          customerPhone: "+17325956266"
+        }
+      })
+    );
+
+    const attrs = result.body.data.lexResponse.sessionAttributes;
+    assert.equal(result.response.status, 200, phrase);
+    assert.equal(result.body.data.outcome, "MISSING_INFO", phrase);
+    assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "requestedTime", phrase);
+    assert.notEqual(attrs.requestedTime, "5 PM", phrase);
+    assert.notEqual(attrs.requestedTime, "17:00", phrase);
+    assert.notEqual(attrs.staffPreference, "Any staff", phrase);
+    assert.equal(state.appointments.length, 0, phrase);
+  }
+});
+
+test("tomorrow afternoon without an exact hour asks for requestedTime", async () => {
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Pedicure",
+      requestedDate,
+      requestedTime: undefined,
+      staffPreference: "Any staff",
+      confirmationState: undefined,
+      amazonConnectContactId: "connect-afternoon-needs-time",
+      currentTurnTranscript: "i want to book a pedicure tomorrow afternoon",
+      transcript: "i want to book a pedicure tomorrow afternoon",
+      attributes: {
+        serviceName: "Pedicure",
+        requestedDate,
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "requestedTime");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, undefined);
+  assert.equal(state.appointments.length, 0);
+});
+
+test("generic services clarification preserves date time and Amy when service is answered", async () => {
+  const today = DateTime.now().setZone("America/New_York").toFormat("yyyy-MM-dd");
+
+  for (const serviceName of ["Pedicure", "Manicure", "Full Set", "Dip Powder"]) {
+    resetMockState();
+    const contactId = `connect-generic-service-${serviceName.replace(/\s+/g, "-").toLowerCase()}`;
+    const first = await postInternalAppointment(
+      bookingPayload({
+        serviceName: "services",
+        requestedDate: today,
+        requestedTime: "2 PM",
+        staffPreference: "Amy",
+        staffId: ids.amy,
+        confirmationState: undefined,
+        amazonConnectContactId: contactId,
+        currentTurnTranscript: "at two p m with amy",
+        transcript: "I want to book services today at 2 PM with Amy",
+        attributes: {
+          AmazonConnectContactId: contactId,
+          currentTurnTranscript: "at two p m with amy",
+          requestedDate: today,
+          requestedTime: "2 PM",
+          staffPreference: "Amy",
+          staffId: ids.amy,
+          selectedStaffId: ids.amy,
+          confirmedStaffId: ids.amy,
+          confirmedStaffName: "Amy",
+          customerName: "Kiet Nguyen",
+          customerPhone: "+17325956266"
+        }
+      })
+    );
+
+    assert.equal(first.body.data.outcome, "MISSING_INFO", serviceName);
+    assert.equal(first.body.data.lexResponse.dialogAction.slotToElicit, "serviceName", serviceName);
+    assert.equal(first.body.data.lexResponse.sessionAttributes.requestedDate, today, serviceName);
+    assert.equal(first.body.data.lexResponse.sessionAttributes.requestedTime, "2 PM", serviceName);
+    assert.equal(first.body.data.lexResponse.sessionAttributes.staffPreference, "Amy", serviceName);
+
+    const second = await postInternalAppointment(
+      bookingPayload({
+        serviceName,
+        requestedDate: first.body.data.lexResponse.sessionAttributes.requestedDate,
+        requestedTime: first.body.data.lexResponse.sessionAttributes.requestedTime,
+        staffPreference: first.body.data.lexResponse.sessionAttributes.staffPreference,
+        staffId: first.body.data.lexResponse.sessionAttributes.staffId,
+        confirmationState: undefined,
+        amazonConnectContactId: contactId,
+        currentTurnTranscript: serviceName,
+        transcript: serviceName,
+        attributes: {
+          ...first.body.data.lexResponse.sessionAttributes,
+          AmazonConnectContactId: contactId,
+          lastAskedSlot: "serviceName",
+          currentTurnTranscript: serviceName
+        }
+      })
+    );
+
+    const attrs = second.body.data.lexResponse.sessionAttributes;
+    assert.equal(second.response.status, 200, serviceName);
+    assert.equal(second.body.data.outcome, "MISSING_INFO", serviceName);
+    assert.equal(second.body.data.lexResponse.dialogAction.type, "ConfirmIntent", serviceName);
+    assert.equal(attrs.serviceName, serviceName, serviceName);
+    assert.equal(attrs.requestedDate, today, serviceName);
+    assert.equal(attrs.requestedTime, "2 PM", serviceName);
+    assert.equal(attrs.staffPreference, "Amy", serviceName);
+    assert.equal(attrs.staffId, ids.amy, serviceName);
+    assert.doesNotMatch(second.body.data.lexResponse.message, /which service|what day|what time|which staff|what name/i, serviceName);
+    assert.equal(state.appointments.length, 0, serviceName);
+  }
+});
+
+test("staff exclusions select first available while excluding Amy for explicit any-staff phrases", async () => {
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+
+  for (const phrase of ["any staff but not Amy", "anyone except Amy", "first available except Amy"]) {
+    resetMockState();
+    const result = await postInternalAppointment(
+      bookingPayload({
+        serviceName: "Pedicure",
+        requestedDate,
+        requestedTime: "5 PM",
+        staffPreference: "Any staff",
+        staffId: ids.amy,
+        confirmationState: undefined,
+        amazonConnectContactId: `connect-exclude-amy-${phrase.replace(/\W+/g, "-")}`,
+        currentTurnTranscript: phrase,
+        transcript: phrase,
+        attributes: {
+          lastAskedSlot: "staffPreference",
+          serviceName: "Pedicure",
+          requestedDate,
+          requestedTime: "5 PM",
+          staffPreference: "Amy",
+          staffId: ids.amy,
+          selectedStaffId: ids.amy,
+          confirmedStaffId: ids.amy,
+          confirmedStaffName: "Amy",
+          customerName: "Kiet Nguyen",
+          customerPhone: "+17325956266"
+        }
+      })
+    );
+
+    const attrs = result.body.data.lexResponse.sessionAttributes;
+    assert.equal(result.response.status, 200, phrase);
+    assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent", phrase);
+    assert.equal(attrs.staffPreference, "Trang", phrase);
+    assert.equal(attrs.staffId, ids.trang, phrase);
+    assert.notEqual(attrs.selectedStaffId, ids.amy, phrase);
+    assert.notEqual(attrs.confirmedStaffId, ids.amy, phrase);
+    assert.notEqual(attrs.confirmedStaffName, "Amy", phrase);
+    assert.match(attrs.excludedStaffNames, /amy/i, phrase);
+    assert.doesNotMatch(result.body.data.lexResponse.message, /with Amy/i, phrase);
+    assert.equal(attrs.serviceName, "Pedicure", phrase);
+    assert.equal(attrs.requestedDate, requestedDate, phrase);
+    assert.equal(attrs.requestedTime, "5 PM", phrase);
+  }
+});
+
+test("staff exclusion control phrases clear Amy and reprompt for staff", async () => {
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+
+  for (const phrase of [
+    "not Amy",
+    "I don't want Amy",
+    "another person, not Amy",
+    "someone else",
+    "change the staff",
+    "no, just change the staff"
+  ]) {
+    resetMockState();
+    const result = await postInternalAppointment(
+      bookingPayload({
+        serviceName: "Pedicure",
+        requestedDate,
+        requestedTime: "5 PM",
+        staffPreference: "Amy",
+        staffId: ids.amy,
+        confirmationState: "None",
+        amazonConnectContactId: `connect-clear-amy-${phrase.replace(/\W+/g, "-")}`,
+        currentTurnTranscript: phrase,
+        transcript: phrase,
+        attributes: {
+          lastAskedSlot: "bookingConfirmation",
+          awaitingFinalBookingConfirmation: "true",
+          bookingConfirmationAsked: "true",
+          serviceName: "Pedicure",
+          requestedDate,
+          requestedTime: "5 PM",
+          staffPreference: "Amy",
+          staffId: ids.amy,
+          selectedStaffId: ids.amy,
+          confirmedStaffId: ids.amy,
+          confirmedStaffName: "Amy",
+          customerName: "Kiet Nguyen",
+          customerPhone: "+17325956266"
+        }
+      })
+    );
+
+    const attrs = result.body.data.lexResponse.sessionAttributes;
+    assert.equal(result.response.status, 200, phrase);
+    assert.equal(result.body.data.outcome, "MISSING_INFO", phrase);
+    assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "staffPreference", phrase);
+    assert.equal(attrs.staffPreference, undefined, phrase);
+    assert.equal(attrs.staffId, undefined, phrase);
+    assert.equal(attrs.selectedStaffId, undefined, phrase);
+    assert.equal(attrs.confirmedStaffId, undefined, phrase);
+    assert.equal(attrs.confirmedStaffName, undefined, phrase);
+    assert.match(attrs.excludedStaffNames, /amy/i, phrase);
+    assert.equal(attrs.serviceName, "Pedicure", phrase);
+    assert.equal(attrs.requestedDate, requestedDate, phrase);
+    assert.equal(attrs.requestedTime, "5 PM", phrase);
+    assert.doesNotMatch(result.body.data.lexResponse.message, /with Amy|with Just/i, phrase);
+    assert.equal(state.appointments.length, 0, phrase);
+  }
+});
+
+test("explicit Amy request removes Amy from staff exclusions", async () => {
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Pedicure",
+      requestedDate,
+      requestedTime: "5 PM",
+      staffPreference: undefined,
+      staffId: undefined,
+      confirmationState: undefined,
+      amazonConnectContactId: "connect-wants-amy-after-exclusion",
+      currentTurnTranscript: "I want Amy",
+      transcript: "I want Amy",
+      attributes: {
+        lastAskedSlot: "staffPreference",
+        activeDtmfMenu: "staff",
+        serviceName: "Pedicure",
+        requestedDate,
+        requestedTime: "5 PM",
+        excludedStaffIds: JSON.stringify([ids.amy]),
+        excludedStaffNames: JSON.stringify(["amy"]),
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266"
+      }
+    })
+  );
+
+  const attrs = result.body.data.lexResponse.sessionAttributes;
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(attrs.staffPreference, "Amy");
+  assert.equal(attrs.staffId, ids.amy);
+  assert.equal(attrs.excludedStaffIds, undefined);
+  assert.equal(attrs.excludedStaffNames, undefined);
+  assert.match(result.body.data.lexResponse.message, /with Amy/i);
+});
+
+test("staff exclusion says clearly when no other mapped technician is available", async () => {
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  state.staffServiceMappings = state.staffServiceMappings?.filter(
+    (mapping) => mapping.serviceId !== ids.pedicure || mapping.staffId === ids.amy
+  ) ?? null;
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Pedicure",
+      requestedDate,
+      requestedTime: "5 PM",
+      staffPreference: "Any staff",
+      staffId: ids.amy,
+      confirmationState: undefined,
+      amazonConnectContactId: "connect-no-other-after-amy-exclusion",
+      currentTurnTranscript: "any staff but not Amy",
+      transcript: "any staff but not Amy",
+      attributes: {
+        lastAskedSlot: "staffPreference",
+        serviceName: "Pedicure",
+        requestedDate,
+        requestedTime: "5 PM",
+        staffPreference: "Amy",
+        staffId: ids.amy,
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "staffPreference");
+  assert.match(result.body.data.lexResponse.message, /another technician/i);
+  assert.doesNotMatch(result.body.data.lexResponse.message, /found Amy|with Amy/i);
+  assert.equal(state.appointments.length, 0);
 });
 
 test("time-only answer does not invent requestedDate today", async () => {

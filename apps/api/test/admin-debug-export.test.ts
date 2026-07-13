@@ -779,6 +779,81 @@ test("compact call export omits duplicate raw turn payloads and appointment refe
   assert.equal(record.bookingAttempts[0].appointment.id, ids.appointment1);
 });
 
+test("compact turn histories do not copy latest slot decisions into earlier turns", async () => {
+  const state = setupAdminDebugMocks();
+  const interaction = buildAiInteraction({
+    id: ids.ai4,
+    callSessionId: ids.missingCall,
+    bookingAttemptId: ids.booking2,
+    transcriptId: ids.transcript2,
+    contactId: "contact-no-future-state",
+    createdAt: now
+  });
+  interaction.responsePayload = {
+    lexTurnDebug: {
+      contactId: "contact-no-future-state",
+      currentTurnTranscript: "available",
+      slotDecisions: {
+        serviceName: "Pedicure",
+        requestedTime: "5 PM",
+        staffPreference: "Trang"
+      }
+    },
+    turnHistory: [
+      {
+        index: 1,
+        createdAt: now.toISOString(),
+        currentTurnTranscript: "food set",
+        responseText: "Which day?",
+        trustedSlotsBefore: {},
+        trustedSlotsAfter: {
+          serviceName: "Full Set"
+        }
+      },
+      {
+        index: 2,
+        createdAt: later.toISOString(),
+        currentTurnTranscript: "available",
+        responseText: "I found Trang available.",
+        slotDecisions: {
+          serviceName: "Pedicure",
+          requestedTime: "5 PM",
+          staffPreference: "Trang"
+        },
+        trustedSlotsBefore: {
+          serviceName: "Full Set"
+        },
+        trustedSlotsAfter: {
+          serviceName: "Pedicure",
+          requestedTime: "5 PM",
+          staffPreference: "Trang"
+        }
+      }
+    ]
+  };
+  const call = buildCall({
+    id: ids.missingCall,
+    providerCallId: "contact-no-future-state",
+    transcriptId: ids.transcript2,
+    bookingAttemptId: ids.booking2,
+    appointmentId: ids.appointment2,
+    aiInteractions: [interaction]
+  });
+  state.calls.push(call);
+  state.aiInteractions.push(interaction);
+
+  const response = await requestJson("/api/v1/admin/calls/debug-export", {
+    ids: [ids.missingCall],
+    mode: "compact"
+  });
+  const firstTurn = response.body.data.records[0].turnHistories[0];
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(firstTurn.trustedSlotsAfter, { serviceName: "Full Set" });
+  assert.equal(firstTurn.slotDecisions, undefined);
+  assert.doesNotMatch(JSON.stringify(firstTurn), /Pedicure|5 PM|Trang/);
+});
+
 test("calls export redacts sensitive keys without removing useful debug IDs", async () => {
   setupAdminDebugMocks();
 
@@ -1043,4 +1118,47 @@ test("compact export is substantially smaller for a synthetic 15-turn production
   ]) {
     assert.notEqual(firstTurn[field], undefined, `expected compact turn field ${field}`);
   }
+});
+
+test("gpt export omits heavy payloads, dedupes adjacent transcripts, and stays small", async () => {
+  const state = setupAdminDebugMocks();
+  const heavyInteraction = buildHeavyAiInteraction();
+  const heavyCall = buildCall({
+    id: ids.heavyCall,
+    providerCallId: "heavy-contact-15",
+    transcriptId: ids.heavyTranscript,
+    bookingAttemptId: ids.heavyBooking,
+    appointmentId: ids.heavyAppointment,
+    aiInteractions: [heavyInteraction]
+  });
+  heavyCall.transcripts.push({
+    ...heavyCall.transcripts[0],
+    id: "99999999-9999-4999-8999-999999999995",
+    createdAt: new Date(now.getTime() + 1_000),
+    startedAt: new Date(now.getTime() + 1_000),
+    endedAt: new Date(now.getTime() + 1_000)
+  });
+  state.calls.push(heavyCall);
+  state.aiInteractions.push(heavyInteraction);
+
+  const response = await requestJson("/api/v1/admin/calls/debug-export", {
+    ids: [ids.heavyCall],
+    mode: "gpt"
+  });
+  const record = response.body.data.records[0];
+  const serialized = JSON.stringify(response.body.data);
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.data.exportMode, "gpt");
+  assert.equal(record.exportType, "call_debug_gpt");
+  assert.equal(record.aiInteractions, undefined);
+  assert.equal(record.events, undefined);
+  assert.equal(record.transcripts.length, 1);
+  assert.equal(record.turnHistories.length, 15);
+  assert.equal(record.turnHistories[0].sessionAttributesBefore, undefined);
+  assert.equal(record.turnHistories[0].sessionAttributesAfter, undefined);
+  assert.equal(record.bookingAttempts[0].rawInput, undefined);
+  assert.equal(record.bookingAttempts[0].appointment.appointmentServices, undefined);
+  assert.doesNotMatch(serialized, /requestPayload|responsePayload|sessionAttributesBefore|sessionAttributesAfter|rawInput|lexTurnDebug|sourceMetadata/);
+  assert.ok(Buffer.byteLength(serialized, "utf8") < 400_000);
 });

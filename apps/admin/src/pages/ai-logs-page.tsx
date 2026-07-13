@@ -56,11 +56,14 @@ interface AiLogsResponse {
 
 interface PreparedBulkBundle {
   key: string;
+  mode: DebugExportMode;
   payload: unknown;
   json: string;
   byteSize: number;
   response: BulkDebugExportResponse;
 }
+
+type DebugExportMode = "compact" | "gpt";
 
 interface AiLogCallGroup {
   key: string;
@@ -245,22 +248,25 @@ export const AiLogsPage = () => {
     setSearch(querySearch.trim());
   };
 
-  const prepareSelectedDebugBundle = async (): Promise<PreparedBulkBundle | null> => {
+  const prepareSelectedDebugBundle = async (
+    mode: DebugExportMode = "compact"
+  ): Promise<PreparedBulkBundle | null> => {
     if (!selectedVisibleIds.length) {
       notify("error", t("debugBulk.noRecordsSelected"));
       return null;
     }
-    if (preparedBundle?.key === selectionKey) {
+    const preparedKey = `${selectionKey}::${mode}`;
+    if (preparedBundle?.key === preparedKey) {
       return preparedBundle;
     }
 
     setBulkActionLoading(true);
     try {
-      const response = await apiPost<BulkDebugExportResponse, { ids: string[]; mode: "compact" }>(
+      const response = await apiPost<BulkDebugExportResponse, { ids: string[]; mode: DebugExportMode }>(
         "/api/v1/admin/ai-logs/debug-export",
         {
           ids: selectedVisibleIds,
-          mode: "compact"
+          mode
         },
         {
           timeout: DEBUG_EXPORT_TIMEOUT_MS
@@ -281,7 +287,8 @@ export const AiLogsPage = () => {
       });
       const json = stringifyServerDebugBundle(payload);
       const nextPreparedBundle = {
-        key: selectionKey,
+        key: preparedKey,
+        mode,
         payload,
         json,
         byteSize: getJsonByteSize(json),
@@ -317,6 +324,26 @@ export const AiLogsPage = () => {
     }
   };
 
+  const copySelectedGptDebug = async () => {
+    let prepared: PreparedBulkBundle | null;
+    try {
+      prepared = await prepareSelectedDebugBundle("gpt");
+    } catch (copyError) {
+      notify("error", isTimeoutError(copyError) ? t("debugBulk.timeout") : extractErrorMessage(copyError));
+      return;
+    }
+    if (!prepared) {
+      return;
+    }
+
+    try {
+      await copyTextToClipboard(prepared.json);
+      notify("success", t("debugBulk.copied"));
+    } catch {
+      notify("error", t("debugBulk.copyTooLarge"));
+    }
+  };
+
   const exportSelectedDebug = async () => {
     let prepared: PreparedBulkBundle | null;
     try {
@@ -334,6 +361,29 @@ export const AiLogsPage = () => {
     }
 
     const filename = `fastaibooking-ai-debug-${prepared.response.recordCount}-calls-${toUtcTimestampForFilename(
+      new Date(prepared.response.exportedAt)
+    )}.json`;
+    downloadPreparedJson(filename, prepared.json);
+    notify("success", t("debugBulk.exported"));
+  };
+
+  const exportSelectedGptDebug = async () => {
+    let prepared: PreparedBulkBundle | null;
+    try {
+      prepared = await prepareSelectedDebugBundle("gpt");
+    } catch (exportError) {
+      notify("error", isTimeoutError(exportError) ? t("debugBulk.timeout") : extractErrorMessage(exportError));
+      return;
+    }
+    if (!prepared) {
+      return;
+    }
+    if (prepared.response.recordCount === 0) {
+      notify("error", t("debugBulk.someNotFound"));
+      return;
+    }
+
+    const filename = `fastaibooking-ai-gpt-debug-${prepared.response.recordCount}-calls-${toUtcTimestampForFilename(
       new Date(prepared.response.exportedAt)
     )}.json`;
     downloadPreparedJson(filename, prepared.json);
@@ -430,11 +480,13 @@ export const AiLogsPage = () => {
           totalVisible={visibleIds.length}
           busy={bulkActionLoading}
           preparedByteSize={
-            preparedBundle?.key === selectionKey ? formatDebugByteSize(preparedBundle.byteSize) : undefined
+            preparedBundle?.key.startsWith(`${selectionKey}::`) ? formatDebugByteSize(preparedBundle.byteSize) : undefined
           }
           onSelectAllVisible={selectAllVisible}
           onCopy={copySelectedDebug}
           onExport={exportSelectedDebug}
+          onCopyGpt={copySelectedGptDebug}
+          onExportGpt={exportSelectedGptDebug}
           onExportFull={exportSelectedFullDebug}
           onClear={clearAll}
         />

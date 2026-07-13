@@ -236,6 +236,11 @@ const CONTEXTUAL_ANY_STAFF_ALIASES = [
   "any stop if i",
   "any stuff",
   "any stuff is fine",
+  "and the staff is fine",
+  "and the staff",
+  "and staff is fine",
+  "and staff",
+  "staff is fine",
   "any star",
   "any star is fine",
   "available"
@@ -245,7 +250,7 @@ const ANY_STAFF_TRAILING_FILLER_PATTERN =
 const OPERATOR_TRANSFER_PROMPT = "Let me check for an available operator.";
 const OPERATOR_BUSY_PROMPT = "All of our operators are currently busy. Please call back later.";
 const SERVICE_DTMF_PROMPT =
-  "Hi, thanks for calling Kiet Nails. How can I help? You can say the service, day, time, and technician in one sentence. Press 0 for a person.";
+  "Hi, thanks for calling Kiet Nails. What would you like to book? You can say everything in one sentence, or press 0 for a person.";
 const SERVICE_KEYPAD_PROMPT =
   "Sure. Which service would you like?";
 const SERVICE_DTMF_SHORT_PROMPT =
@@ -845,7 +850,7 @@ function normalizeScopedStaffCandidatePhrase(text, sessionAttributes = {}) {
   }
 
   let candidate = normalized
-    .replace(/\b(?:technician|tech|staff|please|actually|instead)\b/g, " ")
+    .replace(/\b(?:technician|tech|staff|please|actually|instead|just)\b/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 
@@ -866,7 +871,7 @@ function normalizeScopedStaffCandidatePhrase(text, sessionAttributes = {}) {
 
   candidate = normalizeForMatch(
     candidate.replace(
-      /\b(?:with|book|use|i|want|to|said|change|switch|it|instead|no|please|actually|technician|staff|tech|the|a|an)\b/g,
+      /\b(?:with|book|use|i|want|to|said|change|switch|it|instead|just|no|please|actually|technician|staff|tech|the|a|an)\b/g,
       " "
     )
   );
@@ -2565,6 +2570,31 @@ function normalizeGpsTimePhrase(value, context = {}) {
   return /^(?:g\s+p(?:\s+s)?)$/.test(normalized) ? "3 PM" : "";
 }
 
+function hasRequestedTimeContext(context = {}) {
+  return Boolean(
+    context?.lastAskedSlot === "requestedTime" ||
+      context?.currentTurnSemanticType === "TIME_REQUEST" ||
+      context?.semanticType === "TIME_REQUEST"
+  );
+}
+
+function normalizeBareRequestedTimeAnswer(value) {
+  const normalized = normalizeSpokenNumbers(normalizeHourMinuteTimeExpression(value || ""))
+    .replace(/\b([ap])\s*\.?\s*m\.?\b/gi, "$1m")
+    .trim()
+    .toLowerCase();
+  return normalizeForMatch(normalized)
+    .replace(/^(?:and\s+)?(?:it\s+is|its|it's)\s+/, "")
+    .trim();
+}
+
+function isBareRequestedTimeAnswer(value, context = {}) {
+  if (!hasRequestedTimeContext(context)) {
+    return false;
+  }
+  return /^([1-9]|1[0-2])(?::[0-5]\d)?$/.test(normalizeBareRequestedTimeAnswer(value));
+}
+
 function extractTimeCandidate(value, context = {}) {
   const gpsTime = normalizeGpsTimePhrase(value, context);
   if (gpsTime) {
@@ -2573,7 +2603,7 @@ function extractTimeCandidate(value, context = {}) {
   const source = normalizeHourMinuteTimeExpression(value)
     .replace(/\b([ap])\s*\.?\s*m\.?\b/gi, "$1m")
     .trim();
-  const searchable = source.replace(/^\s*(?:at|around|about|for|by)\s+/i, "");
+  const searchable = source;
   const segment = searchable
     .split(/[,.!?;]/)[0]
     ?.trim();
@@ -2591,24 +2621,31 @@ function extractTimeCandidate(value, context = {}) {
     return explicitMatch[0];
   }
 
+  const oclockMatch = searchable.match(
+    new RegExp(
+      `\\b((?:${SPOKEN_HOUR_PATTERN}|\\d{1,2})(?::\\d{2})?\\s*(?:o\\s*'?clock|oclock))\\b`,
+      "i"
+    )
+  );
+  if (oclockMatch?.[1]) {
+    return oclockMatch[1];
+  }
+
   const markedBareMatch = searchable.match(
     new RegExp(
-      `\\b(?:at|around|about|for|by)\\s+((?:${SPOKEN_HOUR_PATTERN}|\\d{1,2})(?::\\d{2})?)\\b`,
+      `\\bat\\s+((?:${SPOKEN_HOUR_PATTERN}|\\d{1,2})(?::\\d{2})?)\\b`,
       "i"
     )
   );
   if (markedBareMatch?.[1]) {
-    return markedBareMatch[1];
+    return `at ${markedBareMatch[1]}`;
   }
 
   if (!segment) {
     return "";
   }
 
-  const leadingBareMatch = segment.match(
-    new RegExp(`^\\s*((?:${SPOKEN_HOUR_PATTERN}|\\d{1,2})(?::\\d{2})?)\\b`, "i")
-  );
-  return leadingBareMatch?.[1] || "";
+  return isBareRequestedTimeAnswer(segment, context) ? normalizeBareRequestedTimeAnswer(segment) : "";
 }
 
 function getPreferredDateCandidate(raw) {
@@ -2640,9 +2677,11 @@ function normalizeTimePhrase(value, datePhrase = "", context = {}) {
     .replace(/\ba\.?m\.?\b/gi, "am")
     .replace(/\bp\.?m\.?\b/gi, "pm")
     .trim();
-  const contextText = normalizeForMatch(`${datePhrase} ${value}`);
+  const contextText = normalizeForMatch(value);
   const hasMorningContext = /\bmorning\b/.test(contextText);
-  const hasAfternoonContext = /\b(afternoon|evening|tonight|night)\b/.test(contextText);
+  const hasAtHourCue = /^at\s+\d{1,2}(?::\d{2})?/.test(contextText);
+  const hasOclockCue = /\b(?:o\s+clock|oclock)\b/.test(contextText);
+  const requestedTimeAnswer = isBareRequestedTimeAnswer(value, context);
   const periodMatch = normalized.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i);
   let hour;
   let minute = 0;
@@ -2653,7 +2692,7 @@ function normalizeTimePhrase(value, datePhrase = "", context = {}) {
     minute = Number(periodMatch[2] || 0);
     period = periodMatch[3]?.toUpperCase() || "";
   } else {
-    const timeMatch = normalized.match(/\b(\d{1,2})(?::(\d{2}))?\b/);
+    const timeMatch = normalized.match(/^(?:at\s+)?(\d{1,2})(?::(\d{2}))?(?:\s*(?:o\s*'?clock|oclock))?$/i);
     if (!timeMatch) {
       return "";
     }
@@ -2667,8 +2706,8 @@ function normalizeTimePhrase(value, datePhrase = "", context = {}) {
       hour -= 12;
     } else if (hasMorningContext) {
       period = "AM";
-    } else if (hasAfternoonContext || (hour >= 1 && hour <= 7)) {
-      period = "PM";
+    } else if (hasAtHourCue || hasOclockCue || requestedTimeAnswer) {
+      period = hour === 12 || (hour >= 1 && hour <= 7) ? "PM" : "AM";
     } else {
       return "";
     }
@@ -2736,7 +2775,7 @@ function extractBookingDetailsFromText(text, timeZone = DEFAULT_SALON_TIMEZONE, 
       extractTimeCandidate(afterDate, context) ||
       extractTimeCandidate(beforeDate.split(/[!?;]/).at(-1) || "", context) ||
       extractTimeCandidate(raw, context);
-    requestedTime = normalizeTimePhrase(timeCandidate, dateMatch.text, context);
+    requestedTime = normalizeTimePhrase(timeCandidate, "", context);
   } else {
     requestedTime = normalizeTimePhrase(extractTimeCandidate(raw, context), "", context);
   }
@@ -3418,10 +3457,11 @@ function buildKnownBookingSessionAttributes(event) {
     getSlotValue(slots, slotNames.requestedDate) ||
     getSessionAttribute(previous, slotNames.requestedDate);
   const previousDate = getSessionAttribute(previous, slotNames.requestedDate);
+  const lexKnownTime = ignoreLexTimeFromWrongSlotDigit
+    ? ""
+    : getSlotValue(slots, slotNames.requestedTime, { preferOriginal: true });
   const knownTime =
-    (ignoreLexTimeFromWrongSlotDigit
-      ? ""
-      : getSlotValue(slots, slotNames.requestedTime, { preferOriginal: true })) ||
+    lexKnownTime ||
     getSessionAttribute(previous, slotNames.requestedTime);
   const previousTime = getSessionAttribute(previous, slotNames.requestedTime);
   const rawKnownService =
@@ -3477,6 +3517,12 @@ function buildKnownBookingSessionAttributes(event) {
     : extractStaffFromTranscript(transcript, previous);
   const currentTurnHasGroundedDate = hasCurrentTurnDatePhrase(event.inputTranscript);
   const currentTurnHasGroundedTime = hasCurrentTurnTimePhrase(event.inputTranscript, previous);
+  const ignoreUngroundedCurrentLexTime =
+    Boolean(lexKnownTime) &&
+    !previousTime &&
+    Boolean(currentTurnTranscript) &&
+    !currentTurnHasGroundedTime &&
+    hasRequestedTimeContext(previous);
   const recoveredDateIsGrounded =
     Boolean(currentRecovered.requestedDate) && currentTurnHasGroundedDate;
   const recoveredTimeIsGrounded =
@@ -3486,7 +3532,7 @@ function buildKnownBookingSessionAttributes(event) {
   const previousResolvedDate = resolveKnownDateValue(previousDate, timeZone);
   const knownResolvedDate = resolveKnownDateValue(knownDate, timeZone);
   const previousResolvedTime = normalizeTimePhrase(previousTime) || previousTime;
-  const knownResolvedTime = normalizeTimePhrase(knownTime) || knownTime;
+  const knownResolvedTime = ignoreUngroundedCurrentLexTime ? "" : normalizeTimePhrase(knownTime) || knownTime;
   const historicalRecoveredDate =
     !previousResolvedDate && !knownResolvedDate ? recovered.requestedDate : "";
   const historicalRecoveredTime =

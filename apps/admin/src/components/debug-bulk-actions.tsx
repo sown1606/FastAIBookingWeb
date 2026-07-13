@@ -8,6 +8,8 @@ interface DebugBulkActionsProps {
   onSelectAllVisible: () => void;
   onCopy: () => void;
   onExport: () => void;
+  onCopyGpt?: () => void;
+  onExportGpt?: () => void;
   onExportFull?: () => void;
   onClear: () => void;
 }
@@ -20,6 +22,8 @@ export const DebugBulkActions = ({
   onSelectAllVisible,
   onCopy,
   onExport,
+  onCopyGpt,
+  onExportGpt,
   onExportFull,
   onClear
 }: DebugBulkActionsProps) => {
@@ -65,6 +69,28 @@ export const DebugBulkActions = ({
         >
           {t("debugBulk.exportCompactJson")}
         </button>
+        {onCopyGpt ? (
+          <button
+            type="button"
+            className="button-secondary"
+            onClick={onCopyGpt}
+            disabled={disabled}
+            aria-label={t("debugBulk.copyGptJson")}
+          >
+            {busy ? t("debugBulk.preparingShort") : t("debugBulk.copyGptJson")}
+          </button>
+        ) : null}
+        {onExportGpt ? (
+          <button
+            type="button"
+            className="button-secondary"
+            onClick={onExportGpt}
+            disabled={disabled}
+            aria-label={t("debugBulk.exportGptJson")}
+          >
+            {t("debugBulk.exportGptJson")}
+          </button>
+        ) : null}
         {onExportFull ? (
           <button
             type="button"

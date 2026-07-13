@@ -13,7 +13,7 @@ const lexRoots = ["v7", "v8", "v10"].map((version) => ({
 }));
 const connectRoot = path.join(repoRoot, "infra/aws/connect/contact-flows");
 const CANONICAL_SERVICE_PROMPT =
-  "Hi, thanks for calling Kiet Nails. How can I help? You can say the service, day, time, and technician in one sentence. Press 0 for a person.";
+  "Hi, thanks for calling Kiet Nails. What would you like to book? You can say everything in one sentence, or press 0 for a person.";
 const FIRST_SERVICE_RETRY_PROMPT = "Sure. Which service would you like?";
 const SERVICE_MENU_PROMPT =
   "I can list the services once. Please say the service name, or press 0 for a person.";
@@ -1308,7 +1308,7 @@ test("yes after no-input human offer transfers only after confirmation", async (
   assert.equal(response.sessionState.sessionAttributes.awaitingNoInputHumanConfirmation, "false");
 });
 
-test("DialogCodeHook recovers pedicure aliases and bare PM time from transcript", async () => {
+test("DialogCodeHook recovers pedicure aliases and cued PM time from transcript", async () => {
   const handler = await loadHandler();
   globalThis.fetch = async () => {
     throw new Error("fetch should not be called for DialogCodeHook recovery");
@@ -1318,7 +1318,7 @@ test("DialogCodeHook recovers pedicure aliases and bare PM time from transcript"
     baseEvent({
       invocationSource: "DialogCodeHook",
       inputTranscript:
-        "I need a better cure tomorrow at five with Trang. My name is Kiet Nguyen. My phone number is 7325956266.",
+        "I need a better cure tomorrow at five PM with Trang. My name is Kiet Nguyen. My phone number is 7325956266.",
       sessionState: {
         ...baseEvent().sessionState,
         sessionAttributes: {
