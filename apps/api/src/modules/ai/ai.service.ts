@@ -681,6 +681,28 @@ const isNegative = (value?: string | null): boolean => {
 
 type FinalBookingConfirmationOutcome = "AFFIRMED" | "DENIED" | "CHANGE_REQUEST" | "UNKNOWN";
 
+const FINAL_CONFIRMATION_ONLY_PHRASES = new Set([
+  "yes",
+  "yeah",
+  "yep",
+  "correct",
+  "that s right",
+  "thats right",
+  "that is right",
+  "sounds good",
+  "go ahead",
+  "please go ahead",
+  "book it",
+  "please book it",
+  "confirm it",
+  "proceed",
+  "do it"
+]);
+
+const isFinalConfirmationOnlyPhrase = (value?: string | null): boolean => {
+  return FINAL_CONFIRMATION_ONLY_PHRASES.has(normalizeForMatch(value));
+};
+
 const hasStaticServiceAliasInText = (value?: string | null): boolean => {
   const compactText = compactForMatch(value);
   if (!compactText) {
@@ -704,6 +726,9 @@ const classifyFinalBookingConfirmation = (
   }
   if (/^(?:ok|okay)$/.test(normalized)) {
     return "UNKNOWN";
+  }
+  if (isFinalConfirmationOnlyPhrase(normalized)) {
+    return "AFFIRMED";
   }
 
   const hasChangeRequest =
@@ -938,6 +963,9 @@ const normalizeScopedStaffCandidatePhrase = (value?: string | null): string | un
   if (!normalized) {
     return undefined;
   }
+  if (isFinalConfirmationOnlyPhrase(normalized)) {
+    return undefined;
+  }
   if (isAnyStaffPreference(normalized)) {
     return "any staff";
   }
@@ -1051,6 +1079,9 @@ const isClearlyInvalidStaffPreference = (value?: string | null): boolean => {
     return true;
   }
   if (/^(?:am|pm|a m|p m|time|phone|phone number)$/.test(normalized)) {
+    return true;
+  }
+  if (isFinalConfirmationOnlyPhrase(normalized)) {
     return true;
   }
   if (hasStaticServiceAliasInText(normalized)) {
@@ -5445,12 +5476,16 @@ export const createAmazonConnectAIAppointment = async (
   const customerNameTurnOwnsTranscript =
     readStringAttribute(normalized.attributes, ["lastAskedSlot"]) === "customerName" &&
     readStringAttribute(normalized.attributes, ["activeDtmfMenu"]) !== "staff";
-  const currentTurnStaffMention = normalized.currentTurnTranscript && !customerNameTurnOwnsTranscript
+  const finalConfirmationText = normalized.currentTurnTranscript ?? normalized.transcriptText;
+  const finalConfirmationOnlyPhrase =
+    awaitingFinalBookingConfirmation && isFinalConfirmationOnlyPhrase(finalConfirmationText);
+  const currentTurnStaffMention = normalized.currentTurnTranscript && !customerNameTurnOwnsTranscript && !finalConfirmationOnlyPhrase
     ? await findStaffMentionInText(salon.id, normalized.currentTurnTranscript)
     : undefined;
   const currentTurnAllowsUnmatchedStaff =
     Boolean(normalized.currentTurnTranscript) &&
     !customerNameTurnOwnsTranscript &&
+    !finalConfirmationOnlyPhrase &&
     (readStringAttribute(normalized.attributes, ["lastAskedSlot"]) === "staffPreference" ||
       readStringAttribute(normalized.attributes, ["activeDtmfMenu"]) === "staff" ||
       awaitingFinalBookingConfirmation ||
@@ -5481,7 +5516,6 @@ export const createAmazonConnectAIAppointment = async (
   }
 
   let finalConfirmationRequiresStaffSelection = false;
-  const finalConfirmationText = normalized.currentTurnTranscript ?? normalized.transcriptText;
   const finalConfirmationOutcome = awaitingFinalBookingConfirmation
     ? classifyFinalBookingConfirmation(finalConfirmationText, {
         hasExplicitStaffChange: Boolean(currentTurnStaffMention)

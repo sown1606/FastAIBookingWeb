@@ -638,6 +638,9 @@ function normalizeScopedStaffCandidatePhrase(text) {
   if (!normalized) {
     return "";
   }
+  if (isFinalConfirmationOnlyPhrase(normalized)) {
+    return "";
+  }
   if (ANY_STAFF_ALIASES.some((alias) => normalized.includes(normalizeForMatch(alias)))) {
     return "any staff";
   }
@@ -1485,6 +1488,9 @@ function isInvalidStaffPreferenceNoise(value, sessionAttributes = {}) {
   if (!normalized) {
     return true;
   }
+  if (isFinalConfirmationOnlyPhrase(normalized)) {
+    return true;
+  }
   if (
     previousStaffHasValidatedIdentity(sessionAttributes) &&
     (normalizeForMatch(sessionAttributes.staffPreference) === normalized ||
@@ -1562,10 +1568,12 @@ function analyzeLexTurnSanitization(event) {
   const customerNameTurnOwnsTranscript =
     previous.lastAskedSlot === "customerName" &&
     !(dtmfRouting.accepted && dtmfRouting.route === "staff_menu");
-  const currentTurnStaffMention = customerNameTurnOwnsTranscript
+  const finalConfirmationOnlyPhrase =
+    isFinalBookingConfirmationActive(event) && isFinalConfirmationOnlyPhrase(currentTurnTranscript);
+  const currentTurnStaffMention = customerNameTurnOwnsTranscript || finalConfirmationOnlyPhrase
     ? ""
     : extractStaffFromTranscript(currentTurnTranscript, previous);
-  const currentTurnHasExplicitStaffPhrase = customerNameTurnOwnsTranscript
+  const currentTurnHasExplicitStaffPhrase = customerNameTurnOwnsTranscript || finalConfirmationOnlyPhrase
     ? false
     : hasExplicitStaffPhrase(currentTurnTranscript, previous);
   const previousStaffPreferenceForAnalysis =
@@ -2680,6 +2688,28 @@ function isNegativeUtterance(value) {
   return /^(?:no|nope|not now|no thanks|do not|dont|don t)$/i.test(normalizeForMatch(value));
 }
 
+const FINAL_CONFIRMATION_ONLY_PHRASES = new Set([
+  "yes",
+  "yeah",
+  "yep",
+  "correct",
+  "that s right",
+  "thats right",
+  "that is right",
+  "sounds good",
+  "go ahead",
+  "please go ahead",
+  "book it",
+  "please book it",
+  "confirm it",
+  "proceed",
+  "do it"
+]);
+
+function isFinalConfirmationOnlyPhrase(value) {
+  return FINAL_CONFIRMATION_ONLY_PHRASES.has(normalizeForMatch(value));
+}
+
 const FINAL_CONFIRMATION_OUTCOME = {
   AFFIRMED: "AFFIRMED",
   DENIED: "DENIED",
@@ -2694,6 +2724,9 @@ function classifyFinalBookingConfirmation(value) {
   }
   if (/^(?:ok|okay)$/.test(normalized)) {
     return FINAL_CONFIRMATION_OUTCOME.UNKNOWN;
+  }
+  if (isFinalConfirmationOnlyPhrase(normalized)) {
+    return FINAL_CONFIRMATION_OUTCOME.AFFIRMED;
   }
 
   const hasChangeRequest =

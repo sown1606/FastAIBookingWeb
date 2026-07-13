@@ -3176,6 +3176,117 @@ test("DialogCodeHook natural final confirmations post confirmed booking once", a
   }
 });
 
+test("DialogCodeHook final confirmation-only phrases preserve trusted staff", async () => {
+  const handler = await loadHandler();
+
+  for (const phrase of [
+    "yes",
+    "go ahead",
+    "please go ahead",
+    "book it",
+    "please book it",
+    "confirm it",
+    "sounds good",
+    "that's right",
+    "proceed"
+  ]) {
+    const fetchCalls = installFetchMock((_url, _options, body) =>
+      jsonResponse(
+        successfulBackendPayload({
+          outcome: "BOOKED",
+          appointment: {
+            id: `appointment-${phrase.replace(/\W+/g, "-")}`
+          },
+          lexResponse: {
+            fulfillmentState: "Fulfilled",
+            message: "Booked.",
+            messageContentType: "PlainText",
+            dialogAction: {
+              type: "Close"
+            },
+            sessionAttributes: {
+              customerName: body.customerName,
+              customerPhone: body.customerPhone,
+              serviceName: body.serviceName,
+              requestedDate: body.requestedDate,
+              requestedTime: body.requestedTime,
+              staffPreference: body.staffPreference,
+              staffId: body.staffId,
+              selectedStaffId: body.attributes.selectedStaffId,
+              confirmedStaffId: body.attributes.confirmedStaffId,
+              confirmedStaffName: body.attributes.confirmedStaffName,
+              awaitingFinalBookingConfirmation: "false",
+              bookingConfirmationAsked: "false",
+              forceHumanEscalation: "false",
+              transferToQueue: "false"
+            }
+          }
+        })
+      )
+    );
+
+    const response = await handler(
+      baseEvent({
+        invocationSource: "DialogCodeHook",
+        inputTranscript: phrase,
+        sessionId: `connect-affirm-alex-${phrase.replace(/\W+/g, "-")}`,
+        sessionState: {
+          ...baseEvent().sessionState,
+          sessionAttributes: {
+            salonId: "salon-explicit",
+            CalledNumber: "+18483487681",
+            CustomerEndpointAddress: "+84978634886",
+            AmazonConnectContactId: `connect-affirm-alex-${phrase.replace(/\W+/g, "-")}`,
+            customerName: "Lee",
+            customerPhone: "+84978634886",
+            serviceName: "Full Set",
+            confirmedServiceName: "Full Set",
+            requestedDate: usEasternDate(1),
+            requestedTime: "2 PM",
+            staffPreference: "Alex",
+            staffId: "staff-alex",
+            selectedStaffId: "staff-alex",
+            confirmedStaffName: "Alex",
+            confirmedStaffId: "staff-alex",
+            awaitingFinalBookingConfirmation: "true",
+            bookingConfirmationAsked: "true",
+            lastAskedSlot: "bookingConfirmation",
+            confirmationFingerprint: "trusted-alex-fingerprint"
+          },
+          intent: {
+            ...baseEvent().sessionState.intent,
+            confirmationState: "None",
+            slots: {
+              serviceName: slot("Full Set"),
+              requestedDate: slot("tomorrow"),
+              requestedTime: slot("2 PM"),
+              staffPreference: slot("Alex"),
+              customerName: slot("Lee"),
+              customerPhone: slot("+84978634886")
+            }
+          }
+        }
+      })
+    );
+
+    assert.equal(fetchCalls.length, 1, phrase);
+    assert.equal(fetchCalls[0].body.confirmationState, "Confirmed", phrase);
+    assert.equal(fetchCalls[0].body.currentTurnTranscript, phrase, phrase);
+    assert.equal(fetchCalls[0].body.serviceName, "Full Set", phrase);
+    assert.equal(fetchCalls[0].body.requestedTime, "2 PM", phrase);
+    assert.equal(fetchCalls[0].body.staffPreference, "Alex", phrase);
+    assert.equal(fetchCalls[0].body.staffId, "staff-alex", phrase);
+    assert.equal(fetchCalls[0].body.attributes.selectedStaffId, "staff-alex", phrase);
+    assert.equal(fetchCalls[0].body.attributes.confirmedStaffId, "staff-alex", phrase);
+    assert.equal(fetchCalls[0].body.attributes.confirmedStaffName, "Alex", phrase);
+    assert.notEqual(fetchCalls[0].body.staffPreference, phrase, phrase);
+    assert.notEqual(fetchCalls[0].body.requestedStaff, phrase, phrase);
+    assert.notEqual(fetchCalls[0].body.attributes.discardedStaleStaff, "Alex", phrase);
+    assert.equal(response.sessionState.dialogAction.type, "Close", phrase);
+    assert.doesNotMatch(response.messages[0].content, /technician|didn't find/i, phrase);
+  }
+});
+
 test("DialogCodeHook final confirmation value-only changes route as draft updates", async () => {
   const handler = await loadHandler();
 
@@ -3707,6 +3818,164 @@ test("DialogCodeHook time-only final correction preserves Alex staff identity", 
   assert.notEqual(fetchCalls[0].body.attributes.staffPreference, "Trang");
   assert.equal(response.sessionState.dialogAction.type, "ConfirmIntent");
   assert.equal(response.sessionState.sessionAttributes.staffId, "staff-alex");
+});
+
+test("DialogCodeHook Alex time correction then go ahead books with trusted Alex", async () => {
+  const handler = await loadHandler();
+  const fetchCalls = installFetchMock((_url, _options, body) =>
+    jsonResponse(
+      body.confirmationState === "Confirmed"
+        ? successfulBackendPayload({
+            outcome: "BOOKED",
+            appointment: {
+              id: "appointment-alex-go-ahead"
+            },
+            lexResponse: {
+              fulfillmentState: "Fulfilled",
+              message: "Booked Full Set with Alex.",
+              messageContentType: "PlainText",
+              dialogAction: {
+                type: "Close"
+              },
+              sessionAttributes: {
+                ...body.attributes,
+                bookingOutcome: "BOOKED",
+                staffPreference: body.staffPreference,
+                staffId: body.staffId,
+                selectedStaffId: body.attributes.selectedStaffId,
+                confirmedStaffId: body.attributes.confirmedStaffId,
+                confirmedStaffName: body.attributes.confirmedStaffName,
+                conversationState: "COMPLETE",
+                conversationOutcome: "BOOKED",
+                conversationComplete: "true",
+                awaitingFinalBookingConfirmation: "false",
+                bookingConfirmationAsked: "false"
+              }
+            }
+          })
+        : successfulBackendPayload({
+            outcome: "MISSING_INFO",
+            appointment: null,
+            lexResponse: {
+              fulfillmentState: "InProgress",
+              message: "Lee, just to confirm: Full Set tomorrow at 2 PM with Alex. Is that correct?",
+              messageContentType: "PlainText",
+              dialogAction: {
+                type: "ConfirmIntent"
+              },
+              sessionAttributes: {
+                ...body.attributes,
+                requestedTime: body.requestedTime,
+                staffPreference: "Alex",
+                staffId: "staff-alex",
+                selectedStaffId: "staff-alex",
+                confirmedStaffId: "staff-alex",
+                confirmedStaffName: "Alex",
+                confirmationFingerprint: "new-alex-two-pm",
+                awaitingFinalBookingConfirmation: "true",
+                bookingConfirmationAsked: "true",
+                forceHumanEscalation: "false",
+                transferToQueue: "false"
+              }
+            }
+          })
+    )
+  );
+
+  const correction = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "no change it into two pm",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+84978634886",
+          AmazonConnectContactId: "connect-production-alex-go-ahead",
+          customerName: "Lee",
+          customerPhone: "+84978634886",
+          serviceName: "Full Set",
+          confirmedServiceName: "Full Set",
+          requestedDate: usEasternDate(1),
+          requestedTime: "11 AM",
+          staffPreference: "Alex",
+          staffId: "staff-alex",
+          selectedStaffId: "staff-alex",
+          confirmedStaffName: "Alex",
+          confirmedStaffId: "staff-alex",
+          confirmationFingerprint: "old-alex-eleven-am",
+          awaitingFinalBookingConfirmation: "true",
+          bookingConfirmationAsked: "true",
+          lastAskedSlot: "bookingConfirmation"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          confirmationState: "None",
+          slots: {
+            serviceName: slot("Full Set"),
+            requestedDate: slot("tomorrow"),
+            requestedTime: slot("11 AM"),
+            staffPreference: slot("Alex"),
+            customerName: slot("Lee"),
+            customerPhone: slot("+84978634886")
+          }
+        }
+      }
+    })
+  );
+
+  const correctedAttrs = correction.sessionState.sessionAttributes;
+  assert.equal(fetchCalls[0].body.requestedTime, "2 PM");
+  assert.equal(fetchCalls[0].body.staffPreference, "Alex");
+  assert.equal(fetchCalls[0].body.staffId, "staff-alex");
+  assert.equal(correctedAttrs.staffId, "staff-alex");
+  assert.equal(correction.sessionState.dialogAction.type, "ConfirmIntent");
+
+  const booked = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "go ahead",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          ...correctedAttrs,
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+84978634886",
+          AmazonConnectContactId: "connect-production-alex-go-ahead",
+          customerName: "Lee",
+          customerPhone: "+84978634886",
+          lastAskedSlot: "bookingConfirmation"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          confirmationState: "None",
+          slots: {
+            serviceName: slot("Full Set"),
+            requestedDate: slot("tomorrow"),
+            requestedTime: slot("2 PM"),
+            staffPreference: slot("Alex"),
+            customerName: slot("Lee"),
+            customerPhone: slot("+84978634886")
+          }
+        }
+      }
+    })
+  );
+
+  assert.equal(fetchCalls.length, 2);
+  assert.equal(fetchCalls[1].body.confirmationState, "Confirmed");
+  assert.equal(fetchCalls[1].body.currentTurnTranscript, "go ahead");
+  assert.equal(fetchCalls[1].body.staffPreference, "Alex");
+  assert.equal(fetchCalls[1].body.staffId, "staff-alex");
+  assert.equal(fetchCalls[1].body.attributes.selectedStaffId, "staff-alex");
+  assert.equal(fetchCalls[1].body.attributes.confirmedStaffId, "staff-alex");
+  assert.equal(fetchCalls[1].body.attributes.confirmedStaffName, "Alex");
+  assert.notEqual(fetchCalls[1].body.staffPreference, "go ahead");
+  assert.notEqual(fetchCalls[1].body.attributes.discardedStaleStaff, "Alex");
+  assert.equal(booked.sessionState.dialogAction.type, "Close");
+  assert.doesNotMatch(booked.messages[0].content, /technician|didn't find/i);
 });
 
 test("DialogCodeHook spoken minute correction preserves Alex staff identity", async () => {

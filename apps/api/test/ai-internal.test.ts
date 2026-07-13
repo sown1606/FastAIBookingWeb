@@ -45,9 +45,17 @@ const ids = {
   amy: "10000000-0000-4000-8000-000000000006",
   kelly: "10000000-0000-4000-8000-000000000007",
   kevin: "10000000-0000-4000-8000-000000000008",
+  alex: "10000000-0000-4000-8000-000000000009",
   pedicure: "20000000-0000-4000-8000-000000000001",
+  fullSet: "20000000-0000-4000-8000-000000000004",
   kietCustomer: "30000000-0000-4000-8000-000000000001"
 };
+
+const MOCK_BLOCKING_APPOINTMENT_STATUSES = new Set<AppointmentStatus>([
+  AppointmentStatus.SCHEDULED,
+  AppointmentStatus.CONFIRMED,
+  AppointmentStatus.IN_PROGRESS
+]);
 
 const patch = (target: Record<string, unknown>, key: string, value: unknown) => {
   patches.push({ target, key, original: target[key] });
@@ -500,13 +508,14 @@ const setupPrismaMock = () => {
       state.validationStaffIds.push(args.where.staffId);
     }
     if (args?.where?.staffId && args?.where?.startTime?.lt && args?.where?.endTime?.gt) {
+      const statusFilter = args.where.status?.in as AppointmentStatus[] | undefined;
       const overlapping = state.appointments.find((appointment) => {
         const excludedId = args.where.id?.not;
         return (
           appointment.salonId === args.where.salonId &&
           appointment.staffId === args.where.staffId &&
           appointment.id !== excludedId &&
-          appointment.status !== AppointmentStatus.CANCELED &&
+          (statusFilter ? statusFilter.includes(appointment.status) : MOCK_BLOCKING_APPOINTMENT_STATUSES.has(appointment.status)) &&
           appointment.startTime < args.where.startTime.lt &&
           appointment.endTime > args.where.endTime.gt
         );
@@ -916,6 +925,31 @@ const addKevinStaff = () => {
     ].map((serviceId) => ({
       salonId: ids.salonA,
       staffId: ids.kevin,
+      serviceId
+    }))
+  );
+};
+
+const addAlexStaff = (options: { mapFullSet?: boolean } = {}) => {
+  const mapFullSet = options.mapFullSet ?? true;
+  state.staff.push({
+    id: ids.alex,
+    salonId: ids.salonA,
+    fullName: "Alex",
+    status: StaffStatus.ACTIVE,
+    isBookable: true,
+    createdAt: new Date("2026-01-05T00:00:00.000Z")
+  });
+  state.staffServiceMappings?.push(
+    ...[
+      "20000000-0000-4000-8000-000000000000",
+      ids.pedicure,
+      "20000000-0000-4000-8000-000000000003",
+      ...(mapFullSet ? [ids.fullSet] : []),
+      "20000000-0000-4000-8000-000000000005"
+    ].map((serviceId) => ({
+      salonId: ids.salonA,
+      staffId: ids.alex,
       serviceId
     }))
   );
@@ -3306,6 +3340,94 @@ test("natural final confirmations create or return one appointment for the conta
   }
 });
 
+test("final confirmation-only phrases preserve trusted Alex and book exactly once", async () => {
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+
+  for (const phrase of [
+    "yes",
+    "go ahead",
+    "please go ahead",
+    "book it",
+    "please book it",
+    "confirm it",
+    "sounds good",
+    "that's right",
+    "proceed"
+  ]) {
+    resetMockState();
+    addAlexStaff();
+    const contactId = `connect-final-alex-${phrase.replace(/\W+/g, "-")}`;
+    const confirmation = await postInternalAppointment(
+      bookingPayload({
+        serviceName: "Full Set",
+        requestedDate,
+        requestedTime: "2 PM",
+        staffPreference: "Alex",
+        staffId: ids.alex,
+        confirmationState: undefined,
+        amazonConnectContactId: contactId,
+        amazonConnectPhoneNumber: "+18483487681",
+        calledNumber: "+18483487681",
+        currentTurnTranscript: "Full Set tomorrow at 2 PM with Alex",
+        transcript: "Full Set tomorrow at 2 PM with Alex",
+        attributes: {
+          AmazonConnectContactId: contactId,
+          CustomerEndpointAddress: "+17325956266",
+          customerPhone: "+17325956266"
+        }
+      })
+    );
+    const attrs = confirmation.body.data.lexResponse.sessionAttributes;
+    assert.equal(confirmation.body.data.lexResponse.dialogAction.type, "ConfirmIntent", phrase);
+    assert.equal(attrs.staffPreference, "Alex", phrase);
+    assert.equal(attrs.staffId, ids.alex, phrase);
+    assert.equal(attrs.selectedStaffId, ids.alex, phrase);
+    assert.equal(attrs.confirmedStaffId, ids.alex, phrase);
+    assert.equal(attrs.confirmedStaffName, "Alex", phrase);
+
+    const payload = bookingPayload({
+      serviceName: "Full Set",
+      requestedDate: attrs.requestedDate,
+      requestedTime: attrs.requestedTime,
+      staffPreference: attrs.staffPreference,
+      staffId: attrs.staffId,
+      confirmationState: "None",
+      amazonConnectContactId: contactId,
+      amazonConnectPhoneNumber: "+18483487681",
+      calledNumber: "+18483487681",
+      currentTurnTranscript: phrase,
+      transcript: phrase,
+      attributes: {
+        ...attrs,
+        AmazonConnectContactId: contactId,
+        CustomerEndpointAddress: "+17325956266",
+        currentTurnTranscript: phrase
+      }
+    });
+    const first = await postInternalAppointment(payload);
+    const second = await postInternalAppointment(payload);
+
+    assert.equal(first.response.status, 201, phrase);
+    assert.equal(second.response.status, 201, phrase);
+    assert.equal(first.body.data.outcome, "BOOKED", phrase);
+    assert.equal(second.body.data.outcome, "BOOKED", phrase);
+    assert.equal(first.body.data.appointment.id, second.body.data.appointment.id, phrase);
+    assert.equal(state.appointments.length, 1, phrase);
+    assert.equal(state.appointments[0].staffId, ids.alex, phrase);
+    assert.equal(state.bookingAttempts.filter((attempt) => attempt.status === BookingAttemptStatus.SUCCESS).length, 1, phrase);
+    assert.equal(state.aiInteractionLogs.length, 1, phrase);
+    assert.ok(state.validationStaffIds.length >= 1, phrase);
+    assert.ok(state.validationStaffIds.every((staffId) => staffId === ids.alex), phrase);
+    assert.equal(first.body.data.lexResponse.sessionAttributes.staffPreference, "Alex", phrase);
+    assert.equal(first.body.data.lexResponse.sessionAttributes.staffId, ids.alex, phrase);
+    assert.equal(first.body.data.lexResponse.sessionAttributes.selectedStaffId, ids.alex, phrase);
+    assert.equal(first.body.data.lexResponse.sessionAttributes.confirmedStaffId, ids.alex, phrase);
+    assert.equal(first.body.data.lexResponse.sessionAttributes.confirmedStaffName, "Alex", phrase);
+    assert.doesNotMatch(first.body.data.lexResponse.message, /technician|didn't find/i, phrase);
+    assert.notEqual(first.body.data.lexResponse.sessionAttributes.staffPreference, phrase, phrase);
+  }
+});
+
 test("denied final confirmations do not create appointments and preserve booking slots", async () => {
   const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
 
@@ -3568,6 +3690,150 @@ test("business hours are explained before staff availability", async () => {
   assert.doesNotMatch(result.body.data.lexResponse.message, /Kelly is not available/i);
   assert.equal(result.body.data.lexResponse.sessionAttributes.awaitingAlternativeSelection, "false");
   assert.equal(state.appointments.length, 0);
+});
+
+test("specific Alex conflict reports overlap and does not create another appointment", async () => {
+  addAlexStaff();
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  const start = DateTime.fromISO(`${requestedDate}T14:00:00`, { zone: "America/New_York" }).toUTC();
+  state.appointments.push({
+    id: "existing-alex-overlap",
+    salonId: ids.salonA,
+    customerId: ids.kietCustomer,
+    staffId: ids.alex,
+    serviceId: ids.fullSet,
+    startTime: start.toJSDate(),
+    endTime: start.plus({ minutes: 100 }).toJSDate(),
+    status: AppointmentStatus.CONFIRMED,
+    source: AppointmentSource.DASHBOARD
+  });
+
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Full Set",
+      requestedDate,
+      requestedTime: "2 PM",
+      staffPreference: "Alex",
+      staffId: ids.alex,
+      confirmationState: undefined,
+      amazonConnectContactId: "connect-alex-overlap"
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "NO_AVAILABILITY");
+  assert.equal(state.appointments.length, 1);
+  assert.equal(state.validationStaffIds[0], ids.alex);
+  assert.match(state.bookingAttempts[0].failureReason, /overlaps with an existing booking/i);
+  assert.equal(state.bookingAttempts[0].status, BookingAttemptStatus.NO_AVAILABILITY);
+  assert.equal(state.bookingAttempts[0].appointmentId, undefined);
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "requestedTime");
+});
+
+test("canceled Alex overlap does not block booking", async () => {
+  addAlexStaff();
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  const start = DateTime.fromISO(`${requestedDate}T14:00:00`, { zone: "America/New_York" }).toUTC();
+  state.appointments.push({
+    id: "canceled-alex-overlap",
+    salonId: ids.salonA,
+    customerId: ids.kietCustomer,
+    staffId: ids.alex,
+    serviceId: ids.fullSet,
+    startTime: start.toJSDate(),
+    endTime: start.plus({ minutes: 100 }).toJSDate(),
+    status: AppointmentStatus.CANCELED,
+    source: AppointmentSource.DASHBOARD
+  });
+  const contactId = "connect-alex-canceled-overlap";
+  const confirmation = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Full Set",
+      requestedDate,
+      requestedTime: "2 PM",
+      staffPreference: "Alex",
+      staffId: ids.alex,
+      confirmationState: undefined,
+      amazonConnectContactId: contactId
+    })
+  );
+  assert.equal(confirmation.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+
+  const booked = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Full Set",
+      requestedDate,
+      requestedTime: "2 PM",
+      staffPreference: "Alex",
+      staffId: ids.alex,
+      confirmationState: "None",
+      amazonConnectContactId: contactId,
+      currentTurnTranscript: "go ahead",
+      transcript: "go ahead",
+      attributes: confirmation.body.data.lexResponse.sessionAttributes
+    })
+  );
+
+  assert.equal(booked.response.status, 201);
+  assert.equal(booked.body.data.outcome, "BOOKED");
+  assert.equal(state.appointments.length, 2);
+  assert.equal(state.appointments[1].staffId, ids.alex);
+  assert.equal(state.appointments[1].status, AppointmentStatus.SCHEDULED);
+  assert.ok(state.validationStaffIds.every((staffId) => staffId === ids.alex));
+});
+
+test("Alex not mapped to Full Set asks for another staff instead of saying busy", async () => {
+  addAlexStaff({ mapFullSet: false });
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Full Set",
+      requestedDate,
+      requestedTime: "2 PM",
+      staffPreference: "Alex",
+      staffId: ids.alex,
+      confirmationState: undefined,
+      amazonConnectContactId: "connect-alex-not-mapped"
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "staffPreference");
+  assert.match(state.bookingAttempts[0].failureReason, /STAFF_NOT_MAPPED/i);
+  assert.match(result.body.data.lexResponse.message, /doesn't provide Full Set/i);
+  assert.doesNotMatch(result.body.data.lexResponse.message, /busy|not available/i);
+  assert.equal(state.appointments.length, 0);
+  assert.equal(state.validationStaffIds.length, 0);
+});
+
+test("Alex outside business hours reports business hours instead of staff busy", async () => {
+  addAlexStaff();
+  state.businessHours = state.businessHours.map((hour) => ({
+    ...hour,
+    isOpen: true,
+    openTime: "09:00",
+    closeTime: "12:00"
+  }));
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Full Set",
+      requestedDate,
+      requestedTime: "2 PM",
+      staffPreference: "Alex",
+      staffId: ids.alex,
+      confirmationState: undefined,
+      amazonConnectContactId: "connect-alex-outside-hours"
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "NO_AVAILABILITY");
+  assert.match(state.bookingAttempts[0].failureReason, /outside business hours/i);
+  assert.doesNotMatch(result.body.data.lexResponse.message, /Alex is not available/i);
+  assert.equal(state.appointments.length, 0);
+  assert.equal(state.validationStaffIds.length, 0);
 });
 
 test("alternative rejection clears the old offer instead of repeating it", async () => {
@@ -4023,6 +4289,88 @@ test("time-only final correction preserves non-first Kevin staff identity", asyn
   assert.equal(attrs.confirmedStaffName, "Kevin");
   assert.notEqual(attrs.confirmationFingerprint, "old-kevin-two-pm");
   assert.equal(state.appointments.length, 0);
+});
+
+test("production Alex time correction then go ahead keeps Alex through booking", async () => {
+  addAlexStaff();
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  const contactId = "connect-production-alex-time-go-ahead";
+  const correction = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Full Set",
+      requestedDate,
+      requestedTime: "11 AM",
+      staffPreference: "Alex",
+      staffId: ids.alex,
+      confirmationState: "None",
+      amazonConnectContactId: contactId,
+      amazonConnectPhoneNumber: "+18483487681",
+      calledNumber: "+18483487681",
+      currentTurnTranscript: "no change it into two pm",
+      transcript: "no change it into two pm",
+      attributes: {
+        lastAskedSlot: "bookingConfirmation",
+        awaitingFinalBookingConfirmation: "true",
+        bookingConfirmationAsked: "true",
+        serviceName: "Full Set",
+        confirmedServiceName: "Full Set",
+        requestedDate,
+        requestedTime: "11 AM",
+        staffPreference: "Alex",
+        staffId: ids.alex,
+        selectedStaffId: ids.alex,
+        confirmedStaffId: ids.alex,
+        confirmedStaffName: "Alex",
+        customerName: "Lee",
+        customerPhone: "+17325956266",
+        confirmationFingerprint: "old-alex-eleven-am"
+      }
+    })
+  );
+  const attrs = correction.body.data.lexResponse.sessionAttributes;
+
+  assert.equal(correction.response.status, 200);
+  assert.equal(correction.body.data.outcome, "MISSING_INFO");
+  assert.equal(correction.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(attrs.requestedTime, "14:00");
+  assert.equal(attrs.staffPreference, "Alex");
+  assert.equal(attrs.staffId, ids.alex);
+  assert.equal(attrs.selectedStaffId, ids.alex);
+  assert.equal(attrs.confirmedStaffId, ids.alex);
+  assert.equal(attrs.confirmedStaffName, "Alex");
+  assert.equal(state.appointments.length, 0);
+
+  const booked = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Full Set",
+      requestedDate: attrs.requestedDate,
+      requestedTime: attrs.requestedTime,
+      staffPreference: attrs.staffPreference,
+      staffId: attrs.staffId,
+      confirmationState: "None",
+      amazonConnectContactId: contactId,
+      amazonConnectPhoneNumber: "+18483487681",
+      calledNumber: "+18483487681",
+      currentTurnTranscript: "go ahead",
+      transcript: "go ahead",
+      attributes: {
+        ...attrs,
+        currentTurnTranscript: "go ahead"
+      }
+    })
+  );
+
+  assert.equal(booked.response.status, 201);
+  assert.equal(booked.body.data.outcome, "BOOKED");
+  assert.equal(booked.body.data.lexResponse.sessionAttributes.staffPreference, "Alex");
+  assert.equal(booked.body.data.lexResponse.sessionAttributes.staffId, ids.alex);
+  assert.equal(booked.body.data.lexResponse.sessionAttributes.selectedStaffId, ids.alex);
+  assert.equal(booked.body.data.lexResponse.sessionAttributes.confirmedStaffId, ids.alex);
+  assert.equal(booked.body.data.lexResponse.sessionAttributes.confirmedStaffName, "Alex");
+  assert.equal(state.appointments.length, 1);
+  assert.equal(state.appointments[0].staffId, ids.alex);
+  assert.ok(state.validationStaffIds.every((staffId) => staffId === ids.alex));
+  assert.doesNotMatch(booked.body.data.lexResponse.message, /technician|didn't find/i);
 });
 
 test("spoken minute final correction preserves Kevin and exact minutes", async () => {
