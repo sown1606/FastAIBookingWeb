@@ -15,6 +15,7 @@ import {
 import { app } from "../src/app";
 import { prisma } from "../src/db/prisma";
 import { signAccessToken } from "../src/lib/jwt";
+import { setAdminDebugProviderTraceEnricherForTest } from "../src/modules/admin/admin-debug-export.service";
 
 type Patch = {
   target: Record<string, unknown>;
@@ -58,6 +59,7 @@ const patch = (target: Record<string, unknown>, key: string, value: unknown) => 
 };
 
 const restorePatches = () => {
+  setAdminDebugProviderTraceEnricherForTest(null);
   while (patches.length) {
     const item = patches.pop()!;
     item.target[item.key] = item.original;
@@ -313,6 +315,33 @@ const buildHeavyAiInteraction = () => {
     },
     sessionAttributesBefore,
     sessionAttributesAfter,
+    turnStateDiagnostics: index === 0
+      ? {
+          lastAskedSlot: "serviceName",
+          slotToElicit: "serviceName",
+          activeDtmfMenu: "service",
+          activeDtmfOptionsJson: JSON.stringify({ "1": "Pedicure", "2": "Manicure", "0": "__operator__" }),
+          serviceRecognitionFailureCount: "1",
+          excludedStaffIds: ["staff-trang"],
+          excludedStaffNames: ["Trang"],
+          awaitingFinalBookingConfirmation: "false",
+          conversationState: "CONTINUE",
+          conversationOutcome: "NEEDS_INPUT",
+          conversationComplete: "false",
+          transferToQueue: "false",
+          outerRecoveryAttempt: "true",
+          connectRecoveryStage: "initial_lex_error",
+          asrDiagnostics: {
+            topTranscript: "fifty kill",
+            nBestAlternatives: [
+              { transcript: "fifty kill", confidence: 0.61 },
+              { transcript: "pedicure", confidence: 0.57 }
+            ],
+            confidence: 0.61,
+            inputMode: "Speech"
+          }
+        }
+      : undefined,
     activeDtmfMenuBefore: index % 2 === 0 ? "service" : "staff",
     activeDtmfMenuAfter: index % 2 === 0 ? "staff" : "time",
     ignoredUngroundedSlots: ["randomColor"],
@@ -1161,4 +1190,130 @@ test("gpt export omits heavy payloads, dedupes adjacent transcripts, and stays s
   assert.equal(record.bookingAttempts[0].appointment.appointmentServices, undefined);
   assert.doesNotMatch(serialized, /requestPayload|responsePayload|sessionAttributesBefore|sessionAttributesAfter|rawInput|lexTurnDebug|sourceMetadata/);
   assert.ok(Buffer.byteLength(serialized, "utf8") < 400_000);
+});
+
+test("gpt export includes compact provider contacts and provider-only window matches", async () => {
+  const state = setupAdminDebugMocks();
+  const inProgressCall = buildCall({
+    id: ids.heavyCall,
+    providerCallId: "heavy-contact-15",
+    transcriptId: ids.heavyTranscript,
+    bookingAttemptId: ids.heavyBooking,
+    appointmentId: ids.heavyAppointment,
+    aiInteractions: [buildHeavyAiInteraction()]
+  });
+  inProgressCall.status = CallSessionStatus.IN_PROGRESS;
+  (inProgressCall as any).endedAt = null;
+  state.calls.push(inProgressCall);
+  state.aiInteractions.push(inProgressCall.aiInteractions[0]);
+  setAdminDebugProviderTraceEnricherForTest(async () => ({
+    contacts: [
+      {
+        contactId: "heavy-contact-15",
+        applicationSessionFound: true,
+        initialContactId: "heavy-contact-15",
+        relatedContactIds: [],
+        initiatedAt: "2026-07-14T09:09:17.603Z",
+        disconnectedAt: "2026-07-14T09:11:49.020Z",
+        disconnectReason: "CUSTOMER_DISCONNECT",
+        initiationMethod: "INBOUND",
+        queue: null,
+        agent: null,
+        contactAttributes: {
+          connectRecoveryStage: "initial",
+          conversationComplete: "false"
+        },
+        associatedFlowId: "dcccf542-587c-426c-a644-a4c6f24da6e4",
+        associatedFlowArn: "arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/contact-flow/dcccf542-587c-426c-a644-a4c6f24da6e4",
+        flowVersion: 42,
+        flowStatus: "PUBLISHED",
+        flowState: "ACTIVE",
+        lexBotId: "KHMIXGA2US",
+        lexAliasId: "JVIPIZDYE3",
+        lambdaInvoked: true
+      }
+    ],
+    providerOnlyContacts: [
+      {
+        contactId: "provider-only-greeting",
+        applicationSessionFound: false,
+        initiatedAt: "2026-07-14T09:03:50.542Z",
+        disconnectedAt: "2026-07-14T09:04:02.341Z",
+        disconnectReason: "FLOW_DISCONNECT",
+        initiationMethod: "INBOUND",
+        associatedFlowId: "dcccf542-587c-426c-a644-a4c6f24da6e4",
+        lexBotId: "KHMIXGA2US",
+        lexAliasId: "JVIPIZDYE3",
+        lambdaInvoked: false
+      }
+    ],
+    limitations: []
+  }));
+
+  const response = await requestJson("/api/v1/admin/calls/debug-export", {
+    ids: [ids.heavyCall],
+    mode: "gpt"
+  });
+  const record = response.body.data.records[0];
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.data.schemaVersion, 2);
+  assert.equal(response.body.data.coverage.providerContactFound, true);
+  assert.equal(response.body.data.providerOnlyContacts[0].applicationSessionFound, false);
+  assert.equal(response.body.data.providerOnlyContacts[0].contactId, "provider-only-greeting");
+  assert.equal(record.coverage.applicationSessionFound, true);
+  assert.equal(record.providerContacts[0].disconnectReason, "CUSTOMER_DISCONNECT");
+  assert.equal(record.providerContacts[0].disconnectedAt, "2026-07-14T09:11:49.020Z");
+  assert.match(record.warnings.join(" "), /not finalized/i);
+});
+
+test("gpt export includes compact turn exclusion state and ASR alternatives", async () => {
+  const state = setupAdminDebugMocks();
+  const heavyInteraction = buildHeavyAiInteraction();
+  const heavyCall = buildCall({
+    id: ids.heavyCall,
+    providerCallId: "heavy-contact-15",
+    transcriptId: ids.heavyTranscript,
+    bookingAttemptId: ids.heavyBooking,
+    appointmentId: ids.heavyAppointment,
+    aiInteractions: [heavyInteraction]
+  });
+  state.calls.push(heavyCall);
+  state.aiInteractions.push(heavyInteraction);
+
+  const response = await requestJson("/api/v1/admin/calls/debug-export", {
+    ids: [ids.heavyCall],
+    mode: "gpt"
+  });
+  const firstTurn = response.body.data.records[0].turnHistories[0];
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(firstTurn.turnStateSnapshot.excludedStaffIds, ["staff-trang"]);
+  assert.deepEqual(firstTurn.turnStateSnapshot.excludedStaffNames, ["Trang"]);
+  assert.equal(firstTurn.turnStateSnapshot.serviceRecognitionFailureCount, "1");
+  assert.equal(firstTurn.asrDiagnostics.topTranscript, "fifty kill");
+  assert.deepEqual(firstTurn.asrDiagnostics.nBestAlternatives[1], {
+    transcript: "pedicure",
+    confidence: 0.57
+  });
+});
+
+test("AI and call GPT exports advertise canonical deduplication", async () => {
+  setupAdminDebugMocks();
+
+  const callResponse = await requestJson("/api/v1/admin/calls/debug-export", {
+    ids: [ids.call1],
+    mode: "gpt"
+  });
+  const aiResponse = await requestJson("/api/v1/admin/ai-logs/debug-export", {
+    ids: [ids.ai1, ids.ai2],
+    mode: "gpt"
+  });
+
+  assert.equal(callResponse.status, 200);
+  assert.equal(aiResponse.status, 200);
+  assert.match(callResponse.body.data.canonicalDeduplicationNote, /one canonical call record/i);
+  assert.match(aiResponse.body.data.canonicalDeduplicationNote, /one canonical call record/i);
+  assert.equal(aiResponse.body.data.recordCount, 1);
+  assert.equal(aiResponse.body.data.deduplicatedCount, 1);
 });

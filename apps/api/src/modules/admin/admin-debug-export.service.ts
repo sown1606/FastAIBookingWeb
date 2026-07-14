@@ -1,4 +1,13 @@
-import { Prisma } from "@prisma/client";
+import {
+  ConnectClient,
+  DescribeContactCommand,
+  DescribeContactFlowCommand,
+  GetContactAttributesCommand,
+  ListFlowAssociationsCommand,
+  SearchContactsCommand
+} from "@aws-sdk/client-connect";
+import { ExternalProvider, Prisma } from "@prisma/client";
+import { env } from "../../config/env";
 import { prisma } from "../../db/prisma";
 import { logger } from "../../lib/logger";
 import { buildAdminDebugTimelineItems } from "../ai/ai.service";
@@ -515,6 +524,59 @@ export interface AdminDebugExportResult {
   timings: AdminDebugExportTimings;
 }
 
+type ProviderContactSummary = {
+  contactId: string;
+  applicationSessionFound: boolean;
+  initialContactId?: string | null;
+  relatedContactIds?: string[];
+  initiatedAt?: string | null;
+  disconnectedAt?: string | null;
+  disconnectReason?: string | null;
+  initiationMethod?: string | null;
+  queue?: Record<string, unknown> | null;
+  agent?: Record<string, unknown> | null;
+  contactAttributes?: Record<string, unknown> | null;
+  associatedFlowId?: string | null;
+  associatedFlowArn?: string | null;
+  flowVersion?: number | null;
+  flowStatus?: string | null;
+  flowState?: string | null;
+  lexAliasArn?: string | null;
+  lexBotId?: string | null;
+  lexAliasId?: string | null;
+  lexVersion?: string | null;
+  lambdaInvoked?: boolean;
+  providerTraceUnavailableReason?: string | null;
+};
+
+type ProviderTraceEnrichment = {
+  contacts: ProviderContactSummary[];
+  providerOnlyContacts: ProviderContactSummary[];
+  providerTraceUnavailableReason?: string | null;
+  limitations?: string[];
+};
+
+type ProviderTraceRecordInput = {
+  contactIds: string[];
+  applicationContactIds: Set<string>;
+  callerPhone?: string | null;
+  calledNumbers: string[];
+  startedAt?: unknown;
+  endedAt?: unknown;
+};
+
+type ProviderTraceEnricher = (
+  records: ProviderTraceRecordInput[]
+) => Promise<ProviderTraceEnrichment>;
+
+let providerTraceEnricherForTest: ProviderTraceEnricher | null = null;
+
+export const setAdminDebugProviderTraceEnricherForTest = (
+  enricher: ProviderTraceEnricher | null
+) => {
+  providerTraceEnricherForTest = enricher;
+};
+
 const compactValues = (values: unknown[]): string[] =>
   Array.from(
     new Set(
@@ -523,6 +585,164 @@ const compactValues = (values: unknown[]): string[] =>
         .map((value) => value.trim())
     )
   );
+
+const normalizePhoneDigits = (value: unknown): string =>
+  typeof value === "string" ? value.replace(/\D/g, "") : "";
+
+const valuesOverlapByPhoneDigits = (left: unknown[], right: unknown[]): boolean => {
+  const rightDigits = new Set(right.map(normalizePhoneDigits).filter(Boolean));
+  return left.map(normalizePhoneDigits).filter(Boolean).some((value) => rightDigits.has(value));
+};
+
+const jsonStringToRecord = (value: unknown): Record<string, unknown> => {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  if (typeof value !== "string" || !value.trim()) {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(value);
+    return readRecord(parsed);
+  } catch {
+    return {};
+  }
+};
+
+const maybeParseJsonValue = (value: unknown): unknown => {
+  if (typeof value !== "string" || !value.trim()) {
+    return value;
+  }
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+};
+
+const toIsoOrNull = (value: unknown): string | null => {
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  if (typeof value === "string" && value.trim()) {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  }
+  return null;
+};
+
+const withTimeout = async <T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  label: string
+): Promise<T> =>
+  new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out`)), timeoutMs);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
+
+const mapWithConcurrency = async <T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T) => Promise<R>
+): Promise<R[]> => {
+  const results: R[] = [];
+  let nextIndex = 0;
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      results[currentIndex] = await mapper(items[currentIndex]);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+};
+
+const readCompactContactAttributes = (
+  attributes: Record<string, string> | undefined
+): Record<string, unknown> | null => {
+  const source = attributes ?? {};
+  const keys = [
+    "connectRecoveryStage",
+    "connectLastErrorBranch",
+    "connectFlowSourceVersion",
+    "outerRecoveryAttempt",
+    "conversationState",
+    "conversationOutcome",
+    "conversationComplete",
+    "transferToQueue",
+    "callSessionId",
+    "amazonConnectContactId",
+    "AmazonConnectContactId",
+    "InitialContactId",
+    "CallerId",
+    "CustomerEndpointAddress",
+    "SystemEndpointAddress",
+    "CalledNumber",
+    "calledNumber"
+  ];
+  const compact = Object.fromEntries(
+    keys
+      .map((key) => [key, source[key]] as const)
+      .filter(([, value]) => value !== undefined && value !== "")
+  );
+  return Object.keys(compact).length ? compact : null;
+};
+
+const readLexAliasSummaryFromFlowContent = (
+  content: string | undefined
+): Pick<ProviderContactSummary, "lexAliasArn" | "lexBotId" | "lexAliasId" | "lexVersion"> => {
+  if (!content) {
+    return {};
+  }
+  try {
+    const flow = JSON.parse(content);
+    const action = Array.isArray(flow.Actions)
+      ? flow.Actions.find((item: Record<string, unknown>) => item.Type === "ConnectParticipantWithLexBot")
+      : null;
+    const aliasArn = readNestedValue(action, ["Parameters", "LexV2Bot", "AliasArn"]);
+    if (typeof aliasArn !== "string" || !aliasArn.trim()) {
+      return {};
+    }
+    const match = aliasArn.match(/bot-alias\/([^/]+)\/([^/]+)$/);
+    return {
+      lexAliasArn: aliasArn,
+      lexBotId: match?.[1] ?? null,
+      lexAliasId: match?.[2] ?? null,
+      lexVersion: null
+    };
+  } catch {
+    return {};
+  }
+};
+
+const compactQueueInfo = (value: unknown): Record<string, unknown> | null => {
+  const record = readRecord(value);
+  const compact = {
+    id: record.Id,
+    enqueueTimestamp: toIsoOrNull(record.EnqueueTimestamp)
+  };
+  return Object.values(compact).some((item) => item !== undefined && item !== null) ? compact : null;
+};
+
+const compactAgentInfo = (value: unknown): Record<string, unknown> | null => {
+  const record = readRecord(value);
+  const compact = {
+    id: record.Id,
+    connectedToAgentTimestamp: toIsoOrNull(record.ConnectedToAgentTimestamp)
+  };
+  return Object.values(compact).some((item) => item !== undefined && item !== null) ? compact : null;
+};
 
 const readNestedRecord = (value: unknown, key: string): Record<string, unknown> =>
   readRecord(readRecord(value)[key]);
@@ -546,6 +766,251 @@ const readAIInteractionContactIds = (interaction: Pick<
     requestAttributes.contactId,
     readNestedValue(responsePayload, ["lexTurnDebug", "contactId"])
   ]);
+};
+
+const getConfiguredProviderFlowSummary = async (
+  client: ConnectClient,
+  instanceId: string
+) => {
+  const flowId = env.AMAZON_CONNECT_CONTACT_FLOW_ID_AI_RECEPTION ?? env.AMAZON_CONNECT_CONTACT_FLOW_ID;
+  const phoneNumberId = env.AMAZON_CONNECT_PHONE_NUMBER_ID;
+  const summary: Pick<
+    ProviderContactSummary,
+    "associatedFlowId" | "associatedFlowArn" | "flowVersion" | "flowStatus" | "flowState" | "lexAliasArn" | "lexBotId" | "lexAliasId" | "lexVersion"
+  > = {
+    associatedFlowId: flowId ?? null,
+    associatedFlowArn: flowId
+      ? `arn:aws:connect:${env.AWS_REGION ?? env.AWS_DEFAULT_REGION ?? "us-east-1"}:*:instance/${instanceId}/contact-flow/${flowId}`
+      : null
+  };
+
+  try {
+    if (phoneNumberId) {
+      const association = await withTimeout(
+        client.send(
+          new ListFlowAssociationsCommand({
+            InstanceId: instanceId,
+            ResourceType: "VOICE_PHONE_NUMBER"
+          })
+        ),
+        3_000,
+        "ListFlowAssociations"
+      );
+      const resourceIdSuffix = `phone-number/${phoneNumberId}`;
+      const activeAssociation = association.FlowAssociationSummaryList?.find((item) =>
+        item.ResourceId?.endsWith(resourceIdSuffix)
+      );
+      if (activeAssociation?.FlowId) {
+        summary.associatedFlowArn = activeAssociation.FlowId;
+        summary.associatedFlowId = activeAssociation.FlowId.split("/").pop() ?? activeAssociation.FlowId;
+      }
+    }
+  } catch {
+    // Flow association is best-effort for debug export.
+  }
+
+  const associatedFlowId = summary.associatedFlowId ?? flowId;
+  if (associatedFlowId) {
+    try {
+      const flow = await withTimeout(
+        client.send(
+          new DescribeContactFlowCommand({
+            InstanceId: instanceId,
+            ContactFlowId: associatedFlowId
+          })
+        ),
+        3_000,
+        "DescribeContactFlow"
+      );
+      summary.associatedFlowId = flow.ContactFlow?.Id ?? summary.associatedFlowId ?? null;
+      summary.associatedFlowArn = flow.ContactFlow?.Arn ?? summary.associatedFlowArn ?? null;
+      summary.flowVersion = flow.ContactFlow?.Version ?? null;
+      summary.flowStatus = flow.ContactFlow?.Status ?? null;
+      summary.flowState = flow.ContactFlow?.State ?? null;
+      Object.assign(summary, readLexAliasSummaryFromFlowContent(flow.ContactFlow?.Content));
+    } catch {
+      // Keep the association values when flow content is unavailable.
+    }
+  }
+
+  return summary;
+};
+
+const describeProviderContact = async (input: {
+  client: ConnectClient;
+  instanceId: string;
+  contactId: string;
+  applicationSessionFound: boolean;
+  lambdaInvoked: boolean;
+  flowSummary: Partial<ProviderContactSummary>;
+}): Promise<ProviderContactSummary> => {
+  try {
+    const [contactResult, attributesResult] = await Promise.all([
+      withTimeout(
+        input.client.send(
+          new DescribeContactCommand({
+            InstanceId: input.instanceId,
+            ContactId: input.contactId
+          })
+        ),
+        3_000,
+        "DescribeContact"
+      ),
+      withTimeout(
+        input.client.send(
+          new GetContactAttributesCommand({
+            InstanceId: input.instanceId,
+            InitialContactId: input.contactId
+          })
+        ),
+        3_000,
+        "GetContactAttributes"
+      ).catch(() => ({ Attributes: undefined }))
+    ]);
+    const contact = contactResult.Contact;
+    const relatedContactIds = compactValues([
+      contact?.PreviousContactId,
+      contact?.ContactAssociationId
+    ]);
+    return {
+      contactId: contact?.Id ?? input.contactId,
+      applicationSessionFound: input.applicationSessionFound,
+      initialContactId: contact?.InitialContactId ?? null,
+      relatedContactIds,
+      initiatedAt: toIsoOrNull(contact?.InitiationTimestamp),
+      disconnectedAt: toIsoOrNull(contact?.DisconnectTimestamp),
+      disconnectReason: contact?.DisconnectReason ?? null,
+      initiationMethod: contact?.InitiationMethod ?? null,
+      queue: compactQueueInfo(contact?.QueueInfo),
+      agent: compactAgentInfo(contact?.AgentInfo),
+      contactAttributes: readCompactContactAttributes(attributesResult.Attributes),
+      associatedFlowId: input.flowSummary.associatedFlowId ?? null,
+      associatedFlowArn: input.flowSummary.associatedFlowArn ?? null,
+      flowVersion: input.flowSummary.flowVersion ?? null,
+      flowStatus: input.flowSummary.flowStatus ?? null,
+      flowState: input.flowSummary.flowState ?? null,
+      lexAliasArn: input.flowSummary.lexAliasArn ?? null,
+      lexBotId: input.flowSummary.lexBotId ?? null,
+      lexAliasId: input.flowSummary.lexAliasId ?? null,
+      lexVersion: input.flowSummary.lexVersion ?? null,
+      lambdaInvoked: input.lambdaInvoked
+    };
+  } catch (error) {
+    return {
+      contactId: input.contactId,
+      applicationSessionFound: input.applicationSessionFound,
+      providerTraceUnavailableReason: error instanceof Error ? error.message : String(error),
+      lambdaInvoked: input.lambdaInvoked
+    };
+  }
+};
+
+const defaultProviderTraceEnricher: ProviderTraceEnricher = async (records) => {
+  const instanceId = env.AMAZON_CONNECT_INSTANCE_ID;
+  if (!instanceId) {
+    return {
+      contacts: [],
+      providerOnlyContacts: [],
+      providerTraceUnavailableReason: "AMAZON_CONNECT_INSTANCE_ID is not configured",
+      limitations: ["Amazon Connect enrichment skipped"]
+    };
+  }
+  if (process.env.NODE_ENV === "test") {
+    return {
+      contacts: [],
+      providerOnlyContacts: [],
+      providerTraceUnavailableReason: "Amazon Connect enrichment disabled in tests",
+      limitations: ["Use setAdminDebugProviderTraceEnricherForTest for provider trace tests"]
+    };
+  }
+
+  try {
+    const client = new ConnectClient({
+      region: env.AWS_REGION ?? env.AWS_DEFAULT_REGION ?? "us-east-1"
+    });
+    const flowSummary = await getConfiguredProviderFlowSummary(client, instanceId);
+    const appContactIds = new Set(records.flatMap((record) => Array.from(record.applicationContactIds)));
+    const selectedContactIds = compactValues(records.flatMap((record) => record.contactIds)).slice(0, 20);
+
+    const described = await mapWithConcurrency(selectedContactIds, 4, (contactId) =>
+      describeProviderContact({
+        client,
+        instanceId,
+        contactId,
+        applicationSessionFound: appContactIds.has(contactId),
+        lambdaInvoked: appContactIds.has(contactId),
+        flowSummary
+      })
+    );
+
+    const startTimes = records.map((record) => toIsoOrNull(record.startedAt)).filter((value): value is string => Boolean(value));
+    const endTimes = records
+      .map((record) => toIsoOrNull(record.endedAt) ?? toIsoOrNull(record.startedAt))
+      .filter((value): value is string => Boolean(value));
+    const providerOnlyContacts: ProviderContactSummary[] = [];
+    if (startTimes.length && endTimes.length) {
+      const startMs = Math.min(...startTimes.map((value) => new Date(value).getTime())) - 2 * 60_000;
+      const endMs = Math.max(...endTimes.map((value) => new Date(value).getTime())) + 2 * 60_000;
+      const boundedEndMs = Math.min(endMs, startMs + 35 * 60_000);
+      const search = await withTimeout(
+        client.send(
+          new SearchContactsCommand({
+            InstanceId: instanceId,
+            TimeRange: {
+              Type: "INITIATION_TIMESTAMP",
+              StartTime: new Date(startMs),
+              EndTime: new Date(boundedEndMs)
+            },
+            SearchCriteria: {
+              Channels: ["VOICE"],
+              InitiationMethods: ["INBOUND"]
+            },
+            MaxResults: 50
+          })
+        ),
+        5_000,
+        "SearchContacts"
+      );
+      const searchedContactIds = compactValues((search.Contacts ?? []).map((contact) => contact.Id));
+      const unseenContactIds = searchedContactIds.filter((contactId) => !appContactIds.has(contactId));
+      const candidates = await mapWithConcurrency(unseenContactIds.slice(0, 20), 4, (contactId) =>
+        describeProviderContact({
+          client,
+          instanceId,
+          contactId,
+          applicationSessionFound: false,
+          lambdaInvoked: false,
+          flowSummary
+        })
+      );
+      for (const candidate of candidates) {
+        const attrs = readRecord(candidate.contactAttributes);
+        const callerValues = [attrs.CallerId, attrs.CustomerEndpointAddress];
+        const calledValues = [attrs.SystemEndpointAddress, attrs.CalledNumber, attrs.calledNumber];
+        const matchingRecord = records.find(
+          (record) =>
+            valuesOverlapByPhoneDigits(callerValues, [record.callerPhone]) &&
+            valuesOverlapByPhoneDigits(calledValues, record.calledNumbers)
+        );
+        if (matchingRecord) {
+          providerOnlyContacts.push(candidate);
+        }
+      }
+    }
+
+    return {
+      contacts: described,
+      providerOnlyContacts,
+      limitations: []
+    };
+  } catch (error) {
+    return {
+      contacts: [],
+      providerOnlyContacts: [],
+      providerTraceUnavailableReason: error instanceof Error ? error.message : String(error),
+      limitations: ["Amazon Connect trace enrichment failed"]
+    };
+  }
 };
 
 const getAIInteractionCallSessionId = (interaction: AIInteractionDebugSource): string | null =>
@@ -853,7 +1318,82 @@ const summarizeEscalationsForGpt = (records: CallDebugSession["callEscalations"]
   records: records.map(summarizeEscalationForGpt)
 });
 
+const compactAsrDiagnosticsForGpt = (value: unknown) => {
+  const parsed = maybeParseJsonValue(value);
+  const record = readRecord(parsed);
+  const alternatives = Array.isArray(record.nBestAlternatives)
+    ? record.nBestAlternatives
+        .map((item) => {
+          const itemRecord = readRecord(item);
+          const transcript =
+            typeof item === "string"
+              ? item
+              : typeof itemRecord.transcript === "string"
+                ? itemRecord.transcript
+                : typeof itemRecord.transcription === "string"
+                  ? itemRecord.transcription
+                  : null;
+          if (!transcript) {
+            return null;
+          }
+          const confidence = itemRecord.confidence ?? itemRecord.score;
+          return {
+            transcript,
+            confidence: typeof confidence === "number" ? confidence : undefined
+          };
+        })
+        .filter(Boolean)
+        .slice(0, 5)
+    : undefined;
+  const compact = {
+    topTranscript: record.topTranscript,
+    nBestAlternatives: alternatives,
+    confidence: record.confidence,
+    inputMode: record.inputMode
+  };
+  return Object.values(compact).some((item) => item !== undefined) ? compact : null;
+};
+
+const readStateValue = (
+  diagnostics: Record<string, unknown>,
+  sessionAttributes: Record<string, unknown>,
+  key: string
+) => diagnostics[key] ?? sessionAttributes[key];
+
+const buildCompactTurnStateSnapshot = (turn: Record<string, unknown>) => {
+  const diagnostics = readRecord(turn.turnStateDiagnostics);
+  const sessionAttributes = readRecord(turn.sessionAttributesAfter);
+  const activeOptions = readStateValue(diagnostics, sessionAttributes, "activeDtmfOptionsJson");
+  const snapshot = {
+    lastAskedSlot: turn.lastAskedSlotAfter ?? sessionAttributes.lastAskedSlot,
+    slotToElicit: turn.slotToElicit,
+    dialogAction: turn.dialogAction,
+    activeDtmfMenu: turn.activeDtmfMenuAfter ?? sessionAttributes.activeDtmfMenu,
+    activeDtmfOptionsJson:
+      typeof activeOptions === "string" ? activeOptions : undefined,
+    serviceRecognitionFailureCount: readStateValue(diagnostics, sessionAttributes, "serviceRecognitionFailureCount"),
+    staffRecognitionFailureCount: readStateValue(diagnostics, sessionAttributes, "staffRecognitionFailureCount"),
+    excludedStaffIds: readStateValue(diagnostics, sessionAttributes, "excludedStaffIds"),
+    excludedStaffNames: readStateValue(diagnostics, sessionAttributes, "excludedStaffNames"),
+    awaitingFinalBookingConfirmation: readStateValue(diagnostics, sessionAttributes, "awaitingFinalBookingConfirmation"),
+    conversationState: readStateValue(diagnostics, sessionAttributes, "conversationState"),
+    conversationOutcome: readStateValue(diagnostics, sessionAttributes, "conversationOutcome"),
+    conversationComplete: readStateValue(diagnostics, sessionAttributes, "conversationComplete"),
+    transferToQueue: readStateValue(diagnostics, sessionAttributes, "transferToQueue"),
+    outerRecoveryAttempt: readStateValue(diagnostics, sessionAttributes, "outerRecoveryAttempt"),
+    connectRecoveryStage: readStateValue(diagnostics, sessionAttributes, "connectRecoveryStage")
+  };
+  return Object.fromEntries(
+    Object.entries(snapshot).filter(([, value]) => value !== undefined && value !== null)
+  );
+};
+
 const normalizeTurnForGpt = (turn: Record<string, unknown>) => {
+  const turnStateSnapshot = buildCompactTurnStateSnapshot(turn);
+  const asrDiagnostics = compactAsrDiagnosticsForGpt(
+    readRecord(turn.turnStateDiagnostics).asrDiagnostics ??
+      readRecord(turn.sessionAttributesAfter).asrDiagnostics
+  );
   const item: Record<string, unknown> = {
     index: turn.index,
     timestamp: isoStringOrNull(turn.createdAt),
@@ -867,7 +1407,9 @@ const normalizeTurnForGpt = (turn: Record<string, unknown>) => {
     trustedSlotsBefore: null,
     trustedSlotsAfter: null,
     dtmfRoute: readRecord(turn.dtmfRouting).route ?? null,
-    missingFields: turn.missingFields ?? null
+    missingFields: turn.missingFields ?? null,
+    turnStateSnapshot: Object.keys(turnStateSnapshot).length ? turnStateSnapshot : null,
+    asrDiagnostics
   };
   writeRecordIfPresent(item, "slotDecisions", turn.slotDecisions);
   writeRecordIfPresent(item, "trustedSlotsBefore", turn.trustedSlotsBefore);
@@ -912,6 +1454,102 @@ const buildGptCallSummary = (call: CallDebugSession) => ({
   failureReason: call.failureReason,
   finalResolution: call.finalResolution
 });
+
+const getCalledNumbersForCall = (call: CallDebugSession): string[] =>
+  compactValues([
+    call.dialedPhone,
+    call.trackingNumber,
+    call.originalPhoneNumber
+  ]);
+
+const buildProviderTraceRecordInputsForCalls = (
+  calls: CallDebugSession[]
+): ProviderTraceRecordInput[] =>
+  calls
+    .filter((call) => call.provider === ExternalProvider.AMAZON_CONNECT)
+    .map((call) => {
+      const contactIds = readCallContactIds(call);
+      return {
+        contactIds,
+        applicationContactIds: new Set(contactIds),
+        callerPhone: call.callerPhone,
+        calledNumbers: getCalledNumbersForCall(call),
+        startedAt: call.startedAt,
+        endedAt: call.endedAt
+      };
+    });
+
+const summarizeProviderCoverage = (input: {
+  records: Record<string, unknown>[];
+  providerTrace?: ProviderTraceEnrichment;
+}) => {
+  const providerContacts = input.providerTrace?.contacts ?? [];
+  const providerOnlyContacts = input.providerTrace?.providerOnlyContacts ?? [];
+  const limitations = [
+    ...(input.providerTrace?.limitations ?? []),
+    ...(input.providerTrace?.providerTraceUnavailableReason
+      ? [input.providerTrace.providerTraceUnavailableReason]
+      : [])
+  ];
+  return {
+    applicationSessionFound: input.records.some((record) => Boolean(record.call)),
+    providerContactFound: providerContacts.length > 0 || providerOnlyContacts.length > 0,
+    providerTraceFound: !input.providerTrace?.providerTraceUnavailableReason,
+    limitations
+  };
+};
+
+const applyProviderTraceToGptRecords = async (
+  records: Record<string, unknown>[],
+  calls: CallDebugSession[]
+): Promise<ProviderTraceEnrichment> => {
+  if (!records.length) {
+    return {
+      contacts: [],
+      providerOnlyContacts: [],
+      limitations: ["No records selected"]
+    };
+  }
+  const inputs = buildProviderTraceRecordInputsForCalls(calls);
+  if (!inputs.length) {
+    return {
+      contacts: [],
+      providerOnlyContacts: [],
+      limitations: ["No Amazon Connect call sessions selected"]
+    };
+  }
+  const enrichment = await (providerTraceEnricherForTest ?? defaultProviderTraceEnricher)(inputs);
+  const providerContactsById = new Map(enrichment.contacts.map((contact) => [contact.contactId, contact]));
+
+  for (const record of records) {
+    const contactIds = Array.isArray(record.contactIds)
+      ? record.contactIds.filter((value): value is string => typeof value === "string")
+      : [];
+    const providerContacts = contactIds
+      .map((contactId) => providerContactsById.get(contactId))
+      .filter((contact): contact is ProviderContactSummary => Boolean(contact));
+    const call = readRecord(record.call);
+    const warnings = [
+      ...(Array.isArray(record.warnings) ? record.warnings : []),
+      ...(call.status === "IN_PROGRESS" || !call.endedAt
+        ? ["Application call session is not finalized; provider timestamps are authoritative when present."]
+        : [])
+    ];
+    Object.assign(record, {
+      coverage: {
+        applicationSessionFound: Boolean(record.call),
+        providerContactFound: providerContacts.length > 0,
+        providerTraceFound: providerContacts.length > 0 && !enrichment.providerTraceUnavailableReason,
+        limitations: enrichment.providerTraceUnavailableReason ? [enrichment.providerTraceUnavailableReason] : []
+      },
+      providerContacts,
+      providerTraceUnavailableReason: enrichment.providerTraceUnavailableReason ?? undefined,
+      warnings
+    });
+  }
+
+  return enrichment;
+};
 
 const buildGptCallDebugRecord = (
   call: CallDebugSession,
@@ -1132,7 +1770,7 @@ export const getCallsDebugExportForAdmin = async (
   const databaseDurationMs = elapsedMs(databaseStartedAt);
   const buildStartedAt = process.hrtime.bigint();
   const byId = new Map(calls.map((call) => [call.id, call]));
-  const records = requestedIds
+  const records = (requestedIds
     .map((id) => byId.get(id))
     .filter((call): call is CallDebugSession => Boolean(call))
     .map((call) =>
@@ -1140,7 +1778,11 @@ export const getCallsDebugExportForAdmin = async (
         sourcePage: "call_logs",
         selectedCallSessionIds: [call.id]
       })
-    );
+    ) as Record<string, unknown>[]);
+  const providerTrace =
+    mode === "gpt"
+      ? await applyProviderTraceToGptRecords(records, calls)
+      : undefined;
   const buildDurationMs = elapsedMs(buildStartedAt);
 
   const bundle = sanitizeDebugJsonValue({
@@ -1149,10 +1791,14 @@ export const getCallsDebugExportForAdmin = async (
     exportType: "multi_call_debug",
     exportMode: mode,
     requestedCount: ids.length,
-    recordCount: records.length,
+	    recordCount: records.length,
 	    deduplicatedCount: ids.length - requestedIds.length,
 	    notFoundIds: requestedIds.filter((id) => !byId.has(id)),
 	    omittedDuplicateFields: mode === "gpt" ? GPT_OMITTED_DUPLICATE_FIELDS : OMITTED_DUPLICATE_FIELDS,
+	    canonicalDeduplicationNote:
+	      "Call Logs and AI Logs debug exports use one canonical call record when selections resolve to the same calls.",
+	    coverage: mode === "gpt" ? summarizeProviderCoverage({ records, providerTrace }) : undefined,
+	    providerOnlyContacts: mode === "gpt" ? providerTrace?.providerOnlyContacts ?? [] : undefined,
 	    records
 	  }) as Record<string, unknown>;
 
@@ -1263,7 +1909,7 @@ export const getAIInteractionsDebugExportForAdmin = async (
     dedupKeys.forEach((key) => planByIdentityKey.set(key, nextPlan));
   }
 
-  const records = plans.map((plan) =>
+  const records = (plans.map((plan) =>
     plan.callSession
       ? buildCanonicalCallDebugRecord(plan.callSession, exportedAt, mode, {
           sourcePage: "ai_logs",
@@ -1273,7 +1919,14 @@ export const getAIInteractionsDebugExportForAdmin = async (
           sourcePage: "ai_logs",
           selectedAiInteractionIds: plan.selectedAiInteractionIds
         })
-  );
+  ) as Record<string, unknown>[]);
+  const providerTrace =
+    mode === "gpt"
+      ? await applyProviderTraceToGptRecords(
+          records,
+          plans.map((plan) => plan.callSession).filter((call): call is CallDebugSession => Boolean(call))
+        )
+      : undefined;
   const buildDurationMs = elapsedMs(buildStartedAt);
 
   const bundle = sanitizeDebugJsonValue({
@@ -1286,6 +1939,10 @@ export const getAIInteractionsDebugExportForAdmin = async (
 	    deduplicatedCount,
 	    notFoundIds: requestedIds.filter((id) => !selectedById.has(id)),
 	    omittedDuplicateFields: mode === "gpt" ? GPT_OMITTED_DUPLICATE_FIELDS : OMITTED_DUPLICATE_FIELDS,
+	    canonicalDeduplicationNote:
+	      "Call Logs and AI Logs debug exports use one canonical call record when selections resolve to the same calls.",
+	    coverage: mode === "gpt" ? summarizeProviderCoverage({ records, providerTrace }) : undefined,
+	    providerOnlyContacts: mode === "gpt" ? providerTrace?.providerOnlyContacts ?? [] : undefined,
 	    records
 	  }) as Record<string, unknown>;
 

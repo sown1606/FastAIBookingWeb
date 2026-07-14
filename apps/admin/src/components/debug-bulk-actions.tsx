@@ -40,6 +40,7 @@ export const DebugBulkActions = ({
         {busy ? <span>{t("debugBulk.preparing", { count: selectedCount })}</span> : null}
         {!busy && totalVisible > 0 ? <span>{t("debugBulk.visibleCount", { count: totalVisible })}</span> : null}
         <span>{t("debugBulk.shiftHint")}</span>
+        <span>{t("debugBulk.canonicalNote")}</span>
       </div>
       <div className="bulk-debug-toolbar__actions">
         <button

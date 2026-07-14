@@ -507,14 +507,20 @@ test("Connect AI reception has one reachable greeting and no outer service promp
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedTime"], "1600");
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference"], "1600");
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:customerName"], "2000");
+  assert.equal(primary.Parameters.LexSessionAttributes.connectRecoveryStage, "initial");
+  assert.equal(primary.Parameters.LexSessionAttributes.connectFlowSourceVersion, "2026-07-14-thuyet-service-staff-exclusion-disconnect");
   assert.equal(recovery.Parameters.Text, "Please tell me what you need, or press 0 for a person.");
   assert.equal(recovery.Transitions.NextAction, "check-transfer-to-queue");
   assert.equal(recovery.Parameters.LexSessionAttributes.confirmationFingerprint, "$.Lex.SessionAttributes.confirmationFingerprint");
   assert.equal(recovery.Parameters.LexSessionAttributes.aiAlternativeSlots, "$.Lex.SessionAttributes.aiAlternativeSlots");
-  assert.doesNotMatch(JSON.stringify(recovery.Parameters.LexSessionAttributes), /activeDtmfMenu|Pedicure|Full Set/i);
+  assert.equal(recovery.Parameters.LexSessionAttributes.excludedStaffIds, "$.Lex.SessionAttributes.excludedStaffIds");
+  assert.equal(recovery.Parameters.LexSessionAttributes.excludedStaffNames, "$.Lex.SessionAttributes.excludedStaffNames");
+  assert.equal(recovery.Parameters.LexSessionAttributes.activeDtmfMenu, "$.Lex.SessionAttributes.activeDtmfMenu");
   assert.equal(finalRecovery.Type, "ConnectParticipantWithLexBot");
-  assert.match(finalRecovery.Parameters.Text, /say the appointment again, or press 0 for a person/i);
+  assert.match(finalRecovery.Parameters.Text, /Press 0 for a person, or tell me your appointment again/i);
   assert.equal(finalRecovery.Parameters.LexSessionAttributes.outerRecoveryAttempt, "final");
+  assert.equal(finalRecovery.Parameters.LexSessionAttributes.excludedStaffIds, "$.Lex.SessionAttributes.excludedStaffIds");
+  assert.equal(finalRecovery.Parameters.LexSessionAttributes.excludedStaffNames, "$.Lex.SessionAttributes.excludedStaffNames");
   assert.doesNotMatch(finalRecovery.Parameters.Text, /next prompt/i);
 });
 
@@ -537,15 +543,20 @@ test("Connect AI reception routes only explicit complete conversations to goodby
   assert.equal(completeCheck.Parameters.ComparisonValue, "$.Lex.SessionAttributes.conversationComplete");
   assert.equal(completeCheck.Transitions.NextAction, "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d");
   assert.equal(completeCheck.Transitions.Conditions[0].NextAction, "67ada978-600a-4d39-9965-6230c52810a9");
-  assert.equal(primary.Transitions.Errors[0].NextAction, "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d");
-  assert.equal(recovery.Transitions.Errors[0].NextAction, "41e3f239-5b57-4363-92fc-9d594579fa98");
-  assert.equal(recovery.Transitions.Errors[1].NextAction, "41e3f239-5b57-4363-92fc-9d594579fa98");
+  assert.equal(primary.Transitions.Errors[0].NextAction, "set-recovery-stage-initial-error");
+  assert.equal(primary.Transitions.Errors[1].NextAction, "set-recovery-stage-initial-error");
+  assert.equal(actionsById.get(primary.Transitions.Errors[0].NextAction).Transitions.NextAction, "initial-lex-error-message");
+  assert.equal(actionsById.get("initial-lex-error-message").Transitions.NextAction, "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d");
+  assert.equal(recovery.Transitions.Errors[0].NextAction, "set-recovery-stage-retry-error");
+  assert.equal(recovery.Transitions.Errors[1].NextAction, "set-recovery-stage-retry-error");
+  assert.equal(actionsById.get(recovery.Transitions.Errors[0].NextAction).Transitions.NextAction, "retry-lex-error-message");
+  assert.equal(actionsById.get("retry-lex-error-message").Transitions.NextAction, "41e3f239-5b57-4363-92fc-9d594579fa98");
   assert.notEqual(recovery.Transitions.Errors[0].NextAction, "67ada978-600a-4d39-9965-6230c52810a9");
   assert.notEqual(recovery.Transitions.Errors[1].NextAction, "67ada978-600a-4d39-9965-6230c52810a9");
   assert.equal(finalRecovery.Type, "ConnectParticipantWithLexBot");
   assert.equal(finalRecovery.Transitions.NextAction, "check-transfer-to-queue");
-  assert.equal(finalRecovery.Transitions.Errors[0].NextAction, "67ada978-600a-4d39-9965-6230c52810a9");
-  assert.equal(finalRecovery.Transitions.Errors[1].NextAction, "67ada978-600a-4d39-9965-6230c52810a9");
+  assert.equal(finalRecovery.Transitions.Errors[0].NextAction, "final-recovery-goodbye");
+  assert.equal(finalRecovery.Transitions.Errors[1].NextAction, "final-recovery-goodbye");
   assert.ok(
     recovery.Transitions.Conditions.some((condition) =>
       condition.Condition.Operands.includes("FallbackIntent")
@@ -568,11 +579,19 @@ test("Connect AI reception recovery paths do not immediately disconnect after gr
   const finalRecovery = actionsById.get("41e3f239-5b57-4363-92fc-9d594579fa98");
 
   for (const error of primary.Transitions.Errors) {
-    assert.equal(actionsById.get(error.NextAction)?.Type, "ConnectParticipantWithLexBot");
+    const setRecovery = actionsById.get(error.NextAction);
+    const message = actionsById.get(setRecovery?.Transitions?.NextAction);
+    assert.equal(setRecovery?.Type, "UpdateContactAttributes");
+    assert.equal(message?.Type, "MessageParticipant");
+    assert.match(message?.Parameters?.Text || "", /trouble hearing/i);
     assert.notEqual(actionsById.get(error.NextAction)?.Type, "DisconnectParticipant");
   }
   for (const error of recovery.Transitions.Errors) {
-    assert.equal(actionsById.get(error.NextAction)?.Type, "ConnectParticipantWithLexBot");
+    const setRecovery = actionsById.get(error.NextAction);
+    const message = actionsById.get(setRecovery?.Transitions?.NextAction);
+    assert.equal(setRecovery?.Type, "UpdateContactAttributes");
+    assert.equal(message?.Type, "MessageParticipant");
+    assert.match(message?.Parameters?.Text || "", /still having trouble/i);
   }
   for (const error of finalRecovery.Transitions.Errors) {
     const action = actionsById.get(error.NextAction);
@@ -619,6 +638,53 @@ test("Connect AI reception routes operator transfer only through explicit transf
       );
     }
   }
+});
+
+test("Connect AI reception disconnects only after an explicit audible goodbye", () => {
+  const aiReceptionFlow = JSON.parse(
+    readFileSync(path.join(connectRoot, "ai-reception.json"), "utf8")
+  );
+  const { actionsById, reachable } = collectReachableActions(aiReceptionFlow);
+
+  for (const id of reachable) {
+    const action = actionsById.get(id);
+    for (const targetId of [
+      action?.Transitions?.NextAction,
+      ...(action?.Transitions?.Conditions || []).map((condition) => condition.NextAction),
+      ...(action?.Transitions?.Errors || []).map((error) => error.NextAction)
+    ].filter(Boolean)) {
+      const target = actionsById.get(targetId);
+      if (target?.Type !== "DisconnectParticipant") {
+        continue;
+      }
+      assert.equal(action.Type, "MessageParticipant", `${id} must play goodbye before disconnect`);
+      assert.match(action.Parameters?.Text || "", /goodbye/i, `${id} goodbye text`);
+    }
+  }
+});
+
+test("Connect AI reception missing fields and no-match paths stay nonterminal", () => {
+  const aiReceptionFlow = JSON.parse(
+    readFileSync(path.join(connectRoot, "ai-reception.json"), "utf8")
+  );
+  const { actionsById } = collectReachableActions(aiReceptionFlow);
+  const completeCheck = actionsById.get("check-conversation-complete");
+  const initialMessage = actionsById.get("initial-lex-error-message");
+  const retryMessage = actionsById.get("retry-lex-error-message");
+
+  assert.equal(completeCheck.Transitions.NextAction, "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d");
+  assert.notEqual(actionsById.get(completeCheck.Transitions.NextAction)?.Type, "DisconnectParticipant");
+  assert.equal(initialMessage.Type, "MessageParticipant");
+  assert.notEqual(actionsById.get(initialMessage.Transitions.NextAction)?.Type, "DisconnectParticipant");
+  assert.equal(retryMessage.Type, "MessageParticipant");
+  assert.notEqual(actionsById.get(retryMessage.Transitions.NextAction)?.Type, "DisconnectParticipant");
+});
+
+test("Connect source contract keeps production phone number on AI reception flow", () => {
+  const dotenv = readFileSync(path.join(repoRoot, ".env"), "utf8");
+  assert.match(dotenv, /AMAZON_CONNECT_PHONE_NUMBER=\+18483487681/);
+  assert.match(dotenv, /AMAZON_CONNECT_PHONE_NUMBER_ID=f2e36faa-5264-4955-8a18-e2f53755c102/);
+  assert.match(dotenv, /AMAZON_CONNECT_CONTACT_FLOW_ID_AI_RECEPTION=dcccf542-587c-426c-a644-a4c6f24da6e4/);
 });
 
 test("booking prompts are speech-first and service menu is not the greeting", () => {
@@ -2134,6 +2200,99 @@ test("Fulfillment preserves dynamic service DTMF options from backend", async ()
   assert.equal(response.sessionState.sessionAttributes.staffId, undefined);
 });
 
+test("DialogCodeHook forwards compact ASR alternatives for verified Pedicure ASR correction", async () => {
+  const handler = await loadHandler();
+  const fetchCalls = installFetchMock((_url, _options, body) =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "MISSING_INFO",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "InProgress",
+          message: "Please choose a service. Press 1 for Pedicure, 2 for Manicure, 3 for Full Set, 4 for Dip Powder, or 0 for an operator.",
+          messageContentType: "PlainText",
+          dialogAction: {
+            type: "ElicitSlot",
+            slotToElicit: "serviceName"
+          },
+          sessionAttributes: {
+            activeDtmfMenu: "service",
+            activeDtmfOptionsJson: JSON.stringify({
+              "1": "Pedicure",
+              "2": "Manicure",
+              "3": "Full Set",
+              "4": "Dip Powder",
+              "0": "__operator__"
+            }),
+            serviceDtmfOptions: JSON.stringify({
+              "1": "Pedicure",
+              "2": "Manicure",
+              "3": "Full Set",
+              "4": "Dip Powder"
+            }),
+            serviceDtmfServiceIds: JSON.stringify({
+              "1": "service-pedicure",
+              "2": "service-manicure",
+              "3": "service-full-set",
+              "4": "service-dip-powder"
+            }),
+            serviceRecognitionFailureCount: "1"
+          }
+        },
+        missingFields: ["serviceName"]
+      })
+    )
+  );
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "fifty kill",
+      transcriptions: [
+        { transcription: "fifty kill", transcriptionConfidence: 0.61 },
+        { transcription: "pedicure", transcriptionConfidence: 0.57 }
+      ],
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: "connect-fifty-kill-service",
+          lastAskedSlot: "serviceName",
+          customerName: "Kiet Nguyen",
+          customerPhone: "7325956266",
+          requestedDate: usEasternDate(0),
+          requestedTime: "11 AM"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          confirmationState: "None",
+          slots: {
+            serviceName: slotWith({
+              originalValue: "fifty kill",
+              interpretedValue: "fifty kill",
+              resolvedValues: ["fifty kill"]
+            }),
+            requestedDate: slot("today"),
+            requestedTime: slot("11 AM")
+          }
+        }
+      }
+    })
+  );
+
+  const asrDiagnostics = JSON.parse(fetchCalls[0].body.attributes.asrDiagnostics);
+  assert.equal(fetchCalls.length, 1);
+  assert.equal(fetchCalls[0].body.serviceName, "Pedicure");
+  assert.equal(asrDiagnostics.topTranscript, "fifty kill");
+  assert.equal(asrDiagnostics.nBestAlternatives[1].transcript, "pedicure");
+  assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "staffPreference");
+  assert.equal(response.sessionState.sessionAttributes.activeDtmfMenu, "staff");
+  assert.equal(JSON.parse(response.sessionState.sessionAttributes.serviceDtmfOptions)["1"], "Pedicure");
+});
+
 test("Fulfillment backend missing service does not ask service after Full Set confirmed", async () => {
   const handler = await loadHandler();
   installFetchMock(() =>
@@ -2346,6 +2505,70 @@ test("DialogCodeHook maps service DTMF 4 to Full Set and preserves it for name a
   assert.equal(dateResponse.sessionState.sessionAttributes.requestedTime, "3 PM");
   assert.notEqual(dateResponse.sessionState.sessionAttributes.transferToQueue, "true");
   assert.notEqual(dateResponse.sessionState.sessionAttributes.forceHumanEscalation, "true");
+});
+
+test("DialogCodeHook production service DTMF 1 selects Pedicure and preserves known fields", async () => {
+  const handler = await loadHandler();
+  globalThis.fetch = async () => {
+    throw new Error("fetch should not be called for local Pedicure DTMF recovery");
+  };
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "1",
+      inputMode: "DTMF",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: "connect-service-dtmf-1",
+          lastAskedSlot: "serviceName",
+          activeDtmfMenu: "service",
+          activeDtmfOptionsJson: JSON.stringify({
+            "0": "__operator__",
+            "1": "Pedicure",
+            "2": "Manicure",
+            "3": "Full Set",
+            "4": "Dip Powder"
+          }),
+          serviceDtmfOptions: JSON.stringify({
+            "1": "Pedicure",
+            "2": "Manicure",
+            "3": "Full Set",
+            "4": "Dip Powder"
+          }),
+          serviceDtmfServiceIds: JSON.stringify({
+            "1": "service-pedicure",
+            "2": "service-manicure",
+            "3": "service-full-set",
+            "4": "service-dip-powder"
+          }),
+          customerName: "Kiet Nguyen",
+          customerPhone: "7325956266",
+          requestedDate: usEasternDate(0),
+          requestedTime: "11 AM",
+          staffPreference: "Amy",
+          staffId: "staff-amy",
+          confirmedStaffName: "Amy"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          slots: {}
+        }
+      }
+    })
+  );
+
+  assert.equal(response.sessionState.sessionAttributes.serviceName, "Pedicure");
+  assert.equal(response.sessionState.sessionAttributes.confirmedServiceName, "Pedicure");
+  assert.equal(response.sessionState.sessionAttributes.serviceId, "service-pedicure");
+  assert.equal(response.sessionState.sessionAttributes.requestedDate, usEasternDate(0));
+  assert.equal(response.sessionState.sessionAttributes.requestedTime, "11 AM");
+  assert.equal(response.sessionState.sessionAttributes.staffPreference, "Amy");
+  assert.notEqual(response.sessionState.sessionAttributes.transferToQueue, "true");
 });
 
 test("DialogCodeHook scopes polluted ViberOut service DTMF 4 to serviceName only", async () => {
@@ -4968,6 +5191,94 @@ test("DialogCodeHook denied final confirmations preserve slots and ask what to c
   }
 });
 
+test("DialogCodeHook final-confirmation another staff preserves selected staff for exclusion parsing", async () => {
+  const handler = await loadHandler();
+  const fetchCalls = installFetchMock((_url, _options, body) =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "MISSING_INFO",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "InProgress",
+          message: "Okay, I'll exclude Amy. I found Kelly available.",
+          messageContentType: "PlainText",
+          dialogAction: {
+            type: "ConfirmIntent"
+          },
+          sessionAttributes: {
+            serviceName: body.serviceName,
+            requestedDate: body.requestedDate,
+            requestedTime: body.requestedTime,
+            staffPreference: "Kelly",
+            staffId: "staff-kelly",
+            selectedStaffId: "staff-kelly",
+            confirmedStaffId: "staff-kelly",
+            excludedStaffIds: JSON.stringify(["staff-trang", "staff-amy"]),
+            excludedStaffNames: JSON.stringify(["trang", "amy"]),
+            awaitingFinalBookingConfirmation: "true",
+            conversationComplete: "false"
+          }
+        }
+      })
+    )
+  );
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "i want another staff",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+84978634886",
+          AmazonConnectContactId: "connect-final-another-staff",
+          customerName: "Jane",
+          customerPhone: "+84978634886",
+          serviceName: "Manicure",
+          confirmedServiceName: "Manicure",
+          requestedDate: usEasternDate(0),
+          requestedTime: "11 AM",
+          staffPreference: "Amy",
+          staffId: "staff-amy",
+          selectedStaffId: "staff-amy",
+          confirmedStaffName: "Amy",
+          confirmedStaffId: "staff-amy",
+          excludedStaffIds: JSON.stringify(["staff-trang"]),
+          excludedStaffNames: JSON.stringify(["trang"]),
+          awaitingFinalBookingConfirmation: "true",
+          bookingConfirmationAsked: "true",
+          lastAskedSlot: "bookingConfirmation"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          confirmationState: "None",
+          slots: {
+            serviceName: slot("Manicure"),
+            requestedDate: slot(usEasternDate(0)),
+            requestedTime: slot("11 AM"),
+            customerName: slot("Jane"),
+            customerPhone: slot("+84978634886")
+          }
+        }
+      }
+    })
+  );
+
+  if (fetchCalls.length > 0) {
+    assert.equal(fetchCalls[0].body.currentTurnTranscript, "i want another staff");
+    assert.equal(fetchCalls[0].body.staffPreference, "Amy");
+    assert.equal(fetchCalls[0].body.staffId, "staff-amy");
+    assert.match(fetchCalls[0].body.attributes.excludedStaffIds, /staff-trang/);
+  }
+  assert.equal(response.sessionState.sessionAttributes.staffPreference, "Amy");
+  assert.equal(response.sessionState.sessionAttributes.staffId, "staff-amy");
+  assert.equal(response.sessionState.sessionAttributes.selectedStaffId, "staff-amy");
+  assert.equal(response.sessionState.sessionAttributes.discardedStaleStaff, undefined);
+  assert.match(response.sessionState.sessionAttributes.excludedStaffIds, /staff-trang/);
+});
+
 test("DialogCodeHook digit 4 at requestedDate does not become time or service", async () => {
   const handler = await loadHandler();
   globalThis.fetch = async () => {
@@ -5993,6 +6304,11 @@ test("DialogCodeHook accepts live Any staff ASR variants only in staff context",
     "any star",
     "first available",
     "first avaiable",
+    "what available",
+    "who available",
+    "one available",
+    "which available",
+    "for available",
     "available"
   ];
 

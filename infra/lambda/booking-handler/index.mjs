@@ -236,6 +236,10 @@ const CONTEXTUAL_ANY_STAFF_ALIASES = [
   "anystop",
   "any stop if i",
   "any stuff",
+  "what available",
+  "who available",
+  "one available",
+  "which available",
   "any stuff is fine",
   "and the staff is fine",
   "and the staff",
@@ -666,10 +670,20 @@ function hasExplicitStaffContextCue(normalizedText, sessionAttributes = {}) {
       sessionAttributes?.activeDtmfMenu === "staff" ||
       /\b(?:with|use|i said|technician|staff|tech)\b/.test(normalizedText) ||
       /\b(?:change|switch)\s+(?:the\s+)?(?:person|staff|technician|tech)\b/.test(normalizedText) ||
-      /\b(?:someone else|different person|different staff|different technician|different tech)\b/.test(
+      /\b(?:someone else|another person|another staff|another stop|another technician|another tech|different person|different staff|different technician|different tech)\b/.test(
         normalizedText
       ) ||
       /\binstead\b/.test(normalizedText)
+  );
+}
+
+function isGenericStaffChangePhrase(normalizedText) {
+  return Boolean(
+    normalizedText &&
+      (/\b(?:change|switch)\s+(?:the\s+)?(?:person|staff|technician|tech)\b/.test(normalizedText) ||
+        /\b(?:someone else|another person|another staff|another stop|another technician|another tech|different person|different staff|different technician|different tech)\b/.test(
+          normalizedText
+        ))
   );
 }
 
@@ -1140,6 +1154,13 @@ function getScopedDtmfDigit(event, expectedSlot) {
 function readScopedDtmfSelection(event, expectedSlot, options) {
   const digit = getScopedDtmfDigit(event, expectedSlot);
   return digit && options[digit] ? options[digit] : "";
+}
+
+function readScopedServiceDtmfId(event) {
+  const digit = getScopedDtmfDigit(event, "serviceName");
+  const previous = event.sessionState?.sessionAttributes || {};
+  const ids = parseDtmfRecord(previous.serviceDtmfServiceIds);
+  return digit && ids[digit] ? ids[digit] : "";
 }
 
 function getCurrentTurnTranscript(event) {
@@ -1860,6 +1881,9 @@ function analyzeLexTurnSanitization(event) {
   const sanitizedSlots = { ...slots };
   const currentTurnTranscript = getCurrentTurnTranscript(event);
   const timeZone = getAttribute(event, attributeNames.timezone) || DEFAULT_SALON_TIMEZONE;
+  const genericFinalConfirmationStaffChange =
+    isFinalBookingConfirmationActive(event) &&
+    isGenericStaffChangePhrase(normalizeForMatch(currentTurnTranscript));
   const currentTurnDetails = getCurrentTurnBookingDetails(event);
   const recognizedService = currentTurnServiceMention(event);
   const serviceAliasCorrectionRaw = getScopedServiceAliasCorrectionRaw(event);
@@ -2127,7 +2151,9 @@ function analyzeLexTurnSanitization(event) {
     )
   ) {
     delete sanitizedSlots[staffSlotName];
-    fieldsToClear.add("staffPreference");
+    if (!genericFinalConfirmationStaffChange) {
+      fieldsToClear.add("staffPreference");
+    }
     ignoredPollutedSlots.push(staffSlotName);
     changed = true;
   }
@@ -2174,7 +2200,8 @@ function analyzeLexTurnSanitization(event) {
   if (
     previousStaffPreferenceForAnalysis &&
     currentTurnHasExplicitStaffPhrase &&
-    !currentTurnStaffMention
+    !currentTurnStaffMention &&
+    !genericFinalConfirmationStaffChange
   ) {
     fieldsToClear.add("staffPreference");
     ignoredPollutedSlots.push("sessionAttributes.staffPreference");
@@ -3514,6 +3541,7 @@ function buildKnownBookingSessionAttributes(event) {
     "serviceName",
     getActiveDtmfOptions(previous, "service")
   );
+  const serviceDtmfServiceId = serviceDtmfSelection ? readScopedServiceDtmfId(event) : "";
   const staffDtmfSelection = readScopedStaffDtmfSelection(event);
   const recoveryTranscript =
     serviceDtmfSelection || staffDtmfSelection || currentTurnIsDigitNoise
@@ -3608,6 +3636,7 @@ function buildKnownBookingSessionAttributes(event) {
       recovered.customerPhone ||
       amazonConnectCustomerPhone,
     serviceName: serviceDtmfSelection || currentService || stablePreviousService || knownService || historicalRecoveredService,
+    serviceId: serviceDtmfServiceId || previous.serviceId,
     requestedDate: finalDate,
     requestedTime: finalTime,
     staffPreference:
@@ -4017,6 +4046,7 @@ function buildBookServiceElicitResponse(event) {
 }
 
 function shouldRequestDynamicServiceMenu(event) {
+  const previous = event.sessionState?.sessionAttributes || {};
   const serviceSlot = getKnownField(event, "serviceName", { preferOriginal: true });
   const text = [
     event.inputTranscript,
@@ -4025,7 +4055,15 @@ function shouldRequestDynamicServiceMenu(event) {
   ]
     .filter(Boolean)
     .join(" ");
-  return isUnsupportedServiceRequestPhrase(text) || isServiceMenuRequestPhrase(text);
+  return (
+    isUnsupportedServiceRequestPhrase(text) ||
+    isServiceMenuRequestPhrase(text) ||
+    previous.lastAskedSlot === "serviceName" ||
+    previous.activeDtmfMenu === "service" ||
+    (Boolean(String(text || "").trim()) &&
+      !currentTurnRecognizedService(event) &&
+      isBookingLikeUtterance(text))
+  );
 }
 
 async function buildDynamicServiceElicitResponse(event, intentName) {
@@ -4296,11 +4334,11 @@ function buildLexResponse(event, message, state = "Fulfilled", sessionAttributes
   let nextState = dialogAction.type === "Close" ? state : "InProgress";
   const contentType =
     lexResponse.messageContentType || (String(responseMessage || "").trim().startsWith("<speak>") ? "SSML" : "PlainText");
-  const mergedSessionAttributes = removeIgnoredPollutedFields({
+  const mergedSessionAttributes = clearExcludedStaffSelection(removeIgnoredPollutedFields({
     ...knownAttributes,
     ...sessionAttributes,
     ...(lexResponse.sessionAttributes || {})
-  });
+  }));
   if (dialogAction.type === "ElicitSlot" && dialogAction.slotToElicit) {
     mergedSessionAttributes.lastAskedSlot = dialogAction.slotToElicit;
     mergedSessionAttributes.slotToElicit = dialogAction.slotToElicit;
@@ -4324,10 +4362,10 @@ function buildLexResponse(event, message, state = "Fulfilled", sessionAttributes
     };
     nextState = "InProgress";
   }
-  const responseSessionAttributes = applyActiveDtmfMenuAttributes(
+  const responseSessionAttributes = clearExcludedStaffSelection(applyActiveDtmfMenuAttributes(
     mergedSessionAttributes,
     dialogAction.type === "ElicitSlot" && canElicitSlotInCurrentIntent ? dialogAction.slotToElicit : ""
-  );
+  ));
   const needsCallerInput = responseStillNeedsCallerInput(responseMessage, dialogAction, responseSessionAttributes);
   if (needsCallerInput && dialogAction.type === "Close") {
     dialogAction = {
@@ -4802,6 +4840,8 @@ function buildInternalPayload(event, intentName, extraAttributes = {}) {
       ...extraAttributes,
       currentTurnTranscript,
       aggregatedBookingTranscript: transcript,
+      asrDiagnostics: JSON.stringify(getAsrDiagnostics(event)),
+      asrNBestAlternatives: JSON.stringify(getAsrDiagnostics(event).nBestAlternatives),
       ...(event.lexTurnDebug ? { lexTurnDebug: event.lexTurnDebug } : {})
     }
   };
@@ -4888,6 +4928,47 @@ function removeIgnoredPollutedFields(sessionAttributes = {}) {
   return cleaned;
 }
 
+function parseStringListAttribute(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item).trim()).filter(Boolean);
+  }
+  if (typeof value !== "string" || !value.trim()) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) {
+      return parsed.map((item) => String(item).trim()).filter(Boolean);
+    }
+  } catch {
+    // Fall back to comma-separated attributes.
+  }
+  return value.split(",").map((item) => item.trim()).filter(Boolean);
+}
+
+function clearExcludedStaffSelection(sessionAttributes = {}) {
+  const next = { ...sessionAttributes };
+  const excludedIds = new Set(parseStringListAttribute(next.excludedStaffIds));
+  const excludedNames = new Set(parseStringListAttribute(next.excludedStaffNames).map((name) => normalizeForMatch(name)));
+  const selectedIds = [next.staffId, next.selectedStaffId, next.confirmedStaffId]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+  const selectedNames = [next.staffPreference, next.confirmedStaffName]
+    .map((value) => normalizeForMatch(value))
+    .filter(Boolean);
+  const selectedStaffIsExcluded =
+    selectedIds.some((id) => excludedIds.has(id)) ||
+    selectedNames.some((name) => excludedNames.has(name));
+  if (selectedStaffIsExcluded) {
+    delete next.staffPreference;
+    delete next.confirmedStaffName;
+    delete next.staffId;
+    delete next.selectedStaffId;
+    delete next.confirmedStaffId;
+  }
+  return next;
+}
+
 function applyActiveDtmfMenuAttributes(sessionAttributes = {}, slotName = "") {
   const next = { ...sessionAttributes };
   if (slotName === "serviceName") {
@@ -4970,7 +5051,7 @@ function commitDialogState(response, options = {}) {
     ...response,
     sessionState: {
       ...(response.sessionState || {}),
-      sessionAttributes
+      sessionAttributes: clearExcludedStaffSelection(sessionAttributes)
     }
   };
 }
@@ -4988,6 +5069,76 @@ function redactLogObject(value) {
 
 function getInputMode(event) {
   return event.inputMode || (readDtmfDigit(event.inputTranscript) ? "DTMF" : "Speech");
+}
+
+function getAsrDiagnostics(event) {
+  const alternatives = [];
+  const addAlternative = (candidate) => {
+    if (!candidate || typeof candidate !== "object") {
+      return;
+    }
+    const transcript = String(
+      candidate.transcription ||
+        candidate.transcript ||
+        candidate.inputTranscript ||
+        candidate.text ||
+        ""
+    ).trim();
+    if (!transcript) {
+      return;
+    }
+    const rawConfidence =
+      candidate.confidence ??
+      candidate.transcriptionConfidence ??
+      candidate.nluConfidence?.score ??
+      candidate.score;
+    const confidence =
+      typeof rawConfidence === "number"
+        ? rawConfidence
+        : typeof rawConfidence === "string" && rawConfidence.trim()
+          ? Number(rawConfidence)
+          : undefined;
+    alternatives.push({
+      transcript,
+      ...(Number.isFinite(confidence) ? { confidence } : {})
+    });
+  };
+
+  for (const transcription of event.transcriptions || []) {
+    addAlternative(transcription);
+  }
+  for (const interpretation of event.interpretations || []) {
+    addAlternative({
+      transcription: interpretation?.transcription || interpretation?.inputTranscript,
+      confidence:
+        interpretation?.nluConfidence?.score ??
+        interpretation?.intent?.nluConfidence?.score ??
+        interpretation?.intentConfidence
+    });
+  }
+
+  const seen = new Set();
+  const nBestAlternatives = alternatives
+    .filter((alternative) => {
+      const key = normalizeForMatch(alternative.transcript);
+      if (!key || seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 5);
+  const topTranscript = event.inputTranscript || nBestAlternatives[0]?.transcript || "";
+  const topAlternative = nBestAlternatives.find(
+    (alternative) => normalizeForMatch(alternative.transcript) === normalizeForMatch(topTranscript)
+  ) || nBestAlternatives[0];
+
+  return {
+    topTranscript,
+    nBestAlternatives,
+    confidence: topAlternative?.confidence,
+    inputMode: getInputMode(event)
+  };
 }
 
 function buildLexTurnDebug(event, analysis = {}) {
@@ -5013,6 +5164,7 @@ function buildLexTurnDebug(event, analysis = {}) {
     slotsInterpretedValues: collectSlotInterpretedValues(slots),
     trustedSlotsBefore: collectTrustedBookingSlots(attributesBefore),
     attributesBefore: redactLogObject(attributesBefore),
+    asrDiagnostics: getAsrDiagnostics(event),
     dtmfDiagnostics: analysis.dtmfDiagnostics ?? getCurrentTurnDtmfDiagnostics(event),
     dtmfRouting: analysis.dtmfRouting,
     slotDecisions: buildSlotDecisionDebug(event, knownAfterSanitization),
@@ -5055,6 +5207,7 @@ function logStructuredLexTurn(event, response, analysis = {}) {
     slotsOriginalValues: collectSlotOriginalValues(slots),
     slotsInterpretedValues: collectSlotInterpretedValues(slots),
     scopedDtmfDigit: analysis.scopedDtmfDigit || "",
+    asrDiagnostics: getAsrDiagnostics(event),
     dtmfDiagnostics: analysis.dtmfDiagnostics ?? getCurrentTurnDtmfDiagnostics(event),
     dtmfRouting: analysis.dtmfRouting,
     slotDecisions: buildSlotDecisionDebug(event, sessionAttributesAfter),
@@ -5469,7 +5622,7 @@ async function handleLexEvent(event, analysis = {}) {
     }
 
     if (!shouldEscalate && shouldPromptForServiceFallback(event, intentName)) {
-      return buildBookServiceElicitResponse(event);
+      return await buildDynamicServiceElicitResponse(event, intentName || "BookAppointmentIntent");
     }
 
     if (!shouldEscalate && intentName === "BookAppointmentIntent") {

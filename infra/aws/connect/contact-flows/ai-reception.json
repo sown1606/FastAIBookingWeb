@@ -113,9 +113,23 @@
       },
       "41e3f239-5b57-4363-92fc-9d594579fa98": {
         "position": {
-          "x": 800,
-          "y": 620
-        }
+          "x": 980,
+          "y": 880
+        },
+        "parameters": {
+          "LexV2Bot": {
+            "AliasArn": {
+              "displayName": "prod",
+              "useLexBotDropdown": true,
+              "lexV2BotName": "FastAIBookingBot"
+            }
+          },
+          "Text": "Press 0 for a person, or tell me your appointment again."
+        },
+        "promptName": "Text prompt",
+        "useLexBotDropdown": true,
+        "lexV2BotName": "FastAIBookingBot",
+        "lexV2BotAliasName": "prod"
       },
       "37dbed23-a7c0-4259-a4f5-9be9db2f9c80": {
         "position": {
@@ -139,6 +153,42 @@
         "position": {
           "x": 1040,
           "y": 160
+        }
+      },
+      "transfer-return-goodbye": {
+        "position": {
+          "x": 1180,
+          "y": 260
+        }
+      },
+      "set-recovery-stage-initial-error": {
+        "position": {
+          "x": 520,
+          "y": 640
+        }
+      },
+      "initial-lex-error-message": {
+        "position": {
+          "x": 520,
+          "y": 760
+        }
+      },
+      "set-recovery-stage-retry-error": {
+        "position": {
+          "x": 760,
+          "y": 760
+        }
+      },
+      "retry-lex-error-message": {
+        "position": {
+          "x": 760,
+          "y": 880
+        }
+      },
+      "final-recovery-goodbye": {
+        "position": {
+          "x": 1040,
+          "y": 760
         }
       }
     },
@@ -175,7 +225,7 @@
       "Identifier": "67ada978-600a-4d39-9965-6230c52810a9",
       "Type": "MessageParticipant",
       "Transitions": {
-        "NextAction": "ef8d8054-77ea-40c7-aa4e-800ed784c49c",
+        "NextAction": "transfer-return-goodbye",
         "Errors": [
           {
             "NextAction": "ef8d8054-77ea-40c7-aa4e-800ed784c49c",
@@ -209,7 +259,9 @@
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName": "2200",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedTime": "1600",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference": "1600",
-          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:customerName": "2000"
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:customerName": "2000",
+          "connectRecoveryStage": "initial",
+          "connectFlowSourceVersion": "2026-07-14-thuyet-service-staff-exclusion-disconnect"
         },
         "Text": "Hi, thanks for calling Kiet Nails. What would you like to book? You can say everything in one sentence, or press 0 for a person."
       },
@@ -275,11 +327,11 @@
         ],
         "Errors": [
           {
-            "NextAction": "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d",
+            "NextAction": "set-recovery-stage-initial-error",
             "ErrorType": "NoMatchingCondition"
           },
           {
-            "NextAction": "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d",
+            "NextAction": "set-recovery-stage-initial-error",
             "ErrorType": "NoMatchingError"
           }
         ]
@@ -327,6 +379,8 @@
           "selectedStaffId": "$.Lex.SessionAttributes.selectedStaffId",
           "confirmedStaffId": "$.Lex.SessionAttributes.confirmedStaffId",
           "confirmedStaffName": "$.Lex.SessionAttributes.confirmedStaffName",
+          "excludedStaffIds": "$.Lex.SessionAttributes.excludedStaffIds",
+          "excludedStaffNames": "$.Lex.SessionAttributes.excludedStaffNames",
           "awaitingFinalBookingConfirmation": "$.Lex.SessionAttributes.awaitingFinalBookingConfirmation",
           "bookingConfirmationAsked": "$.Lex.SessionAttributes.bookingConfirmationAsked",
           "confirmationFingerprint": "$.Lex.SessionAttributes.confirmationFingerprint",
@@ -338,7 +392,15 @@
           "anchorRequestedStaff": "$.Lex.SessionAttributes.anchorRequestedStaff",
           "rejectedOptionKeys": "$.Lex.SessionAttributes.rejectedOptionKeys",
           "lastAskedSlot": "$.Lex.SessionAttributes.lastAskedSlot",
-          "outerRecoveryAttempt": "true"
+          "activeDtmfMenu": "$.Lex.SessionAttributes.activeDtmfMenu",
+          "activeDtmfOptionsJson": "$.Lex.SessionAttributes.activeDtmfOptionsJson",
+          "serviceDtmfOptions": "$.Lex.SessionAttributes.serviceDtmfOptions",
+          "serviceDtmfServiceIds": "$.Lex.SessionAttributes.serviceDtmfServiceIds",
+          "staffDtmfOptions": "$.Lex.SessionAttributes.staffDtmfOptions",
+          "staffDtmfStaffIds": "$.Lex.SessionAttributes.staffDtmfStaffIds",
+          "outerRecoveryAttempt": "true",
+          "connectRecoveryStage": "retry_after_initial_error",
+          "connectFlowSourceVersion": "2026-07-14-thuyet-service-staff-exclusion-disconnect"
         },
         "Text": "Please tell me what you need, or press 0 for a person."
       },
@@ -402,11 +464,11 @@
         ],
         "Errors": [
           {
-            "NextAction": "41e3f239-5b57-4363-92fc-9d594579fa98",
+            "NextAction": "set-recovery-stage-retry-error",
             "ErrorType": "NoMatchingCondition"
           },
           {
-            "NextAction": "41e3f239-5b57-4363-92fc-9d594579fa98",
+            "NextAction": "set-recovery-stage-retry-error",
             "ErrorType": "NoMatchingError"
           }
         ]
@@ -454,6 +516,8 @@
           "selectedStaffId": "$.Lex.SessionAttributes.selectedStaffId",
           "confirmedStaffId": "$.Lex.SessionAttributes.confirmedStaffId",
           "confirmedStaffName": "$.Lex.SessionAttributes.confirmedStaffName",
+          "excludedStaffIds": "$.Lex.SessionAttributes.excludedStaffIds",
+          "excludedStaffNames": "$.Lex.SessionAttributes.excludedStaffNames",
           "awaitingFinalBookingConfirmation": "$.Lex.SessionAttributes.awaitingFinalBookingConfirmation",
           "bookingConfirmationAsked": "$.Lex.SessionAttributes.bookingConfirmationAsked",
           "confirmationFingerprint": "$.Lex.SessionAttributes.confirmationFingerprint",
@@ -465,9 +529,17 @@
           "anchorRequestedStaff": "$.Lex.SessionAttributes.anchorRequestedStaff",
           "rejectedOptionKeys": "$.Lex.SessionAttributes.rejectedOptionKeys",
           "lastAskedSlot": "$.Lex.SessionAttributes.lastAskedSlot",
-          "outerRecoveryAttempt": "final"
+          "activeDtmfMenu": "$.Lex.SessionAttributes.activeDtmfMenu",
+          "activeDtmfOptionsJson": "$.Lex.SessionAttributes.activeDtmfOptionsJson",
+          "serviceDtmfOptions": "$.Lex.SessionAttributes.serviceDtmfOptions",
+          "serviceDtmfServiceIds": "$.Lex.SessionAttributes.serviceDtmfServiceIds",
+          "staffDtmfOptions": "$.Lex.SessionAttributes.staffDtmfOptions",
+          "staffDtmfStaffIds": "$.Lex.SessionAttributes.staffDtmfStaffIds",
+          "outerRecoveryAttempt": "final",
+          "connectRecoveryStage": "final_dtmf_opportunity",
+          "connectFlowSourceVersion": "2026-07-14-thuyet-service-staff-exclusion-disconnect"
         },
-        "Text": "Sorry, I am still having trouble. Please say the appointment again, or press 0 for a person."
+        "Text": "Press 0 for a person, or tell me your appointment again."
       },
       "Transitions": {
         "NextAction": "check-transfer-to-queue",
@@ -529,11 +601,11 @@
         ],
         "Errors": [
           {
-            "NextAction": "67ada978-600a-4d39-9965-6230c52810a9",
+            "NextAction": "final-recovery-goodbye",
             "ErrorType": "NoMatchingCondition"
           },
           {
-            "NextAction": "67ada978-600a-4d39-9965-6230c52810a9",
+            "NextAction": "final-recovery-goodbye",
             "ErrorType": "NoMatchingError"
           }
         ]
@@ -544,10 +616,10 @@
       "Type": "MessageParticipant",
       "Parameters": {
         "SkipWhenDTMFBufferEnabled": "false",
-        "Text": "All of our operators are currently busy. Please call back later."
+        "Text": "All of our operators are currently busy. Please call back later. Goodbye."
       },
       "Transitions": {
-        "NextAction": "ef8d8054-77ea-40c7-aa4e-800ed784c49c",
+        "NextAction": "transfer-return-goodbye",
         "Errors": [
           {
             "NextAction": "ef8d8054-77ea-40c7-aa4e-800ed784c49c",
@@ -565,7 +637,10 @@
           "callerPhone": "$.CustomerEndpoint.Address",
           "calledNumber": "$.SystemEndpoint.Address",
           "contactId": "$.ContactId",
-          "initialContactId": "$.InitialContactId"
+          "initialContactId": "$.InitialContactId",
+          "connectRecoveryStage": "initial",
+          "connectLastErrorBranch": "none",
+          "connectFlowSourceVersion": "2026-07-14-thuyet-service-staff-exclusion-disconnect"
         },
         "TargetContact": "Current"
       },
@@ -640,10 +715,122 @@
         "ContactFlowId": "arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/contact-flow/c7386b94-56bb-4382-b517-ee890bbacb51"
       },
       "Transitions": {
-        "NextAction": "ef8d8054-77ea-40c7-aa4e-800ed784c49c",
+        "NextAction": "transfer-return-goodbye",
         "Errors": [
           {
             "NextAction": "37dbed23-a7c0-4259-a4f5-9be9db2f9c80",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "transfer-return-goodbye",
+      "Type": "MessageParticipant",
+      "Parameters": {
+        "SkipWhenDTMFBufferEnabled": "false",
+        "Text": "Thank you for calling Kiet Nails & Beauty. Goodbye."
+      },
+      "Transitions": {
+        "NextAction": "ef8d8054-77ea-40c7-aa4e-800ed784c49c",
+        "Errors": [
+          {
+            "NextAction": "ef8d8054-77ea-40c7-aa4e-800ed784c49c",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "set-recovery-stage-initial-error",
+      "Type": "UpdateContactAttributes",
+      "Parameters": {
+        "Attributes": {
+          "connectRecoveryStage": "initial_lex_error",
+          "connectLastErrorBranch": "$.ErrorCode",
+          "connectFlowSourceVersion": "2026-07-14-thuyet-service-staff-exclusion-disconnect",
+          "conversationComplete": "false"
+        },
+        "TargetContact": "Current"
+      },
+      "Transitions": {
+        "NextAction": "initial-lex-error-message",
+        "Errors": [
+          {
+            "NextAction": "initial-lex-error-message",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "initial-lex-error-message",
+      "Type": "MessageParticipant",
+      "Parameters": {
+        "SkipWhenDTMFBufferEnabled": "false",
+        "Text": "Sorry, I had trouble hearing you. Please tell me what you need again, or press 0 for a person."
+      },
+      "Transitions": {
+        "NextAction": "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d",
+        "Errors": [
+          {
+            "NextAction": "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "set-recovery-stage-retry-error",
+      "Type": "UpdateContactAttributes",
+      "Parameters": {
+        "Attributes": {
+          "connectRecoveryStage": "retry_lex_error",
+          "connectLastErrorBranch": "$.ErrorCode",
+          "connectFlowSourceVersion": "2026-07-14-thuyet-service-staff-exclusion-disconnect",
+          "conversationComplete": "false"
+        },
+        "TargetContact": "Current"
+      },
+      "Transitions": {
+        "NextAction": "retry-lex-error-message",
+        "Errors": [
+          {
+            "NextAction": "retry-lex-error-message",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "retry-lex-error-message",
+      "Type": "MessageParticipant",
+      "Parameters": {
+        "SkipWhenDTMFBufferEnabled": "false",
+        "Text": "I am still having trouble hearing you. You can press 0 for a person, or try saying the appointment one more time."
+      },
+      "Transitions": {
+        "NextAction": "41e3f239-5b57-4363-92fc-9d594579fa98",
+        "Errors": [
+          {
+            "NextAction": "41e3f239-5b57-4363-92fc-9d594579fa98",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "final-recovery-goodbye",
+      "Type": "MessageParticipant",
+      "Parameters": {
+        "SkipWhenDTMFBufferEnabled": "false",
+        "Text": "I am sorry, I still cannot continue this call. Please call again. Goodbye."
+      },
+      "Transitions": {
+        "NextAction": "ef8d8054-77ea-40c7-aa4e-800ed784c49c",
+        "Errors": [
+          {
+            "NextAction": "ef8d8054-77ea-40c7-aa4e-800ed784c49c",
             "ErrorType": "NoMatchingError"
           }
         ]

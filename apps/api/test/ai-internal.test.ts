@@ -1978,7 +1978,10 @@ test("Emmy and correction staff phrases resolve to Amy without selecting Trang",
     assert.equal(result.body.data.lexResponse.sessionAttributes.selectedStaffId, ids.amy, phrase);
     assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedStaffId, ids.amy, phrase);
     assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedStaffName, "Amy", phrase);
-    assert.doesNotMatch(result.body.data.lexResponse.message, /Trang/i, phrase);
+    assert.doesNotMatch(result.body.data.lexResponse.message, /with Trang|found Trang/i, phrase);
+    if (/Trang/i.test(phrase)) {
+      assert.match(result.body.data.lexResponse.message, /exclude Trang/i, phrase);
+    }
     assert.match(result.body.data.lexResponse.message, /Amy/i, phrase);
     assert.deepEqual(new Set(state.validationStaffIds), new Set([ids.amy]), phrase);
     assert.equal(state.appointments.length, 0, phrase);
@@ -2081,7 +2084,8 @@ test("final confirmation correction from Emmy replaces Trang and books Amy only 
     "old-trang-fingerprint"
   );
   assert.match(correction.body.data.lexResponse.message, /Amy/i);
-  assert.doesNotMatch(correction.body.data.lexResponse.message, /Trang/i);
+  assert.match(correction.body.data.lexResponse.message, /exclude Trang/i);
+  assert.doesNotMatch(correction.body.data.lexResponse.message, /with Trang|found Trang/i);
   assert.equal(state.appointments.length, 0);
 
   const confirmed = await postInternalAppointment(
@@ -2107,7 +2111,7 @@ test("final confirmation correction from Emmy replaces Trang and books Amy only 
   assert.match(confirmed.body.data.lexResponse.message, /Amy/i);
 });
 
-test("not Trang without replacement clears staff and preserves booking details", async () => {
+test("not Trang without replacement excludes Trang and confirms next eligible staff", async () => {
   const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
   const result = await postInternalAppointment(
     bookingPayload({
@@ -2140,15 +2144,17 @@ test("not Trang without replacement clears staff and preserves booking details",
 
   assert.equal(result.response.status, 200);
   assert.equal(result.body.data.outcome, "MISSING_INFO");
-  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitSlot");
-  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "staffPreference");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
   assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Pedicure");
   assert.equal(result.body.data.lexResponse.sessionAttributes.requestedDate, requestedDate);
   assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "11 AM");
   assert.equal(result.body.data.lexResponse.sessionAttributes.customerName, "Jane");
-  assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, undefined);
-  assert.equal(result.body.data.lexResponse.sessionAttributes.staffId, undefined);
-  assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedStaffName, undefined);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Amy");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffId, ids.amy);
+  assert.match(result.body.data.lexResponse.sessionAttributes.excludedStaffIds, new RegExp(ids.trang));
+  assert.match(result.body.data.lexResponse.sessionAttributes.excludedStaffNames, /trang/i);
+  assert.match(result.body.data.lexResponse.message, /exclude Trang/i);
+  assert.doesNotMatch(result.body.data.lexResponse.message, /with Trang/i);
   assert.equal(state.appointments.length, 0);
 });
 
@@ -2447,6 +2453,165 @@ test("unsupported service requests activate service DTMF and never become staff"
     assert.match(result.body.data.lexResponse.message, /available services|Press 1/i, phrase);
     assert.equal(state.appointments.length, 0, phrase);
   }
+});
+
+test("verified pedicure ASR and service menu fallback preserve exact Manicure", async () => {
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  const fiftyKill = await postInternalAppointment(
+    bookingPayload({
+      serviceName: undefined,
+      requestedDate,
+      requestedTime: "11 AM",
+      staffPreference: "Amy",
+      staffId: ids.amy,
+      confirmationState: undefined,
+      currentTurnTranscript: "fifty kill",
+      transcript: "fifty kill",
+      attributes: {
+        lastAskedSlot: "serviceName",
+        requestedDate,
+        requestedTime: "11 AM",
+        staffPreference: "Amy",
+        staffId: ids.amy,
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266"
+      }
+    })
+  );
+
+  assert.equal(fiftyKill.response.status, 200);
+  assert.equal(fiftyKill.body.data.lexResponse.sessionAttributes.serviceName, "Pedicure");
+  assert.equal(fiftyKill.body.data.lexResponse.sessionAttributes.requestedDate, requestedDate);
+  assert.equal(fiftyKill.body.data.lexResponse.sessionAttributes.requestedTime, "11 AM");
+  assert.equal(fiftyKill.body.data.lexResponse.sessionAttributes.staffPreference, "Amy");
+  assert.equal(state.appointments.length, 0);
+
+  resetMockState();
+  const manicure = await postInternalAppointment(
+    bookingPayload({
+      serviceName: undefined,
+      requestedDate,
+      requestedTime: "11 AM",
+      staffPreference: "Amy",
+      staffId: ids.amy,
+      confirmationState: undefined,
+      currentTurnTranscript: "manicure",
+      transcript: "manicure",
+      attributes: {
+        lastAskedSlot: "serviceName",
+        requestedDate,
+        requestedTime: "11 AM",
+        staffPreference: "Amy",
+        staffId: ids.amy,
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266"
+      }
+    })
+  );
+
+  assert.equal(manicure.response.status, 200);
+  assert.equal(manicure.body.data.lexResponse.sessionAttributes.serviceName, "Manicure");
+  assert.notEqual(manicure.body.data.lexResponse.sessionAttributes.serviceName, "Pedicure");
+});
+
+test("first unresolved service attempt provides stable numbered menu and DTMF 1 selects Pedicure", async () => {
+  const requestedDate = "2026-05-28";
+  const first = await postInternalAppointment(
+    bookingPayload({
+      serviceName: undefined,
+      requestedDate,
+      requestedTime: "5 PM",
+      staffPreference: "Amy",
+      staffId: ids.amy,
+      confirmationState: undefined,
+      currentTurnTranscript: "fifty unknown",
+      transcript: "fifty unknown",
+      attributes: {
+        lastAskedSlot: "serviceName",
+        serviceClarificationAttempts: "1",
+        requestedDate,
+        requestedTime: "5 PM",
+        staffPreference: "Amy",
+        staffId: ids.amy,
+        knownCallerAcknowledged: "true",
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266"
+      }
+    })
+  );
+
+  const firstAttrs = first.body.data.lexResponse.sessionAttributes;
+  assert.equal(first.body.data.outcome, "MISSING_INFO");
+  assert.equal(first.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
+  assert.equal(firstAttrs.activeDtmfMenu, "service");
+  assert.match(first.body.data.lexResponse.message, /Press 1 for Pedicure.*Press 2 for Manicure.*Press 3 for Full Set.*Press 4 for Dip Powder/i);
+  assert.equal(JSON.parse(firstAttrs.activeDtmfOptionsJson)["1"], "Pedicure");
+  assert.equal(JSON.parse(firstAttrs.serviceDtmfServiceIds)["1"], ids.pedicure);
+  assert.equal(firstAttrs.serviceRecognitionFailureCount, "1");
+
+  const second = await postInternalAppointment(
+    bookingPayload({
+      serviceName: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      transcript: "1",
+      attributes: firstAttrs
+    })
+  );
+
+  const secondAttrs = second.body.data.lexResponse.sessionAttributes;
+  assert.equal(second.response.status, 200);
+  assert.equal(secondAttrs.serviceName, "Pedicure");
+  assert.equal(secondAttrs.confirmedServiceName, "Pedicure");
+  assert.equal(secondAttrs.requestedDate, requestedDate);
+  assert.equal(secondAttrs.requestedTime, "5 PM");
+  assert.equal(secondAttrs.staffPreference, "Amy");
+  assert.equal(secondAttrs.staffId, ids.amy);
+  assert.equal(state.appointments.length, 0);
+});
+
+test("ambiguous Manicure after unresolved service asks confirmation with service keypad", async () => {
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Manicure",
+      requestedDate: "2026-05-28",
+      requestedTime: "5 PM",
+      staffPreference: "Amy",
+      staffId: ids.amy,
+      confirmationState: undefined,
+      currentTurnTranscript: "manicure",
+      transcript: "manicure",
+      attributes: {
+        lastAskedSlot: "serviceName",
+        serviceRecognitionFailureCount: "1",
+        asrDiagnostics: JSON.stringify({
+          topTranscript: "manicure",
+          nBestAlternatives: [
+            { transcript: "manicure", confidence: 0.62 },
+            { transcript: "pedicure", confidence: 0.58 }
+          ],
+          confidence: 0.62,
+          inputMode: "Speech"
+        }),
+        requestedDate: "2026-05-28",
+        requestedTime: "5 PM",
+        staffPreference: "Amy",
+        staffId: ids.amy,
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266"
+      }
+    })
+  );
+
+  const attrs = result.body.data.lexResponse.sessionAttributes;
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitSlot");
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
+  assert.equal(attrs.serviceName, undefined);
+  assert.match(result.body.data.lexResponse.message, /I heard Manicure.*misheard Pedicure/i);
+  assert.match(result.body.data.lexResponse.message, /Press 1 for Pedicure/i);
+  assert.equal(attrs.activeDtmfMenu, "service");
+  assert.equal(state.appointments.length, 0);
 });
 
 test("generic gel asks before selecting the one active gel-related alternative", async () => {
@@ -2825,7 +2990,8 @@ test("unclear service asks the canonical service list without escalation", async
   assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
   assert.equal(result.body.data.lexResponse.sessionAttributes.transferToQueue, undefined);
   assert.equal(result.body.data.lexResponse.sessionAttributes.forceHumanEscalation, undefined);
-  assert.match(result.body.data.lexResponse.message, /1 for Manicure/i);
+  assert.match(result.body.data.lexResponse.message, /1 for Pedicure/i);
+  assert.match(result.body.data.lexResponse.message, /2 for Manicure/i);
   assert.match(result.body.data.lexResponse.message, /4 for Dip Powder/i);
   assert.doesNotMatch(result.body.data.lexResponse.message, /Gel Manicure/i);
   assert.match(result.body.data.lexResponse.message, /0 for a person/i);
@@ -3627,6 +3793,10 @@ test("Any staff exact phrase and live ASR variants never persist raw unmatched s
     "any star",
     "first available",
     "first avaiable",
+    "what available",
+    "who available",
+    "one available",
+    "which available",
     "available"
   ]) {
     resetMockState();
@@ -5250,6 +5420,10 @@ test("first available ASR variants enter explicit-any flow without staff clarifi
     "any stop is fine",
     "and the staff is fine",
     "first available",
+    "what available",
+    "who available",
+    "one available",
+    "which available",
     "available"
   ]) {
     resetMockState();
@@ -5317,6 +5491,34 @@ test("ungrounded thirty five ASR does not become 5 PM or Any staff", async () =>
     assert.notEqual(attrs.staffPreference, "Any staff", phrase);
     assert.equal(state.appointments.length, 0, phrase);
   }
+});
+
+test("what available does not become Any staff outside staff context", async () => {
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Manicure",
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      currentTurnTranscript: "what available",
+      transcript: "what available",
+      attributes: {
+        lastAskedSlot: "requestedDate",
+        serviceName: "Manicure",
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266"
+      }
+    })
+  );
+
+  const attrs = result.body.data.lexResponse.sessionAttributes;
+  assert.equal(result.response.status, 200);
+  assert.notEqual(attrs.staffPreference, "Any staff");
+  assert.notEqual(attrs.staffPreference, "Trang");
+  assert.equal(attrs.staffId, undefined);
+  assert.notEqual(result.body.data.lexResponse.dialogAction.slotToElicit, "staffPreference");
+  assert.equal(state.appointments.length, 0);
 });
 
 test("tomorrow afternoon without an exact hour asks for requestedTime", async () => {
@@ -5409,6 +5611,20 @@ test("generic services clarification preserves date time and Amy when service is
     const attrs = second.body.data.lexResponse.sessionAttributes;
     assert.equal(second.response.status, 200, serviceName);
     assert.equal(second.body.data.outcome, "MISSING_INFO", serviceName);
+    if (serviceName === "Manicure") {
+      assert.equal(second.body.data.lexResponse.dialogAction.type, "ElicitSlot", serviceName);
+      assert.equal(second.body.data.lexResponse.dialogAction.slotToElicit, "serviceName", serviceName);
+      assert.equal(attrs.serviceName, undefined, serviceName);
+      assert.equal(attrs.requestedDate, today, serviceName);
+      assert.equal(attrs.requestedTime, "2 PM", serviceName);
+      assert.equal(attrs.staffPreference, "Amy", serviceName);
+      assert.equal(attrs.staffId, ids.amy, serviceName);
+      assert.equal(attrs.activeDtmfMenu, "service", serviceName);
+      assert.match(second.body.data.lexResponse.message, /I heard Manicure/i, serviceName);
+      assert.match(second.body.data.lexResponse.message, /Press 1 for Pedicure.*Press 2 for Manicure/i, serviceName);
+      assert.equal(state.appointments.length, 0, serviceName);
+      continue;
+    }
     assert.equal(second.body.data.lexResponse.dialogAction.type, "ConfirmIntent", serviceName);
     assert.equal(attrs.serviceName, serviceName, serviceName);
     assert.equal(attrs.requestedDate, today, serviceName);
@@ -5468,13 +5684,261 @@ test("staff exclusions select first available while excluding Amy for explicit a
   }
 });
 
-test("staff exclusion control phrases clear Amy and reprompt for staff", async () => {
+test("Trang negative ASR variants stay excluded through Any staff selection", async () => {
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+
+  for (const phrase of [
+    "any staff but not praying",
+    "only staff but not trained",
+    "only staff not trained",
+    "any staff but not Trang",
+    "anyone except Trang",
+    "first available except Trang"
+  ]) {
+    resetMockState();
+    const result = await postInternalAppointment(
+      bookingPayload({
+        serviceName: "Manicure",
+        requestedDate,
+        requestedTime: "11 AM",
+        staffPreference: "Trang",
+        staffId: ids.trang,
+        confirmationState: undefined,
+        amazonConnectContactId: `connect-exclude-trang-${phrase.replace(/\W+/g, "-")}`,
+        currentTurnTranscript: phrase,
+        transcript: phrase,
+        attributes: {
+          lastAskedSlot: "staffPreference",
+          activeDtmfMenu: "staff",
+          serviceName: "Manicure",
+          requestedDate,
+          requestedTime: "11 AM",
+          staffPreference: "Trang",
+          staffId: ids.trang,
+          selectedStaffId: ids.trang,
+          confirmedStaffId: ids.trang,
+          confirmedStaffName: "Trang",
+          customerName: "Kiet Nguyen",
+          customerPhone: "+17325956266"
+        }
+      })
+    );
+
+    const attrs = result.body.data.lexResponse.sessionAttributes;
+    assert.equal(result.response.status, 200, phrase);
+    assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent", phrase);
+    assert.equal(attrs.staffPreference, "Amy", phrase);
+    assert.equal(attrs.staffId, ids.amy, phrase);
+    assert.match(attrs.excludedStaffIds, new RegExp(ids.trang), phrase);
+    assert.match(attrs.excludedStaffNames, /trang/i, phrase);
+    assert.doesNotMatch(attrs.activeDtmfOptionsJson ?? "", /Trang/i, phrase);
+    assert.doesNotMatch(result.body.data.lexResponse.message, /with Trang|found Trang/i, phrase);
+    assert.match(result.body.data.lexResponse.message, /exclude Trang/i, phrase);
+    assert.equal(attrs.serviceName, "Manicure", phrase);
+    assert.equal(attrs.requestedDate, requestedDate, phrase);
+    assert.equal(attrs.requestedTime, "11 AM", phrase);
+    assert.equal(state.appointments.length, 0, phrase);
+  }
+});
+
+test("production staff exclusion sequence keeps booking fields sticky and does not book before confirmation", async () => {
+  const requestedDate = DateTime.now().setZone("America/New_York").toFormat("yyyy-MM-dd");
+  const contactId = "connect-production-exclusion-sequence";
+
+  const anyStop = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Manicure",
+      requestedDate,
+      requestedTime: "11 AM",
+      staffPreference: undefined,
+      confirmationState: undefined,
+      amazonConnectContactId: contactId,
+      currentTurnTranscript: "any stop",
+      transcript: "any stop",
+      attributes: {
+        AmazonConnectContactId: contactId,
+        lastAskedSlot: "staffPreference",
+        activeDtmfMenu: "staff",
+        serviceName: "Manicure",
+        requestedDate,
+        requestedTime: "11 AM",
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266"
+      }
+    })
+  );
+  assert.equal(anyStop.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
+  assert.equal(anyStop.body.data.lexResponse.sessionAttributes.staffId, ids.trang);
+  assert.equal(state.appointments.length, 0);
+
+  const rejectTrang = await postInternalAppointment(
+    bookingPayload({
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      amazonConnectContactId: contactId,
+      currentTurnTranscript: "no i don't want jang",
+      transcript: "no i don't want jang",
+      attributes: {
+        ...anyStop.body.data.lexResponse.sessionAttributes,
+        AmazonConnectContactId: contactId,
+        lastAskedSlot: "bookingConfirmation",
+        awaitingFinalBookingConfirmation: "true",
+        bookingConfirmationAsked: "true"
+      }
+    })
+  );
+  assert.match(rejectTrang.body.data.lexResponse.sessionAttributes.excludedStaffNames, /trang/i);
+  assert.doesNotMatch(rejectTrang.body.data.lexResponse.message, /Which detail would you like to change/i);
+  assert.equal(rejectTrang.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(rejectTrang.body.data.lexResponse.sessionAttributes.staffPreference, "Amy");
+  assert.equal(rejectTrang.body.data.lexResponse.sessionAttributes.staffId, ids.amy);
+  assert.match(rejectTrang.body.data.lexResponse.message, /exclude Trang/i);
+
+  const anotherStaff = await postInternalAppointment(
+    bookingPayload({
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      amazonConnectContactId: contactId,
+      currentTurnTranscript: "i want another staff",
+      transcript: "i want another staff",
+      attributes: {
+        ...rejectTrang.body.data.lexResponse.sessionAttributes,
+        AmazonConnectContactId: contactId,
+        lastAskedSlot: "staffPreference"
+      }
+    })
+  );
+
+  const final = await postInternalAppointment(
+    bookingPayload({
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      amazonConnectContactId: contactId,
+      currentTurnTranscript: "any staff but not praying",
+      transcript: "any staff but not praying",
+      attributes: {
+        ...anotherStaff.body.data.lexResponse.sessionAttributes,
+        AmazonConnectContactId: contactId,
+        lastAskedSlot: "staffPreference",
+        activeDtmfMenu: "staff"
+      }
+    })
+  );
+
+  const attrs = final.body.data.lexResponse.sessionAttributes;
+  assert.equal(final.response.status, 200);
+  assert.equal(final.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(attrs.serviceName, "Manicure");
+  assert.equal(attrs.requestedDate, requestedDate);
+  assert.equal(attrs.requestedTime, "11 AM");
+  assert.equal(attrs.customerName, "Kiet");
+  assert.equal(attrs.staffPreference, "Kelly");
+  assert.equal(attrs.staffId, ids.kelly);
+  assert.match(attrs.excludedStaffIds, new RegExp(ids.trang));
+  assert.match(attrs.excludedStaffIds, new RegExp(ids.amy));
+  assert.match(attrs.excludedStaffNames, /trang/i);
+  assert.match(attrs.excludedStaffNames, /amy/i);
+  assert.doesNotMatch(attrs.activeDtmfOptionsJson ?? "", /Trang/i);
+  assert.doesNotMatch(attrs.activeDtmfOptionsJson ?? "", /Amy/i);
+  assert.doesNotMatch(final.body.data.lexResponse.message, /with Trang|found Trang/i);
+  assert.match(final.body.data.lexResponse.message, /just to confirm: Manicure .* 11 AM with Kelly/i);
+  assert.equal(state.appointments.length, 0);
+});
+
+test("negative Trang ASR aliases do not override exact active staff name collisions", async () => {
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  const collisionStaff = [
+    ["Jang", "10000000-0000-4000-8000-000000000101"],
+    ["Praying", "10000000-0000-4000-8000-000000000102"],
+    ["Trained", "10000000-0000-4000-8000-000000000103"]
+  ];
+
+  for (const [staffName, staffId] of collisionStaff) {
+    resetMockState();
+    state.staff.push({
+      id: staffId,
+      salonId: ids.salonA,
+      fullName: staffName,
+      status: StaffStatus.ACTIVE,
+      isBookable: true,
+      createdAt: new Date("2026-01-10T00:00:00.000Z")
+    });
+    state.staffServiceMappings?.push({
+      salonId: ids.salonA,
+      staffId,
+      serviceId: "20000000-0000-4000-8000-000000000000"
+    });
+
+    const positive = await postInternalAppointment(
+      bookingPayload({
+        serviceName: "Manicure",
+        requestedDate,
+        requestedTime: "11 AM",
+        staffPreference: undefined,
+        confirmationState: undefined,
+        currentTurnTranscript: staffName.toLowerCase(),
+        transcript: staffName.toLowerCase(),
+        attributes: {
+          lastAskedSlot: "staffPreference",
+          activeDtmfMenu: "staff",
+          serviceName: "Manicure",
+          requestedDate,
+          requestedTime: "11 AM",
+          customerName: "Kiet Nguyen",
+          customerPhone: "+17325956266"
+        }
+      })
+    );
+    assert.equal(positive.body.data.lexResponse.sessionAttributes.staffPreference, staffName, staffName);
+    assert.equal(positive.body.data.lexResponse.sessionAttributes.staffId, staffId, staffName);
+
+    const negative = await postInternalAppointment(
+      bookingPayload({
+        serviceName: "Manicure",
+        requestedDate,
+        requestedTime: "11 AM",
+        staffPreference: "Any staff",
+        staffId: ids.trang,
+        confirmationState: undefined,
+        currentTurnTranscript: `any staff but not ${staffName.toLowerCase()}`,
+        transcript: `any staff but not ${staffName.toLowerCase()}`,
+        attributes: {
+          lastAskedSlot: "staffPreference",
+          activeDtmfMenu: "staff",
+          serviceName: "Manicure",
+          requestedDate,
+          requestedTime: "11 AM",
+          staffPreference: "Trang",
+          staffId: ids.trang,
+          customerName: "Kiet Nguyen",
+          customerPhone: "+17325956266"
+        }
+      })
+    );
+    assert.match(negative.body.data.lexResponse.sessionAttributes.excludedStaffIds, new RegExp(staffId), staffName);
+    assert.doesNotMatch(negative.body.data.lexResponse.sessionAttributes.excludedStaffIds ?? "", new RegExp(ids.trang), staffName);
+  }
+});
+
+test("staff exclusion control phrases exclude Amy and confirm the next eligible staff", async () => {
   const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
 
   for (const phrase of [
     "not Amy",
     "I don't want Amy",
     "another person, not Amy",
+    "another staff",
+    "another technician",
+    "another stop",
     "someone else",
     "change the staff",
     "no, just change the staff"
@@ -5512,17 +5976,18 @@ test("staff exclusion control phrases clear Amy and reprompt for staff", async (
     const attrs = result.body.data.lexResponse.sessionAttributes;
     assert.equal(result.response.status, 200, phrase);
     assert.equal(result.body.data.outcome, "MISSING_INFO", phrase);
-    assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "staffPreference", phrase);
-    assert.equal(attrs.staffPreference, undefined, phrase);
-    assert.equal(attrs.staffId, undefined, phrase);
-    assert.equal(attrs.selectedStaffId, undefined, phrase);
-    assert.equal(attrs.confirmedStaffId, undefined, phrase);
-    assert.equal(attrs.confirmedStaffName, undefined, phrase);
+    assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent", phrase);
+    assert.notEqual(attrs.staffPreference, "Amy", phrase);
+    assert.notEqual(attrs.staffId, ids.amy, phrase);
+    assert.equal(attrs.selectedStaffId, attrs.staffId, phrase);
+    assert.equal(attrs.confirmedStaffId, attrs.staffId, phrase);
+    assert.ok(attrs.confirmedStaffName, phrase);
     assert.match(attrs.excludedStaffNames, /amy/i, phrase);
     assert.equal(attrs.serviceName, "Pedicure", phrase);
     assert.equal(attrs.requestedDate, requestedDate, phrase);
     assert.equal(attrs.requestedTime, "5 PM", phrase);
     assert.doesNotMatch(result.body.data.lexResponse.message, /with Amy|with Just/i, phrase);
+    assert.match(result.body.data.lexResponse.message, /exclude Amy/i, phrase);
     assert.equal(state.appointments.length, 0, phrase);
   }
 });
@@ -5562,6 +6027,43 @@ test("explicit Amy request removes Amy from staff exclusions", async () => {
   assert.equal(attrs.excludedStaffIds, undefined);
   assert.equal(attrs.excludedStaffNames, undefined);
   assert.match(result.body.data.lexResponse.message, /with Amy/i);
+});
+
+test("explicit Trang request removes Trang from staff exclusions", async () => {
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Manicure",
+      requestedDate,
+      requestedTime: "11 AM",
+      staffPreference: undefined,
+      staffId: undefined,
+      confirmationState: undefined,
+      amazonConnectContactId: "connect-wants-trang-after-exclusion",
+      currentTurnTranscript: "I want Trang",
+      transcript: "I want Trang",
+      attributes: {
+        lastAskedSlot: "staffPreference",
+        activeDtmfMenu: "staff",
+        serviceName: "Manicure",
+        requestedDate,
+        requestedTime: "11 AM",
+        excludedStaffIds: JSON.stringify([ids.trang]),
+        excludedStaffNames: JSON.stringify(["Trang"]),
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266"
+      }
+    })
+  );
+
+  const attrs = result.body.data.lexResponse.sessionAttributes;
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(attrs.staffPreference, "Trang");
+  assert.equal(attrs.staffId, ids.trang);
+  assert.equal(attrs.excludedStaffIds, undefined);
+  assert.equal(attrs.excludedStaffNames, undefined);
+  assert.match(result.body.data.lexResponse.message, /with Trang/i);
 });
 
 test("staff exclusion says clearly when no other mapped technician is available", async () => {
@@ -5806,7 +6308,7 @@ test("closed Friday is not kept trusted and Monday replacement works", async () 
   assert.notEqual(monday.body.data.lexResponse.sessionAttributes.requestedDate, friday);
 });
 
-test("change the person before final confirmation elicits staff without goodbye", async () => {
+test("change the person before final confirmation confirms next eligible staff without goodbye", async () => {
   const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
   const result = await postInternalAppointment(
     bookingPayload({
@@ -5836,10 +6338,13 @@ test("change the person before final confirmation elicits staff without goodbye"
   assert.equal(result.response.status, 200);
   assert.equal(result.body.data.outcome, "MISSING_INFO");
   assert.equal(state.appointments.length, 0);
-  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitSlot");
-  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "staffPreference");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
   assert.equal(result.body.data.lexResponse.sessionAttributes.conversationComplete, "false");
+  assert.notEqual(result.body.data.lexResponse.sessionAttributes.staffId, ids.amy);
+  assert.match(result.body.data.lexResponse.sessionAttributes.excludedStaffIds, new RegExp(ids.amy));
+  assert.match(result.body.data.lexResponse.sessionAttributes.excludedStaffNames, /amy/i);
   assert.doesNotMatch(result.body.data.lexResponse.message, /Thank you for calling/i);
+  assert.doesNotMatch(result.body.data.lexResponse.message, /with Amy/i);
 });
 
 test("reschedule confirmation updates the existing appointment without creating a duplicate", async () => {
