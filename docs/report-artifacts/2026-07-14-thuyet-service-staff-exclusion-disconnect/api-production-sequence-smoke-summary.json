@@ -1,0 +1,222 @@
+{
+  "contactId": "codex-api-seq-1784039756390",
+  "turns": [
+    {
+      "turn": 1,
+      "transcript": "book manicure today",
+      "response": {
+        "success": true,
+        "routeMessage": "<speak>Welcome back, lee. Got it. <break time=\"300ms\"/> What time works best?</speak>",
+        "outcome": "MISSING_INFO",
+        "message": "<speak>Welcome back, lee. Got it. <break time=\"300ms\"/> What time works best?</speak>",
+        "dialogAction": "ElicitSlot",
+        "slotToElicit": "requestedTime",
+        "fulfillmentState": "InProgress",
+        "appointmentId": null,
+        "bookingAttemptId": "a7649b22-4c28-4d47-98d6-7fd89ea7ec7e",
+        "callSessionId": "2b23655d-5b18-40d7-ab42-58d3f674ebc4",
+        "aiInteractionId": "1805df57-3487-40d7-8e3f-bb005c50d0ff",
+        "missingFields": [
+          "preferredDateTime",
+          "staffPreference"
+        ],
+        "sessionAttributes": {
+          "serviceName": "Manicure",
+          "confirmedServiceName": "Manicure",
+          "requestedDate": "2026-07-14",
+          "lastAskedSlot": "requestedTime",
+          "conversationComplete": "false",
+          "conversationState": "CONTINUE",
+          "conversationOutcome": "NEEDS_INPUT"
+        },
+        "alternatives": []
+      }
+    },
+    {
+      "turn": 2,
+      "transcript": "eleven am",
+      "response": {
+        "success": true,
+        "routeMessage": "<speak>Got it, Manicure. Which staff would you like, Trang, Amy, Kelly, Kevin, or first available?</speak>",
+        "outcome": "MISSING_INFO",
+        "message": "<speak>Got it, Manicure. Which staff would you like, Trang, Amy, Kelly, Kevin, or first available?</speak>",
+        "dialogAction": "ElicitSlot",
+        "slotToElicit": "staffPreference",
+        "fulfillmentState": "InProgress",
+        "appointmentId": null,
+        "bookingAttemptId": "a7649b22-4c28-4d47-98d6-7fd89ea7ec7e",
+        "callSessionId": "2b23655d-5b18-40d7-ab42-58d3f674ebc4",
+        "aiInteractionId": "1805df57-3487-40d7-8e3f-bb005c50d0ff",
+        "missingFields": [
+          "staffPreference"
+        ],
+        "sessionAttributes": {
+          "serviceName": "Manicure",
+          "confirmedServiceName": "Manicure",
+          "requestedDate": "2026-07-14",
+          "requestedTime": "11:00",
+          "activeDtmfMenu": "staff",
+          "activeDtmfOptionsJson": "{\"0\":\"__operator__\",\"1\":\"Trang\",\"2\":\"Amy\",\"3\":\"Kelly\",\"4\":\"Kevin\",\"5\":\"Alex\",\"6\":\"Linh\",\"7\":\"Thien Le\",\"8\":\"Any staff\"}",
+          "lastAskedSlot": "staffPreference",
+          "conversationComplete": "false",
+          "conversationState": "CONTINUE",
+          "conversationOutcome": "NEEDS_INPUT"
+        },
+        "alternatives": []
+      }
+    },
+    {
+      "turn": 3,
+      "transcript": "any stop",
+      "response": {
+        "success": true,
+        "routeMessage": "<speak>I found Trang available. <break time=\"300ms\"/> lee, just to confirm: Manicure today at 11 AM with Trang. <break time=\"300ms\"/> Is that correct?</speak>",
+        "outcome": "MISSING_INFO",
+        "message": "<speak>I found Trang available. <break time=\"300ms\"/> lee, just to confirm: Manicure today at 11 AM with Trang. <break time=\"300ms\"/> Is that correct?</speak>",
+        "dialogAction": "ConfirmIntent",
+        "fulfillmentState": "InProgress",
+        "appointmentId": null,
+        "bookingAttemptId": "a7649b22-4c28-4d47-98d6-7fd89ea7ec7e",
+        "callSessionId": "2b23655d-5b18-40d7-ab42-58d3f674ebc4",
+        "aiInteractionId": "1805df57-3487-40d7-8e3f-bb005c50d0ff",
+        "missingFields": [],
+        "sessionAttributes": {
+          "serviceName": "Manicure",
+          "confirmedServiceName": "Manicure",
+          "requestedDate": "2026-07-14",
+          "requestedTime": "11:00",
+          "staffPreference": "Trang",
+          "staffId": "903511ee-4849-43dd-85fb-73595e79a233",
+          "selectedStaffId": "903511ee-4849-43dd-85fb-73595e79a233",
+          "confirmedStaffId": "903511ee-4849-43dd-85fb-73595e79a233",
+          "confirmedStaffName": "Trang",
+          "awaitingFinalBookingConfirmation": "true",
+          "lastAskedSlot": "bookingConfirmation",
+          "conversationComplete": "false",
+          "conversationState": "CONTINUE",
+          "conversationOutcome": "NEEDS_INPUT"
+        },
+        "alternatives": []
+      }
+    },
+    {
+      "turn": 4,
+      "transcript": "no i don't want jang",
+      "response": {
+        "success": true,
+        "routeMessage": "<speak>Okay, I'll exclude Trang. <break time=\"300ms\"/> I found Amy available. <break time=\"300ms\"/> lee, just to confirm: Manicure today at 11 AM with Amy. <break time=\"300ms\"/> Is that correct?</speak>",
+        "outcome": "MISSING_INFO",
+        "message": "<speak>Okay, I'll exclude Trang. <break time=\"300ms\"/> I found Amy available. <break time=\"300ms\"/> lee, just to confirm: Manicure today at 11 AM with Amy. <break time=\"300ms\"/> Is that correct?</speak>",
+        "dialogAction": "ConfirmIntent",
+        "fulfillmentState": "InProgress",
+        "appointmentId": null,
+        "bookingAttemptId": "a7649b22-4c28-4d47-98d6-7fd89ea7ec7e",
+        "callSessionId": "2b23655d-5b18-40d7-ab42-58d3f674ebc4",
+        "aiInteractionId": "1805df57-3487-40d7-8e3f-bb005c50d0ff",
+        "missingFields": [],
+        "sessionAttributes": {
+          "serviceName": "Manicure",
+          "confirmedServiceName": "Manicure",
+          "requestedDate": "2026-07-14",
+          "requestedTime": "11:00",
+          "staffPreference": "Amy",
+          "staffId": "e75b9b6d-ad6a-4060-b945-43f1358e3a79",
+          "selectedStaffId": "e75b9b6d-ad6a-4060-b945-43f1358e3a79",
+          "confirmedStaffId": "e75b9b6d-ad6a-4060-b945-43f1358e3a79",
+          "confirmedStaffName": "Amy",
+          "excludedStaffIds": "[\"903511ee-4849-43dd-85fb-73595e79a233\"]",
+          "excludedStaffNames": "[\"trang\"]",
+          "awaitingFinalBookingConfirmation": "true",
+          "lastAskedSlot": "bookingConfirmation",
+          "conversationComplete": "false",
+          "conversationState": "CONTINUE",
+          "conversationOutcome": "NEEDS_INPUT"
+        },
+        "alternatives": []
+      }
+    },
+    {
+      "turn": 5,
+      "transcript": "i want another staff",
+      "response": {
+        "success": true,
+        "routeMessage": "<speak>Okay, I'll exclude Amy. <break time=\"300ms\"/> I found Kelly available. <break time=\"300ms\"/> lee, just to confirm: Manicure today at 11 AM with Kelly. <break time=\"300ms\"/> Is that correct?</speak>",
+        "outcome": "MISSING_INFO",
+        "message": "<speak>Okay, I'll exclude Amy. <break time=\"300ms\"/> I found Kelly available. <break time=\"300ms\"/> lee, just to confirm: Manicure today at 11 AM with Kelly. <break time=\"300ms\"/> Is that correct?</speak>",
+        "dialogAction": "ConfirmIntent",
+        "fulfillmentState": "InProgress",
+        "appointmentId": null,
+        "bookingAttemptId": "a7649b22-4c28-4d47-98d6-7fd89ea7ec7e",
+        "callSessionId": "2b23655d-5b18-40d7-ab42-58d3f674ebc4",
+        "aiInteractionId": "1805df57-3487-40d7-8e3f-bb005c50d0ff",
+        "missingFields": [],
+        "sessionAttributes": {
+          "serviceName": "Manicure",
+          "confirmedServiceName": "Manicure",
+          "requestedDate": "2026-07-14",
+          "requestedTime": "11:00",
+          "staffPreference": "Kelly",
+          "staffId": "25406cde-99ef-4407-999d-cf42eaa67bc3",
+          "selectedStaffId": "25406cde-99ef-4407-999d-cf42eaa67bc3",
+          "confirmedStaffId": "25406cde-99ef-4407-999d-cf42eaa67bc3",
+          "confirmedStaffName": "Kelly",
+          "excludedStaffIds": "[\"903511ee-4849-43dd-85fb-73595e79a233\",\"e75b9b6d-ad6a-4060-b945-43f1358e3a79\"]",
+          "excludedStaffNames": "[\"trang\",\"amy\"]",
+          "awaitingFinalBookingConfirmation": "true",
+          "lastAskedSlot": "bookingConfirmation",
+          "conversationComplete": "false",
+          "conversationState": "CONTINUE",
+          "conversationOutcome": "NEEDS_INPUT"
+        },
+        "alternatives": []
+      }
+    },
+    {
+      "turn": 6,
+      "transcript": "any staff but not praying",
+      "response": {
+        "success": true,
+        "routeMessage": "<speak>Okay, I'll exclude Trang. <break time=\"300ms\"/> I found Kelly available. <break time=\"300ms\"/> lee, just to confirm: Manicure today at 11 AM with Kelly. <break time=\"300ms\"/> Is that correct?</speak>",
+        "outcome": "MISSING_INFO",
+        "message": "<speak>Okay, I'll exclude Trang. <break time=\"300ms\"/> I found Kelly available. <break time=\"300ms\"/> lee, just to confirm: Manicure today at 11 AM with Kelly. <break time=\"300ms\"/> Is that correct?</speak>",
+        "dialogAction": "ConfirmIntent",
+        "fulfillmentState": "InProgress",
+        "appointmentId": null,
+        "bookingAttemptId": "a7649b22-4c28-4d47-98d6-7fd89ea7ec7e",
+        "callSessionId": "2b23655d-5b18-40d7-ab42-58d3f674ebc4",
+        "aiInteractionId": "1805df57-3487-40d7-8e3f-bb005c50d0ff",
+        "missingFields": [],
+        "sessionAttributes": {
+          "serviceName": "Manicure",
+          "confirmedServiceName": "Manicure",
+          "requestedDate": "2026-07-14",
+          "requestedTime": "11:00",
+          "staffPreference": "Kelly",
+          "staffId": "25406cde-99ef-4407-999d-cf42eaa67bc3",
+          "selectedStaffId": "25406cde-99ef-4407-999d-cf42eaa67bc3",
+          "confirmedStaffId": "25406cde-99ef-4407-999d-cf42eaa67bc3",
+          "confirmedStaffName": "Kelly",
+          "excludedStaffIds": "[\"903511ee-4849-43dd-85fb-73595e79a233\",\"e75b9b6d-ad6a-4060-b945-43f1358e3a79\"]",
+          "excludedStaffNames": "[\"trang\",\"amy\"]",
+          "awaitingFinalBookingConfirmation": "true",
+          "lastAskedSlot": "bookingConfirmation",
+          "conversationComplete": "false",
+          "conversationState": "CONTINUE",
+          "conversationOutcome": "NEEDS_INPUT"
+        },
+        "alternatives": []
+      }
+    }
+  ],
+  "assertions": {
+    "noAppointmentCreatedBeforeConfirmation": true,
+    "manicureSticky": true,
+    "dateSticky": true,
+    "timeSticky": true,
+    "trangExcluded": true,
+    "selectedTechnicianIsNotTrang": true,
+    "finalConfirmationProduced": true,
+    "trangAbsentFromPostExclusionAlternatives": true,
+    "trangAbsentFromPostExclusionDtmfMenu": true
+  }
+}

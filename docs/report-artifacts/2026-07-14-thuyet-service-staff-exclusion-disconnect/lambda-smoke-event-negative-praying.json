@@ -1,0 +1,87 @@
+{
+  "messageVersion": "1.0",
+  "invocationSource": "DialogCodeHook",
+  "inputMode": "Speech",
+  "inputTranscript": "any staff but not praying",
+  "transcriptions": [
+    {
+      "transcription": "any staff but not praying",
+      "transcriptionConfidence": 0.58,
+      "resolvedContext": {
+        "intent": "BookAppointmentIntent"
+      }
+    },
+    {
+      "transcription": "any staff but not praying",
+      "transcriptionConfidence": 0.54,
+      "resolvedContext": {
+        "intent": "BookAppointmentIntent"
+      }
+    }
+  ],
+  "interpretations": [
+    {
+      "intent": {
+        "name": "BookAppointmentIntent",
+        "slots": {
+          "staffPreference": {
+            "value": {
+              "originalValue": "praying",
+              "interpretedValue": "praying",
+              "resolvedValues": [
+                "praying"
+              ]
+            }
+          }
+        },
+        "state": "InProgress"
+      }
+    }
+  ],
+  "bot": {
+    "id": "KHMIXGA2US",
+    "aliasId": "JVIPIZDYE3",
+    "localeId": "en_US"
+  },
+  "sessionId": "codex-lambda-smoke-1784040344538-negative-praying",
+  "requestAttributes": {},
+  "sessionState": {
+    "sessionAttributes": {
+      "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147",
+      "CalledNumber": "+18483487681",
+      "SystemEndpointAddress": "+18483487681",
+      "CustomerEndpointAddress": "+84798171999",
+      "CallerId": "+84798171999",
+      "AmazonConnectContactId": "codex-lambda-smoke-1784040344538-negative-praying",
+      "amazonConnectContactId": "codex-lambda-smoke-1784040344538-negative-praying",
+      "customerName": "Thuyet",
+      "customerPhone": "+84798171999",
+      "lastAskedSlot": "bookingConfirmation",
+      "serviceName": "Manicure",
+      "requestedDate": "2026-07-14",
+      "requestedTime": "11:00",
+      "staffPreference": "Trang",
+      "staffId": "903511ee-4849-43dd-85fb-73595e79a233",
+      "selectedStaffId": "903511ee-4849-43dd-85fb-73595e79a233",
+      "confirmedStaffId": "903511ee-4849-43dd-85fb-73595e79a233",
+      "confirmedStaffName": "Trang",
+      "awaitingFinalBookingConfirmation": "true",
+      "bookingConfirmationAsked": "true"
+    },
+    "intent": {
+      "name": "BookAppointmentIntent",
+      "slots": {
+        "staffPreference": {
+          "value": {
+            "originalValue": "praying",
+            "interpretedValue": "praying",
+            "resolvedValues": [
+              "praying"
+            ]
+          }
+        }
+      },
+      "state": "InProgress"
+    }
+  }
+}

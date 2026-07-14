@@ -1,0 +1,1134 @@
+{
+  "generatedFromProviderCallIds": [
+    "codex-lambda-smoke-1784040344538-staff-what-available",
+    "codex-lambda-smoke-1784040344538-staff-any-stop",
+    "codex-lambda-smoke-1784040344538-negative-jang",
+    "codex-lambda-smoke-1784040344538-negative-praying",
+    "codex-lambda-smoke-1784040344538-another-staff"
+  ],
+  "callExport": {
+    "schemaVersion": 2,
+    "exportedAt": "2026-07-14T14:49:03.240Z",
+    "exportType": "multi_call_debug",
+    "exportMode": "gpt",
+    "requestedCount": 5,
+    "recordCount": 5,
+    "deduplicatedCount": 0,
+    "notFoundIds": [],
+    "omittedDuplicateFields": [
+      "heavy AI exchange payloads",
+      "full session attribute snapshots",
+      "raw booking input payloads",
+      "repeated appointment relation trees",
+      "repeated Lex diagnostic trees",
+      "duplicate adjacent transcript rows"
+    ],
+    "canonicalDeduplicationNote": "Call Logs and AI Logs debug exports use one canonical call record when selections resolve to the same calls.",
+    "coverage": {
+      "applicationSessionFound": true,
+      "providerContactFound": false,
+      "providerTraceFound": false,
+      "limitations": [
+        "Amazon Connect trace enrichment failed",
+        "Could not load credentials from any providers"
+      ]
+    },
+    "providerOnlyContacts": [],
+    "records": [
+      {
+        "schemaVersion": 2,
+        "exportedAt": "2026-07-14T14:49:03.240Z",
+        "exportType": "call_debug_gpt",
+        "exportMode": "gpt",
+        "selectedFrom": {
+          "sourcePage": "call_logs",
+          "selectedCallSessionIds": [
+            "cb269f8f-13ce-4910-a599-92b333088159"
+          ]
+        },
+        "contactIds": [
+          "codex-lambda-smoke-1784040344538-staff-what-available"
+        ],
+        "call": {
+          "id": "cb269f8f-13ce-4910-a599-92b333088159",
+          "provider": "AMAZON_CONNECT",
+          "providerCallId": "codex-lambda-smoke-1784040344538-staff-what-available",
+          "contactId": "codex-lambda-smoke-1784040344538-staff-what-available",
+          "status": "IN_PROGRESS",
+          "routingOutcome": "AI_RECEPTION",
+          "callerPhone": "+84798171999",
+          "originalPhoneNumber": null,
+          "dialedPhone": "+18483487681",
+          "trackingNumber": "+18483487681",
+          "direction": "inbound",
+          "sourceName": "amazon_connect_lex",
+          "startedAt": "2026-07-14T14:45:53.070Z",
+          "answeredAt": null,
+          "endedAt": null,
+          "durationSeconds": null,
+          "bookingResult": {
+            "status": "NEEDS_INPUT",
+            "updatedAt": "2026-07-14T14:45:53.160Z",
+            "failureReason": "Booking confirmation required before creating appointment.",
+            "bookingAttemptId": "c37bd7c8-0052-47bf-9847-87d55852a156"
+          },
+          "failureReason": "Booking confirmation required before creating appointment.",
+          "finalResolution": "<speak>I found Trang available. <break time=\"300ms\"/> Thuyet, just to confirm: Manicure today at 11 AM with Trang. <break time=\"300ms\"/> Is that correct?</speak>"
+        },
+        "callerSummary": {
+          "callerPhone": "+84798171999",
+          "originalPhoneNumber": null,
+          "dialedPhone": "+18483487681",
+          "trackingNumber": "+18483487681"
+        },
+        "salonSummary": {
+          "id": "9bd14a12-85ed-418a-af7d-3f5cb329c147",
+          "name": "Kiet Nails & Beauty",
+          "timezone": "America/New_York",
+          "status": "ACTIVE"
+        },
+        "transcripts": [
+          {
+            "id": "495a99bd-b0fb-482a-8e2b-441f2dae0619",
+            "source": "amazon_connect_lex",
+            "timestamp": "2026-07-14T14:45:53.091Z",
+            "startedAt": null,
+            "endedAt": null,
+            "text": "what available",
+            "summary": null
+          }
+        ],
+        "turnHistories": [
+          {
+            "index": 0,
+            "timestamp": "2026-07-14T14:45:53.140Z",
+            "callerTranscript": "what available",
+            "aiResponse": "<speak>I found Trang available. <break time=\"300ms\"/> Thuyet, just to confirm: Manicure today at 11 AM with Trang. <break time=\"300ms\"/> Is that correct?</speak>",
+            "lastAskedSlot": {
+              "before": "staffPreference",
+              "after": "bookingConfirmation"
+            },
+            "slotDecisions": null,
+            "trustedSlotsBefore": {
+              "serviceName": "Manicure",
+              "customerName": "Thuyet",
+              "customerPhone": "+84798171999",
+              "requestedDate": "2026-07-14",
+              "requestedTime": "11:00"
+            },
+            "trustedSlotsAfter": {
+              "staffId": "903511ee-4849-43dd-85fb-73595e79a233",
+              "serviceName": "Manicure",
+              "customerName": "Thuyet",
+              "customerPhone": "+84798171999",
+              "requestedDate": "2026-07-14",
+              "requestedTime": "11:00",
+              "selectedStaffId": "903511ee-4849-43dd-85fb-73595e79a233",
+              "staffPreference": "Trang",
+              "confirmedStaffName": "Trang",
+              "confirmedServiceName": "Manicure"
+            },
+            "dtmfRoute": "",
+            "missingFields": null,
+            "turnStateSnapshot": {
+              "lastAskedSlot": "bookingConfirmation",
+              "excludedStaffIds": [],
+              "excludedStaffNames": [],
+              "awaitingFinalBookingConfirmation": "true",
+              "conversationState": "CONTINUE",
+              "conversationOutcome": "NEEDS_INPUT",
+              "conversationComplete": "false"
+            },
+            "asrDiagnostics": {
+              "topTranscript": "what available",
+              "nBestAlternatives": [
+                {
+                  "transcript": "what available",
+                  "confidence": 0.58
+                }
+              ],
+              "confidence": 0.58,
+              "inputMode": "Speech"
+            },
+            "activeDtmfMenuBefore": "staff"
+          }
+        ],
+        "bookingAttempts": [
+          {
+            "id": "c37bd7c8-0052-47bf-9847-87d55852a156",
+            "callSessionId": "cb269f8f-13ce-4910-a599-92b333088159",
+            "transcriptId": "495a99bd-b0fb-482a-8e2b-441f2dae0619",
+            "appointmentId": null,
+            "status": "NEEDS_INPUT",
+            "source": "amazon_connect_ai",
+            "customerName": "Thuyet",
+            "customerPhone": "+84798171999",
+            "requestedService": "Manicure",
+            "requestedStaff": "Trang",
+            "requestedDateTimeText": "2026-07-14T15:00:00.000Z",
+            "normalizedRequest": {
+              "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147",
+              "staffId": "903511ee-4849-43dd-85fb-73595e79a233",
+              "timezone": "America/New_York",
+              "serviceId": "30ec9d22-cdd9-41fb-91ee-b46baf770364",
+              "staffName": "Trang",
+              "serviceName": "Manicure",
+              "customerName": "Thuyet",
+              "startTimeIso": "2026-07-14T15:00:00.000Z",
+              "customerPhone": "+84798171999",
+              "requestedDate": "2026-07-14",
+              "requestedTime": "11:00",
+              "selectedStaffId": "903511ee-4849-43dd-85fb-73595e79a233",
+              "staffPreference": "Trang",
+              "excludedStaffIds": [],
+              "serviceRecordName": "Manicure",
+              "excludedStaffNames": [],
+              "customerProfileSource": "current_request",
+              "salonResolutionSource": "explicit_salon_id"
+            },
+            "alternativeSlots": null,
+            "failureReason": "Booking confirmation required before creating appointment.",
+            "appointment": null,
+            "createdAt": "2026-07-14T14:45:53.127Z",
+            "updatedAt": "2026-07-14T14:45:53.127Z"
+          }
+        ],
+        "escalationSummary": {
+          "count": 0,
+          "records": []
+        },
+        "finalResolution": "<speak>I found Trang available. <break time=\"300ms\"/> Thuyet, just to confirm: Manicure today at 11 AM with Trang. <break time=\"300ms\"/> Is that correct?</speak>",
+        "coverage": {
+          "applicationSessionFound": true,
+          "providerContactFound": false,
+          "providerTraceFound": false,
+          "limitations": [
+            "Could not load credentials from any providers"
+          ]
+        },
+        "providerContacts": [],
+        "providerTraceUnavailableReason": "Could not load credentials from any providers",
+        "warnings": [
+          "Application call session is not finalized; provider timestamps are authoritative when present."
+        ]
+      },
+      {
+        "schemaVersion": 2,
+        "exportedAt": "2026-07-14T14:49:03.240Z",
+        "exportType": "call_debug_gpt",
+        "exportMode": "gpt",
+        "selectedFrom": {
+          "sourcePage": "call_logs",
+          "selectedCallSessionIds": [
+            "6e3bcfbc-d6d9-4ebd-ace5-9d013cdfcc20"
+          ]
+        },
+        "contactIds": [
+          "codex-lambda-smoke-1784040344538-staff-any-stop"
+        ],
+        "call": {
+          "id": "6e3bcfbc-d6d9-4ebd-ace5-9d013cdfcc20",
+          "provider": "AMAZON_CONNECT",
+          "providerCallId": "codex-lambda-smoke-1784040344538-staff-any-stop",
+          "contactId": "codex-lambda-smoke-1784040344538-staff-any-stop",
+          "status": "IN_PROGRESS",
+          "routingOutcome": "AI_RECEPTION",
+          "callerPhone": "+84798171999",
+          "originalPhoneNumber": null,
+          "dialedPhone": "+18483487681",
+          "trackingNumber": "+18483487681",
+          "direction": "inbound",
+          "sourceName": "amazon_connect_lex",
+          "startedAt": "2026-07-14T14:45:55.890Z",
+          "answeredAt": null,
+          "endedAt": null,
+          "durationSeconds": null,
+          "bookingResult": {
+            "status": "NEEDS_INPUT",
+            "updatedAt": "2026-07-14T14:45:55.971Z",
+            "failureReason": "Booking confirmation required before creating appointment.",
+            "bookingAttemptId": "99845f78-e86b-4e4b-a2c9-04b5021f55bd"
+          },
+          "failureReason": "Booking confirmation required before creating appointment.",
+          "finalResolution": "<speak>I found Trang available. <break time=\"300ms\"/> Thuyet, just to confirm: Manicure today at 11 AM with Trang. <break time=\"300ms\"/> Is that correct?</speak>"
+        },
+        "callerSummary": {
+          "callerPhone": "+84798171999",
+          "originalPhoneNumber": null,
+          "dialedPhone": "+18483487681",
+          "trackingNumber": "+18483487681"
+        },
+        "salonSummary": {
+          "id": "9bd14a12-85ed-418a-af7d-3f5cb329c147",
+          "name": "Kiet Nails & Beauty",
+          "timezone": "America/New_York",
+          "status": "ACTIVE"
+        },
+        "transcripts": [
+          {
+            "id": "075bbae1-3a62-49e1-a794-79375055d51d",
+            "source": "amazon_connect_lex",
+            "timestamp": "2026-07-14T14:45:55.909Z",
+            "startedAt": null,
+            "endedAt": null,
+            "text": "any stop",
+            "summary": null
+          }
+        ],
+        "turnHistories": [
+          {
+            "index": 0,
+            "timestamp": "2026-07-14T14:45:55.954Z",
+            "callerTranscript": "any stop",
+            "aiResponse": "<speak>I found Trang available. <break time=\"300ms\"/> Thuyet, just to confirm: Manicure today at 11 AM with Trang. <break time=\"300ms\"/> Is that correct?</speak>",
+            "lastAskedSlot": {
+              "before": "staffPreference",
+              "after": "bookingConfirmation"
+            },
+            "slotDecisions": null,
+            "trustedSlotsBefore": {
+              "serviceName": "Manicure",
+              "customerName": "Thuyet",
+              "customerPhone": "+84798171999",
+              "requestedDate": "2026-07-14",
+              "requestedTime": "11:00"
+            },
+            "trustedSlotsAfter": {
+              "staffId": "903511ee-4849-43dd-85fb-73595e79a233",
+              "serviceName": "Manicure",
+              "customerName": "Thuyet",
+              "customerPhone": "+84798171999",
+              "requestedDate": "2026-07-14",
+              "requestedTime": "11:00",
+              "selectedStaffId": "903511ee-4849-43dd-85fb-73595e79a233",
+              "staffPreference": "Trang",
+              "confirmedStaffName": "Trang",
+              "confirmedServiceName": "Manicure"
+            },
+            "dtmfRoute": "",
+            "missingFields": null,
+            "turnStateSnapshot": {
+              "lastAskedSlot": "bookingConfirmation",
+              "excludedStaffIds": [],
+              "excludedStaffNames": [],
+              "awaitingFinalBookingConfirmation": "true",
+              "conversationState": "CONTINUE",
+              "conversationOutcome": "NEEDS_INPUT",
+              "conversationComplete": "false"
+            },
+            "asrDiagnostics": {
+              "topTranscript": "any stop",
+              "nBestAlternatives": [
+                {
+                  "transcript": "any stop",
+                  "confidence": 0.58
+                }
+              ],
+              "confidence": 0.58,
+              "inputMode": "Speech"
+            },
+            "activeDtmfMenuBefore": "staff"
+          }
+        ],
+        "bookingAttempts": [
+          {
+            "id": "99845f78-e86b-4e4b-a2c9-04b5021f55bd",
+            "callSessionId": "6e3bcfbc-d6d9-4ebd-ace5-9d013cdfcc20",
+            "transcriptId": "075bbae1-3a62-49e1-a794-79375055d51d",
+            "appointmentId": null,
+            "status": "NEEDS_INPUT",
+            "source": "amazon_connect_ai",
+            "customerName": "Thuyet",
+            "customerPhone": "+84798171999",
+            "requestedService": "Manicure",
+            "requestedStaff": "Trang",
+            "requestedDateTimeText": "2026-07-14T15:00:00.000Z",
+            "normalizedRequest": {
+              "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147",
+              "staffId": "903511ee-4849-43dd-85fb-73595e79a233",
+              "timezone": "America/New_York",
+              "serviceId": "30ec9d22-cdd9-41fb-91ee-b46baf770364",
+              "staffName": "Trang",
+              "serviceName": "Manicure",
+              "customerName": "Thuyet",
+              "startTimeIso": "2026-07-14T15:00:00.000Z",
+              "customerPhone": "+84798171999",
+              "requestedDate": "2026-07-14",
+              "requestedTime": "11:00",
+              "selectedStaffId": "903511ee-4849-43dd-85fb-73595e79a233",
+              "staffPreference": "Trang",
+              "excludedStaffIds": [],
+              "serviceRecordName": "Manicure",
+              "excludedStaffNames": [],
+              "customerProfileSource": "current_request",
+              "salonResolutionSource": "explicit_salon_id"
+            },
+            "alternativeSlots": null,
+            "failureReason": "Booking confirmation required before creating appointment.",
+            "appointment": null,
+            "createdAt": "2026-07-14T14:45:55.942Z",
+            "updatedAt": "2026-07-14T14:45:55.942Z"
+          }
+        ],
+        "escalationSummary": {
+          "count": 0,
+          "records": []
+        },
+        "finalResolution": "<speak>I found Trang available. <break time=\"300ms\"/> Thuyet, just to confirm: Manicure today at 11 AM with Trang. <break time=\"300ms\"/> Is that correct?</speak>",
+        "coverage": {
+          "applicationSessionFound": true,
+          "providerContactFound": false,
+          "providerTraceFound": false,
+          "limitations": [
+            "Could not load credentials from any providers"
+          ]
+        },
+        "providerContacts": [],
+        "providerTraceUnavailableReason": "Could not load credentials from any providers",
+        "warnings": [
+          "Application call session is not finalized; provider timestamps are authoritative when present."
+        ]
+      },
+      {
+        "schemaVersion": 2,
+        "exportedAt": "2026-07-14T14:49:03.240Z",
+        "exportType": "call_debug_gpt",
+        "exportMode": "gpt",
+        "selectedFrom": {
+          "sourcePage": "call_logs",
+          "selectedCallSessionIds": [
+            "42d051ab-884a-43d5-975a-4776f7782a60"
+          ]
+        },
+        "contactIds": [
+          "codex-lambda-smoke-1784040344538-negative-jang"
+        ],
+        "call": {
+          "id": "42d051ab-884a-43d5-975a-4776f7782a60",
+          "provider": "AMAZON_CONNECT",
+          "providerCallId": "codex-lambda-smoke-1784040344538-negative-jang",
+          "contactId": "codex-lambda-smoke-1784040344538-negative-jang",
+          "status": "IN_PROGRESS",
+          "routingOutcome": "AI_RECEPTION",
+          "callerPhone": "+84798171999",
+          "originalPhoneNumber": null,
+          "dialedPhone": "+18483487681",
+          "trackingNumber": "+18483487681",
+          "direction": "inbound",
+          "sourceName": "amazon_connect_lex",
+          "startedAt": "2026-07-14T14:45:58.011Z",
+          "answeredAt": null,
+          "endedAt": null,
+          "durationSeconds": null,
+          "bookingResult": {
+            "status": "NEEDS_INPUT",
+            "updatedAt": "2026-07-14T14:45:58.095Z",
+            "failureReason": "Booking confirmation required before creating appointment.",
+            "bookingAttemptId": "08cc2101-7a25-4ac7-b2ee-26cb63966069"
+          },
+          "failureReason": "Booking confirmation required before creating appointment.",
+          "finalResolution": "<speak>Okay, I'll exclude Trang. <break time=\"300ms\"/> I found Amy available. <break time=\"300ms\"/> Thuyet, just to confirm: Manicure today at 11 AM with Amy. <break time=\"300ms\"/> Is that correct?</speak>"
+        },
+        "callerSummary": {
+          "callerPhone": "+84798171999",
+          "originalPhoneNumber": null,
+          "dialedPhone": "+18483487681",
+          "trackingNumber": "+18483487681"
+        },
+        "salonSummary": {
+          "id": "9bd14a12-85ed-418a-af7d-3f5cb329c147",
+          "name": "Kiet Nails & Beauty",
+          "timezone": "America/New_York",
+          "status": "ACTIVE"
+        },
+        "transcripts": [
+          {
+            "id": "f19c3abf-741a-4b08-a02e-90ba58a46fdc",
+            "source": "amazon_connect_lex",
+            "timestamp": "2026-07-14T14:45:58.029Z",
+            "startedAt": null,
+            "endedAt": null,
+            "text": "no i don't want jang",
+            "summary": null
+          }
+        ],
+        "turnHistories": [
+          {
+            "index": 0,
+            "timestamp": "2026-07-14T14:45:58.075Z",
+            "callerTranscript": "no i don't want jang",
+            "aiResponse": "<speak>Okay, I'll exclude Trang. <break time=\"300ms\"/> I found Amy available. <break time=\"300ms\"/> Thuyet, just to confirm: Manicure today at 11 AM with Amy. <break time=\"300ms\"/> Is that correct?</speak>",
+            "lastAskedSlot": {
+              "before": "bookingConfirmation",
+              "after": "bookingConfirmation"
+            },
+            "slotDecisions": null,
+            "trustedSlotsBefore": {
+              "staffId": "903511ee-4849-43dd-85fb-73595e79a233",
+              "serviceName": "Manicure",
+              "customerName": "Thuyet",
+              "customerPhone": "+84798171999",
+              "requestedDate": "2026-07-14",
+              "requestedTime": "11:00",
+              "selectedStaffId": "903511ee-4849-43dd-85fb-73595e79a233",
+              "staffPreference": "Trang",
+              "confirmedStaffName": "Trang"
+            },
+            "trustedSlotsAfter": {
+              "staffId": "e75b9b6d-ad6a-4060-b945-43f1358e3a79",
+              "serviceName": "Manicure",
+              "customerName": "Thuyet",
+              "customerPhone": "+84798171999",
+              "requestedDate": "2026-07-14",
+              "requestedTime": "11:00",
+              "selectedStaffId": "e75b9b6d-ad6a-4060-b945-43f1358e3a79",
+              "staffPreference": "Amy",
+              "confirmedStaffName": "Amy",
+              "confirmedServiceName": "Manicure"
+            },
+            "dtmfRoute": "",
+            "missingFields": null,
+            "turnStateSnapshot": {
+              "lastAskedSlot": "bookingConfirmation",
+              "excludedStaffIds": [
+                "903511ee-4849-43dd-85fb-73595e79a233"
+              ],
+              "excludedStaffNames": [
+                "trang"
+              ],
+              "awaitingFinalBookingConfirmation": "true",
+              "conversationState": "CONTINUE",
+              "conversationOutcome": "NEEDS_INPUT",
+              "conversationComplete": "false"
+            },
+            "asrDiagnostics": {
+              "topTranscript": "no i don't want jang",
+              "nBestAlternatives": [
+                {
+                  "transcript": "no i don't want jang",
+                  "confidence": 0.58
+                }
+              ],
+              "confidence": 0.58,
+              "inputMode": "Speech"
+            }
+          }
+        ],
+        "bookingAttempts": [
+          {
+            "id": "08cc2101-7a25-4ac7-b2ee-26cb63966069",
+            "callSessionId": "42d051ab-884a-43d5-975a-4776f7782a60",
+            "transcriptId": "f19c3abf-741a-4b08-a02e-90ba58a46fdc",
+            "appointmentId": null,
+            "status": "NEEDS_INPUT",
+            "source": "amazon_connect_ai",
+            "customerName": "Thuyet",
+            "customerPhone": "+84798171999",
+            "requestedService": "Manicure",
+            "requestedStaff": "Amy",
+            "requestedDateTimeText": "2026-07-14T15:00:00.000Z",
+            "normalizedRequest": {
+              "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147",
+              "staffId": "e75b9b6d-ad6a-4060-b945-43f1358e3a79",
+              "timezone": "America/New_York",
+              "serviceId": "30ec9d22-cdd9-41fb-91ee-b46baf770364",
+              "staffName": "Amy",
+              "serviceName": "Manicure",
+              "customerName": "Thuyet",
+              "startTimeIso": "2026-07-14T15:00:00.000Z",
+              "customerPhone": "+84798171999",
+              "requestedDate": "2026-07-14",
+              "requestedTime": "11:00",
+              "selectedStaffId": "e75b9b6d-ad6a-4060-b945-43f1358e3a79",
+              "staffPreference": "Amy",
+              "excludedStaffIds": [
+                "903511ee-4849-43dd-85fb-73595e79a233"
+              ],
+              "serviceRecordName": "Manicure",
+              "excludedStaffNames": [
+                "trang"
+              ],
+              "customerProfileSource": "current_request",
+              "salonResolutionSource": "explicit_salon_id"
+            },
+            "alternativeSlots": null,
+            "failureReason": "Booking confirmation required before creating appointment.",
+            "appointment": null,
+            "createdAt": "2026-07-14T14:45:58.062Z",
+            "updatedAt": "2026-07-14T14:45:58.062Z"
+          }
+        ],
+        "escalationSummary": {
+          "count": 0,
+          "records": []
+        },
+        "finalResolution": "<speak>Okay, I'll exclude Trang. <break time=\"300ms\"/> I found Amy available. <break time=\"300ms\"/> Thuyet, just to confirm: Manicure today at 11 AM with Amy. <break time=\"300ms\"/> Is that correct?</speak>",
+        "coverage": {
+          "applicationSessionFound": true,
+          "providerContactFound": false,
+          "providerTraceFound": false,
+          "limitations": [
+            "Could not load credentials from any providers"
+          ]
+        },
+        "providerContacts": [],
+        "providerTraceUnavailableReason": "Could not load credentials from any providers",
+        "warnings": [
+          "Application call session is not finalized; provider timestamps are authoritative when present."
+        ]
+      },
+      {
+        "schemaVersion": 2,
+        "exportedAt": "2026-07-14T14:49:03.240Z",
+        "exportType": "call_debug_gpt",
+        "exportMode": "gpt",
+        "selectedFrom": {
+          "sourcePage": "call_logs",
+          "selectedCallSessionIds": [
+            "ef18f004-4ec1-4299-84a0-0d350d46d86f"
+          ]
+        },
+        "contactIds": [
+          "codex-lambda-smoke-1784040344538-negative-praying"
+        ],
+        "call": {
+          "id": "ef18f004-4ec1-4299-84a0-0d350d46d86f",
+          "provider": "AMAZON_CONNECT",
+          "providerCallId": "codex-lambda-smoke-1784040344538-negative-praying",
+          "contactId": "codex-lambda-smoke-1784040344538-negative-praying",
+          "status": "IN_PROGRESS",
+          "routingOutcome": "AI_RECEPTION",
+          "callerPhone": "+84798171999",
+          "originalPhoneNumber": null,
+          "dialedPhone": "+18483487681",
+          "trackingNumber": "+18483487681",
+          "direction": "inbound",
+          "sourceName": "amazon_connect_lex",
+          "startedAt": "2026-07-14T14:46:00.173Z",
+          "answeredAt": null,
+          "endedAt": null,
+          "durationSeconds": null,
+          "bookingResult": {
+            "status": "NEEDS_INPUT",
+            "updatedAt": "2026-07-14T14:46:00.252Z",
+            "failureReason": "Booking confirmation required before creating appointment.",
+            "bookingAttemptId": "112ae449-4683-4a4d-b26c-0834995638f4"
+          },
+          "failureReason": "Booking confirmation required before creating appointment.",
+          "finalResolution": "<speak>Okay, I'll exclude Trang. <break time=\"300ms\"/> I found Amy available. <break time=\"300ms\"/> Thuyet, just to confirm: Manicure today at 11 AM with Amy. <break time=\"300ms\"/> Is that correct?</speak>"
+        },
+        "callerSummary": {
+          "callerPhone": "+84798171999",
+          "originalPhoneNumber": null,
+          "dialedPhone": "+18483487681",
+          "trackingNumber": "+18483487681"
+        },
+        "salonSummary": {
+          "id": "9bd14a12-85ed-418a-af7d-3f5cb329c147",
+          "name": "Kiet Nails & Beauty",
+          "timezone": "America/New_York",
+          "status": "ACTIVE"
+        },
+        "transcripts": [
+          {
+            "id": "983de881-0f0e-48c2-a236-66195512512c",
+            "source": "amazon_connect_lex",
+            "timestamp": "2026-07-14T14:46:00.196Z",
+            "startedAt": null,
+            "endedAt": null,
+            "text": "any staff but not praying",
+            "summary": null
+          }
+        ],
+        "turnHistories": [
+          {
+            "index": 0,
+            "timestamp": "2026-07-14T14:46:00.234Z",
+            "callerTranscript": "any staff but not praying",
+            "aiResponse": "<speak>Okay, I'll exclude Trang. <break time=\"300ms\"/> I found Amy available. <break time=\"300ms\"/> Thuyet, just to confirm: Manicure today at 11 AM with Amy. <break time=\"300ms\"/> Is that correct?</speak>",
+            "lastAskedSlot": {
+              "before": "bookingConfirmation",
+              "after": "bookingConfirmation"
+            },
+            "slotDecisions": null,
+            "trustedSlotsBefore": {
+              "staffId": "903511ee-4849-43dd-85fb-73595e79a233",
+              "serviceName": "Manicure",
+              "customerName": "Thuyet",
+              "customerPhone": "+84798171999",
+              "requestedDate": "2026-07-14",
+              "requestedTime": "11:00",
+              "selectedStaffId": "903511ee-4849-43dd-85fb-73595e79a233",
+              "staffPreference": "Trang",
+              "confirmedStaffName": "Trang"
+            },
+            "trustedSlotsAfter": {
+              "staffId": "e75b9b6d-ad6a-4060-b945-43f1358e3a79",
+              "serviceName": "Manicure",
+              "customerName": "Thuyet",
+              "customerPhone": "+84798171999",
+              "requestedDate": "2026-07-14",
+              "requestedTime": "11:00",
+              "selectedStaffId": "e75b9b6d-ad6a-4060-b945-43f1358e3a79",
+              "staffPreference": "Amy",
+              "confirmedStaffName": "Amy",
+              "confirmedServiceName": "Manicure"
+            },
+            "dtmfRoute": "",
+            "missingFields": null,
+            "turnStateSnapshot": {
+              "lastAskedSlot": "bookingConfirmation",
+              "excludedStaffIds": [
+                "903511ee-4849-43dd-85fb-73595e79a233"
+              ],
+              "excludedStaffNames": [
+                "trang"
+              ],
+              "awaitingFinalBookingConfirmation": "true",
+              "conversationState": "CONTINUE",
+              "conversationOutcome": "NEEDS_INPUT",
+              "conversationComplete": "false"
+            },
+            "asrDiagnostics": {
+              "topTranscript": "any staff but not praying",
+              "nBestAlternatives": [
+                {
+                  "transcript": "any staff but not praying",
+                  "confidence": 0.58
+                }
+              ],
+              "confidence": 0.58,
+              "inputMode": "Speech"
+            }
+          }
+        ],
+        "bookingAttempts": [
+          {
+            "id": "112ae449-4683-4a4d-b26c-0834995638f4",
+            "callSessionId": "ef18f004-4ec1-4299-84a0-0d350d46d86f",
+            "transcriptId": "983de881-0f0e-48c2-a236-66195512512c",
+            "appointmentId": null,
+            "status": "NEEDS_INPUT",
+            "source": "amazon_connect_ai",
+            "customerName": "Thuyet",
+            "customerPhone": "+84798171999",
+            "requestedService": "Manicure",
+            "requestedStaff": "Amy",
+            "requestedDateTimeText": "2026-07-14T15:00:00.000Z",
+            "normalizedRequest": {
+              "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147",
+              "staffId": "e75b9b6d-ad6a-4060-b945-43f1358e3a79",
+              "timezone": "America/New_York",
+              "serviceId": "30ec9d22-cdd9-41fb-91ee-b46baf770364",
+              "staffName": "Amy",
+              "serviceName": "Manicure",
+              "customerName": "Thuyet",
+              "startTimeIso": "2026-07-14T15:00:00.000Z",
+              "customerPhone": "+84798171999",
+              "requestedDate": "2026-07-14",
+              "requestedTime": "11:00",
+              "selectedStaffId": "e75b9b6d-ad6a-4060-b945-43f1358e3a79",
+              "staffPreference": "Amy",
+              "excludedStaffIds": [
+                "903511ee-4849-43dd-85fb-73595e79a233"
+              ],
+              "serviceRecordName": "Manicure",
+              "excludedStaffNames": [
+                "trang"
+              ],
+              "customerProfileSource": "current_request",
+              "salonResolutionSource": "explicit_salon_id"
+            },
+            "alternativeSlots": null,
+            "failureReason": "Booking confirmation required before creating appointment.",
+            "appointment": null,
+            "createdAt": "2026-07-14T14:46:00.227Z",
+            "updatedAt": "2026-07-14T14:46:00.227Z"
+          }
+        ],
+        "escalationSummary": {
+          "count": 0,
+          "records": []
+        },
+        "finalResolution": "<speak>Okay, I'll exclude Trang. <break time=\"300ms\"/> I found Amy available. <break time=\"300ms\"/> Thuyet, just to confirm: Manicure today at 11 AM with Amy. <break time=\"300ms\"/> Is that correct?</speak>",
+        "coverage": {
+          "applicationSessionFound": true,
+          "providerContactFound": false,
+          "providerTraceFound": false,
+          "limitations": [
+            "Could not load credentials from any providers"
+          ]
+        },
+        "providerContacts": [],
+        "providerTraceUnavailableReason": "Could not load credentials from any providers",
+        "warnings": [
+          "Application call session is not finalized; provider timestamps are authoritative when present."
+        ]
+      },
+      {
+        "schemaVersion": 2,
+        "exportedAt": "2026-07-14T14:49:03.240Z",
+        "exportType": "call_debug_gpt",
+        "exportMode": "gpt",
+        "selectedFrom": {
+          "sourcePage": "call_logs",
+          "selectedCallSessionIds": [
+            "7c182ee3-a6c5-4884-97bd-99ec9c905c3c"
+          ]
+        },
+        "contactIds": [
+          "codex-lambda-smoke-1784040344538-another-staff"
+        ],
+        "call": {
+          "id": "7c182ee3-a6c5-4884-97bd-99ec9c905c3c",
+          "provider": "AMAZON_CONNECT",
+          "providerCallId": "codex-lambda-smoke-1784040344538-another-staff",
+          "contactId": "codex-lambda-smoke-1784040344538-another-staff",
+          "status": "IN_PROGRESS",
+          "routingOutcome": "AI_RECEPTION",
+          "callerPhone": "+84798171999",
+          "originalPhoneNumber": null,
+          "dialedPhone": "+18483487681",
+          "trackingNumber": "+18483487681",
+          "direction": "inbound",
+          "sourceName": "amazon_connect_lex",
+          "startedAt": "2026-07-14T14:46:02.751Z",
+          "answeredAt": null,
+          "endedAt": null,
+          "durationSeconds": null,
+          "bookingResult": {
+            "status": "NEEDS_INPUT",
+            "updatedAt": "2026-07-14T14:46:02.841Z",
+            "failureReason": "Booking confirmation required before creating appointment.",
+            "bookingAttemptId": "bbb895fa-d77c-4743-ad4c-8601ba59f47b"
+          },
+          "failureReason": "Booking confirmation required before creating appointment.",
+          "finalResolution": "<speak>Okay, I'll exclude Amy. <break time=\"300ms\"/> I found Kelly available. <break time=\"300ms\"/> Thuyet, just to confirm: Manicure today at 11 AM with Kelly. <break time=\"300ms\"/> Is that correct?</speak>"
+        },
+        "callerSummary": {
+          "callerPhone": "+84798171999",
+          "originalPhoneNumber": null,
+          "dialedPhone": "+18483487681",
+          "trackingNumber": "+18483487681"
+        },
+        "salonSummary": {
+          "id": "9bd14a12-85ed-418a-af7d-3f5cb329c147",
+          "name": "Kiet Nails & Beauty",
+          "timezone": "America/New_York",
+          "status": "ACTIVE"
+        },
+        "transcripts": [
+          {
+            "id": "5a72162d-c7e6-4c94-98e4-5a2e937b73c9",
+            "source": "amazon_connect_lex",
+            "timestamp": "2026-07-14T14:46:02.770Z",
+            "startedAt": null,
+            "endedAt": null,
+            "text": "i want another staff",
+            "summary": null
+          }
+        ],
+        "turnHistories": [
+          {
+            "index": 0,
+            "timestamp": "2026-07-14T14:46:02.824Z",
+            "callerTranscript": "i want another staff",
+            "aiResponse": "<speak>Okay, I'll exclude Amy. <break time=\"300ms\"/> I found Kelly available. <break time=\"300ms\"/> Thuyet, just to confirm: Manicure today at 11 AM with Kelly. <break time=\"300ms\"/> Is that correct?</speak>",
+            "lastAskedSlot": {
+              "before": "bookingConfirmation",
+              "after": "bookingConfirmation"
+            },
+            "slotDecisions": null,
+            "trustedSlotsBefore": {
+              "staffId": "e75b9b6d-ad6a-4060-b945-43f1358e3a79",
+              "serviceName": "Manicure",
+              "customerName": "Thuyet",
+              "customerPhone": "+84798171999",
+              "requestedDate": "2026-07-14",
+              "requestedTime": "11:00",
+              "selectedStaffId": "e75b9b6d-ad6a-4060-b945-43f1358e3a79",
+              "staffPreference": "Amy",
+              "confirmedStaffName": "Amy"
+            },
+            "trustedSlotsAfter": {
+              "staffId": "25406cde-99ef-4407-999d-cf42eaa67bc3",
+              "serviceName": "Manicure",
+              "customerName": "Thuyet",
+              "customerPhone": "+84798171999",
+              "requestedDate": "2026-07-14",
+              "requestedTime": "11:00",
+              "selectedStaffId": "25406cde-99ef-4407-999d-cf42eaa67bc3",
+              "staffPreference": "Kelly",
+              "confirmedStaffName": "Kelly",
+              "confirmedServiceName": "Manicure"
+            },
+            "dtmfRoute": "",
+            "missingFields": null,
+            "turnStateSnapshot": {
+              "lastAskedSlot": "bookingConfirmation",
+              "excludedStaffIds": [
+                "903511ee-4849-43dd-85fb-73595e79a233",
+                "e75b9b6d-ad6a-4060-b945-43f1358e3a79"
+              ],
+              "excludedStaffNames": [
+                "trang",
+                "amy"
+              ],
+              "awaitingFinalBookingConfirmation": "true",
+              "conversationState": "CONTINUE",
+              "conversationOutcome": "NEEDS_INPUT",
+              "conversationComplete": "false"
+            },
+            "asrDiagnostics": {
+              "topTranscript": "i want another staff",
+              "nBestAlternatives": [
+                {
+                  "transcript": "i want another staff",
+                  "confidence": 0.58
+                }
+              ],
+              "confidence": 0.58,
+              "inputMode": "Speech"
+            }
+          }
+        ],
+        "bookingAttempts": [
+          {
+            "id": "bbb895fa-d77c-4743-ad4c-8601ba59f47b",
+            "callSessionId": "7c182ee3-a6c5-4884-97bd-99ec9c905c3c",
+            "transcriptId": "5a72162d-c7e6-4c94-98e4-5a2e937b73c9",
+            "appointmentId": null,
+            "status": "NEEDS_INPUT",
+            "source": "amazon_connect_ai",
+            "customerName": "Thuyet",
+            "customerPhone": "+84798171999",
+            "requestedService": "Manicure",
+            "requestedStaff": "Kelly",
+            "requestedDateTimeText": "2026-07-14T15:00:00.000Z",
+            "normalizedRequest": {
+              "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147",
+              "staffId": "25406cde-99ef-4407-999d-cf42eaa67bc3",
+              "timezone": "America/New_York",
+              "serviceId": "30ec9d22-cdd9-41fb-91ee-b46baf770364",
+              "staffName": "Kelly",
+              "serviceName": "Manicure",
+              "customerName": "Thuyet",
+              "startTimeIso": "2026-07-14T15:00:00.000Z",
+              "customerPhone": "+84798171999",
+              "requestedDate": "2026-07-14",
+              "requestedTime": "11:00",
+              "selectedStaffId": "25406cde-99ef-4407-999d-cf42eaa67bc3",
+              "staffPreference": "Kelly",
+              "excludedStaffIds": [
+                "903511ee-4849-43dd-85fb-73595e79a233",
+                "e75b9b6d-ad6a-4060-b945-43f1358e3a79"
+              ],
+              "serviceRecordName": "Manicure",
+              "excludedStaffNames": [
+                "trang",
+                "amy"
+              ],
+              "customerProfileSource": "current_request",
+              "salonResolutionSource": "explicit_salon_id"
+            },
+            "alternativeSlots": null,
+            "failureReason": "Booking confirmation required before creating appointment.",
+            "appointment": null,
+            "createdAt": "2026-07-14T14:46:02.815Z",
+            "updatedAt": "2026-07-14T14:46:02.815Z"
+          }
+        ],
+        "escalationSummary": {
+          "count": 0,
+          "records": []
+        },
+        "finalResolution": "<speak>Okay, I'll exclude Amy. <break time=\"300ms\"/> I found Kelly available. <break time=\"300ms\"/> Thuyet, just to confirm: Manicure today at 11 AM with Kelly. <break time=\"300ms\"/> Is that correct?</speak>",
+        "coverage": {
+          "applicationSessionFound": true,
+          "providerContactFound": false,
+          "providerTraceFound": false,
+          "limitations": [
+            "Could not load credentials from any providers"
+          ]
+        },
+        "providerContacts": [],
+        "providerTraceUnavailableReason": "Could not load credentials from any providers",
+        "warnings": [
+          "Application call session is not finalized; provider timestamps are authoritative when present."
+        ]
+      }
+    ],
+    "serializationDurationMs": 0.16,
+    "approximateJsonBytes": 27194,
+    "timings": {
+      "callSessionQueryDurationMs": 36.47,
+      "databaseDurationMs": 36.48,
+      "buildDurationMs": 70.01,
+      "serializationDurationMs": 0.16,
+      "responseBytes": 27194
+    }
+  },
+  "summary": {
+    "schemaVersion": 2,
+    "exportType": "multi_call_debug",
+    "exportMode": "gpt",
+    "recordCount": 5,
+    "responseBytes": 27194,
+    "coverage": {
+      "applicationSessionFound": true,
+      "providerContactFound": false,
+      "providerTraceFound": false,
+      "limitations": [
+        "Amazon Connect trace enrichment failed",
+        "Could not load credentials from any providers"
+      ]
+    },
+    "providerOnlyContacts": [],
+    "firstRecordCoverage": {
+      "applicationSessionFound": true,
+      "providerContactFound": false,
+      "providerTraceFound": false,
+      "limitations": [
+        "Could not load credentials from any providers"
+      ]
+    },
+    "firstRecordWarnings": [
+      "Application call session is not finalized; provider timestamps are authoritative when present."
+    ],
+    "firstRecordProviderContacts": [],
+    "turnSnapshots": [
+      {
+        "turnStateSnapshot": {
+          "lastAskedSlot": "bookingConfirmation",
+          "excludedStaffIds": [],
+          "excludedStaffNames": [],
+          "awaitingFinalBookingConfirmation": "true",
+          "conversationState": "CONTINUE",
+          "conversationOutcome": "NEEDS_INPUT",
+          "conversationComplete": "false"
+        },
+        "asrDiagnostics": {
+          "topTranscript": "what available",
+          "nBestAlternatives": [
+            {
+              "transcript": "what available",
+              "confidence": 0.58
+            }
+          ],
+          "confidence": 0.58,
+          "inputMode": "Speech"
+        }
+      },
+      {
+        "turnStateSnapshot": {
+          "lastAskedSlot": "bookingConfirmation",
+          "excludedStaffIds": [],
+          "excludedStaffNames": [],
+          "awaitingFinalBookingConfirmation": "true",
+          "conversationState": "CONTINUE",
+          "conversationOutcome": "NEEDS_INPUT",
+          "conversationComplete": "false"
+        },
+        "asrDiagnostics": {
+          "topTranscript": "any stop",
+          "nBestAlternatives": [
+            {
+              "transcript": "any stop",
+              "confidence": 0.58
+            }
+          ],
+          "confidence": 0.58,
+          "inputMode": "Speech"
+        }
+      },
+      {
+        "turnStateSnapshot": {
+          "lastAskedSlot": "bookingConfirmation",
+          "excludedStaffIds": [
+            "903511ee-4849-43dd-85fb-73595e79a233"
+          ],
+          "excludedStaffNames": [
+            "trang"
+          ],
+          "awaitingFinalBookingConfirmation": "true",
+          "conversationState": "CONTINUE",
+          "conversationOutcome": "NEEDS_INPUT",
+          "conversationComplete": "false"
+        },
+        "asrDiagnostics": {
+          "topTranscript": "no i don't want jang",
+          "nBestAlternatives": [
+            {
+              "transcript": "no i don't want jang",
+              "confidence": 0.58
+            }
+          ],
+          "confidence": 0.58,
+          "inputMode": "Speech"
+        }
+      },
+      {
+        "turnStateSnapshot": {
+          "lastAskedSlot": "bookingConfirmation",
+          "excludedStaffIds": [
+            "903511ee-4849-43dd-85fb-73595e79a233"
+          ],
+          "excludedStaffNames": [
+            "trang"
+          ],
+          "awaitingFinalBookingConfirmation": "true",
+          "conversationState": "CONTINUE",
+          "conversationOutcome": "NEEDS_INPUT",
+          "conversationComplete": "false"
+        },
+        "asrDiagnostics": {
+          "topTranscript": "any staff but not praying",
+          "nBestAlternatives": [
+            {
+              "transcript": "any staff but not praying",
+              "confidence": 0.58
+            }
+          ],
+          "confidence": 0.58,
+          "inputMode": "Speech"
+        }
+      },
+      {
+        "turnStateSnapshot": {
+          "lastAskedSlot": "bookingConfirmation",
+          "excludedStaffIds": [
+            "903511ee-4849-43dd-85fb-73595e79a233",
+            "e75b9b6d-ad6a-4060-b945-43f1358e3a79"
+          ],
+          "excludedStaffNames": [
+            "trang",
+            "amy"
+          ],
+          "awaitingFinalBookingConfirmation": "true",
+          "conversationState": "CONTINUE",
+          "conversationOutcome": "NEEDS_INPUT",
+          "conversationComplete": "false"
+        },
+        "asrDiagnostics": {
+          "topTranscript": "i want another staff",
+          "nBestAlternatives": [
+            {
+              "transcript": "i want another staff",
+              "confidence": 0.58
+            }
+          ],
+          "confidence": 0.58,
+          "inputMode": "Speech"
+        }
+      }
+    ],
+    "aiExportSummary": {
+      "schemaVersion": 2,
+      "exportType": "multi_ai_call_debug",
+      "exportMode": "gpt",
+      "recordCount": 1,
+      "canonicalDeduplicationNote": "Call Logs and AI Logs debug exports use one canonical call record when selections resolve to the same calls.",
+      "responseBytes": 6050
+    }
+  }
+}

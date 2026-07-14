@@ -1,0 +1,47 @@
+{
+    "FunctionName": "fastaibooking-booking-handler",
+    "FunctionArn": "arn:aws:lambda:us-east-1:197452633989:function:fastaibooking-booking-handler",
+    "Runtime": "nodejs20.x",
+    "Role": "arn:aws:iam::197452633989:role/service-role/fastaibooking-booking-handler-role-e3acnre0",
+    "Handler": "index.handler",
+    "CodeSize": 37494,
+    "Description": "",
+    "Timeout": 15,
+    "MemorySize": 128,
+    "LastModified": "2026-07-14T14:44:55.000+0000",
+    "CodeSha256": "/Jrie6LOEr660QHwgQ+UalDPqTHS4mRBf/Xam/5gVpM=",
+    "Version": "$LATEST",
+    "Environment": {
+        "Variables": {
+            "FASTAIBOOKING_API_INTERNAL_TOKEN": "Dp2743UI71thF8DuDj6aP8wrSsThUqmv63zG2AaURGOe00htPZuFS2cKyJRir5oe",
+            "DEFAULT_SALON_ID": "9bd14a12-85ed-418a-af7d-3f5cb329c147",
+            "FASTAIBOOKING_API_BASE_URL": "https://api-new-nail.kendemo.com"
+        }
+    },
+    "TracingConfig": {
+        "Mode": "PassThrough"
+    },
+    "RevisionId": "8d1c12d6-9eab-4153-bf83-20ac65ca6be6",
+    "State": "Active",
+    "LastUpdateStatus": "InProgress",
+    "LastUpdateStatusReason": "The function is being created.",
+    "LastUpdateStatusReasonCode": "Creating",
+    "PackageType": "Zip",
+    "Architectures": [
+        "x86_64"
+    ],
+    "EphemeralStorage": {
+        "Size": 512
+    },
+    "SnapStart": {
+        "ApplyOn": "None",
+        "OptimizationStatus": "Off"
+    },
+    "RuntimeVersionConfig": {
+        "RuntimeVersionArn": "arn:aws:lambda:us-east-1::runtime:18671876e7cc385452255180c58ca50cf8763398a4248ae92ed14410d196b942"
+    },
+    "LoggingConfig": {
+        "LogFormat": "Text",
+        "LogGroup": "/aws/lambda/fastaibooking-booking-handler"
+    }
+}

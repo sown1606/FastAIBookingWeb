@@ -1,0 +1,101 @@
+{
+  "contactGroup": "codex-lambda-smoke-1784040344538",
+  "assertions": {
+    "fiftyKillResolvesPedicureOrServiceMenu": true,
+    "manicureRemainsManicure": true,
+    "whatAvailableResolvesAnyStaffPath": true,
+    "anyStopResolvesAnyStaffPath": true,
+    "negativeVariantsExcludeTrang": true,
+    "negativeVariantsDoNotSelectTrang": true,
+    "anotherStaffExcludesAmy": true,
+    "anotherStaffDoesNotSelectAmyOrTrang": true,
+    "noAppointmentsCreated": true,
+    "conversationStaysNonterminal": true
+  },
+  "results": [
+    {
+      "name": "service-fifty-kill",
+      "transcript": "fifty kill",
+      "dialogAction": "ElicitSlot",
+      "slotToElicit": "requestedDate",
+      "message": "What day would you like? You can say today or tomorrow.",
+      "serviceName": "Pedicure",
+      "appointmentId": null
+    },
+    {
+      "name": "service-manicure",
+      "transcript": "manicure",
+      "dialogAction": "ElicitSlot",
+      "slotToElicit": "requestedDate",
+      "message": "What day would you like? You can say today or tomorrow.",
+      "serviceName": "Manicure",
+      "appointmentId": null
+    },
+    {
+      "name": "staff-what-available",
+      "transcript": "what available",
+      "dialogAction": "ConfirmIntent",
+      "message": "<speak>I found Trang available. <break time=\"300ms\"/> Thuyet, just to confirm: Manicure today at 11 AM with Trang. <break time=\"300ms\"/> Is that correct?</speak>",
+      "serviceName": "Manicure",
+      "staffPreference": "Trang",
+      "staffId": "903511ee-4849-43dd-85fb-73595e79a233",
+      "selectedStaffId": "903511ee-4849-43dd-85fb-73595e79a233",
+      "conversationComplete": "false",
+      "appointmentId": null
+    },
+    {
+      "name": "staff-any-stop",
+      "transcript": "any stop",
+      "dialogAction": "ConfirmIntent",
+      "message": "<speak>I found Trang available. <break time=\"300ms\"/> Thuyet, just to confirm: Manicure today at 11 AM with Trang. <break time=\"300ms\"/> Is that correct?</speak>",
+      "serviceName": "Manicure",
+      "staffPreference": "Trang",
+      "staffId": "903511ee-4849-43dd-85fb-73595e79a233",
+      "selectedStaffId": "903511ee-4849-43dd-85fb-73595e79a233",
+      "conversationComplete": "false",
+      "appointmentId": null
+    },
+    {
+      "name": "negative-jang",
+      "transcript": "no i don't want jang",
+      "dialogAction": "ConfirmIntent",
+      "message": "<speak>Okay, I'll exclude Trang. <break time=\"300ms\"/> I found Amy available. <break time=\"300ms\"/> Thuyet, just to confirm: Manicure today at 11 AM with Amy. <break time=\"300ms\"/> Is that correct?</speak>",
+      "serviceName": "Manicure",
+      "staffPreference": "Amy",
+      "staffId": "e75b9b6d-ad6a-4060-b945-43f1358e3a79",
+      "selectedStaffId": "e75b9b6d-ad6a-4060-b945-43f1358e3a79",
+      "excludedStaffIds": "[\"903511ee-4849-43dd-85fb-73595e79a233\"]",
+      "excludedStaffNames": "[\"trang\"]",
+      "conversationComplete": "false",
+      "appointmentId": null
+    },
+    {
+      "name": "negative-praying",
+      "transcript": "any staff but not praying",
+      "dialogAction": "ConfirmIntent",
+      "message": "<speak>Okay, I'll exclude Trang. <break time=\"300ms\"/> I found Amy available. <break time=\"300ms\"/> Thuyet, just to confirm: Manicure today at 11 AM with Amy. <break time=\"300ms\"/> Is that correct?</speak>",
+      "serviceName": "Manicure",
+      "staffPreference": "Amy",
+      "staffId": "e75b9b6d-ad6a-4060-b945-43f1358e3a79",
+      "selectedStaffId": "e75b9b6d-ad6a-4060-b945-43f1358e3a79",
+      "excludedStaffIds": "[\"903511ee-4849-43dd-85fb-73595e79a233\"]",
+      "excludedStaffNames": "[\"trang\"]",
+      "conversationComplete": "false",
+      "appointmentId": null
+    },
+    {
+      "name": "another-staff",
+      "transcript": "i want another staff",
+      "dialogAction": "ConfirmIntent",
+      "message": "<speak>Okay, I'll exclude Amy. <break time=\"300ms\"/> I found Kelly available. <break time=\"300ms\"/> Thuyet, just to confirm: Manicure today at 11 AM with Kelly. <break time=\"300ms\"/> Is that correct?</speak>",
+      "serviceName": "Manicure",
+      "staffPreference": "Kelly",
+      "staffId": "25406cde-99ef-4407-999d-cf42eaa67bc3",
+      "selectedStaffId": "25406cde-99ef-4407-999d-cf42eaa67bc3",
+      "excludedStaffIds": "[\"903511ee-4849-43dd-85fb-73595e79a233\",\"e75b9b6d-ad6a-4060-b945-43f1358e3a79\"]",
+      "excludedStaffNames": "[\"trang\",\"amy\"]",
+      "conversationComplete": "false",
+      "appointmentId": null
+    }
+  ]
+}

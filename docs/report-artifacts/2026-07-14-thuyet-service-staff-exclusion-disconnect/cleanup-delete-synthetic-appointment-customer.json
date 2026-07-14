@@ -1,0 +1,32 @@
+prisma:query SELECT "public"."Appointment"."id", "public"."Appointment"."customerId", "public"."Appointment"."source"::text, "public"."Appointment"."createdAt" FROM "public"."Appointment" WHERE ("public"."Appointment"."id" = $1 AND 1=1) LIMIT $2 OFFSET $3
+prisma:query SELECT "public"."BookingAttempt"."id", "public"."BookingAttempt"."callSessionId", "public"."BookingAttempt"."appointmentId" FROM "public"."BookingAttempt" WHERE "public"."BookingAttempt"."appointmentId" IN ($1) OFFSET $2
+prisma:query SELECT "public"."CallSession"."id", "public"."CallSession"."providerCallId" FROM "public"."CallSession" WHERE "public"."CallSession"."id" IN ($1) OFFSET $2
+prisma:query DELETE FROM "public"."Appointment" WHERE ("public"."Appointment"."id" = $1 AND 1=1) RETURNING "public"."Appointment"."id", "public"."Appointment"."customerId"
+prisma:query SELECT COUNT(*) FROM (SELECT "public"."Appointment"."id" FROM "public"."Appointment" WHERE "public"."Appointment"."customerId" = $1 OFFSET $2) AS "sub"
+prisma:query DELETE FROM "public"."Customer" WHERE ("public"."Customer"."id" = $1 AND 1=1) RETURNING "public"."Customer"."id", "public"."Customer"."firstName", "public"."Customer"."lastName", "public"."Customer"."phone"
+{
+  "before": {
+    "id": "f8df65f0-8ff7-4c2b-bf46-ef8dcc6d3cef",
+    "customerId": "03cd70db-b12a-40fb-9749-6ff0ee807d6f",
+    "source": "AI",
+    "createdAt": "2026-07-14T14:46:54.390Z",
+    "bookingAttempts": [
+      {
+        "id": "23a2bd2b-7fbe-4c17-9941-66a308117564",
+        "callSession": {
+          "providerCallId": "3d44dcdc-7ca7-4133-93f5-944d7f6ea2a4"
+        }
+      }
+    ]
+  },
+  "deletedAppointment": {
+    "id": "f8df65f0-8ff7-4c2b-bf46-ef8dcc6d3cef",
+    "customerId": "03cd70db-b12a-40fb-9749-6ff0ee807d6f"
+  },
+  "deletedCustomer": {
+    "id": "03cd70db-b12a-40fb-9749-6ff0ee807d6f",
+    "firstName": "lee",
+    "lastName": "",
+    "phone": "+84798171999"
+  }
+}

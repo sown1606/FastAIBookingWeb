@@ -1,0 +1,59 @@
+[
+  {
+    "transcript": "i want another staff",
+    "ok": true,
+    "dialogAction": {
+      "type": "ElicitSlot",
+      "slotToElicit": "staffPreference"
+    },
+    "excludedStaffIds": "[\"903511ee-4849-43dd-85fb-73595e79a233\"]",
+    "activeDtmfOptionsJson": "{\"0\":\"__operator__\",\"1\":\"Amy\",\"2\":\"Kelly\",\"3\":\"Kevin\",\"4\":\"Alex\",\"5\":\"Linh\",\"6\":\"Thien Le\",\"7\":\"Any staff\"}",
+    "conversationComplete": "false"
+  },
+  {
+    "transcript": "another staff",
+    "ok": true,
+    "dialogAction": {
+      "type": "ElicitSlot",
+      "slotToElicit": "staffPreference"
+    },
+    "excludedStaffIds": "[\"903511ee-4849-43dd-85fb-73595e79a233\"]",
+    "activeDtmfOptionsJson": "{\"0\":\"__operator__\",\"1\":\"Amy\",\"2\":\"Kelly\",\"3\":\"Kevin\",\"4\":\"Alex\",\"5\":\"Linh\",\"6\":\"Thien Le\",\"7\":\"Any staff\"}",
+    "conversationComplete": "false"
+  },
+  {
+    "transcript": "another technician",
+    "ok": true,
+    "dialogAction": {
+      "type": "ElicitSlot",
+      "slotToElicit": "staffPreference"
+    },
+    "excludedStaffIds": "[\"903511ee-4849-43dd-85fb-73595e79a233\"]",
+    "activeDtmfOptionsJson": "{\"0\":\"__operator__\",\"1\":\"Amy\",\"2\":\"Kelly\",\"3\":\"Kevin\",\"4\":\"Alex\",\"5\":\"Linh\",\"6\":\"Thien Le\",\"7\":\"Any staff\"}",
+    "conversationComplete": "false"
+  },
+  {
+    "transcript": "someone else",
+    "ok": true,
+    "dialogAction": {
+      "type": "ElicitSlot",
+      "slotToElicit": "staffPreference"
+    },
+    "excludedStaffIds": "[\"903511ee-4849-43dd-85fb-73595e79a233\"]",
+    "activeDtmfOptionsJson": "{\"0\":\"__operator__\",\"1\":\"Amy\",\"2\":\"Kelly\",\"3\":\"Kevin\",\"4\":\"Alex\",\"5\":\"Linh\",\"6\":\"Thien Le\",\"7\":\"Any staff\"}",
+    "conversationComplete": "false"
+  },
+  {
+    "transcript": "i want another stop",
+    "ok": true,
+    "dialogAction": {
+      "type": "ElicitSlot",
+      "slotToElicit": "staffPreference"
+    },
+    "excludedStaffIds": "[\"903511ee-4849-43dd-85fb-73595e79a233\"]",
+    "activeDtmfOptionsJson": "{\"0\":\"__operator__\",\"1\":\"Amy\",\"2\":\"Kelly\",\"3\":\"Kevin\",\"4\":\"Alex\",\"5\":\"Linh\",\"6\":\"Thien Le\",\"7\":\"Any staff\"}",
+    "staffPreference": "Trang",
+    "staffId": "903511ee-4849-43dd-85fb-73595e79a233",
+    "conversationComplete": "false"
+  }
+]
