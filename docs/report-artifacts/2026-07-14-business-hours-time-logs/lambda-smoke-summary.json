@@ -1,0 +1,46 @@
+[
+  {
+    "name": "friday-closed",
+    "dialogAction": {
+      "type": "ElicitSlot",
+      "slotToElicit": "requestedDate"
+    },
+    "message": "<speak>We are closed on Friday. <break time=\"300ms\"/> What other day works for you? You can also press 0 for a person.</speak>",
+    "attrs": {
+      "lastAskedSlot": "requestedDate",
+      "slotToElicit": "requestedDate",
+      "conversationComplete": "false",
+      "availabilityReasonCode": "SALON_CLOSED",
+      "requestedTime": "11 AM"
+    }
+  },
+  {
+    "name": "noisy-time",
+    "dialogAction": {
+      "type": "ElicitSlot",
+      "slotToElicit": "requestedTime"
+    },
+    "message": "Did you mean 10 AM?",
+    "attrs": {
+      "lastAskedSlot": "requestedTime",
+      "slotToElicit": "requestedTime",
+      "awaitingTimeConfirmation": "true",
+      "proposedRequestedTime": "10 AM"
+    }
+  },
+  {
+    "name": "clear-10am",
+    "dialogAction": {
+      "type": "ElicitSlot",
+      "slotToElicit": "staffPreference"
+    },
+    "message": "<speak>Got it, Pedicure. Which staff would you like, Trang, Amy, Kelly, Kevin, or first available?</speak>",
+    "attrs": {
+      "lastAskedSlot": "staffPreference",
+      "slotToElicit": "staffPreference",
+      "conversationComplete": "false",
+      "requestedTime": "10 AM",
+      "activeDtmfMenu": "staff"
+    }
+  }
+]

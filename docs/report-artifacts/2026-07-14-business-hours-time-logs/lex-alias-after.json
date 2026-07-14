@@ -1,0 +1,71 @@
+{
+    "botAliasId": "JVIPIZDYE3",
+    "botAliasName": "prod",
+    "botVersion": "31",
+    "botAliasLocaleSettings": {
+        "en_US": {
+            "enabled": true,
+            "codeHookSpecification": {
+                "lambdaCodeHook": {
+                    "lambdaARN": "arn:aws:lambda:us-east-1:197452633989:function:fastaibooking-booking-handler",
+                    "codeHookInterfaceVersion": "1.0"
+                }
+            }
+        }
+    },
+    "botAliasHistoryEvents": [
+        {
+            "botVersion": "30",
+            "startDate": "2026-07-12T02:57:30.509000-04:00",
+            "endDate": "2026-07-12T06:33:54.425000-04:00"
+        },
+        {
+            "botVersion": "29",
+            "startDate": "2026-07-12T00:19:30.810000-04:00",
+            "endDate": "2026-07-12T02:57:30.509000-04:00"
+        },
+        {
+            "botVersion": "27",
+            "startDate": "2026-07-10T10:10:43.875000-04:00",
+            "endDate": "2026-07-12T00:19:30.810000-04:00"
+        },
+        {
+            "botVersion": "26",
+            "startDate": "2026-07-10T08:12:27.711000-04:00",
+            "endDate": "2026-07-10T10:10:43.875000-04:00"
+        },
+        {
+            "botVersion": "25",
+            "startDate": "2026-07-10T07:59:51.948000-04:00",
+            "endDate": "2026-07-10T08:12:27.711000-04:00"
+        },
+        {
+            "botVersion": "24",
+            "startDate": "2026-07-10T07:51:27.318000-04:00",
+            "endDate": "2026-07-10T07:59:51.948000-04:00"
+        },
+        {
+            "botVersion": "23",
+            "startDate": "2026-07-10T03:52:47.707000-04:00",
+            "endDate": "2026-07-10T07:51:27.318000-04:00"
+        },
+        {
+            "botVersion": "22",
+            "startDate": "2026-07-10T02:26:30.534000-04:00",
+            "endDate": "2026-07-10T03:52:47.707000-04:00"
+        },
+        {
+            "botVersion": "21",
+            "startDate": "2026-07-09T10:16:04.311000-04:00",
+            "endDate": "2026-07-10T02:26:30.534000-04:00"
+        },
+        {
+            "botVersion": "31",
+            "startDate": "2026-07-12T06:33:54.425000-04:00"
+        }
+    ],
+    "botAliasStatus": "Available",
+    "botId": "KHMIXGA2US",
+    "creationDateTime": "2026-05-07T10:32:59.521000-04:00",
+    "lastUpdatedDateTime": "2026-07-12T06:33:54.454000-04:00"
+}

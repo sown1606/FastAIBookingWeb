@@ -1,0 +1,115 @@
+{
+  "messageVersion": "1.0",
+  "invocationSource": "DialogCodeHook",
+  "inputMode": "Speech",
+  "inputTranscript": "pedicure Friday July 17 at 11 AM",
+  "transcriptions": [
+    {
+      "transcription": "pedicure Friday July 17 at 11 AM",
+      "transcriptionConfidence": 0.7,
+      "resolvedContext": {
+        "intent": "BookAppointmentIntent"
+      }
+    }
+  ],
+  "interpretations": [
+    {
+      "intent": {
+        "name": "BookAppointmentIntent",
+        "slots": {
+          "serviceName": {
+            "shape": "Scalar",
+            "value": {
+              "originalValue": "Pedicure",
+              "interpretedValue": "Pedicure",
+              "resolvedValues": [
+                "Pedicure"
+              ]
+            }
+          },
+          "requestedDate": {
+            "shape": "Scalar",
+            "value": {
+              "originalValue": "2026-07-17",
+              "interpretedValue": "2026-07-17",
+              "resolvedValues": [
+                "2026-07-17"
+              ]
+            }
+          },
+          "requestedTime": {
+            "shape": "Scalar",
+            "value": {
+              "originalValue": "11 AM",
+              "interpretedValue": "11 AM",
+              "resolvedValues": [
+                "11 AM"
+              ]
+            }
+          }
+        },
+        "state": "InProgress"
+      }
+    }
+  ],
+  "bot": {
+    "id": "KHMIXGA2US",
+    "aliasId": "JVIPIZDYE3",
+    "localeId": "en_US"
+  },
+  "sessionId": "codex-business-hours-friday-1784045694222",
+  "requestAttributes": {},
+  "sessionState": {
+    "sessionAttributes": {
+      "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147",
+      "CalledNumber": "+18483487681",
+      "SystemEndpointAddress": "+18483487681",
+      "CustomerEndpointAddress": "+15550140714",
+      "CallerId": "+15550140714",
+      "AmazonConnectContactId": "codex-business-hours-friday-1784045694222",
+      "amazonConnectContactId": "codex-business-hours-friday-1784045694222",
+      "customerName": "Codex Smoke",
+      "customerPhone": "+15550140714",
+      "serviceName": "Pedicure",
+      "requestedDate": "2026-07-17",
+      "requestedTime": "11 AM"
+    },
+    "intent": {
+      "name": "BookAppointmentIntent",
+      "slots": {
+        "serviceName": {
+          "shape": "Scalar",
+          "value": {
+            "originalValue": "Pedicure",
+            "interpretedValue": "Pedicure",
+            "resolvedValues": [
+              "Pedicure"
+            ]
+          }
+        },
+        "requestedDate": {
+          "shape": "Scalar",
+          "value": {
+            "originalValue": "2026-07-17",
+            "interpretedValue": "2026-07-17",
+            "resolvedValues": [
+              "2026-07-17"
+            ]
+          }
+        },
+        "requestedTime": {
+          "shape": "Scalar",
+          "value": {
+            "originalValue": "11 AM",
+            "interpretedValue": "11 AM",
+            "resolvedValues": [
+              "11 AM"
+            ]
+          }
+        }
+      },
+      "state": "InProgress",
+      "confirmationState": "None"
+    }
+  }
+}

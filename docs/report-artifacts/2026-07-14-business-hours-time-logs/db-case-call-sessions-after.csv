@@ -1,0 +1,3 @@
+id,providerCallId,status,startedAt,endedAt,durationSeconds,callerPhone,dialedPhone,finalResolution,updatedAt
+ac7dcda2-e25a-4264-8bfd-d1d859492aab,aac7cf9b-2b95-4b9a-bda4-656ee771b194,COMPLETED,2026-07-14 14:47:33.758,2026-07-14 14:48:51.093,77,+84798171999,+18483487681,"<speak>We are closed on Friday. <break time=""300ms""/> Would you like another day or a person?</speak>",2026-07-14 16:19:07.708
+b0dfdced-9256-4b1f-a91a-57b43d5db6c1,f6c5beba-b17c-413c-b8a5-2b21a0e62932,COMPLETED,2026-07-14 14:56:02.425,2026-07-14 14:58:06.436,124,+84798171999,+18483487681,"<speak>We are open Tuesday from 9 AM to 6 PM, so I cannot book 8:10 AM. <break time=""300ms""/> What time during those hours works for you?</speak>",2026-07-14 16:19:07.921

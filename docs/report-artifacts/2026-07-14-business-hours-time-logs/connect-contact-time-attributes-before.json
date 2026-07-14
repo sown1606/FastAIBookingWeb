@@ -1,0 +1,12 @@
+{
+    "Attributes": {
+        "connectLastErrorBranch": "none",
+        "initialContactId": "f6c5beba-b17c-413c-b8a5-2b21a0e62932",
+        "connectRecoveryStage": "initial",
+        "contactId": "f6c5beba-b17c-413c-b8a5-2b21a0e62932",
+        "provider": "AMAZON_CONNECT",
+        "connectFlowSourceVersion": "2026-07-14-thuyet-service-staff-exclusion-disconnect",
+        "callerPhone": "+84798171999",
+        "calledNumber": "+18483487681"
+    }
+}
