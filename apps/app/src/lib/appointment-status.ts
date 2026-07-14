@@ -30,6 +30,10 @@ const canceledOrNoShowStatusSet = new Set<string>(CANCELED_OR_NO_SHOW_STATUSES);
 export const isOperationalAppointmentStatus = (status: string | null | undefined): boolean =>
   Boolean(status && operationalStatusSet.has(status));
 
+export const filterOperationalAppointments = <T extends { status: string | null | undefined }>(
+  items: T[]
+): T[] => items.filter((item) => isOperationalAppointmentStatus(item.status));
+
 export const isHistoryAppointmentStatus = (status: string | null | undefined): boolean =>
   Boolean(status && historyStatusSet.has(status));
 

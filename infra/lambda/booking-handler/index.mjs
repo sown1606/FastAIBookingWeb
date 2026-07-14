@@ -209,6 +209,7 @@ const STAFF_ALIAS_GROUPS = {
   Amy: ["amy", "amie", "emmy", "emmie", "a me"],
   Kelly: ["kelly", "kelley", "keli", "ke li"]
 };
+const TRANG_ASR_CONFUSION_ALIASES = new Set(["frank", "jen", "hang"]);
 const ANY_STAFF_ALIASES = [
   "anyone",
   "any one",
@@ -588,7 +589,7 @@ function extractServiceFromTranscript(text) {
 }
 
 function isPrincessFullSetAsr(value) {
-  return normalizeForMatch(value) === "princess";
+  return /\bprincess\b/.test(normalizeForMatch(value));
 }
 
 function isServiceCollectionContext(event) {
@@ -743,6 +744,40 @@ function shouldSkipStaffAlias(staffName, alias, normalizedText, sessionAttribute
     normalizeForMatch(alias) === "dang" &&
     !isScopedDangAliasAllowed(normalizedText, sessionAttributes)
   );
+}
+
+function extractTrangAsrConfusionToken(value) {
+  const normalized = normalizeForMatch(value);
+  if (!normalized) {
+    return "";
+  }
+  return normalized.split(/\s+/).find((token) => TRANG_ASR_CONFUSION_ALIASES.has(token)) || "";
+}
+
+function hasDynamicStaffExactCollision(token, sessionAttributes = {}) {
+  if (!token) {
+    return false;
+  }
+  return Object.values(getStaffDtmfOptions(sessionAttributes)).some((staffName) => {
+    const fullName = normalizeForMatch(staffName);
+    const firstName = normalizeForMatch(String(staffName).split(/\s+/)[0]);
+    return token === fullName || token === firstName;
+  });
+}
+
+function resolveTrangAsrConfusionFromText(value, sessionAttributes = {}) {
+  if (
+    sessionAttributes?.lastAskedSlot === "customerName" &&
+    sessionAttributes?.activeDtmfMenu !== "staff"
+  ) {
+    return "";
+  }
+  const normalized = normalizeForMatch(value);
+  const token = extractTrangAsrConfusionToken(normalized);
+  if (!token || !hasExplicitStaffContextCue(normalized, sessionAttributes)) {
+    return "";
+  }
+  return hasDynamicStaffExactCollision(token, sessionAttributes) ? "" : "Trang";
 }
 
 function isExactKnownStaffAliasText(value, sessionAttributes = {}) {
@@ -954,6 +989,10 @@ function extractStaffFromTranscript(text, sessionAttributes = {}) {
   if (positiveNames.length === 1) {
     return positiveNames[0];
   }
+  const trangAsrConfusion = resolveTrangAsrConfusionFromText(normalizedText, sessionAttributes);
+  if (trangAsrConfusion) {
+    return trangAsrConfusion;
+  }
   return "";
 }
 
@@ -966,6 +1005,9 @@ function hasExplicitStaffPhrase(text, sessionAttributes = {}) {
     return true;
   }
   if (normalizeScopedStaffCandidatePhrase(text, sessionAttributes)) {
+    return true;
+  }
+  if (resolveTrangAsrConfusionFromText(text, sessionAttributes)) {
     return true;
   }
   const matches = collectStaffAliasMatches(normalized, sessionAttributes);
@@ -3845,44 +3887,6 @@ function getNoInputPrompt(slotName, noInputCount, event) {
 function buildNoInputResponse(event, slotName) {
   const previous = event.sessionState?.sessionAttributes || {};
   const noInputCount = parseAttemptCount(previous.noInputCount) + 1;
-
-  if (slotName === "staffPreference" && noInputCount >= 2) {
-    const intent = event.sessionState?.intent || {};
-    const slots = mergeKnownSlots(event);
-    const slotNameToSet =
-      slotNames.staffPreference.find((name) => Object.prototype.hasOwnProperty.call(slots, name)) ||
-      slotNames.staffPreference[0];
-    slots[slotNameToSet] = buildLexSlot("Any staff");
-    const sessionAttributes = {
-      ...buildKnownBookingSessionAttributes(event),
-      staffPreference: "Any staff",
-      confirmedStaffName: "Any staff",
-      noInputCount: String(noInputCount),
-      noInputPrompted: "true",
-      staffNoInputFallback: "any_staff"
-    };
-    delete sessionAttributes.staffId;
-    delete sessionAttributes.selectedStaffId;
-    delete sessionAttributes.confirmedStaffId;
-    return {
-      sessionState: {
-        sessionAttributes: applyActiveDtmfMenuAttributes(sessionAttributes, ""),
-        dialogAction: {
-          type: "Delegate"
-        },
-        intent: {
-          ...intent,
-          slots
-        }
-      },
-      messages: [
-        {
-          contentType: "PlainText",
-          content: "I'll check any available staff."
-        }
-      ]
-    };
-  }
 
   if (noInputCount >= 3) {
     return buildLexResponse(

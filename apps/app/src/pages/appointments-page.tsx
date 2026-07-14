@@ -1,4 +1,4 @@
-import { Fragment, FormEvent, useEffect, useMemo, useState } from "react";
+import { Fragment, FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { useSearchParams } from "react-router-dom";
 import { apiDelete, apiGet, apiPatch, apiPost, extractApiErrorCode, extractErrorMessage } from "../lib/api";
@@ -20,6 +20,7 @@ import {
 } from "../lib/timezone";
 import { formatCustomerName } from "../lib/customer-name";
 import {
+  filterOperationalAppointments,
   isHistoryAppointmentStatus,
   isOperationalAppointmentStatus,
   type AppointmentStatus
@@ -102,6 +103,10 @@ interface StaffReminder {
   remindAt: string;
   message: string;
   appointment: AppointmentItem;
+}
+
+interface LoadOptions {
+  silent?: boolean;
 }
 
 const FALLBACK_SALON_TIMEZONE = "America/New_York";
@@ -276,7 +281,7 @@ export const AppointmentsPage = () => {
     [appointments, ownerCanceledNoShowAppointments, ownerCompletedAppointments, ownerUpcomingAppointments]
   );
   const todayDateKey = useMemo(() => getSalonDateKey(new Date(), salonTimezone), [salonTimezone]);
-  const fetchAppointments = async (baseParams: URLSearchParams) => {
+  const fetchAppointments = useCallback(async (baseParams: URLSearchParams) => {
     const items: AppointmentItem[] = [];
     let page = 1;
     let total = 0;
@@ -291,9 +296,9 @@ export const AppointmentsPage = () => {
       page += 1;
     } while (items.length < total && page <= 5);
     return items;
-  };
+  }, []);
 
-  const fetchAppointmentsForStatuses = async (
+  const fetchAppointmentsForStatuses = useCallback(async (
     baseParams: URLSearchParams,
     statuses: AppointmentItem["status"][]
   ) => {
@@ -307,11 +312,13 @@ export const AppointmentsPage = () => {
     return results
       .flat()
       .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
-  };
+  }, [fetchAppointments]);
 
-  const load = async () => {
-    setError("");
-    setLoading(true);
+  const load = useCallback(async (options: LoadOptions = {}) => {
+    if (!options.silent) {
+      setError("");
+      setLoading(true);
+    }
     try {
       if (isOwner) {
         const [customerResponse, staffResponse, serviceResponse, salonProfile] = await Promise.all([
@@ -342,7 +349,7 @@ export const AppointmentsPage = () => {
           fetchAppointmentsForStatuses(archiveParams, ["CANCELED", "NO_SHOW"])
         ]);
         setAppointments(dayAppointments);
-        setOwnerUpcomingAppointments(upcoming);
+        setOwnerUpcomingAppointments(filterOperationalAppointments(upcoming));
         setOwnerCompletedAppointments(completed);
         setOwnerCanceledNoShowAppointments(canceledNoShow);
         setCustomers(customerResponse.items);
@@ -374,15 +381,42 @@ export const AppointmentsPage = () => {
         setReminders(reminderResult);
       }
     } catch (loadError) {
-      setError(extractErrorMessage(loadError));
+      if (!options.silent) {
+        setError(extractErrorMessage(loadError));
+      }
     } finally {
-      setLoading(false);
+      if (!options.silent) {
+        setLoading(false);
+      }
     }
-  };
+  }, [fetchAppointments, fetchAppointmentsForStatuses, isOwner, selectedDate, statusFilter]);
 
   useEffect(() => {
     void load();
-  }, [isOwner, selectedDate, statusFilter]);
+  }, [load]);
+
+  useEffect(() => {
+    const revalidateSchedule = () => {
+      if (document.visibilityState === "visible") {
+        void load({ silent: true });
+      }
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void load({ silent: true });
+      }
+    };
+
+    window.addEventListener("focus", revalidateSchedule);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    const interval = window.setInterval(revalidateSchedule, 20000);
+
+    return () => {
+      window.removeEventListener("focus", revalidateSchedule);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.clearInterval(interval);
+    };
+  }, [load]);
 
   useEffect(() => {
     const dateParam = searchParams.get("date");
@@ -554,6 +588,18 @@ export const AppointmentsPage = () => {
     await selectAppointment(appointment.id);
   };
 
+  const removeAppointmentFromActiveCollections = (appointmentId: string) => {
+    setAppointments((items) => items.filter((item) => item.id !== appointmentId));
+    setOwnerUpcomingAppointments((items) => items.filter((item) => item.id !== appointmentId));
+    setReminders((items) => items.filter((item) => item.appointment.id !== appointmentId));
+    setSelectedAppointment((current) => (current?.id === appointmentId ? null : current));
+    if (highlightedAppointmentId === appointmentId) {
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.delete("appointmentId");
+      setSearchParams(nextParams, { replace: true });
+    }
+  };
+
   const cancelAppointment = async (appointment: AppointmentItem) => {
     const values = await openFormDialog({
       title: t("appointments.cancel"),
@@ -571,8 +617,9 @@ export const AppointmentsPage = () => {
       await apiPatch<unknown, { reason?: string }>(`/api/v1/appointments/${appointment.id}/cancel`, {
         reason: values.reason || undefined
       });
+      removeAppointmentFromActiveCollections(appointment.id);
       notify("success", t("appointments.cancel"));
-      await load();
+      await load({ silent: true });
     } catch (cancelError) {
       notify("error", extractErrorMessage(cancelError));
     }
@@ -730,19 +777,17 @@ export const AppointmentsPage = () => {
 
   const selectedDayScheduleAppointments = useMemo(
     () =>
-      selectedDayAppointments.filter(
-        (appointment) =>
-          activeStaffIds.has(appointment.staff.id) && isOperationalAppointmentStatus(appointment.status)
+      filterOperationalAppointments(selectedDayAppointments).filter((appointment) =>
+        activeStaffIds.has(appointment.staff.id)
       ),
     [activeStaffIds, selectedDayAppointments]
   );
 
   const todayAppointments = useMemo(
     () =>
-      appointments
+      filterOperationalAppointments(appointments)
         .filter(
           (appointment) =>
-            isOperationalAppointmentStatus(appointment.status) &&
             localDateKey(appointment.startTime, salonTimezone) === todayDateKey
         )
         .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()),
@@ -750,7 +795,7 @@ export const AppointmentsPage = () => {
   );
 
   const selectedDayOperationalAppointments = useMemo(
-    () => selectedDayAppointments.filter((item) => isOperationalAppointmentStatus(item.status)),
+    () => filterOperationalAppointments(selectedDayAppointments),
     [selectedDayAppointments]
   );
 
@@ -767,10 +812,9 @@ export const AppointmentsPage = () => {
 
   const upcomingAppointments = useMemo(() => {
     const now = Date.now();
-    return appointments
+    return filterOperationalAppointments(appointments)
       .filter(
         (appointment) =>
-          isOperationalAppointmentStatus(appointment.status) &&
           new Date(appointment.startTime).getTime() >= now
       )
       .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
@@ -1498,11 +1542,11 @@ export const AppointmentsPage = () => {
                 <h2>{selectedDate === todayDateKey ? t("appointments.todaySchedule") : t("appointments.selectedDaySchedule")}</h2>
                 <p className="muted">{formatSelectedDateLabel(selectedDate, locale)}</p>
               </div>
-              <span className="summary-badge">{selectedDayAppointments.length} {t("nav.appointments")}</span>
+              <span className="summary-badge">{selectedDayOperationalAppointments.length} {t("nav.appointments")}</span>
             </div>
-            {selectedDayAppointments.length ? (
+            {selectedDayOperationalAppointments.length ? (
               <div className="mobile-list">
-                {selectedDayAppointments.map((item) => (
+                {selectedDayOperationalAppointments.map((item) => (
                   <article
                     id={`appointment-${item.id}`}
                     key={item.id}

@@ -414,16 +414,126 @@
     },
     {
       "Identifier": "41e3f239-5b57-4363-92fc-9d594579fa98",
-      "Type": "MessageParticipant",
+      "Type": "ConnectParticipantWithLexBot",
       "Parameters": {
-        "SkipWhenDTMFBufferEnabled": "false",
-        "Text": "I am having technical trouble continuing this call. Please call again, or press 0 on the next prompt for a person."
+        "LexV2Bot": {
+          "AliasArn": "arn:aws:lex:us-east-1:197452633989:bot-alias/KHMIXGA2US/JVIPIZDYE3"
+        },
+        "LexSessionAttributes": {
+          "provider": "AMAZON_CONNECT",
+          "callerPhone": "$.CustomerEndpoint.Address",
+          "CustomerEndpointAddress": "$.CustomerEndpoint.Address",
+          "CallerId": "$.CustomerEndpoint.Address",
+          "calledNumber": "$.SystemEndpoint.Address",
+          "CalledNumber": "$.SystemEndpoint.Address",
+          "SystemEndpointAddress": "$.SystemEndpoint.Address",
+          "contactId": "$.ContactId",
+          "ContactId": "$.ContactId",
+          "AmazonConnectContactId": "$.ContactId",
+          "InitialContactId": "$.InitialContactId",
+          "operatorHelpMentioned": "true",
+          "x-amz-lex:allow-interrupt:*:*": "true",
+          "x-amz-lex:audio:start-timeout-ms:*:*": "7000",
+          "x-amz-lex:audio:end-timeout-ms:*:*": "2400",
+          "x-amz-lex:audio:max-length-ms:*:*": "20000",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName": "2200",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedTime": "1600",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference": "1600",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:customerName": "2000",
+          "conversationState": "$.Lex.SessionAttributes.conversationState",
+          "conversationOutcome": "$.Lex.SessionAttributes.conversationOutcome",
+          "conversationComplete": "$.Lex.SessionAttributes.conversationComplete",
+          "customerName": "$.Lex.SessionAttributes.customerName",
+          "customerPhone": "$.Lex.SessionAttributes.customerPhone",
+          "serviceName": "$.Lex.SessionAttributes.serviceName",
+          "confirmedServiceName": "$.Lex.SessionAttributes.confirmedServiceName",
+          "requestedDate": "$.Lex.SessionAttributes.requestedDate",
+          "requestedTime": "$.Lex.SessionAttributes.requestedTime",
+          "staffPreference": "$.Lex.SessionAttributes.staffPreference",
+          "staffId": "$.Lex.SessionAttributes.staffId",
+          "selectedStaffId": "$.Lex.SessionAttributes.selectedStaffId",
+          "confirmedStaffId": "$.Lex.SessionAttributes.confirmedStaffId",
+          "confirmedStaffName": "$.Lex.SessionAttributes.confirmedStaffName",
+          "awaitingFinalBookingConfirmation": "$.Lex.SessionAttributes.awaitingFinalBookingConfirmation",
+          "bookingConfirmationAsked": "$.Lex.SessionAttributes.bookingConfirmationAsked",
+          "confirmationFingerprint": "$.Lex.SessionAttributes.confirmationFingerprint",
+          "awaitingAlternativeSelection": "$.Lex.SessionAttributes.awaitingAlternativeSelection",
+          "aiAlternativeSlots": "$.Lex.SessionAttributes.aiAlternativeSlots",
+          "alternativeOfferId": "$.Lex.SessionAttributes.alternativeOfferId",
+          "anchorRequestedDate": "$.Lex.SessionAttributes.anchorRequestedDate",
+          "anchorRequestedTime": "$.Lex.SessionAttributes.anchorRequestedTime",
+          "anchorRequestedStaff": "$.Lex.SessionAttributes.anchorRequestedStaff",
+          "rejectedOptionKeys": "$.Lex.SessionAttributes.rejectedOptionKeys",
+          "lastAskedSlot": "$.Lex.SessionAttributes.lastAskedSlot",
+          "outerRecoveryAttempt": "final"
+        },
+        "Text": "Sorry, I am still having trouble. Please say the appointment again, or press 0 for a person."
       },
       "Transitions": {
-        "NextAction": "ef8d8054-77ea-40c7-aa4e-800ed784c49c",
+        "NextAction": "check-transfer-to-queue",
+        "Conditions": [
+          {
+            "NextAction": "check-transfer-to-queue",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "BookAppointmentIntent"
+              ]
+            }
+          },
+          {
+            "NextAction": "check-transfer-to-queue",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "CancelAppointmentIntent"
+              ]
+            }
+          },
+          {
+            "NextAction": "check-transfer-to-queue",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "RescheduleAppointmentIntent"
+              ]
+            }
+          },
+          {
+            "NextAction": "check-transfer-to-queue",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "HumanEscalationIntent"
+              ]
+            }
+          },
+          {
+            "NextAction": "check-transfer-to-queue",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "FallbackIntent"
+              ]
+            }
+          },
+          {
+            "NextAction": "check-transfer-to-queue",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "AMAZON.FallbackIntent"
+              ]
+            }
+          }
+        ],
         "Errors": [
           {
-            "NextAction": "ef8d8054-77ea-40c7-aa4e-800ed784c49c",
+            "NextAction": "67ada978-600a-4d39-9965-6230c52810a9",
+            "ErrorType": "NoMatchingCondition"
+          },
+          {
+            "NextAction": "67ada978-600a-4d39-9965-6230c52810a9",
             "ErrorType": "NoMatchingError"
           }
         ]

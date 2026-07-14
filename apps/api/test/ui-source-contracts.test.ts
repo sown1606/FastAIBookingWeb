@@ -232,6 +232,56 @@ test("appointment deep links fetch exact appointment detail and clear stale URLs
   assert.match(source, /setSelectedDate\(appointmentDate\)/);
 });
 
+test("active appointment surfaces use operational status helper only", () => {
+  const statusSource = readRepoFile("apps/app/src/lib/appointment-status.ts");
+  const appointmentsSource = readRepoFile("apps/app/src/pages/appointments-page.tsx");
+  const dashboardSource = readRepoFile("apps/app/src/pages/dashboard-page.tsx");
+  const callCenterSource = readRepoFile("apps/app/src/pages/call-center-page.tsx");
+
+  assert.match(statusSource, /OPERATIONAL_APPOINTMENT_STATUSES[\s\S]*"SCHEDULED"[\s\S]*"CONFIRMED"[\s\S]*"IN_PROGRESS"/);
+  assert.doesNotMatch(statusSource.match(/OPERATIONAL_APPOINTMENT_STATUSES[\s\S]*?\];/)?.[0] ?? "", /CANCELED|NO_SHOW|COMPLETED/);
+  assert.match(statusSource, /HISTORY_APPOINTMENT_STATUSES[\s\S]*"COMPLETED"[\s\S]*"CANCELED"[\s\S]*"NO_SHOW"/);
+  assert.match(statusSource, /filterOperationalAppointments/);
+
+  assert.match(appointmentsSource, /setOwnerUpcomingAppointments\(filterOperationalAppointments\(upcoming\)\)/);
+  assert.match(appointmentsSource, /filterOperationalAppointments\(selectedDayAppointments\)\.filter/);
+  assert.match(appointmentsSource, /const selectedDayOperationalAppointments = useMemo/);
+  assert.match(appointmentsSource, /selectedDayOperationalAppointments\.map\(\(item\) =>/);
+  assert.doesNotMatch(appointmentsSource, /selectedDayAppointments\.map\(\(item\) =>/);
+  assert.match(appointmentsSource, /const upcomingAppointments = useMemo\(\(\) => \{[\s\S]*filterOperationalAppointments\(appointments\)/);
+
+  assert.match(dashboardSource, /isOperationalAppointmentStatus\(item\.status\)/);
+  assert.match(callCenterSource, /isOperationalAppointmentStatus\(appointment\.status\)/);
+});
+
+test("canceling selected appointments clears active local state before silent reload", () => {
+  const source = readRepoFile("apps/app/src/pages/appointments-page.tsx");
+
+  assert.match(source, /const removeAppointmentFromActiveCollections = \(appointmentId: string\) =>/);
+  assert.match(source, /setAppointments\(\(items\) => items\.filter\(\(item\) => item\.id !== appointmentId\)\)/);
+  assert.match(source, /setOwnerUpcomingAppointments\(\(items\) => items\.filter\(\(item\) => item\.id !== appointmentId\)\)/);
+  assert.match(source, /setReminders\(\(items\) => items\.filter\(\(item\) => item\.appointment\.id !== appointmentId\)\)/);
+  assert.match(source, /setSelectedAppointment\(\(current\) => \(current\?\.id === appointmentId \? null : current\)\)/);
+  assert.match(source, /nextParams\.delete\("appointmentId"\)/);
+  assert.match(source, /removeAppointmentFromActiveCollections\(appointment\.id\)/);
+  assert.match(source, /await load\(\{ silent: true \}\)/);
+});
+
+test("appointments page silently revalidates schedules without full-page loading flicker", () => {
+  const source = readRepoFile("apps/app/src/pages/appointments-page.tsx");
+
+  assert.match(source, /interface LoadOptions[\s\S]*silent\?: boolean/);
+  assert.match(source, /const load = useCallback\(async \(options: LoadOptions = \{\}\) =>/);
+  assert.match(source, /if \(!options\.silent\) \{[\s\S]*setLoading\(true\)/);
+  assert.match(source, /if \(!options\.silent\) \{[\s\S]*setLoading\(false\)/);
+  assert.match(source, /window\.addEventListener\("focus", revalidateSchedule\)/);
+  assert.match(source, /document\.addEventListener\("visibilitychange", handleVisibilityChange\)/);
+  assert.match(source, /window\.setInterval\(revalidateSchedule, 20000\)/);
+  assert.match(source, /window\.removeEventListener\("focus", revalidateSchedule\)/);
+  assert.match(source, /document\.removeEventListener\("visibilitychange", handleVisibilityChange\)/);
+  assert.match(source, /window\.clearInterval\(interval\)/);
+});
+
 test("owner appointments page uses independent main and sidebar stacks", () => {
   const source = readRepoFile("apps/app/src/pages/appointments-page.tsx");
   const styles = readRepoFile("apps/app/src/styles.css");

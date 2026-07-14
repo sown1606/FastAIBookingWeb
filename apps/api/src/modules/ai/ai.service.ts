@@ -975,6 +975,7 @@ const STAFF_ALIAS_PHRASES: Record<string, string[]> = {
   amy: ["amy", "amie", "emmy", "emmie", "a me"],
   kelly: ["kelly", "kelley", "keli", "ke li"]
 };
+const TRANG_ASR_CONFUSION_ALIASES = new Set(["frank", "jen", "hang"]);
 
 const getStaffAliasPhrases = (staffName: string): string[] => {
   const firstName = staffName.split(/\s+/)[0] ?? "";
@@ -1126,6 +1127,43 @@ const shouldSkipStaffAlias = (
   normalizeForMatch(staffName) === "trang" &&
   normalizeForMatch(alias) === "dang" &&
   !isScopedDangAliasAllowed(normalizedText, context);
+
+const extractTrangAsrConfusionToken = (value?: string | null): string | undefined => {
+  const normalized = normalizeForMatch(value);
+  if (!normalized) {
+    return undefined;
+  }
+  return normalized.split(/\s+/).find((token) => TRANG_ASR_CONFUSION_ALIASES.has(token));
+};
+
+const hasExactActiveStaffNameCollision = (staff: StaffCandidate[], token: string): boolean =>
+  staff.some((member) => {
+    const fullName = normalizeForMatch(member.fullName);
+    const firstName = normalizeForMatch(member.fullName.split(/\s+/)[0]);
+    return token === fullName || token === firstName;
+  });
+
+const resolveTrangAsrConfusionStaff = (
+  staff: StaffCandidate[],
+  value?: string | null,
+  context: StaffPhraseContext = {}
+): StaffCandidate | undefined => {
+  if (
+    context.lastAskedSlot === "customerName" &&
+    context.activeDtmfMenu !== "staff"
+  ) {
+    return undefined;
+  }
+  const normalized = normalizeForMatch(value);
+  const token = extractTrangAsrConfusionToken(normalized);
+  if (!token || !hasExplicitStaffContextCue(normalized, context)) {
+    return undefined;
+  }
+  if (hasExactActiveStaffNameCollision(staff, token)) {
+    return undefined;
+  }
+  return staff.find((member) => normalizeForMatch(member.fullName.split(/\s+/)[0]) === "trang");
+};
 
 const isUnsupportedServiceRequestPhrase = (value?: string | null): boolean => {
   const normalized = normalizeForMatch(value);
@@ -2844,9 +2882,11 @@ const applyGuardedPrincessServiceCorrection = async (
   transcriptText?: string
 ): Promise<string | undefined> => {
   const correctionRaw = readStringAttribute(attributes, ["serviceAliasCorrectionRaw"]);
-  const serviceLooksLikePrincess = normalizeForMatch(serviceName) === "princess";
-  const correctionLooksLikePrincess = normalizeForMatch(correctionRaw) === "princess";
-  const transcriptLooksLikePrincess = normalizeForMatch(currentTurnTranscript) === "princess";
+  const hasPrincessToken = (value?: string | null) => /\bprincess\b/.test(normalizeForMatch(value));
+  const serviceLooksLikePrincess = hasPrincessToken(serviceName);
+  const correctionLooksLikePrincess = hasPrincessToken(correctionRaw);
+  const transcriptLooksLikePrincess =
+    hasPrincessToken(currentTurnTranscript) || hasPrincessToken(transcriptText);
   if (!serviceLooksLikePrincess && !correctionLooksLikePrincess && !transcriptLooksLikePrincess) {
     return serviceName;
   }
@@ -2995,6 +3035,22 @@ const findStaffMentionInText = async (
   }
   if (aliasMatches.length && positiveMatches.length === 0) {
     return undefined;
+  }
+
+  const trangAsrConfusionToken = extractTrangAsrConfusionToken(searchText);
+  if (trangAsrConfusionToken) {
+    const tokenResolution = resolveStaffPreferenceFromCandidates(
+      staff,
+      trangAsrConfusionToken,
+      context
+    );
+    if (tokenResolution.status === "matched") {
+      return tokenResolution.matchedStaff.fullName;
+    }
+    const trangAsrConfusion = resolveTrangAsrConfusionStaff(staff, searchText, context);
+    if (trangAsrConfusion) {
+      return trangAsrConfusion.fullName;
+    }
   }
 
   if (scopedCandidate && scopedCandidate !== "any staff") {
@@ -3493,6 +3549,21 @@ const resolveStaffPreferenceFromCandidates = (
       allStaff,
       rawStaffPreference: rawStaffPreference!,
       ambiguousStaffNames: Array.from(new Set(fuzzyMatches.map((member) => member.fullName)))
+    };
+  }
+
+  const trangAsrConfusion = resolveTrangAsrConfusionStaff(
+    allStaff,
+    scopedStaffPreference ?? rawStaffPreference,
+    context
+  );
+  if (trangAsrConfusion) {
+    return {
+      status: "matched",
+      candidates: [trangAsrConfusion],
+      allStaff,
+      rawStaffPreference: rawStaffPreference!,
+      matchedStaff: trangAsrConfusion
     };
   }
 
