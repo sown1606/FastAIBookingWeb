@@ -19,6 +19,7 @@ import { app } from "../src/app";
 import { env } from "../src/config/env";
 import { prisma } from "../src/db/prisma";
 import { listAIInteractionsForAdmin } from "../src/modules/ai/ai.service";
+import { listCallsForAdmin } from "../src/modules/calls/calls.service";
 
 type Patch = {
   target: Record<string, unknown>;
@@ -633,6 +634,14 @@ const setupPrismaMock = () => {
     return session;
   });
   patch(prisma.callSession as any, "findUnique", async (args: any) => {
+    if (args.where?.provider_providerCallId) {
+      const key = args.where.provider_providerCallId;
+      return (
+        state.callSessions.find(
+          (item) => item.provider === key.provider && item.providerCallId === key.providerCallId
+        ) ?? null
+      );
+    }
     return state.callSessions.find((item) => item.id === args.where.id) ?? null;
   });
   patch(prisma.callSession as any, "findFirst", async (args: any) => {
@@ -657,19 +666,42 @@ const setupPrismaMock = () => {
   });
   patch(prisma.callSession as any, "findMany", async (args: any) => {
     const phoneCandidates = args?.where?.callerPhone?.in as string[] | undefined;
+    const excludesSynthetic = Array.isArray(args?.where?.NOT);
     return state.callSessions
       .filter(
         (item) =>
-          item.salonId === args?.where?.salonId &&
-          (!phoneCandidates || phoneCandidates.includes(item.callerPhone))
+          (!args?.where?.salonId || item.salonId === args.where.salonId) &&
+          (!args?.where?.status || item.status === args.where.status) &&
+          (!phoneCandidates || phoneCandidates.includes(item.callerPhone)) &&
+          (!excludesSynthetic ||
+            (!String(item.providerCallId ?? "").toLowerCase().startsWith("codex-") &&
+              item.rawPayload?.isSynthetic !== true &&
+              item.rawPayload?.metadata?.isSynthetic !== true))
       )
       .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
       .slice(0, args.take ?? 25);
   });
+  patch(prisma.callSession as any, "count", async (args: any) => {
+    const items = await (prisma.callSession as any).findMany({ ...args, take: state.callSessions.length });
+    return items.length;
+  });
+  patch(prisma.callSession as any, "create", async (args: any) => {
+    const session = {
+      id: newId("call-session", state.callSessions),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      ...args.data
+    };
+    state.callSessions.push(session);
+    return session;
+  });
   patch(prisma.callSession as any, "update", async (args: any) => {
     const session = state.callSessions.find((item) => item.id === args.where.id);
     if (session) {
-      Object.assign(session, args.data);
+      Object.assign(
+        session,
+        Object.fromEntries(Object.entries(args.data).filter(([, value]) => value !== undefined))
+      );
     }
     return session;
   });
@@ -715,6 +747,23 @@ const setupPrismaMock = () => {
         )
         .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
         .slice(0, args.take ?? 20);
+    }
+    if (args?.where?.callSessionId) {
+      return state.bookingAttempts
+        .filter((attempt) => {
+          if (attempt.callSessionId !== args.where.callSessionId) {
+            return false;
+          }
+          if (args.where.appointmentId === null && attempt.appointmentId) {
+            return false;
+          }
+          if (args.where.status?.not && attempt.status === args.where.status.not) {
+            return false;
+          }
+          return true;
+        })
+        .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
+        .slice(0, args.take ?? state.bookingAttempts.length);
     }
     return state.bookingAttempts
       .filter((attempt) => attempt.salonId === args?.where?.salonId)
@@ -4540,6 +4589,42 @@ test("business hours are explained before staff availability", async () => {
   assert.equal(state.appointments.length, 0);
 });
 
+test("closed Friday returns before staff prompt or availability lookup", async () => {
+  state.businessHours = state.businessHours.map((hour) =>
+    hour.dayOfWeek === 5
+      ? { ...hour, isOpen: false, openTime: null, closeTime: null }
+      : { ...hour, isOpen: true, openTime: "09:00", closeTime: "18:00" }
+  );
+
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Pedicure",
+      requestedDate: "2026-07-17",
+      requestedTime: "11 AM",
+      staffPreference: undefined,
+      staffId: undefined,
+      confirmationState: undefined,
+      amazonConnectContactId: "connect-closed-friday-before-staff",
+      currentTurnTranscript: "pedicure Friday at eleven a m",
+      transcript: "pedicure Friday at eleven a m"
+    })
+  );
+
+  assert.equal(result.body.data.outcome, "NO_AVAILABILITY");
+  assert.match(result.body.data.lexResponse.message, /closed on Friday/i);
+  assert.doesNotMatch(result.body.data.lexResponse.message, /technician|staff|Trang|Amy|Kelly/i);
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "requestedDate");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.lastAskedSlot, "requestedDate");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.requestedDate, undefined);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "11 AM");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.availabilityReasonCode, "SALON_CLOSED");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.activeDtmfMenu, undefined);
+  assert.equal(state.staffFindManyCalls.length, 0);
+  assert.equal(state.staffServiceChecks.length, 0);
+  assert.equal(state.validationStaffIds.length, 0);
+  assert.equal(state.appointments.length, 0);
+});
+
 test("specific Alex conflict reports overlap and does not create another appointment", async () => {
   addAlexStaff();
   const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
@@ -5025,6 +5110,118 @@ test("empty current turn does not replay initial transcript or duplicate logs", 
     "i want to book pool set"
   );
   assert.equal(state.bookingAttempts[0].transcriptId, undefined);
+});
+
+test("noisy ten eight ten transcript asks for 10 AM confirmation before availability", async () => {
+  state.businessHours = state.businessHours.map((hour) => ({
+    ...hour,
+    openTime: "09:00",
+    closeTime: "18:00"
+  }));
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+
+  const ambiguous = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Manicure",
+      requestedDate,
+      requestedTime: "8:10 AM",
+      staffPreference: "Amy",
+      confirmationState: undefined,
+      amazonConnectContactId: "connect-noisy-ten-eight-ten",
+      currentTurnTranscript: "uh ten eight ten a m",
+      transcript: "uh ten eight ten a m",
+      attributes: {
+        serviceName: "Manicure",
+        requestedDate,
+        requestedTime: "8:10 AM",
+        staffPreference: "Amy",
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266",
+        lastAskedSlot: "requestedTime"
+      }
+    })
+  );
+
+  assert.equal(ambiguous.response.status, 200);
+  assert.equal(ambiguous.body.data.outcome, "MISSING_INFO");
+  assert.match(ambiguous.body.data.lexResponse.message, /Did you mean 10 AM/i);
+  assert.equal(ambiguous.body.data.lexResponse.dialogAction.slotToElicit, "requestedTime");
+  assert.equal(ambiguous.body.data.lexResponse.sessionAttributes.awaitingTimeConfirmation, "true");
+  assert.equal(ambiguous.body.data.lexResponse.sessionAttributes.proposedRequestedTime, "10 AM");
+  assert.equal(ambiguous.body.data.lexResponse.sessionAttributes.requestedTime, undefined);
+  assert.equal(state.validationStaffIds.length, 0);
+  assert.equal(state.appointments.length, 0);
+
+  const confirmed = await postInternalAppointment(
+    bookingPayload({
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      amazonConnectContactId: "connect-noisy-ten-eight-ten",
+      currentTurnTranscript: "yes",
+      transcript: "yes",
+      attributes: {
+        ...ambiguous.body.data.lexResponse.sessionAttributes,
+        currentTurnTranscript: "yes"
+      }
+    })
+  );
+
+  assert.equal(confirmed.response.status, 200);
+  assert.equal(confirmed.body.data.outcome, "MISSING_INFO");
+  assert.equal(confirmed.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(confirmed.body.data.lexResponse.sessionAttributes.requestedTime, "10 AM");
+  assert.equal(state.appointments.length, 0);
+});
+
+test("clear spoken time phrases normalize deterministically", async () => {
+  for (const [phrase, expectedHour, expectedMinute] of [
+    ["ten a m", 10, 0],
+    ["10 AM", 10, 0],
+    ["at ten", 10, 0],
+    ["ten o'clock", 10, 0],
+    ["eight ten a m", 8, 10],
+    ["8:10 AM", 8, 10]
+  ] as const) {
+    resetMockState();
+    state.businessHours = state.businessHours.map((hour) => ({
+      ...hour,
+      openTime: "08:00",
+      closeTime: "18:00"
+    }));
+    const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+
+    const result = await postInternalAppointment(
+      bookingPayload({
+        serviceName: "Manicure",
+        requestedDate,
+        requestedTime: phrase,
+        staffPreference: "Amy",
+        confirmationState: "Confirmed",
+        amazonConnectContactId: `connect-time-phrase-${phrase.replace(/[^a-z0-9]+/gi, "-")}`,
+        currentTurnTranscript: phrase,
+        transcript: phrase,
+        attributes: {
+          lastAskedSlot: "requestedTime",
+          serviceName: "Manicure",
+          requestedDate,
+          requestedTime: phrase,
+          staffPreference: "Amy",
+          customerName: "Kiet Nguyen",
+          customerPhone: "+17325956266"
+        }
+      })
+    );
+
+    assert.equal(result.body.data.outcome, "BOOKED", phrase);
+    const localStart = DateTime.fromJSDate(state.appointments[0].startTime, { zone: "utc" }).setZone(
+      "America/New_York"
+    );
+    assert.equal(localStart.hour, expectedHour, phrase);
+    assert.equal(localStart.minute, expectedMinute, phrase);
+  }
 });
 
 test("10 AM remains valid inside 9 to 6 business hours", async () => {
@@ -6633,6 +6830,126 @@ test("Admin AI logs exclude synthetic ContactIds by default and include them whe
   assert.equal(defaultList.items[0].callSession?.providerCallId, realContactId);
   assert.equal(includedList.items.length, 2);
   assert.ok(includedList.items.some((item) => item.callSession?.providerCallId === syntheticContactId));
+});
+
+test("Admin call logs exclude synthetic ContactIds by default and label them when requested", async () => {
+  const realContactId = "8b82c651-5091-4f32-84f0-bf37d004318d";
+  const syntheticContactId = "codex-call-smoke-test";
+  await postInternalAppointment(
+    bookingPayload({
+      amazonConnectContactId: realContactId,
+      currentTurnTranscript: "pedicure",
+      transcript: "pedicure",
+      attributes: {
+        AmazonConnectContactId: realContactId,
+        currentTurnTranscript: "pedicure"
+      }
+    })
+  );
+  await postInternalAppointment(
+    bookingPayload({
+      amazonConnectContactId: syntheticContactId,
+      currentTurnTranscript: "pedicure",
+      transcript: "pedicure",
+      attributes: {
+        AmazonConnectContactId: syntheticContactId,
+        currentTurnTranscript: "pedicure",
+        isSynthetic: "true"
+      }
+    })
+  );
+  const syntheticSession = state.callSessions.find((item) => item.providerCallId === syntheticContactId);
+  assert.ok(syntheticSession);
+  syntheticSession.rawPayload = { metadata: { isSynthetic: true } };
+
+  const defaultList = await listCallsForAdmin({ page: 1, limit: 50 });
+  const includedList = await listCallsForAdmin({
+    page: 1,
+    limit: 50,
+    includeSynthetic: true
+  });
+
+  assert.equal(defaultList.items.length, 1);
+  assert.equal(defaultList.items[0].providerCallId, realContactId);
+  assert.equal(includedList.items.length, 2);
+  assert.equal(includedList.items.find((item) => item.providerCallId === syntheticContactId)?.isSynthetic, true);
+});
+
+test("repeated identical closed-day turns reuse one logical BookingAttempt", async () => {
+  state.businessHours = state.businessHours.map((hour) =>
+    hour.dayOfWeek === 5
+      ? { ...hour, isOpen: false, openTime: null, closeTime: null }
+      : { ...hour, isOpen: true, openTime: "09:00", closeTime: "18:00" }
+  );
+  const payload = bookingPayload({
+    serviceName: "Pedicure",
+    requestedDate: "2026-07-17",
+    requestedTime: "11 AM",
+    staffPreference: undefined,
+    confirmationState: undefined,
+    amazonConnectContactId: "connect-repeat-closed-friday",
+    currentTurnTranscript: "Friday at eleven a m",
+    transcript: "Friday at eleven a m",
+    attributes: {
+      serviceName: "Pedicure",
+      requestedDate: "2026-07-17",
+      requestedTime: "11 AM",
+      customerName: "Kiet Nguyen",
+      customerPhone: "+17325956266"
+    }
+  });
+
+  const first = await postInternalAppointment(payload);
+  const second = await postInternalAppointment(payload);
+  const third = await postInternalAppointment(payload);
+
+  assert.equal(first.body.data.outcome, "NO_AVAILABILITY");
+  assert.equal(second.body.data.outcome, "NO_AVAILABILITY");
+  assert.equal(third.body.data.outcome, "NO_AVAILABILITY");
+  assert.equal(state.callSessions.length, 1);
+  assert.equal(state.bookingAttempts.length, 1);
+  assert.equal(state.bookingAttempts[0].status, BookingAttemptStatus.NO_AVAILABILITY);
+  assert.equal(state.bookingAttempts[0].normalizedRequest.availabilityReasonCode, "SALON_CLOSED");
+  assert.equal(state.appointments.length, 0);
+});
+
+test("Amazon Connect session upsert never downgrades terminal call status", async () => {
+  const contactId = "connect-terminal-preserved";
+  state.callSessions.push({
+    id: "call-terminal-preserved",
+    salonId: ids.salonA,
+    provider: ExternalProvider.AMAZON_CONNECT,
+    providerCallId: contactId,
+    callerPhone: "+17325956266",
+    trackingNumber: "+18483487681",
+    dialedPhone: "+18483487681",
+    status: CallSessionStatus.COMPLETED,
+    routingOutcome: CallRoutingOutcome.AI_RECEPTION,
+    finalResolution: "Already completed.",
+    startedAt: new Date("2026-07-14T09:00:00.000Z"),
+    endedAt: new Date("2026-07-14T09:01:00.000Z"),
+    durationSeconds: 60,
+    createdAt: new Date("2026-07-14T09:00:00.000Z"),
+    updatedAt: new Date("2026-07-14T09:01:00.000Z")
+  });
+
+  const result = await postInternalAppointment(
+    bookingPayload({
+      amazonConnectContactId: contactId,
+      currentTurnTranscript: "pedicure",
+      transcript: "pedicure",
+      attributes: {
+        AmazonConnectContactId: contactId,
+        currentTurnTranscript: "pedicure"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(state.callSessions.length, 1);
+  assert.equal(state.callSessions[0].status, CallSessionStatus.COMPLETED);
+  assert.equal(state.callSessions[0].endedAt.toISOString(), "2026-07-14T09:01:00.000Z");
+  assert.equal(state.callSessions[0].finalResolution, "Already completed.");
 });
 
 test("confirmed booking retry for the same Amazon Connect contact does not create a duplicate appointment", async () => {

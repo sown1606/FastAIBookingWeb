@@ -376,6 +376,7 @@ export const DashboardPage = () => {
           <Link to="/appointments">{t("dashboard.viewSchedule")}</Link>
           <Link to="/services">{t("dashboard.manageServices")}</Link>
           <Link to="/staff">{t("dashboard.manageStaff")}</Link>
+          <Link to="/business-hours">{t("nav.businessHours")}</Link>
         </section>
 
         <section className="card">
@@ -555,6 +556,7 @@ export const DashboardPage = () => {
             {!isBasicMode ? <Link to="/customers">{t("nav.customers")}</Link> : null}
             <Link to="/staff">{isBasicMode ? t("dashboard.manageStaff") : t("nav.staff")}</Link>
             <Link to="/services">{isBasicMode ? t("dashboard.manageServices") : t("nav.services")}</Link>
+            {isBasicMode ? <Link to="/business-hours">{t("nav.businessHours")}</Link> : null}
             {isBasicMode ? <Link to="/salon-profile">{t("dashboard.salonSettings")}</Link> : null}
             {!isBasicMode ? <Link to="/availability">{t("nav.availability")}</Link> : null}
             {!isBasicMode ? <Link to="/business-hours">{t("nav.businessHours")}</Link> : null}

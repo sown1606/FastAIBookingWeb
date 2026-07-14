@@ -30,6 +30,7 @@ interface CallItem {
   routingOutcome: string | null;
   finalResolution: string | null;
   callerPhone: string | null;
+  isSynthetic?: boolean;
   salon: {
     id: string;
     name: string;
@@ -90,6 +91,7 @@ export const CallsPage = () => {
   const [status, setStatus] = useState("");
   const [salonId, setSalonId] = useState("");
   const [querySalon, setQuerySalon] = useState("");
+  const [includeSynthetic, setIncludeSynthetic] = useState(false);
   const [data, setData] = useState<CallsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -116,9 +118,10 @@ export const CallsPage = () => {
         selectedVisibleIds.join("|"),
         visibleIds.join("|"),
         status,
-        salonId
+        salonId,
+        String(includeSynthetic)
       ].join("::"),
-    [selectedVisibleIds, visibleIds, status, salonId]
+    [selectedVisibleIds, visibleIds, status, salonId, includeSynthetic]
   );
 
   useEffect(() => {
@@ -158,6 +161,9 @@ export const CallsPage = () => {
       if (salonId) {
         params.set("salonId", salonId);
       }
+      if (includeSynthetic) {
+        params.set("includeSynthetic", "true");
+      }
       const response = await apiGet<CallsResponse>(`/api/v1/admin/calls?${params.toString()}`);
       setData(response);
     } catch (loadError) {
@@ -169,7 +175,7 @@ export const CallsPage = () => {
 
   useEffect(() => {
     void load();
-  }, [status, salonId]);
+  }, [status, salonId, includeSynthetic]);
 
   const onFilter = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -216,7 +222,8 @@ export const CallsPage = () => {
           visibleCount: visibleIds.length,
           filters: {
             status,
-            salonId
+            salonId,
+            includeSynthetic
           }
         }
       });
@@ -412,6 +419,14 @@ export const CallsPage = () => {
               placeholder={t("calls.filterSalonPlaceholder")}
             />
           </label>
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={includeSynthetic}
+              onChange={(event) => setIncludeSynthetic(event.target.checked)}
+            />
+            <span>{t("calls.includeSynthetic")}</span>
+          </label>
           <button type="submit" className="button-secondary">
             {t("calls.filterApply")}
           </button>
@@ -481,7 +496,10 @@ export const CallsPage = () => {
                     </td>
                     <td>{formatDateTime(item.createdAt)}</td>
                     <td>{item.salon?.name ?? t("common.none")}</td>
-                    <td>{item.provider}</td>
+                    <td>
+                      <div>{item.provider}</div>
+                      {item.isSynthetic ? <small className="muted">{t("calls.synthetic")}</small> : null}
+                    </td>
                     <td>{translateStatus(item.status)}</td>
                     <td>{translateRouting(item.routingOutcome)}</td>
                     <td>{item.callerPhone ?? t("common.none")}</td>

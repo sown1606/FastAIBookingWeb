@@ -1932,6 +1932,172 @@ const extractExplicitTime = (
   return `${String(parsed.hour).padStart(2, "0")}:${String(parsed.minute).padStart(2, "0")}`;
 };
 
+const timeCandidateToMinutes = (
+  value?: string | null,
+  context: TimePhraseContext = {}
+): number | null => {
+  if (!value?.trim()) {
+    return null;
+  }
+  const parsed = parseLocalTimeText(value, context);
+  return parsed && !parsed.ambiguous ? parsed.hour * 60 + parsed.minute : null;
+};
+
+const formatMinutesForTimePrompt = (totalMinutes: number): string => {
+  let hour = Math.floor(totalMinutes / 60);
+  const minute = totalMinutes % 60;
+  const period = hour >= 12 ? "PM" : "AM";
+  hour %= 12;
+  if (hour === 0) {
+    hour = 12;
+  }
+  return minute === 0 ? `${hour} ${period}` : `${hour}:${String(minute).padStart(2, "0")} ${period}`;
+};
+
+const collectLocalTimeCandidates = (
+  value?: string | null,
+  context: TimePhraseContext = {}
+): Array<{ text: string; minutes: number; source: string; confidence: number }> => {
+  const raw = value?.trim();
+  if (!raw) {
+    return [];
+  }
+  const candidates: Array<{ key: string; text: string; minutes: number; source: string; confidence: number }> = [];
+  const addCandidate = (text: string, source: string, confidence: number) => {
+    const minutes = timeCandidateToMinutes(text, context);
+    if (minutes === null) {
+      return;
+    }
+    const key = String(minutes);
+    if (candidates.some((candidate) => candidate.key === key)) {
+      return;
+    }
+    candidates.push({
+      key,
+      text: formatMinutesForTimePrompt(minutes),
+      minutes,
+      source,
+      confidence
+    });
+  };
+
+  const normalized = normalizeForMatch(raw);
+  const hourPattern = `(?:${SPOKEN_HOUR_PATTERN}|\\d{1,2})`;
+  const noisyHourMinute = new RegExp(
+    `\\b(${hourPattern})\\s+(${hourPattern})\\s+(${SPOKEN_MINUTE_PATTERN}|\\d{1,2})\\s*(a\\s*m|p\\s*m|am|pm)\\b`,
+    "i"
+  );
+  const noisyMatch = normalized.match(noisyHourMinute);
+  if (noisyMatch) {
+    addCandidate(`${noisyMatch[1]} ${String(noisyMatch[4]).replace(/\s+/g, "")}`, "noisy_leading_hour", 0.7);
+    addCandidate(`${noisyMatch[2]} ${noisyMatch[3]} ${String(noisyMatch[4]).replace(/\s+/g, "")}`, "noisy_hour_minute", 0.55);
+  }
+
+  const timeCollectionContext =
+    context.lastAskedSlot === "requestedTime" ||
+    context.currentTurnSemanticType === "TIME_REQUEST" ||
+    /\b(?:at|o\s*clock|o'clock|oclock)\b/.test(normalized);
+  if (
+    timeCollectionContext &&
+    !/\b(?:a\s*m|p\s*m|am|pm)\b/.test(normalized) &&
+    !/\b\d{1,2}\s*:\s*\d{2}\b/.test(normalized)
+  ) {
+    const bareHourMatch = normalized.match(
+      new RegExp(`\\b(?:at\\s+)?(${hourPattern})(?:\\s+(?:o\\s*clock|o'clock|oclock))?\\b`, "i")
+    );
+    if (bareHourMatch) {
+      addCandidate(bareHourMatch[1], "time_context_bare_hour", 0.88);
+    }
+  }
+
+  const extracted = extractTimeCandidate(raw, context);
+  if (extracted) {
+    addCandidate(extracted, "extract_time_candidate", noisyMatch ? 0.55 : 0.9);
+  }
+
+  return candidates
+    .sort((left, right) => right.confidence - left.confidence)
+    .map(({ key: _key, ...candidate }) => candidate);
+};
+
+const analyzeTimeRecognition = (input: {
+  rawTranscript?: string | null;
+  lexSlotValue?: string | null;
+  context?: TimePhraseContext;
+}): {
+  rawTranscript: string;
+  lexSlotValue: string;
+  candidates: Array<{ text: string; minutes: number; source: string; confidence: number }>;
+  selectedCandidate?: { text: string; minutes: number; source: string };
+  requiresConfirmation: boolean;
+  rejectionReason?: string;
+  finalNormalizedLocalTime?: string;
+} => {
+  const context = input.context ?? {};
+  const transcriptCandidates = collectLocalTimeCandidates(input.rawTranscript, context);
+  const slotCandidates = collectLocalTimeCandidates(input.lexSlotValue, {
+    ...context,
+    lastAskedSlot: context.lastAskedSlot ?? "requestedTime"
+  });
+  const byMinute = new Map<number, { text: string; minutes: number; source: string; confidence: number }>();
+  const transcriptMinuteSet = new Set(transcriptCandidates.map((candidate) => candidate.minutes));
+  for (const candidate of transcriptCandidates) {
+    const existing = byMinute.get(candidate.minutes);
+    if (!existing || candidate.confidence > existing.confidence) {
+      byMinute.set(candidate.minutes, candidate);
+    }
+  }
+  for (const candidate of slotCandidates) {
+    const existing = byMinute.get(candidate.minutes);
+    if (existing && transcriptMinuteSet.has(candidate.minutes)) {
+      continue;
+    }
+    if (!existing || candidate.confidence > existing.confidence) {
+      byMinute.set(candidate.minutes, candidate);
+    }
+  }
+  const candidates = Array.from(byMinute.values()).sort((left, right) => right.confidence - left.confidence);
+  const selectedCandidate = candidates[0]
+    ? {
+        text: candidates[0].text,
+        minutes: candidates[0].minutes,
+        source: candidates[0].source
+      }
+    : undefined;
+  const lexMinutes = timeCandidateToMinutes(input.lexSlotValue, {
+    ...context,
+    lastAskedSlot: context.lastAskedSlot ?? "requestedTime"
+  });
+  const hasAmbiguousTranscriptEvidence = transcriptCandidates.length > 1;
+  const lexConflictsWithTranscript =
+    lexMinutes !== null &&
+    transcriptCandidates.length > 0 &&
+    !transcriptCandidates.some((candidate) => candidate.minutes === lexMinutes);
+  const noisyMultipleTimeEvidence =
+    /\b(?:uh|um|ah)\b/.test(normalizeForMatch(input.rawTranscript)) && hasAmbiguousTranscriptEvidence;
+  const requiresConfirmation = Boolean(
+    selectedCandidate &&
+      (hasAmbiguousTranscriptEvidence ||
+        noisyMultipleTimeEvidence ||
+        (lexConflictsWithTranscript && transcriptCandidates.length !== 1))
+  );
+  return {
+    rawTranscript: input.rawTranscript?.trim() ?? "",
+    lexSlotValue: input.lexSlotValue?.trim() ?? "",
+    candidates,
+    selectedCandidate,
+    requiresConfirmation,
+    rejectionReason: hasAmbiguousTranscriptEvidence
+      ? "multiple_time_candidates"
+      : lexConflictsWithTranscript
+        ? "lex_slot_conflicts_with_transcript"
+        : noisyMultipleTimeEvidence
+          ? "noisy_time_transcript"
+          : undefined,
+    finalNormalizedLocalTime: selectedCandidate ? formatMinutesForTimePrompt(selectedCandidate.minutes) : undefined
+  };
+};
+
 const rejectsMentionedDate = (value?: string | null): boolean => {
   const normalized = normalizeForMatch(value);
   return /\b(?:not\s+on|no|not)\s+(?:today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/.test(
@@ -4238,27 +4404,45 @@ const upsertAmazonConnectCallSession = async (input: {
     return null;
   }
 
+  const terminalCallStatuses = new Set<CallSessionStatus>([
+    CallSessionStatus.COMPLETED,
+    CallSessionStatus.MISSED,
+    CallSessionStatus.FAILED,
+    CallSessionStatus.CANCELED,
+    CallSessionStatus.VOICEMAIL
+  ]);
   const routingOutcome = input.routingOutcome ?? CallRoutingOutcome.AI_RECEPTION;
   const finalResolution = input.finalResolution ?? "Amazon Connect AI reception in progress.";
-
-  return prisma.callSession.upsert({
+  const existing = await prisma.callSession.findUnique({
     where: {
       provider_providerCallId: {
         provider: ExternalProvider.AMAZON_CONNECT,
         providerCallId: contactId
       }
-    },
-    update: {
-      salonId: input.salonId,
-      providerCompanyId: env.AMAZON_CONNECT_INSTANCE_ID,
-      callerPhone: normalizePhoneForMatching(input.customerPhone),
-      trackingNumber: normalizePhoneForMatching(input.amazonConnectPhoneNumber),
-      dialedPhone: normalizePhoneForMatching(input.calledNumber),
-      status: CallSessionStatus.IN_PROGRESS,
-      routingOutcome,
-      finalResolution
-    },
-    create: {
+    }
+  });
+  const existingIsTerminal = existing ? terminalCallStatuses.has(existing.status) : false;
+
+  if (existing) {
+    return prisma.callSession.update({
+      where: {
+        id: existing.id
+      },
+      data: {
+        salonId: input.salonId,
+        providerCompanyId: env.AMAZON_CONNECT_INSTANCE_ID,
+        callerPhone: normalizePhoneForMatching(input.customerPhone) ?? existing.callerPhone,
+        trackingNumber: normalizePhoneForMatching(input.amazonConnectPhoneNumber) ?? existing.trackingNumber,
+        dialedPhone: normalizePhoneForMatching(input.calledNumber) ?? existing.dialedPhone,
+        status: existingIsTerminal ? existing.status : CallSessionStatus.IN_PROGRESS,
+        routingOutcome: existing.routingOutcome ?? routingOutcome,
+        finalResolution: existingIsTerminal ? existing.finalResolution ?? finalResolution : finalResolution
+      }
+    });
+  }
+
+  return prisma.callSession.create({
+    data: {
       salonId: input.salonId,
       provider: ExternalProvider.AMAZON_CONNECT,
       providerCallId: contactId,
@@ -5106,6 +5290,67 @@ const getBusinessHoursDecision = async (input: {
       openLocal: openLocal.toISO(),
       closeLocal: closeLocal.toISO()
     }
+  };
+};
+
+const getBusinessHoursDayDecision = async (input: {
+  salonId: string;
+  timezone: string;
+  requestedDate?: string;
+}): Promise<{
+  allowed: boolean;
+  reason?: "closed";
+  message?: string;
+  debug: Record<string, unknown>;
+}> => {
+  if (!input.requestedDate?.trim()) {
+    return {
+      allowed: true,
+      debug: {
+        businessHoursSource: "no_requested_date"
+      }
+    };
+  }
+  const localDate = parseLocalDateText(input.requestedDate, input.timezone);
+  if (!localDate?.isValid) {
+    return {
+      allowed: true,
+      debug: {
+        businessHoursSource: "invalid_requested_date",
+        requestedDate: input.requestedDate
+      }
+    };
+  }
+  const dayOfWeek = mapLuxonWeekdayToBusinessHour(localDate.weekday);
+  const businessHour = await prisma.businessHour.findUnique({
+    where: {
+      salonId_dayOfWeek: {
+        salonId: input.salonId,
+        dayOfWeek
+      }
+    }
+  });
+  const debug = {
+    businessHoursSource: businessHour ? "database" : "missing_row",
+    localRequestedDate: localDate.toFormat("yyyy-MM-dd"),
+    dayOfWeek,
+    openTime: businessHour?.openTime ?? null,
+    closeTime: businessHour?.closeTime ?? null,
+    timezone: input.timezone
+  };
+  if (!businessHour?.isOpen || !businessHour.openTime || !businessHour.closeTime) {
+    return {
+      allowed: false,
+      reason: "closed",
+      message: speak(
+        `We are closed on ${escapeSsml(localDate.toFormat("cccc"))}. <break time="300ms"/> What other day works for you? You can also press 0 for a person.`
+      ),
+      debug
+    };
+  }
+  return {
+    allowed: true,
+    debug
   };
 };
 
@@ -6446,11 +6691,37 @@ export const createAmazonConnectAIAppointment = async (
     lastAskedSlot: readStringAttribute(normalized.attributes, ["lastAskedSlot"]),
     currentTurnSemanticType: readStringAttribute(normalized.attributes, ["currentTurnSemanticType"])
   });
+  const awaitingTimeConfirmation =
+    readStringAttribute(normalized.attributes, ["awaitingTimeConfirmation"]) === "true";
+  const proposedRequestedTime = readStringAttribute(normalized.attributes, ["proposedRequestedTime"]);
+  if (awaitingTimeConfirmation && isAffirmative(normalized.currentTurnTranscript) && proposedRequestedTime) {
+    normalized.requestedTime = proposedRequestedTime;
+    normalized.attributes.awaitingTimeConfirmation = "false";
+    normalized.attributes.proposedRequestedTime = "";
+  } else if (awaitingTimeConfirmation && isNegative(normalized.currentTurnTranscript)) {
+    normalized.requestedTime = undefined;
+    normalized.attributes.awaitingTimeConfirmation = "false";
+    normalized.attributes.proposedRequestedTime = "";
+  }
   if (currentTurnExplicitDate) {
     normalized.requestedDate = currentTurnExplicitDate;
   }
   if (currentTurnExplicitTime && !localTimesEquivalent(normalized.requestedTime, currentTurnExplicitTime)) {
     normalized.requestedTime = currentTurnExplicitTime;
+  }
+  const timeRecognition = analyzeTimeRecognition({
+    rawTranscript: normalized.currentTurnTranscript,
+    lexSlotValue: input.requestedTime ?? normalized.requestedTime,
+    context: {
+      lastAskedSlot: readStringAttribute(normalized.attributes, ["lastAskedSlot"]),
+      currentTurnSemanticType: readStringAttribute(normalized.attributes, ["currentTurnSemanticType"])
+    }
+  });
+  if (timeRecognition.requiresConfirmation && timeRecognition.selectedCandidate) {
+    normalized.requestedTime = undefined;
+    normalized.attributes.awaitingTimeConfirmation = "true";
+    normalized.attributes.proposedRequestedTime = timeRecognition.selectedCandidate.text;
+    normalized.attributes.timeRecognitionDiagnostics = JSON.stringify(timeRecognition);
   }
 
   if (!unsupportedServiceRequest && !normalized.serviceName && normalized.transcriptText) {
@@ -6475,10 +6746,18 @@ export const createAmazonConnectAIAppointment = async (
   const finalConfirmationText = normalized.currentTurnTranscript ?? normalized.transcriptText;
   const finalConfirmationOnlyPhrase =
     awaitingFinalBookingConfirmation && isFinalConfirmationOnlyPhrase(finalConfirmationText);
+  const preStaffBusinessHoursDayDecision = normalized.requestedDate
+    ? await getBusinessHoursDayDecision({
+        salonId: salon.id,
+        timezone: salon.timezone,
+        requestedDate: normalized.requestedDate
+      })
+    : null;
+  const requestedDayIsClosedBeforeStaff = Boolean(
+    preStaffBusinessHoursDayDecision && !preStaffBusinessHoursDayDecision.allowed
+  );
   const staffPhraseContext = staffPhraseContextFromAttributes(normalized.attributes);
-  const currentTurnStaffMention = normalized.currentTurnTranscript && !customerNameTurnOwnsTranscript && !finalConfirmationOnlyPhrase
-    ? await findStaffMentionInText(salon.id, normalized.currentTurnTranscript, staffPhraseContext)
-    : undefined;
+  let currentTurnStaffMention: string | undefined;
   const staffIdBeforeCurrentTurn =
     readStringAttribute(normalized.attributes, ["selectedStaffId", "confirmedStaffId", "staffId"]) ??
     normalized.staffId;
@@ -6486,6 +6765,7 @@ export const createAmazonConnectAIAppointment = async (
     readStringAttribute(normalized.attributes, ["confirmedStaffName", "staffPreference"]) ??
     normalized.staffPreference;
   const currentTurnAllowsUnmatchedStaff =
+    !requestedDayIsClosedBeforeStaff &&
     Boolean(normalized.currentTurnTranscript) &&
     !customerNameTurnOwnsTranscript &&
     !finalConfirmationOnlyPhrase &&
@@ -6498,190 +6778,210 @@ export const createAmazonConnectAIAppointment = async (
   const currentTurnHasExplicitStaffPhrase = currentTurnAllowsUnmatchedStaff
     ? hasExplicitStaffPhrase(normalized.currentTurnTranscript, staffPhraseContext)
     : false;
-  if (currentTurnStaffMention) {
-    const previousStaffPreference = normalized.staffPreference;
-    normalized.staffPreference = currentTurnStaffMention;
-    if (
-      previousStaffPreference &&
-      normalizeForMatch(previousStaffPreference) !== normalizeForMatch(currentTurnStaffMention)
-    ) {
-      normalized.staffId = undefined;
-    }
-  } else if (currentTurnHasExplicitStaffPhrase) {
-    normalized.staffPreference =
-      currentTurnStaffCandidate && currentTurnStaffCandidate !== "any staff"
-        ? currentTurnStaffCandidate
-        : undefined;
-    normalized.staffId = undefined;
-  } else if (!normalized.staffPreference && normalized.transcriptText) {
-    normalized.staffPreference = await findStaffMentionInText(
-      salon.id,
-      normalized.transcriptText,
-      staffPhraseContext
-    );
-  }
-
   const staffExclusionState = readStaffExclusionState(normalized.attributes);
-  const allBookableStaffForExclusion = await getActiveBookableStaff(salon.id);
-  const explicitlySelectedStaff =
-    currentTurnStaffMention && currentTurnStaffMention !== "Any staff"
-      ? allBookableStaffForExclusion.find((member) => staffMatchesName(member, currentTurnStaffMention))
-      : undefined;
-  if (explicitlySelectedStaff) {
-    removeStaffFromExclusionState(staffExclusionState, explicitlySelectedStaff);
-  }
-  const staffIntent = parseStaffIntent({
-    text: finalConfirmationText,
-    staff: allBookableStaffForExclusion,
-    currentStaffId: staffIdBeforeCurrentTurn,
-    currentStaffName: staffNameBeforeCurrentTurn,
-    context: staffPhraseContext
-  });
-  staffIntent.excludedStaff.forEach((member) => addStaffToExclusionState(staffExclusionState, member));
-  const hasActiveStaffExclusions =
+  let allBookableStaffForExclusion: StaffCandidate[] = [];
+  let staffIntent: StaffIntentParseResult = {
+    selectionMode: "UNKNOWN",
+    excludedStaff: [],
+    hasExplicitExclusion: false
+  };
+  let hasActiveStaffExclusions =
     staffExclusionState.ids.size > 0 || staffExclusionState.names.size > 0;
-  const normalizedStaffMember = allBookableStaffForExclusion.find(
-    (member) =>
-      (normalized.staffId && member.id === normalized.staffId) ||
-      staffMatchesName(member, normalized.staffPreference)
-  );
-  const normalizedStaffIsExcluded =
-    normalizedStaffMember && staffIsExcluded(normalizedStaffMember, staffExclusionState.ids, staffExclusionState.names);
-  const currentStaffWasExplicitlyExcluded = staffIntent.excludedStaff.some(
-    (member) =>
-      (staffIdBeforeCurrentTurn && member.id === staffIdBeforeCurrentTurn) ||
-      staffMatchesName(member, staffNameBeforeCurrentTurn)
-  );
-  const shouldAutoSelectAnyStaffAfterExclusion =
-    awaitingFinalBookingConfirmation &&
-    staffIntent.hasExplicitExclusion &&
-    currentStaffWasExplicitlyExcluded &&
-    staffIntent.selectionMode !== "SPECIFIC";
-  if (staffIntent.hasExplicitExclusion || staffIntent.selectionMode === "CHANGE" || normalizedStaffIsExcluded) {
-    if (
-      staffIntent.selectionMode === "ANY" ||
-      currentTurnStaffMention === "Any staff" ||
-      shouldAutoSelectAnyStaffAfterExclusion
-    ) {
-      normalized.staffPreference = "Any staff";
-    } else if (normalizedStaffIsExcluded || staffIntent.selectionMode === "CHANGE") {
-      normalized.staffPreference = undefined;
-    }
-    normalized.staffId = undefined;
-    normalized.confirmationState = undefined;
-  }
-  applyStaffExclusionStateToAttributes(normalized.attributes, staffExclusionState);
+  let shouldAutoSelectAnyStaffAfterExclusion = false;
+  let finalConfirmationRequiresStaffSelection = false;
+  let finalConfirmationOutcome: ReturnType<typeof classifyFinalBookingConfirmation> = "UNKNOWN";
 
-  let finalConfirmationRequiresStaffSelection =
-    awaitingFinalBookingConfirmation &&
-    (staffIntent.hasExplicitExclusion || staffIntent.selectionMode === "CHANGE") &&
-    staffIntent.selectionMode !== "ANY" &&
-    !shouldAutoSelectAnyStaffAfterExclusion;
-  const finalConfirmationOutcome = awaitingFinalBookingConfirmation
-    ? classifyFinalBookingConfirmation(finalConfirmationText, {
-        hasExplicitStaffChange: Boolean(
-          currentTurnStaffMention ||
-          staffIntent.hasExplicitExclusion ||
-          staffIntent.selectionMode === "CHANGE" ||
-          staffIntent.selectionMode === "ANY"
-        )
-      })
-    : "UNKNOWN";
-  if (awaitingFinalBookingConfirmation && finalConfirmationOutcome === "AFFIRMED") {
-    normalized.confirmationState = "Confirmed";
-  } else if (awaitingFinalBookingConfirmation && finalConfirmationOutcome === "DENIED") {
-    normalized.confirmationState = "Denied";
-  } else if (awaitingFinalBookingConfirmation && finalConfirmationOutcome === "CHANGE_REQUEST") {
-    normalized.confirmationState = undefined;
-    const changedDate = extractExplicitDate(finalConfirmationText, salon.timezone);
-    const changedTime = extractExplicitTime(finalConfirmationText);
-    const clearedDate = rejectsMentionedDate(finalConfirmationText);
-    const requestsStaffChange =
-      /\b(?:change|switch)\s+(?:the\s+)?(?:person|staff|technician|tech)\b/.test(
-        normalizeForMatch(finalConfirmationText)
-      ) ||
-      /\b(?:someone else|different person|different staff|different technician|different tech)\b/.test(
-        normalizeForMatch(finalConfirmationText)
-      ) ||
-      (!clearedDate && /\bnot\s+(?!correct\b|right\b|book\b|it\b|that\b|my\b|me\b|name\b)[a-z][a-z\s'-]{1,40}\b/.test(
-        normalizeForMatch(finalConfirmationText)
-      )) ||
-      /\bwith\s+[a-z][a-z\s'-]{1,40}\s+instead\b/.test(normalizeForMatch(finalConfirmationText));
-    if (clearedDate) {
-      normalized.requestedDate = undefined;
-    } else if (changedDate) {
-      normalized.requestedDate = changedDate;
-    }
-    if (changedTime) {
-      normalized.requestedTime = changedTime;
-    }
-    if (finalConfirmationText) {
-      const changedService = await findServiceMentionInText(salon.id, finalConfirmationText);
-      if (changedService) {
-        normalized.serviceName = getCustomerFacingServiceName(changedService.service.name);
+  if (!requestedDayIsClosedBeforeStaff) {
+    currentTurnStaffMention =
+      normalized.currentTurnTranscript && !customerNameTurnOwnsTranscript && !finalConfirmationOnlyPhrase
+        ? await findStaffMentionInText(salon.id, normalized.currentTurnTranscript, staffPhraseContext)
+        : undefined;
+    if (currentTurnStaffMention) {
+      const previousStaffPreference = normalized.staffPreference;
+      normalized.staffPreference = currentTurnStaffMention;
+      if (
+        previousStaffPreference &&
+        normalizeForMatch(previousStaffPreference) !== normalizeForMatch(currentTurnStaffMention)
+      ) {
+        normalized.staffId = undefined;
       }
-      const genericStaffChangeWithoutName =
+    } else if (currentTurnHasExplicitStaffPhrase) {
+      normalized.staffPreference =
+        currentTurnStaffCandidate && currentTurnStaffCandidate !== "any staff"
+          ? currentTurnStaffCandidate
+          : undefined;
+      normalized.staffId = undefined;
+    } else if (!normalized.staffPreference && normalized.transcriptText) {
+      normalized.staffPreference = await findStaffMentionInText(
+        salon.id,
+        normalized.transcriptText,
+        staffPhraseContext
+      );
+    }
+
+    allBookableStaffForExclusion = await getActiveBookableStaff(salon.id);
+    const explicitlySelectedStaff =
+      currentTurnStaffMention && currentTurnStaffMention !== "Any staff"
+        ? allBookableStaffForExclusion.find((member) => staffMatchesName(member, currentTurnStaffMention))
+        : undefined;
+    if (explicitlySelectedStaff) {
+      removeStaffFromExclusionState(staffExclusionState, explicitlySelectedStaff);
+    }
+    staffIntent = parseStaffIntent({
+      text: finalConfirmationText,
+      staff: allBookableStaffForExclusion,
+      currentStaffId: staffIdBeforeCurrentTurn,
+      currentStaffName: staffNameBeforeCurrentTurn,
+      context: staffPhraseContext
+    });
+    staffIntent.excludedStaff.forEach((member) => addStaffToExclusionState(staffExclusionState, member));
+    hasActiveStaffExclusions =
+      staffExclusionState.ids.size > 0 || staffExclusionState.names.size > 0;
+    const normalizedStaffMember = allBookableStaffForExclusion.find(
+      (member) =>
+        (normalized.staffId && member.id === normalized.staffId) ||
+        staffMatchesName(member, normalized.staffPreference)
+    );
+    const normalizedStaffIsExcluded =
+      normalizedStaffMember && staffIsExcluded(normalizedStaffMember, staffExclusionState.ids, staffExclusionState.names);
+    const currentStaffWasExplicitlyExcluded = staffIntent.excludedStaff.some(
+      (member) =>
+        (staffIdBeforeCurrentTurn && member.id === staffIdBeforeCurrentTurn) ||
+        staffMatchesName(member, staffNameBeforeCurrentTurn)
+    );
+    shouldAutoSelectAnyStaffAfterExclusion =
+      awaitingFinalBookingConfirmation &&
+      staffIntent.hasExplicitExclusion &&
+      currentStaffWasExplicitlyExcluded &&
+      staffIntent.selectionMode !== "SPECIFIC";
+    if (staffIntent.hasExplicitExclusion || staffIntent.selectionMode === "CHANGE" || normalizedStaffIsExcluded) {
+      if (
+        staffIntent.selectionMode === "ANY" ||
+        currentTurnStaffMention === "Any staff" ||
+        shouldAutoSelectAnyStaffAfterExclusion
+      ) {
+        normalized.staffPreference = "Any staff";
+      } else if (normalizedStaffIsExcluded || staffIntent.selectionMode === "CHANGE") {
+        normalized.staffPreference = undefined;
+      }
+      normalized.staffId = undefined;
+      normalized.confirmationState = undefined;
+    }
+    applyStaffExclusionStateToAttributes(normalized.attributes, staffExclusionState);
+
+    finalConfirmationRequiresStaffSelection =
+      awaitingFinalBookingConfirmation &&
+      (staffIntent.hasExplicitExclusion || staffIntent.selectionMode === "CHANGE") &&
+      staffIntent.selectionMode !== "ANY" &&
+      !shouldAutoSelectAnyStaffAfterExclusion;
+    finalConfirmationOutcome = awaitingFinalBookingConfirmation
+      ? classifyFinalBookingConfirmation(finalConfirmationText, {
+          hasExplicitStaffChange: Boolean(
+            currentTurnStaffMention ||
+            staffIntent.hasExplicitExclusion ||
+            staffIntent.selectionMode === "CHANGE" ||
+            staffIntent.selectionMode === "ANY"
+          )
+        })
+      : "UNKNOWN";
+    if (awaitingFinalBookingConfirmation && finalConfirmationOutcome === "AFFIRMED") {
+      normalized.confirmationState = "Confirmed";
+    } else if (awaitingFinalBookingConfirmation && finalConfirmationOutcome === "DENIED") {
+      normalized.confirmationState = "Denied";
+    } else if (awaitingFinalBookingConfirmation && finalConfirmationOutcome === "CHANGE_REQUEST") {
+      normalized.confirmationState = undefined;
+      const changedDate = extractExplicitDate(finalConfirmationText, salon.timezone);
+      const changedTime = extractExplicitTime(finalConfirmationText);
+      const clearedDate = rejectsMentionedDate(finalConfirmationText);
+      const requestsStaffChange =
         /\b(?:change|switch)\s+(?:the\s+)?(?:person|staff|technician|tech)\b/.test(
           normalizeForMatch(finalConfirmationText)
         ) ||
         /\b(?:someone else|different person|different staff|different technician|different tech)\b/.test(
           normalizeForMatch(finalConfirmationText)
-        );
-      const currentTurnDesiredStaffCandidate =
-        currentTurnStaffCandidate && currentTurnStaffCandidate !== "any staff"
-          ? currentTurnStaffCandidate
-          : undefined;
-      const changedStaff = genericStaffChangeWithoutName
-        ? undefined
-        : shouldAutoSelectAnyStaffAfterExclusion
-          ? undefined
-          : currentTurnStaffMention ??
-            currentTurnDesiredStaffCandidate ??
-            await findStaffMentionInText(salon.id, finalConfirmationText, staffPhraseContext);
-      if (shouldAutoSelectAnyStaffAfterExclusion) {
-        normalized.staffPreference = "Any staff";
-        normalized.staffId = undefined;
-        finalConfirmationRequiresStaffSelection = false;
-      } else if (changedStaff) {
-        normalized.staffPreference = changedStaff;
-        normalized.staffId = undefined;
-        finalConfirmationRequiresStaffSelection = false;
-      } else if (requestsStaffChange) {
-        normalized.staffPreference = undefined;
-        normalized.staffId = undefined;
-        finalConfirmationRequiresStaffSelection = true;
+        ) ||
+        (!clearedDate && /\bnot\s+(?!correct\b|right\b|book\b|it\b|that\b|my\b|me\b|name\b)[a-z][a-z\s'-]{1,40}\b/.test(
+          normalizeForMatch(finalConfirmationText)
+        )) ||
+        /\bwith\s+[a-z][a-z\s'-]{1,40}\s+instead\b/.test(normalizeForMatch(finalConfirmationText));
+      if (clearedDate) {
+        normalized.requestedDate = undefined;
+      } else if (changedDate) {
+        normalized.requestedDate = changedDate;
       }
+      if (changedTime) {
+        normalized.requestedTime = changedTime;
+      }
+      if (finalConfirmationText) {
+        const changedService = await findServiceMentionInText(salon.id, finalConfirmationText);
+        if (changedService) {
+          normalized.serviceName = getCustomerFacingServiceName(changedService.service.name);
+        }
+        const genericStaffChangeWithoutName =
+          /\b(?:change|switch)\s+(?:the\s+)?(?:person|staff|technician|tech)\b/.test(
+            normalizeForMatch(finalConfirmationText)
+          ) ||
+          /\b(?:someone else|different person|different staff|different technician|different tech)\b/.test(
+            normalizeForMatch(finalConfirmationText)
+          );
+        const currentTurnDesiredStaffCandidate =
+          currentTurnStaffCandidate && currentTurnStaffCandidate !== "any staff"
+            ? currentTurnStaffCandidate
+            : undefined;
+        const changedStaff = genericStaffChangeWithoutName
+          ? undefined
+          : shouldAutoSelectAnyStaffAfterExclusion
+            ? undefined
+            : currentTurnStaffMention ??
+              currentTurnDesiredStaffCandidate ??
+              await findStaffMentionInText(salon.id, finalConfirmationText, staffPhraseContext);
+        if (shouldAutoSelectAnyStaffAfterExclusion) {
+          normalized.staffPreference = "Any staff";
+          normalized.staffId = undefined;
+          finalConfirmationRequiresStaffSelection = false;
+        } else if (changedStaff) {
+          normalized.staffPreference = changedStaff;
+          normalized.staffId = undefined;
+          finalConfirmationRequiresStaffSelection = false;
+        } else if (requestsStaffChange) {
+          normalized.staffPreference = undefined;
+          normalized.staffId = undefined;
+          finalConfirmationRequiresStaffSelection = true;
+        }
+      }
+    } else if (awaitingFinalBookingConfirmation && finalConfirmationOutcome === "UNKNOWN") {
+      normalized.confirmationState = undefined;
     }
-  } else if (awaitingFinalBookingConfirmation && finalConfirmationOutcome === "UNKNOWN") {
-    normalized.confirmationState = undefined;
-  }
-  if (
-    awaitingFinalBookingConfirmation &&
-    !shouldAutoSelectAnyStaffAfterExclusion &&
-    !currentTurnStaffMention &&
-    (/\b(?:change|switch)\s+(?:the\s+)?(?:person|staff|technician|tech)\b/.test(
-      normalizeForMatch(finalConfirmationText)
-    ) ||
-      /\b(?:someone else|different person|different staff|different technician|different tech)\b/.test(
+    if (
+      awaitingFinalBookingConfirmation &&
+      !shouldAutoSelectAnyStaffAfterExclusion &&
+      !currentTurnStaffMention &&
+      (/\b(?:change|switch)\s+(?:the\s+)?(?:person|staff|technician|tech)\b/.test(
         normalizeForMatch(finalConfirmationText)
-      ))
-  ) {
-    normalized.confirmationState = undefined;
-    normalized.staffPreference = undefined;
-    normalized.staffId = undefined;
-    finalConfirmationRequiresStaffSelection = true;
-  }
-  const selectedExcludedStaffAfterCorrection = allBookableStaffForExclusion.find(
-    (member) =>
-      ((normalized.staffId && member.id === normalized.staffId) ||
-        staffMatchesName(member, normalized.staffPreference)) &&
-      staffIsExcluded(member, staffExclusionState.ids, staffExclusionState.names)
-  );
-  if (selectedExcludedStaffAfterCorrection) {
-    normalized.staffPreference = undefined;
-    normalized.staffId = undefined;
-    normalized.confirmationState = undefined;
-    finalConfirmationRequiresStaffSelection = true;
+      ) ||
+        /\b(?:someone else|different person|different staff|different technician|different tech)\b/.test(
+          normalizeForMatch(finalConfirmationText)
+        ))
+    ) {
+      normalized.confirmationState = undefined;
+      normalized.staffPreference = undefined;
+      normalized.staffId = undefined;
+      finalConfirmationRequiresStaffSelection = true;
+    }
+    const selectedExcludedStaffAfterCorrection = allBookableStaffForExclusion.find(
+      (member) =>
+        ((normalized.staffId && member.id === normalized.staffId) ||
+          staffMatchesName(member, normalized.staffPreference)) &&
+        staffIsExcluded(member, staffExclusionState.ids, staffExclusionState.names)
+    );
+    if (selectedExcludedStaffAfterCorrection) {
+      normalized.staffPreference = undefined;
+      normalized.staffId = undefined;
+      normalized.confirmationState = undefined;
+      finalConfirmationRequiresStaffSelection = true;
+    }
+  } else {
+    applyStaffExclusionStateToAttributes(normalized.attributes, staffExclusionState);
   }
 
   const activeAlternativeSlots = awaitingAlternativeSelection
@@ -6737,34 +7037,6 @@ export const createAmazonConnectAIAppointment = async (
     }
   }
 
-  let staffResolution = await resolveStaffCandidates({
-    salonId: salon.id,
-    requestedStaffName: normalized.staffPreference,
-    staffId: normalized.staffId,
-    attributes: normalized.attributes,
-    excludedStaffIds: staffExclusionState.ids,
-    excludedStaffNames: staffExclusionState.names
-  });
-  if (staffResolution.status === "matched") {
-    normalized.staffPreference = staffResolution.matchedStaff.fullName;
-    normalized.staffId = staffResolution.matchedStaff.id;
-  } else if (staffResolution.status === "explicit_any") {
-    normalized.staffPreference = "Any staff";
-    normalized.staffId = undefined;
-    normalized.unrecognizedStaffUtterance = undefined;
-  } else if (normalized.invalidStaffDtmfSelection) {
-    normalized.unrecognizedStaffUtterance = normalized.staffPreference;
-    normalized.staffPreference = undefined;
-    normalized.staffId = undefined;
-  } else if (staffResolution.status !== "ambiguous") {
-    normalized.unrecognizedStaffUtterance =
-      staffResolution.status === "unmatched_specific"
-        ? staffResolution.rawStaffPreference
-        : normalized.unrecognizedStaffUtterance;
-    normalized.staffPreference = undefined;
-    normalized.staffId = undefined;
-  }
-
   let serviceMatch = normalized.serviceName
     ? await resolveServiceMatch(salon.id, normalized.serviceName)
     : null;
@@ -6786,6 +7058,61 @@ export const createAmazonConnectAIAppointment = async (
     alternativeSlots?: SuggestedSlot[];
     failureReason?: string;
   }) => {
+    const inputNormalizedRequest =
+      inputForAttempt.normalizedRequest &&
+      typeof inputForAttempt.normalizedRequest === "object" &&
+      !Array.isArray(inputForAttempt.normalizedRequest)
+        ? (inputForAttempt.normalizedRequest as Record<string, unknown>)
+        : {};
+    const bookingRequestFingerprint = stableHash({
+      salonId: salon.id,
+      customerId: recognizedCustomer?.id,
+      customerPhone:
+        normalizeCustomerPhone(normalized.customerPhone) ??
+        normalizePhoneForMatching(normalized.customerPhone),
+      serviceId: inputNormalizedRequest.serviceId,
+      serviceName: inputNormalizedRequest.serviceName ?? normalized.serviceName,
+      requestedDate: inputNormalizedRequest.requestedDate ?? normalized.requestedDate,
+      requestedTime: inputNormalizedRequest.requestedTime ?? normalized.requestedTime,
+      startTimeIso:
+        inputNormalizedRequest.startTimeIso ??
+        inputForAttempt.requestedStartTime?.toISOString() ??
+        normalized.requestedDate,
+      staffId: inputNormalizedRequest.staffId ?? normalized.staffId,
+      staffPreference: inputNormalizedRequest.staffPreference ?? normalized.staffPreference,
+      availabilityReasonCode: inputNormalizedRequest.availabilityReasonCode,
+      logicalStatus:
+        inputForAttempt.status === BookingAttemptStatus.SUCCESS
+          ? "SUCCESS"
+          : inputForAttempt.status === BookingAttemptStatus.NO_AVAILABILITY
+            ? "NO_AVAILABILITY"
+            : "IN_PROGRESS"
+    });
+    const normalizedRequest = toJson({
+      salonId: salon.id,
+      salonResolutionSource: resolutionSource,
+      customerId: recognizedCustomer?.id,
+      recognizedCustomerId: recognizedCustomer?.id,
+      spokenCustomerName,
+      persistedCustomerFirstName: recognizedCustomer?.firstName,
+      persistedCustomerLastName: recognizedCustomer?.lastName,
+      customerName: normalized.customerName,
+      customerPhone: normalized.customerPhone,
+      customerNameSource: customerNameSourceOverride,
+      customerProfileSource,
+      customerNameNeedsReview: customerNameNeedsReview || undefined,
+      serviceName: normalized.serviceName,
+      requestedDate: normalized.requestedDate,
+      requestedTime: normalized.requestedTime,
+      staffPreference: normalized.staffPreference,
+      staffId: normalized.staffId,
+      selectedStaffId: normalized.staffId,
+      unrecognizedStaffUtterance: normalized.unrecognizedStaffUtterance,
+      excludedStaffIds: Array.from(staffExclusionState.ids.values()),
+      excludedStaffNames: Array.from(staffExclusionState.names.values()),
+      bookingRequestFingerprint,
+      ...inputNormalizedRequest
+    });
     const data = {
       salonId: salon.id,
       callSessionId: callSession?.id,
@@ -6801,30 +7128,7 @@ export const createAmazonConnectAIAppointment = async (
       requestedStaff: normalized.staffPreference,
       requestedDateTimeText:
         inputForAttempt.requestedStartTime?.toISOString() ?? normalized.requestedDate,
-      normalizedRequest: toJson({
-        salonId: salon.id,
-        salonResolutionSource: resolutionSource,
-        customerId: recognizedCustomer?.id,
-        recognizedCustomerId: recognizedCustomer?.id,
-        spokenCustomerName,
-        persistedCustomerFirstName: recognizedCustomer?.firstName,
-        persistedCustomerLastName: recognizedCustomer?.lastName,
-        customerName: normalized.customerName,
-        customerPhone: normalized.customerPhone,
-        customerNameSource: customerNameSourceOverride,
-        customerProfileSource,
-        customerNameNeedsReview: customerNameNeedsReview || undefined,
-        serviceName: normalized.serviceName,
-        requestedDate: normalized.requestedDate,
-        requestedTime: normalized.requestedTime,
-        staffPreference: normalized.staffPreference,
-        staffId: normalized.staffId,
-        selectedStaffId: normalized.staffId,
-        unrecognizedStaffUtterance: normalized.unrecognizedStaffUtterance,
-        excludedStaffIds: Array.from(staffExclusionState.ids.values()),
-        excludedStaffNames: Array.from(staffExclusionState.names.values()),
-        ...((inputForAttempt.normalizedRequest as Record<string, unknown> | undefined) ?? {})
-      }),
+      normalizedRequest,
       alternativeSlots:
         inputForAttempt.alternativeSlots === undefined
           ? undefined
@@ -6847,6 +7151,37 @@ export const createAmazonConnectAIAppointment = async (
       activeBookingAttempt =
         updated.status === BookingAttemptStatus.NEEDS_INPUT ? updated : null;
       return updated;
+    }
+
+    if (callSession && inputForAttempt.status !== BookingAttemptStatus.SUCCESS) {
+      const recentAttempts = await prisma.bookingAttempt.findMany({
+        where: {
+          callSessionId: callSession.id,
+          appointmentId: null,
+          status: {
+            not: BookingAttemptStatus.SUCCESS
+          }
+        },
+        orderBy: {
+          createdAt: "desc"
+        },
+        take: 12
+      });
+      const matchingAttempt = recentAttempts.find((attempt) => {
+        const previousRequest = recordFromUnknown(attempt.normalizedRequest);
+        return previousRequest.bookingRequestFingerprint === bookingRequestFingerprint;
+      });
+      if (matchingAttempt) {
+        const updated = await prisma.bookingAttempt.update({
+          where: {
+            id: matchingAttempt.id
+          },
+          data
+        });
+        activeBookingAttempt =
+          updated.status === BookingAttemptStatus.NEEDS_INPUT ? updated : null;
+        return updated;
+      }
     }
 
     const created = await prisma.bookingAttempt.create({
@@ -6893,6 +7228,40 @@ export const createAmazonConnectAIAppointment = async (
       finalResolution: inputForCall.message,
       language: "en"
     });
+    if (["BOOKED", "RESCHEDULED"].includes(inputForCall.outcome)) {
+      const currentCall = await prisma.callSession.findUnique({
+        where: {
+          id: callSession.id
+        },
+        select: {
+          status: true,
+          startedAt: true,
+          endedAt: true
+        }
+      });
+      const terminalCallStatuses = new Set<CallSessionStatus>([
+        CallSessionStatus.COMPLETED,
+        CallSessionStatus.MISSED,
+        CallSessionStatus.FAILED,
+        CallSessionStatus.CANCELED,
+        CallSessionStatus.VOICEMAIL
+      ]);
+      if (currentCall && !terminalCallStatuses.has(currentCall.status)) {
+        const endedAt = currentCall.endedAt ?? new Date();
+        await prisma.callSession.update({
+          where: {
+            id: callSession.id
+          },
+          data: {
+            status: CallSessionStatus.COMPLETED,
+            endedAt,
+            durationSeconds: currentCall.startedAt
+              ? Math.max(0, Math.round((endedAt.getTime() - currentCall.startedAt.getTime()) / 1000))
+              : undefined
+          }
+        });
+      }
+    }
   };
 
   const createInteraction = async (inputForInteraction: {
@@ -7029,6 +7398,9 @@ export const createAmazonConnectAIAppointment = async (
         input.attributes?.asrDiagnostics ??
           responsePayloadBase.asrDiagnostics ??
           inferredResponseSessionAttributes.asrDiagnostics
+      ),
+      timeRecognition: parseDiagnosticJson(
+        responsePayloadBase.timeRecognition ?? inferredResponseSessionAttributes.timeRecognitionDiagnostics
       ),
       availabilityReasonCode: responsePayloadBase.availabilityReasonCode,
       serviceClarificationReason: responsePayloadBase.serviceClarificationReason,
@@ -7903,7 +8275,7 @@ export const createAmazonConnectAIAppointment = async (
   const humanEscalationReason = shouldTransferToHuman(normalized)
     ? getHumanEscalationReason(normalized)
     : undefined;
-  if (humanEscalationReason) {
+	  if (humanEscalationReason) {
     const humanFailureReason =
       humanEscalationReason === "customer_pressed_zero"
         ? "Caller pressed zero for operator."
@@ -8000,37 +8372,9 @@ export const createAmazonConnectAIAppointment = async (
     };
   }
 
-  const missingFields = new Set<string>();
-  if (!normalized.customerName) {
-    missingFields.add("customerName");
-  }
-  if (!normalized.customerPhone) {
-    missingFields.add("customerPhone");
-  }
-  if (!normalized.serviceName) {
-    missingFields.add("serviceName");
-  }
-  if (
-    !normalized.requestedDate ||
-    (!normalized.requestedTime && !hasTimeComponent(normalized.requestedDate))
-  ) {
-    missingFields.add("preferredDateTime");
-  }
-  const shouldAskStaffOnce =
-    finalConfirmationRequiresStaffSelection ||
-    (staffResolution.status === "missing" && staffResolution.allStaff.length > 0) ||
-    staffResolution.status === "invalid_noise" ||
-    staffResolution.status === "unmatched_specific";
-  if (normalized.invalidStaffDtmfSelection || staffResolution.status === "ambiguous" || shouldAskStaffOnce) {
-    missingFields.add("staffPreference");
-    normalized.staffId = undefined;
-  }
-  if (!missingFields.has("staffPreference") && staffResolution.status === "explicit_any") {
-    normalized.staffPreference = "Any staff";
-    normalized.staffId = undefined;
-  }
   let requestedStartTime: Date | null = null;
-  if (!missingFields.has("preferredDateTime") && normalized.requestedDate) {
+  let requestedStartTimeParseFailed = false;
+  if (normalized.requestedDate && (normalized.requestedTime || hasTimeComponent(normalized.requestedDate))) {
     try {
       const parsedStartTime = parseRequestedStartTimeDetailed({
         requestedDate: normalized.requestedDate,
@@ -8047,15 +8391,174 @@ export const createAmazonConnectAIAppointment = async (
         },
         "Amazon Connect AI appointment time interpreted."
       );
-    } catch (error) {
-      if (error instanceof AppError && error.code === "AMBIGUOUS_REQUESTED_TIME") {
-        missingFields.add("preferredDateTime");
-      } else {
-        missingFields.add("preferredDateTime");
-      }
+    } catch {
+      requestedStartTimeParseFailed = true;
     }
   }
 
+  const businessHoursDayDecision = normalized.requestedDate
+    ? await getBusinessHoursDayDecision({
+        salonId: salon.id,
+        timezone: salon.timezone,
+        requestedDate: normalized.requestedDate
+      })
+    : null;
+  if (businessHoursDayDecision && !businessHoursDayDecision.allowed) {
+    const availabilityReasonCode = "SALON_CLOSED";
+    const message = businessHoursDayDecision.message ?? speak(
+      "We are closed that day. <break time=\"300ms\"/> What other day works for you? You can also press 0 for a person."
+    );
+    const parsed = buildInternalParsedIntent({
+      intentType: "BOOK_APPOINTMENT",
+      customerName: normalized.customerName,
+      customerPhone: normalized.customerPhone,
+      serviceName: normalized.serviceName,
+      staffPreference: normalized.staffPreference,
+      requestedDateTime: normalized.requestedDate,
+      missingFields: ["requestedDate"],
+      isReadyToBook: false
+    });
+    const lexSessionAttributes = buildKnownSessionAttributes({
+      conversationState: "CONTINUE",
+      conversationOutcome: "NO_AVAILABILITY",
+      conversationComplete: "false",
+      availabilityReasonCode,
+      aiAlternativeSlots: "[]",
+      awaitingAlternativeSelection: "false",
+      awaitingFinalBookingConfirmation: "false",
+      bookingConfirmationAsked: "false",
+      requestedDate: undefined,
+      lastAskedSlot: "requestedDate",
+      slotToElicit: "requestedDate",
+      askedSlotsCount: "1",
+      fallbackCount: "1",
+      errorCount: "1",
+      businessHoursDecision: JSON.stringify(businessHoursDayDecision.debug)
+    });
+    const bookingAttempt = await createAttempt({
+      status: BookingAttemptStatus.NO_AVAILABILITY,
+      requestedStartTime: requestedStartTime ?? undefined,
+      failureReason: "Salon is closed for the requested day.",
+      normalizedRequest: {
+        requestedDate: normalized.requestedDate,
+        requestedTime: normalized.requestedTime,
+        availabilityReasonCode,
+        businessHoursDecision: businessHoursDayDecision.debug,
+        startTimeIso: requestedStartTime?.toISOString(),
+        timezone: salon.timezone
+      },
+      alternativeSlots: []
+    });
+    const aiInteraction = await createInteraction({
+      outcome: "NO_AVAILABILITY",
+      message,
+      parsed,
+      bookingAttemptId: bookingAttempt.id,
+      responsePayload: {
+        alternatives: [],
+        availabilityReasonCode,
+        businessHoursDecision: businessHoursDayDecision.debug,
+        promptMissingFields: ["requestedDate"],
+        slotToElicit: "requestedDate",
+        sessionAttributes: lexSessionAttributes
+      },
+      isValid: true
+    });
+    await finalizeCall({
+      outcome: "NO_AVAILABILITY",
+      bookingAttemptId: bookingAttempt.id,
+      bookingStatus: bookingAttempt.status,
+      parsed,
+      message,
+      alternatives: [],
+      failureReason: bookingAttempt.failureReason ?? undefined
+    });
+
+    return {
+      outcome: "NO_AVAILABILITY" as const,
+      message,
+      lexResponse: {
+        fulfillmentState: "InProgress",
+        message,
+        messageContentType: "SSML",
+        dialogAction: {
+          type: "ElicitSlot",
+          slotToElicit: "requestedDate"
+        },
+        sessionAttributes: lexSessionAttributes
+      },
+      appointment: null,
+      bookingAttempt,
+      callSession,
+      transcript,
+      aiInteraction,
+      escalation: null,
+      alternatives: [],
+      missingFields: ["requestedDate"],
+      salonResolutionSource: resolutionSource
+    };
+  }
+
+  let staffResolution = await resolveStaffCandidates({
+    salonId: salon.id,
+    requestedStaffName: normalized.staffPreference,
+    staffId: normalized.staffId,
+    attributes: normalized.attributes,
+    excludedStaffIds: staffExclusionState.ids,
+    excludedStaffNames: staffExclusionState.names
+  });
+  if (staffResolution.status === "matched") {
+    normalized.staffPreference = staffResolution.matchedStaff.fullName;
+    normalized.staffId = staffResolution.matchedStaff.id;
+  } else if (staffResolution.status === "explicit_any") {
+    normalized.staffPreference = "Any staff";
+    normalized.staffId = undefined;
+    normalized.unrecognizedStaffUtterance = undefined;
+  } else if (normalized.invalidStaffDtmfSelection) {
+    normalized.unrecognizedStaffUtterance = normalized.staffPreference;
+    normalized.staffPreference = undefined;
+    normalized.staffId = undefined;
+  } else if (staffResolution.status !== "ambiguous") {
+    normalized.unrecognizedStaffUtterance =
+      staffResolution.status === "unmatched_specific"
+        ? staffResolution.rawStaffPreference
+        : normalized.unrecognizedStaffUtterance;
+    normalized.staffPreference = undefined;
+    normalized.staffId = undefined;
+  }
+
+  const missingFields = new Set<string>();
+  if (!normalized.customerName) {
+    missingFields.add("customerName");
+  }
+  if (!normalized.customerPhone) {
+    missingFields.add("customerPhone");
+  }
+  if (!normalized.serviceName) {
+    missingFields.add("serviceName");
+  }
+  if (
+    !normalized.requestedDate ||
+    (!normalized.requestedTime && !hasTimeComponent(normalized.requestedDate))
+  ) {
+    missingFields.add("preferredDateTime");
+  }
+  if (!missingFields.has("preferredDateTime") && requestedStartTimeParseFailed) {
+    missingFields.add("preferredDateTime");
+  }
+  const shouldAskStaffOnce =
+    finalConfirmationRequiresStaffSelection ||
+    (staffResolution.status === "missing" && staffResolution.allStaff.length > 0) ||
+    staffResolution.status === "invalid_noise" ||
+    staffResolution.status === "unmatched_specific";
+  if (normalized.invalidStaffDtmfSelection || staffResolution.status === "ambiguous" || shouldAskStaffOnce) {
+    missingFields.add("staffPreference");
+    normalized.staffId = undefined;
+  }
+  if (!missingFields.has("staffPreference") && staffResolution.status === "explicit_any") {
+    normalized.staffPreference = "Any staff";
+    normalized.staffId = undefined;
+  }
   if (missingFields.size > 0 || !requestedStartTime) {
     const elicitDecision = getElicitSlotForMissingFields(
       missingFields,
@@ -8109,7 +8612,12 @@ export const createAmazonConnectAIAppointment = async (
           readStringAttribute(normalized.attributes, ["serviceRecognitionFailureCount", "serviceClarificationAttempts"])
         ) > 0);
 
-    const message = buildLexMessage({
+    const timeConfirmationPrompt =
+      readStringAttribute(normalized.attributes, ["awaitingTimeConfirmation"]) === "true" &&
+      readStringAttribute(normalized.attributes, ["proposedRequestedTime"])
+        ? speak(`Did you mean ${escapeSsml(readStringAttribute(normalized.attributes, ["proposedRequestedTime"])!)}?`)
+        : undefined;
+    const message = timeConfirmationPrompt ?? buildLexMessage({
       outcome: "MISSING_INFO",
       missingFields: elicitDecision.promptMissingFields,
       staffOptions: staffPromptOptions,
@@ -8195,7 +8703,10 @@ export const createAmazonConnectAIAppointment = async (
       ...unsupportedServiceAttributes,
       ...unresolvedStaffAttributes,
       ...elicitDecision.sessionAttributes,
-      ...staffPromptAttributes
+      ...staffPromptAttributes,
+      awaitingTimeConfirmation: readStringAttribute(normalized.attributes, ["awaitingTimeConfirmation"]),
+      proposedRequestedTime: readStringAttribute(normalized.attributes, ["proposedRequestedTime"]),
+      timeRecognitionDiagnostics: readStringAttribute(normalized.attributes, ["timeRecognitionDiagnostics"])
     });
     const aiInteraction = await createInteraction({
       outcome: "MISSING_INFO",
@@ -8209,6 +8720,17 @@ export const createAmazonConnectAIAppointment = async (
         serviceClarificationReason: unsupportedServiceRequest ? "unsupported_service" : undefined,
         unsupportedServiceRequest,
         suggestedServiceName: unsupportedServiceSuggestionName,
+        timeRecognition: (() => {
+          const raw = readStringAttribute(normalized.attributes, ["timeRecognitionDiagnostics"]);
+          if (!raw) {
+            return undefined;
+          }
+          try {
+            return JSON.parse(raw);
+          } catch {
+            return raw;
+          }
+        })(),
         sessionAttributes: lexSessionAttributes
       },
       isValid: true
@@ -8533,6 +9055,111 @@ export const createAmazonConnectAIAppointment = async (
   const service = serviceMatch.service;
   const callerServiceName = getCustomerFacingServiceName(service.name) ?? service.name;
   normalized.serviceName = callerServiceName;
+
+  const earlyBusinessHoursDecision = await getBusinessHoursDecision({
+    salonId: salon.id,
+    timezone: salon.timezone,
+    startTime: requestedStartTime,
+    durationMinutes: service.durationMinutes
+  });
+  if (!earlyBusinessHoursDecision.allowed) {
+    const availabilityReasonCode =
+      earlyBusinessHoursDecision.reason === "closed" ? "SALON_CLOSED" : "OUTSIDE_BUSINESS_HOURS";
+    const message = earlyBusinessHoursDecision.message ?? speak(
+      "That time is outside our business hours. <break time=\"300ms\"/> What other time works for you?"
+    );
+    const parsed = buildInternalParsedIntent({
+      intentType: "BOOK_APPOINTMENT",
+      customerName: normalized.customerName,
+      customerPhone: normalized.customerPhone,
+      serviceName: callerServiceName,
+      staffPreference: normalized.staffPreference,
+      requestedDateTime: requestedStartTime.toISOString(),
+      missingFields: earlyBusinessHoursDecision.reason === "closed" ? ["requestedDate"] : ["requestedTime"],
+      isReadyToBook: false
+    });
+    const lexSessionAttributes = buildKnownSessionAttributes({
+      conversationState: "CONTINUE",
+      conversationOutcome: "NO_AVAILABILITY",
+      conversationComplete: "false",
+      availabilityReasonCode,
+      aiAlternativeSlots: "[]",
+      awaitingAlternativeSelection: "false",
+      awaitingFinalBookingConfirmation: "false",
+      bookingConfirmationAsked: "false",
+      requestedDate: earlyBusinessHoursDecision.reason === "closed" ? undefined : normalized.requestedDate,
+      lastAskedSlot: earlyBusinessHoursDecision.reason === "closed" ? "requestedDate" : "requestedTime",
+      slotToElicit: earlyBusinessHoursDecision.reason === "closed" ? "requestedDate" : "requestedTime",
+      askedSlotsCount: "1",
+      fallbackCount: "1",
+      errorCount: "1",
+      businessHoursDecision: JSON.stringify(earlyBusinessHoursDecision.debug)
+    });
+    const bookingAttempt = await createAttempt({
+      status: BookingAttemptStatus.NO_AVAILABILITY,
+      requestedStartTime,
+      failureReason:
+        earlyBusinessHoursDecision.reason === "closed"
+          ? "Salon is closed for the requested day."
+          : "Requested time is outside business hours.",
+      normalizedRequest: {
+        serviceId: service.id,
+        serviceName: callerServiceName,
+        staffPreference: normalized.staffPreference,
+        startTimeIso: requestedStartTime.toISOString(),
+        timezone: salon.timezone,
+        availabilityReasonCode,
+        businessHoursDecision: earlyBusinessHoursDecision.debug
+      },
+      alternativeSlots: []
+    });
+    const aiInteraction = await createInteraction({
+      outcome: "NO_AVAILABILITY",
+      message,
+      parsed,
+      bookingAttemptId: bookingAttempt.id,
+      responsePayload: {
+        alternatives: [],
+        availabilityReasonCode,
+        businessHoursDecision: earlyBusinessHoursDecision.debug,
+        sessionAttributes: lexSessionAttributes
+      },
+      isValid: true
+    });
+    await finalizeCall({
+      outcome: "NO_AVAILABILITY",
+      bookingAttemptId: bookingAttempt.id,
+      bookingStatus: bookingAttempt.status,
+      parsed,
+      message,
+      alternatives: [],
+      failureReason: bookingAttempt.failureReason ?? undefined
+    });
+
+    return {
+      outcome: "NO_AVAILABILITY" as const,
+      message,
+      lexResponse: {
+        fulfillmentState: "InProgress",
+        message,
+        messageContentType: "SSML",
+        dialogAction: {
+          type: "ElicitSlot",
+          slotToElicit: earlyBusinessHoursDecision.reason === "closed" ? "requestedDate" : "requestedTime"
+        },
+        sessionAttributes: lexSessionAttributes
+      },
+      appointment: null,
+      bookingAttempt,
+      callSession,
+      transcript,
+      aiInteraction,
+      escalation: null,
+      alternatives: [],
+      missingFields: earlyBusinessHoursDecision.reason === "closed" ? ["requestedDate"] : ["requestedTime"],
+      salonResolutionSource: resolutionSource
+    };
+  }
 
   staffResolution =
     staffResolution.rawStaffPreference === normalized.staffPreference

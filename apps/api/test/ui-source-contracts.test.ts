@@ -148,6 +148,53 @@ test("admin row selection hook supports Shift-click visible range behavior", () 
   assert.match(aiLogsSource, /groupedItems\.map\(\(group\) => group\.latest\.id\)/);
 });
 
+test("owner Basic UI exposes and validates Business Hours", () => {
+  const layoutSource = readRepoFile("apps/app/src/components/layout.tsx");
+  const dashboardSource = readRepoFile("apps/app/src/pages/dashboard-page.tsx");
+  const settingsSource = readRepoFile("apps/app/src/pages/salon-profile-page.tsx");
+  const hoursSource = readRepoFile("apps/app/src/pages/business-hours-page.tsx");
+  const i18nSource = readRepoFile("apps/app/src/lib/i18n.tsx");
+
+  assert.match(layoutSource, /const ownerBasicNav = \[[\s\S]*to: "\/business-hours"/);
+  assert.match(dashboardSource, /isBasicMode \? <Link to="\/business-hours">/);
+  assert.match(settingsSource, /<Link to="\/business-hours" className="button-secondary">/);
+  assert.match(hoursSource, /apiGet<BusinessHour\[]>\("\/api\/v1\/business-hours"\)/);
+  assert.match(hoursSource, /apiPut<BusinessHour\[], \{ hours: BusinessHour\[] \}>\("\/api\/v1\/business-hours"/);
+  assert.match(hoursSource, /item\.isOpen \? item\.openTime : null/);
+  assert.match(hoursSource, /item\.isOpen \? item\.closeTime : null/);
+  assert.match(hoursSource, /invalidDay/);
+  assert.match(hoursSource, /hours\.invalidRange/);
+  assert.match(hoursSource, /disabled=\{!item\.isOpen \|\| saving\}/);
+  assert.match(hoursSource, /disabled=\{saving\}/);
+  assert.match(hoursSource, /common\.saving/);
+  assert.match(hoursSource, /weekday\.\$\{item\.dayOfWeek\}/);
+  assert.match(i18nSource, /"nav\.businessHours": "Business hours"/);
+  assert.match(i18nSource, /"nav\.businessHours": "Giờ làm việc"/);
+  assert.match(i18nSource, /"hours\.invalidRange"/);
+});
+
+test("admin log pages hide synthetic rows by default and expose opt-in filters", () => {
+  const callsSource = readRepoFile("apps/admin/src/pages/calls-page.tsx");
+  const aiLogsSource = readRepoFile("apps/admin/src/pages/ai-logs-page.tsx");
+  const i18nSource = readRepoFile("apps/admin/src/lib/i18n.tsx");
+  const routesSource = readRepoFile("apps/api/src/modules/admin/admin.routes.ts");
+  const callsServiceSource = readRepoFile("apps/api/src/modules/calls/calls.service.ts");
+
+  assert.match(callsSource, /const \[includeSynthetic, setIncludeSynthetic\] = useState\(false\)/);
+  assert.match(aiLogsSource, /const \[includeSynthetic, setIncludeSynthetic\] = useState\(false\)/);
+  assert.match(callsSource, /params\.set\("includeSynthetic", "true"\)/);
+  assert.match(aiLogsSource, /params\.set\("includeSynthetic", "true"\)/);
+  assert.match(callsSource, /calls\.includeSynthetic/);
+  assert.match(aiLogsSource, /aiLogs\.includeSynthetic/);
+  assert.match(callsSource, /calls\.synthetic/);
+  assert.match(aiLogsSource, /aiLogs\.synthetic/);
+  assert.match(i18nSource, /"calls\.includeSynthetic": "Include test\/smoke"/);
+  assert.match(i18nSource, /"aiLogs\.includeSynthetic": "Include test\/smoke"/);
+  assert.match(routesSource, /includeSynthetic: z\.coerce\.boolean\(\)\.default\(false\)/);
+  assert.match(callsServiceSource, /providerCallId:\s*\{\s*startsWith: "codex-"/);
+  assert.match(callsServiceSource, /rawPayload:\s*\{\s*path: \["metadata", "isSynthetic"\]/);
+});
+
 test("admin API exposes authenticated bulk debug endpoints with server-side sanitization", () => {
   const routesSource = readRepoFile("apps/api/src/modules/admin/admin.routes.ts");
   const serviceSource = readRepoFile("apps/api/src/modules/admin/admin-debug-export.service.ts");

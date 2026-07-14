@@ -164,7 +164,7 @@ export const AiLogsPage = () => {
   const [querySalonId, setQuerySalonId] = useState("");
   const [search, setSearch] = useState("");
   const [querySearch, setQuerySearch] = useState("");
-  const [includeSynthetic, setIncludeSynthetic] = useState(true);
+  const [includeSynthetic, setIncludeSynthetic] = useState(false);
   const [data, setData] = useState<AiLogsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");

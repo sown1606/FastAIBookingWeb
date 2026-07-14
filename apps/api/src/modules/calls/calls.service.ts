@@ -1,4 +1,5 @@
 import { createHash } from "crypto";
+import { ConnectClient, DescribeContactCommand } from "@aws-sdk/client-connect";
 import {
   BookingAttemptStatus,
   CallRoutingOutcome,
@@ -27,6 +28,7 @@ interface ListAdminCallsInput {
   limit: number;
   status?: CallSessionStatus;
   salonId?: string;
+  includeSynthetic?: boolean;
 }
 
 interface AddTranscriptInput {
@@ -48,6 +50,126 @@ const payloadHash = (value: unknown): string => {
 };
 
 const callrailAdapter = new CallRailProviderAdapter();
+
+const AMAZON_CONNECT_RECONCILE_TIMEOUT_MS = 2500;
+
+const terminalCallStatuses = new Set<CallSessionStatus>([
+  CallSessionStatus.COMPLETED,
+  CallSessionStatus.MISSED,
+  CallSessionStatus.FAILED,
+  CallSessionStatus.CANCELED,
+  CallSessionStatus.VOICEMAIL
+]);
+
+const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
+  let timeout: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error("Amazon Connect reconciliation timed out")), timeoutMs);
+      })
+    ]);
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
+};
+
+const reconcileAmazonConnectCallSessions = async <T extends {
+  id: string;
+  provider: ExternalProvider;
+  providerCallId: string;
+  status: CallSessionStatus;
+  startedAt: Date | null;
+  endedAt: Date | null;
+  durationSeconds: number | null;
+}>(items: T[]): Promise<T[]> => {
+  const instanceId = env.AMAZON_CONNECT_INSTANCE_ID;
+  if (!instanceId || process.env.NODE_ENV === "test") {
+    return items;
+  }
+  const candidates = items
+    .filter(
+      (item) =>
+        item.provider === ExternalProvider.AMAZON_CONNECT &&
+        item.status === CallSessionStatus.IN_PROGRESS &&
+        !/^codex-/i.test(item.providerCallId)
+    )
+    .slice(0, 8);
+  if (!candidates.length) {
+    return items;
+  }
+
+  const client = new ConnectClient({
+    region: env.AWS_REGION ?? env.AWS_DEFAULT_REGION ?? "us-east-1"
+  });
+  const reconciledById = new Map<string, Partial<T>>();
+  await Promise.all(
+    candidates.map(async (item) => {
+      try {
+        const response = await withTimeout(
+          client.send(
+            new DescribeContactCommand({
+              InstanceId: instanceId,
+              ContactId: item.providerCallId
+            })
+          ),
+          AMAZON_CONNECT_RECONCILE_TIMEOUT_MS
+        );
+        const contact = response.Contact as
+          | {
+              InitiationTimestamp?: Date;
+              DisconnectTimestamp?: Date;
+            }
+          | undefined;
+        if (!contact?.DisconnectTimestamp) {
+          return;
+        }
+        const startedAt = item.startedAt ?? contact.InitiationTimestamp ?? null;
+        const endedAt = contact.DisconnectTimestamp;
+        const durationSeconds = startedAt
+          ? Math.max(0, Math.round((endedAt.getTime() - startedAt.getTime()) / 1000))
+          : item.durationSeconds;
+        const update: {
+          status: CallSessionStatus;
+          startedAt?: Date;
+          endedAt: Date;
+          durationSeconds: number | null;
+        } = {
+          status: CallSessionStatus.COMPLETED,
+          endedAt,
+          durationSeconds
+        };
+        if (startedAt) {
+          update.startedAt = startedAt;
+        }
+        await prisma.callSession.update({
+          where: {
+            id: item.id
+          },
+          data: update
+        });
+        reconciledById.set(item.id, update as Partial<T>);
+      } catch (error) {
+        logger.debug(
+          {
+            callSessionId: item.id,
+            providerCallId: item.providerCallId,
+            error: error instanceof Error ? error.message : String(error)
+          },
+          "Amazon Connect call reconciliation skipped."
+        );
+      }
+    })
+  );
+
+  return items.map((item) => ({
+    ...item,
+    ...(reconciledById.get(item.id) ?? {})
+  }));
+};
 
 const normalizePhoneDigits = (value: string | undefined): string | undefined => {
   if (!value) {
@@ -797,12 +919,36 @@ export const createTranscriptForSession = async (
 
 export const listCallsForAdmin = async (input: ListAdminCallsInput) => {
   const skip = (input.page - 1) * input.limit;
-  const where = {
+  const where: Prisma.CallSessionWhereInput = {
     ...(input.status ? { status: input.status } : {}),
-    ...(input.salonId ? { salonId: input.salonId } : {})
+    ...(input.salonId ? { salonId: input.salonId } : {}),
+    ...(!input.includeSynthetic
+      ? {
+          NOT: [
+            {
+              providerCallId: {
+                startsWith: "codex-",
+                mode: "insensitive" as const
+              }
+            },
+            {
+              rawPayload: {
+                path: ["isSynthetic"],
+                equals: true
+              }
+            },
+            {
+              rawPayload: {
+                path: ["metadata", "isSynthetic"],
+                equals: true
+              }
+            }
+          ]
+        }
+      : {})
   };
 
-  const [items, total] = await Promise.all([
+  const [rawItems, total] = await Promise.all([
     prisma.callSession.findMany({
       where,
       skip,
@@ -829,9 +975,22 @@ export const listCallsForAdmin = async (input: ListAdminCallsInput) => {
     }),
     prisma.callSession.count({ where })
   ]);
+  const items = await reconcileAmazonConnectCallSessions(rawItems);
 
   return {
-    items,
+    items: items.map((item) => ({
+      ...item,
+      isSynthetic:
+        /^codex-/i.test(item.providerCallId) ||
+        (typeof item.rawPayload === "object" &&
+          item.rawPayload !== null &&
+          !Array.isArray(item.rawPayload) &&
+          ((item.rawPayload as Record<string, unknown>).isSynthetic === true ||
+            ((item.rawPayload as Record<string, unknown>).metadata &&
+              typeof (item.rawPayload as Record<string, unknown>).metadata === "object" &&
+              !Array.isArray((item.rawPayload as Record<string, unknown>).metadata) &&
+              ((item.rawPayload as Record<string, unknown>).metadata as Record<string, unknown>).isSynthetic === true)))
+    })),
     pagination: {
       page: input.page,
       limit: input.limit,
@@ -841,7 +1000,7 @@ export const listCallsForAdmin = async (input: ListAdminCallsInput) => {
 };
 
 export const getCallByIdForAdmin = async (callSessionId: string) => {
-  const callSession = await prisma.callSession.findUnique({
+  let callSession = await prisma.callSession.findUnique({
     where: { id: callSessionId },
     include: {
       salon: {
@@ -883,6 +1042,16 @@ export const getCallByIdForAdmin = async (callSessionId: string) => {
 
   if (!callSession) {
     throw new AppError("Call session not found.", 404, "CALL_SESSION_NOT_FOUND");
+  }
+  const [reconciled] = await reconcileAmazonConnectCallSessions([callSession]);
+  if (reconciled && reconciled !== callSession) {
+    callSession = {
+      ...callSession,
+      status: reconciled.status,
+      startedAt: reconciled.startedAt ?? callSession.startedAt,
+      endedAt: reconciled.endedAt ?? callSession.endedAt,
+      durationSeconds: reconciled.durationSeconds ?? callSession.durationSeconds
+    };
   }
   return callSession;
 };
@@ -944,7 +1113,9 @@ export const updateCallAIState = async (
     data: {
       aiSummary: toJson(input.aiSummary),
       routingOutcome: input.routingOutcome ?? undefined,
-      finalResolution: input.finalResolution ?? undefined,
+      finalResolution: terminalCallStatuses.has(callSession.status)
+        ? undefined
+        : input.finalResolution ?? undefined,
       language: input.language ?? undefined
     }
   });

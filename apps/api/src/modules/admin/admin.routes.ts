@@ -373,7 +373,8 @@ const adminCallsQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
   status: z.nativeEnum(CallSessionStatus).optional(),
-  salonId: z.string().uuid().optional()
+  salonId: z.string().uuid().optional(),
+  includeSynthetic: z.coerce.boolean().default(false)
 });
 
 const adminAiQuerySchema = z.object({

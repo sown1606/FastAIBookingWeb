@@ -2669,10 +2669,12 @@ function extractTimeCandidate(value, context = {}) {
   if (gpsTime) {
     return gpsTime;
   }
+  const normalizedOriginal = normalizeForMatch(value);
   const source = normalizeHourMinuteTimeExpression(value)
     .replace(/\b([ap])\s*\.?\s*m\.?\b/gi, "$1m")
     .trim();
   const searchable = source;
+  const normalizedSearchable = normalizeForMatch(searchable);
   const segment = searchable
     .split(/[,.!?;]/)[0]
     ?.trim();
@@ -2688,6 +2690,13 @@ function extractTimeCandidate(value, context = {}) {
   );
   if (explicitMatch?.[0]) {
     return explicitMatch[0];
+  }
+
+  const normalizedOclockMatch = normalizedOriginal.match(
+    new RegExp(`\\b(${SPOKEN_HOUR_PATTERN}|\\d{1,2})\\s+o\\s+clock\\b`, "i")
+  );
+  if (normalizedOclockMatch?.[1]) {
+    return `${normalizedOclockMatch[1]} o clock`;
   }
 
   const oclockMatch = searchable.match(
@@ -2741,16 +2750,40 @@ function normalizeTimePhrase(value, datePhrase = "", context = {}) {
   if (gpsTime) {
     return gpsTime;
   }
-  const normalized = normalizeSpokenNumbers(normalizeHourMinuteTimeExpression(value))
+  let normalized = normalizeSpokenNumbers(normalizeHourMinuteTimeExpression(value))
     .replace(/\b([ap])\s*\.?\s*m\.?\b/gi, "$1m")
     .replace(/\ba\.?m\.?\b/gi, "am")
     .replace(/\bp\.?m\.?\b/gi, "pm")
     .trim();
   const contextText = normalizeForMatch(value);
+  const spokenBareHourMatch =
+    contextText.match(new RegExp(`\\bat\\s+(${SPOKEN_HOUR_PATTERN}|\\d{1,2})\\b`, "i")) ||
+    contextText.match(new RegExp(`\\b(${SPOKEN_HOUR_PATTERN}|\\d{1,2})\\s+o\\s+clock\\b`, "i")) ||
+    contextText.match(
+      new RegExp(`^(?:at\\s+)?(${SPOKEN_HOUR_PATTERN}|\\d{1,2})(?:\\s+(?:o\\s*clock|o'clock|oclock))?$`, "i")
+    );
+  if (spokenBareHourMatch?.[1]) {
+    const spokenHourValue = NUMBER_WORDS[spokenBareHourMatch[1]] ?? Number(spokenBareHourMatch[1]);
+    if (Number.isFinite(spokenHourValue)) {
+      normalized = String(spokenHourValue);
+    }
+  }
+  const hasSpokenBareHourCue = Boolean(spokenBareHourMatch);
   const hasMorningContext = /\bmorning\b/.test(contextText);
-  const hasAtHourCue = /^at\s+\d{1,2}(?::\d{2})?/.test(contextText);
+  const hasAtHourCue = /^at\s+(?:\d{1,2}|[a-z]+)(?::\d{2})?/.test(contextText);
   const hasOclockCue = /\b(?:o\s+clock|oclock)\b/.test(contextText);
   const requestedTimeAnswer = isBareRequestedTimeAnswer(value, context);
+  if (hasSpokenBareHourCue && (hasAtHourCue || hasOclockCue || hasRequestedTimeContext(context))) {
+    const spokenHour = NUMBER_WORDS[spokenBareHourMatch[1]] ?? Number(spokenBareHourMatch[1]);
+    if (Number.isFinite(spokenHour) && spokenHour >= 1 && spokenHour <= 12) {
+      const inferredPeriod = hasMorningContext
+        ? "AM"
+        : spokenHour === 12 || (spokenHour >= 1 && spokenHour <= 7)
+          ? "PM"
+          : "AM";
+      return `${spokenHour} ${inferredPeriod}`;
+    }
+  }
   const periodMatch = normalized.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i);
   let hour;
   let minute = 0;
@@ -2775,7 +2808,7 @@ function normalizeTimePhrase(value, datePhrase = "", context = {}) {
       hour -= 12;
     } else if (hasMorningContext) {
       period = "AM";
-    } else if (hasAtHourCue || hasOclockCue || requestedTimeAnswer) {
+    } else if (hasAtHourCue || hasOclockCue || requestedTimeAnswer || (hasSpokenBareHourCue && hasRequestedTimeContext(context))) {
       period = hour === 12 || (hour >= 1 && hour <= 7) ? "PM" : "AM";
     } else {
       return "";
@@ -2786,6 +2819,186 @@ function normalizeTimePhrase(value, datePhrase = "", context = {}) {
     return "";
   }
   return minute === 0 ? `${hour} ${period}` : `${hour}:${String(minute).padStart(2, "0")} ${period}`;
+}
+
+function timePhraseToMinutes(value, context = {}) {
+  const normalized = normalizeTimePhrase(value, "", context);
+  if (!normalized) {
+    return null;
+  }
+  const match = normalized.match(/^(\d{1,2})(?::(\d{2}))?\s+(AM|PM)$/i);
+  if (!match) {
+    return null;
+  }
+  let hour = Number(match[1]);
+  const minute = Number(match[2] || 0);
+  const period = String(match[3] || "").toUpperCase();
+  if (period === "PM" && hour < 12) {
+    hour += 12;
+  }
+  if (period === "AM" && hour === 12) {
+    hour = 0;
+  }
+  return hour * 60 + minute;
+}
+
+function formatMinutesForPrompt(totalMinutes) {
+  if (!Number.isFinite(totalMinutes)) {
+    return "";
+  }
+  let hour = Math.floor(totalMinutes / 60);
+  const minute = totalMinutes % 60;
+  const period = hour >= 12 ? "PM" : "AM";
+  hour %= 12;
+  if (hour === 0) {
+    hour = 12;
+  }
+  return minute === 0 ? `${hour} ${period}` : `${hour}:${String(minute).padStart(2, "0")} ${period}`;
+}
+
+function addTimeCandidate(candidates, candidate) {
+  const minutes = timePhraseToMinutes(candidate.text, candidate.context || {});
+  if (minutes === null) {
+    return;
+  }
+  const key = `${minutes}`;
+  if (candidates.some((item) => item.key === key)) {
+    return;
+  }
+  candidates.push({
+    key,
+    text: formatMinutesForPrompt(minutes),
+    minutes,
+    source: candidate.source,
+    confidence: candidate.confidence
+  });
+}
+
+function collectTimeCandidates(value, context = {}) {
+  const raw = String(value || "").trim();
+  const candidates = [];
+  if (!raw) {
+    return candidates;
+  }
+  const normalized = normalizeForMatch(raw);
+  const hourWord = `(?:${SPOKEN_HOUR_PATTERN}|\\d{1,2})`;
+  const noisyHourMinute = new RegExp(
+    `\\b(${hourWord})\\s+(${hourWord})\\s+(${SPOKEN_MINUTE_PATTERN}|\\d{1,2})\\s*(a\\s*m|p\\s*m|am|pm)\\b`,
+    "i"
+  );
+  const noisyMatch = normalized.match(noisyHourMinute);
+  if (noisyMatch) {
+    addTimeCandidate(candidates, {
+      text: `${noisyMatch[1]} ${String(noisyMatch[4]).replace(/\s+/g, "")}`,
+      source: "noisy_leading_hour",
+      confidence: 0.7,
+      context
+    });
+    addTimeCandidate(candidates, {
+      text: `${noisyMatch[2]} ${noisyMatch[3]} ${String(noisyMatch[4]).replace(/\s+/g, "")}`,
+      source: "noisy_hour_minute",
+      confidence: 0.55,
+      context
+    });
+  }
+
+  const timeCollectionContext =
+    context.lastAskedSlot === "requestedTime" ||
+    context.currentTurnSemanticType === "TIME_REQUEST" ||
+    /\b(?:at|o\s*clock|o'clock|oclock)\b/.test(normalized);
+  if (
+    timeCollectionContext &&
+    !/\b(?:a\s*m|p\s*m|am|pm)\b/.test(normalized) &&
+    !/\b\d{1,2}\s*:\s*\d{2}\b/.test(normalized)
+  ) {
+    const bareHourMatch = normalized.match(
+      new RegExp(`\\b(?:at\\s+)?(${hourWord})(?:\\s+(?:o\\s*clock|o'clock|oclock))?\\b`, "i")
+    );
+    if (bareHourMatch) {
+      addTimeCandidate(candidates, {
+        text: bareHourMatch[1],
+        source: "time_context_bare_hour",
+        confidence: 0.88,
+        context
+      });
+    }
+  }
+
+  const explicitCandidate = extractTimeCandidate(raw, context);
+  if (explicitCandidate) {
+    addTimeCandidate(candidates, {
+      text: explicitCandidate,
+      source: "extract_time_candidate",
+      confidence: noisyMatch ? 0.55 : 0.9,
+      context
+    });
+  }
+
+  return candidates.sort((left, right) => (right.confidence || 0) - (left.confidence || 0));
+}
+
+function analyzeTimeGrounding(rawTranscript, lexSlotValue, context = {}) {
+  const transcriptCandidates = collectTimeCandidates(rawTranscript, context);
+  const slotCandidates = collectTimeCandidates(lexSlotValue, {
+    ...context,
+    lastAskedSlot: context.lastAskedSlot || "requestedTime"
+  });
+  const candidates = [];
+  const transcriptMinuteSet = new Set(transcriptCandidates.map((candidate) => candidate.minutes));
+  for (const candidate of transcriptCandidates) {
+    addTimeCandidate(candidates, {
+      text: candidate.text,
+      source: candidate.source,
+      confidence: candidate.confidence,
+      context
+    });
+  }
+  for (const candidate of slotCandidates) {
+    if (transcriptMinuteSet.has(candidate.minutes)) {
+      continue;
+    }
+    addTimeCandidate(candidates, {
+      text: candidate.text,
+      source: candidate.source,
+      confidence: candidate.confidence,
+      context
+    });
+  }
+  candidates.sort((left, right) => (right.confidence || 0) - (left.confidence || 0));
+  const selected = candidates[0] || null;
+  const lexMinutes = timePhraseToMinutes(lexSlotValue, {
+    ...context,
+    lastAskedSlot: context.lastAskedSlot || "requestedTime"
+  });
+  const hasConflictingCandidates = new Set(candidates.map((candidate) => candidate.key)).size > 1;
+  const hasAmbiguousTranscriptEvidence = transcriptCandidates.length > 1;
+  const lexConflictsWithTranscript =
+    lexMinutes !== null &&
+    transcriptCandidates.length > 0 &&
+    !transcriptCandidates.some((candidate) => candidate.minutes === lexMinutes);
+  const noisyMultipleTimeEvidence =
+    /\b(?:uh|um|ah)\b/.test(normalizeForMatch(rawTranscript)) && hasAmbiguousTranscriptEvidence;
+  const requiresConfirmation = Boolean(
+    selected &&
+      (hasAmbiguousTranscriptEvidence ||
+        noisyMultipleTimeEvidence ||
+        (lexConflictsWithTranscript && transcriptCandidates.length !== 1))
+  );
+
+  return {
+    rawTranscript: rawTranscript || "",
+    lexSlotValue: lexSlotValue || "",
+    candidates: candidates.map(({ key, ...candidate }) => candidate),
+    selectedCandidate: selected ? { text: selected.text, minutes: selected.minutes, source: selected.source } : null,
+    requiresConfirmation,
+    rejectionReason: hasAmbiguousTranscriptEvidence
+      ? "multiple_time_candidates"
+      : lexConflictsWithTranscript
+        ? "lex_slot_conflicts_with_transcript"
+        : noisyMultipleTimeEvidence
+          ? "noisy_time_transcript"
+          : ""
+  };
 }
 
 function isClearlyInvalidServiceName(value) {
@@ -3529,6 +3742,7 @@ function buildKnownBookingSessionAttributes(event) {
   const lexKnownTime = ignoreLexTimeFromWrongSlotDigit
     ? ""
     : getSlotValue(slots, slotNames.requestedTime, { preferOriginal: true });
+  const timeGrounding = analyzeTimeGrounding(currentTurnTranscript, lexKnownTime, previous);
   const knownTime =
     lexKnownTime ||
     getSessionAttribute(previous, slotNames.requestedTime);
@@ -3586,7 +3800,8 @@ function buildKnownBookingSessionAttributes(event) {
     ? ""
     : extractStaffFromTranscript(transcript, previous);
   const currentTurnHasGroundedDate = hasCurrentTurnDatePhrase(event.inputTranscript);
-  const currentTurnHasGroundedTime = hasCurrentTurnTimePhrase(event.inputTranscript, previous);
+  const currentTurnHasGroundedTime =
+    hasCurrentTurnTimePhrase(event.inputTranscript, previous) && !timeGrounding.requiresConfirmation;
   const ignoreUngroundedCurrentLexTime =
     Boolean(lexKnownTime) &&
     !previousTime &&
@@ -3602,7 +3817,10 @@ function buildKnownBookingSessionAttributes(event) {
   const previousResolvedDate = resolveKnownDateValue(previousDate, timeZone);
   const knownResolvedDate = resolveKnownDateValue(knownDate, timeZone);
   const previousResolvedTime = normalizeTimePhrase(previousTime) || previousTime;
-  const knownResolvedTime = ignoreUngroundedCurrentLexTime ? "" : normalizeTimePhrase(knownTime) || knownTime;
+  const knownResolvedTime =
+    ignoreUngroundedCurrentLexTime || timeGrounding.requiresConfirmation
+      ? ""
+      : normalizeTimePhrase(knownTime) || knownTime;
   const historicalRecoveredDate =
     !previousResolvedDate && !knownResolvedDate ? recovered.requestedDate : "";
   const historicalRecoveredTime =
@@ -3669,7 +3887,8 @@ function buildKnownBookingSessionAttributes(event) {
       (staffDtmfSelection && !staffDtmfSelection.invalid ? staffDtmfSelection.staffId : "") ||
       (!currentTurnStaffMention && cleanPreviousStaffPreference ? previous.confirmedStaffId : ""),
     initialBookingUtterance: initial,
-    serviceAliasCorrectionRaw
+    serviceAliasCorrectionRaw,
+    timeRecognitionDiagnostics: timeGrounding.requiresConfirmation ? JSON.stringify(timeGrounding) : previous.timeRecognitionDiagnostics
   };
 
   const merged = {
@@ -3713,6 +3932,15 @@ function buildKnownBookingSessionAttributes(event) {
   if (isClearlyInvalidServiceName(merged.serviceName || merged.confirmedServiceName)) {
     delete merged.serviceName;
     delete merged.confirmedServiceName;
+  }
+  if (timeGrounding.requiresConfirmation) {
+    delete merged.requestedTime;
+    merged.awaitingTimeConfirmation = "true";
+    merged.proposedRequestedTime = timeGrounding.selectedCandidate?.text || "";
+    merged.timeRecognitionFailureCount = String(parseAttemptCount(previous.timeRecognitionFailureCount) + 1);
+  } else if (merged.awaitingTimeConfirmation === "true" && merged.requestedTime) {
+    delete merged.awaitingTimeConfirmation;
+    delete merged.proposedRequestedTime;
   }
   return removeIgnoredPollutedFields(merged);
 }
@@ -5379,6 +5607,61 @@ async function handleLexEvent(event, analysis = {}) {
           buildWrongSlotDtmfPrompt(event, analysis.dtmfRouting.nextSlot)
         );
       }
+    }
+
+    if (
+      !shouldEscalate &&
+      intentName === "BookAppointmentIntent" &&
+      sessionAttributes.awaitingTimeConfirmation === "true"
+    ) {
+      if (isAffirmativeUtterance(event.inputTranscript) && sessionAttributes.proposedRequestedTime) {
+        event = withSessionAttributes(event, {
+          requestedTime: sessionAttributes.proposedRequestedTime,
+          awaitingTimeConfirmation: "false",
+          proposedRequestedTime: "",
+          timeRecognitionConfirmed: "true"
+        });
+      } else if (isNegativeUtterance(event.inputTranscript)) {
+        return buildElicitSlotResponse(
+          event,
+          "requestedTime",
+          {
+            awaitingTimeConfirmation: "false",
+            proposedRequestedTime: "",
+            timeRecognitionConfirmed: "false"
+          },
+          "No problem. What time would you like?"
+        );
+      }
+    }
+
+    const knownAfterTimeSanitization =
+      !shouldEscalate && intentName === "BookAppointmentIntent"
+        ? buildKnownBookingSessionAttributes(event)
+        : {};
+    if (
+      !shouldEscalate &&
+      intentName === "BookAppointmentIntent" &&
+      knownAfterTimeSanitization.awaitingTimeConfirmation === "true" &&
+      knownAfterTimeSanitization.proposedRequestedTime
+    ) {
+      const timeRecognitionDiagnostics = (() => {
+        try {
+          return JSON.parse(knownAfterTimeSanitization.timeRecognitionDiagnostics || "{}");
+        } catch {
+          return {};
+        }
+      })();
+      return buildElicitSlotResponse(
+        event,
+        "requestedTime",
+        {
+          awaitingTimeConfirmation: "true",
+          proposedRequestedTime: knownAfterTimeSanitization.proposedRequestedTime,
+          timeRecognitionDiagnostics: JSON.stringify(timeRecognitionDiagnostics)
+        },
+        `Did you mean ${knownAfterTimeSanitization.proposedRequestedTime}?`
+      );
     }
 
     if (

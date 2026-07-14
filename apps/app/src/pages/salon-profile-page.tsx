@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { useAuth } from "../auth/auth-context";
 import { apiGet, apiPut, extractErrorMessage } from "../lib/api";
 import { ErrorBlock, LoadingBlock } from "../components/states";
@@ -273,7 +274,15 @@ export const SalonProfilePage = () => {
       </section>
 
       <section className="card">
-        <h2>{t("profile.settingsTitle")}</h2>
+        <div className="section-header">
+          <div>
+            <h2>{t("profile.settingsTitle")}</h2>
+            <p className="muted">{t("profile.businessSettingsHint")}</p>
+          </div>
+          <Link to="/business-hours" className="button-secondary">
+            {t("nav.businessHours")}
+          </Link>
+        </div>
         <form className="form-grid two-columns" onSubmit={saveSettings}>
           <div className="settings-panel">
             <div>

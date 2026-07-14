@@ -792,6 +792,208 @@ test("DialogCodeHook with service and time prompts staff next", async () => {
   assert.equal(response.sessionState.sessionAttributes.requestedTime, "3 PM");
 });
 
+test("Lambda asks for confirmation when Lex grounds noisy ten eight ten as 8:10", async () => {
+  const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
+  const fetchCalls = installFetchMock(() => {
+    throw new Error("API should not be called before ambiguous time is confirmed");
+  });
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "FulfillmentCodeHook",
+      inputTranscript: "uh ten eight ten a m",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: "connect-noisy-time-lambda",
+          customerName: "Kiet Nguyen",
+          customerPhone: "7325956266",
+          serviceName: "Manicure",
+          requestedDate: usEasternDate(1),
+          requestedTime: "8:10 AM",
+          staffPreference: "Amy",
+          lastAskedSlot: "requestedTime"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          confirmationState: "None",
+          slots: {
+            customerName: slot("Kiet Nguyen"),
+            customerPhone: slot("7325956266"),
+            serviceName: slot("Manicure"),
+            requestedDate: slot(usEasternDate(1)),
+            requestedTime: slotWith({
+              originalValue: "uh ten eight ten a m",
+              interpretedValue: "08:10",
+              resolvedValues: ["08:10"]
+            }),
+            staffPreference: slot("Amy")
+          }
+        }
+      }
+    })
+  );
+
+  assert.equal(fetchCalls.length, 0);
+  assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "requestedTime");
+  assert.match(response.messages[0].content, /Did you mean 10 AM/i);
+  assert.equal(response.sessionState.sessionAttributes.awaitingTimeConfirmation, "true");
+  assert.equal(response.sessionState.sessionAttributes.proposedRequestedTime, "10 AM");
+  assert.equal(response.sessionState.sessionAttributes.requestedTime, undefined);
+  assert.match(response.sessionState.sessionAttributes.timeRecognitionDiagnostics, /multiple_time_candidates|noisy_time_transcript/);
+});
+
+test("Lambda confirmed noisy time posts 10 AM to the backend", async () => {
+  const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
+  const fetchCalls = installFetchMock((_url, _options, body) =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "MISSING_INFO",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "InProgress",
+          message: "Please confirm.",
+          messageContentType: "PlainText",
+          dialogAction: {
+            type: "ConfirmIntent"
+          },
+          sessionAttributes: {
+            serviceName: "Manicure",
+            requestedDate: body.requestedDate,
+            requestedTime: body.requestedTime,
+            staffPreference: "Amy",
+            awaitingTimeConfirmation: "false"
+          }
+        }
+      })
+    )
+  );
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "FulfillmentCodeHook",
+      inputTranscript: "yes",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: "connect-noisy-time-lambda",
+          customerName: "Kiet Nguyen",
+          customerPhone: "7325956266",
+          serviceName: "Manicure",
+          requestedDate: usEasternDate(1),
+          staffPreference: "Amy",
+          lastAskedSlot: "requestedTime",
+          awaitingTimeConfirmation: "true",
+          proposedRequestedTime: "10 AM"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          confirmationState: "None",
+          slots: {
+            customerName: slot("Kiet Nguyen"),
+            customerPhone: slot("7325956266"),
+            serviceName: slot("Manicure"),
+            requestedDate: slot(usEasternDate(1)),
+            requestedTime: null,
+            staffPreference: slot("Amy")
+          }
+        }
+      }
+    })
+  );
+
+  assert.equal(fetchCalls.length, 1);
+  assert.equal(fetchCalls[0].body.requestedTime, "10 AM");
+  assert.equal(fetchCalls[0].body.attributes.awaitingTimeConfirmation, "false");
+  assert.equal(response.sessionState.dialogAction.type, "ConfirmIntent");
+  assert.equal(response.sessionState.sessionAttributes.requestedTime, "10 AM");
+});
+
+test("Lambda clear time phrases post deterministic requested times", async () => {
+  const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
+  const fetchCalls = installFetchMock((_url, _options, body) =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "MISSING_INFO",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "InProgress",
+          message: "Please confirm.",
+          messageContentType: "PlainText",
+          dialogAction: {
+            type: "ConfirmIntent"
+          },
+          sessionAttributes: {
+            serviceName: "Manicure",
+            requestedDate: body.requestedDate,
+            requestedTime: body.requestedTime,
+            staffPreference: "Amy"
+          }
+        }
+      })
+    )
+  );
+
+  for (const [phrase, expected] of [
+    ["ten a m", "10 AM"],
+    ["10 AM", "10 AM"],
+    ["at ten", "10 AM"],
+    ["ten o'clock", "10 AM"],
+    ["eight ten a m", "8:10 AM"],
+    ["8:10 AM", "8:10 AM"]
+  ]) {
+    const response = await handler(
+      baseEvent({
+        invocationSource: "FulfillmentCodeHook",
+        inputTranscript: phrase,
+        sessionState: {
+          ...baseEvent().sessionState,
+          sessionAttributes: {
+            salonId: "salon-explicit",
+            CalledNumber: "+18483487681",
+            CustomerEndpointAddress: "+17325956266",
+            AmazonConnectContactId: `connect-time-${phrase.replace(/[^a-z0-9]+/gi, "-")}`,
+            customerName: "Kiet Nguyen",
+            customerPhone: "7325956266",
+            serviceName: "Manicure",
+            requestedDate: usEasternDate(1),
+            staffPreference: "Amy",
+            lastAskedSlot: "requestedTime"
+          },
+          intent: {
+            ...baseEvent().sessionState.intent,
+            confirmationState: "None",
+            slots: {
+              customerName: slot("Kiet Nguyen"),
+              customerPhone: slot("7325956266"),
+              serviceName: slot("Manicure"),
+              requestedDate: slot(usEasternDate(1)),
+              requestedTime: slotWith({
+                originalValue: phrase,
+                interpretedValue: phrase,
+                resolvedValues: [phrase]
+              }),
+              staffPreference: slot("Amy")
+            }
+          }
+        }
+      })
+    );
+    const latestFetch = fetchCalls.at(-1);
+
+    assert.equal(latestFetch.body.requestedTime, expected, phrase);
+    assert.equal(response.sessionState.dialogAction.type, "ConfirmIntent", phrase);
+    assert.equal(response.sessionState.sessionAttributes.requestedTime, expected, phrase);
+  }
+});
+
 test("Fulfillment current staff alias overrides stale marvell while preserving Jane", async () => {
   const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
   const fetchCalls = installFetchMock((_url, _options, body) =>

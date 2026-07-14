@@ -26,6 +26,8 @@ export const BusinessHoursPage = () => {
   const { t } = useI18n();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [saveError, setSaveError] = useState("");
+  const [saving, setSaving] = useState(false);
   const [hours, setHours] = useState<BusinessHour[]>(defaultHours());
 
   const load = async () => {
@@ -46,14 +48,35 @@ export const BusinessHoursPage = () => {
   }, []);
 
   const save = async () => {
+    if (saving) {
+      return;
+    }
+    setSaveError("");
+    const invalidDay = hours.find(
+      (item) => item.isOpen && (!item.openTime || !item.closeTime || item.openTime >= item.closeTime)
+    );
+    if (invalidDay) {
+      setSaveError(t("hours.invalidRange", { day: t(`weekday.${invalidDay.dayOfWeek}` as TranslationKey) }));
+      return;
+    }
+    const payloadHours = hours.map((item) => ({
+      ...item,
+      openTime: item.isOpen ? item.openTime : null,
+      closeTime: item.isOpen ? item.closeTime : null
+    }));
+    setSaving(true);
     try {
       await apiPut<BusinessHour[], { hours: BusinessHour[] }>("/api/v1/business-hours", {
-        hours
+        hours: payloadHours
       });
       notify("success", t("hours.saved"));
       await load();
     } catch (saveError) {
-      notify("error", extractErrorMessage(saveError));
+      const message = extractErrorMessage(saveError);
+      setSaveError(message);
+      notify("error", message);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -75,10 +98,11 @@ export const BusinessHoursPage = () => {
             <h2>{t("hours.title")}</h2>
             <p className="muted">{t("hours.overviewHint")}</p>
           </div>
-          <button type="button" className="button-primary" onClick={save}>
-            {t("hours.save")}
+          <button type="button" className="button-primary" onClick={save} disabled={saving}>
+            {saving ? t("common.saving") : t("hours.save")}
           </button>
         </div>
+        {saveError ? <p className="form-error">{saveError}</p> : null}
         <div className="summary-badges">
           <span className="summary-badge">
             {t("hours.openDays")}: {hours.filter((item) => item.isOpen).length}
@@ -110,6 +134,7 @@ export const BusinessHoursPage = () => {
                 <input
                   type="checkbox"
                   checked={item.isOpen}
+                  disabled={saving}
                   onChange={(event) =>
                     setHours((prev) =>
                       prev.map((row, rowIndex) =>
@@ -133,7 +158,7 @@ export const BusinessHoursPage = () => {
                 <input
                   type="time"
                   value={item.openTime ?? ""}
-                  disabled={!item.isOpen}
+                  disabled={!item.isOpen || saving}
                   onChange={(event) =>
                     setHours((prev) =>
                       prev.map((row, rowIndex) =>
@@ -148,7 +173,7 @@ export const BusinessHoursPage = () => {
                 <input
                   type="time"
                   value={item.closeTime ?? ""}
-                  disabled={!item.isOpen}
+                  disabled={!item.isOpen || saving}
                   onChange={(event) =>
                     setHours((prev) =>
                       prev.map((row, rowIndex) =>
