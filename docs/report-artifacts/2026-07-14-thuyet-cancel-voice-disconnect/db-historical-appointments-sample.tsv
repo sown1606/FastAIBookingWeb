@@ -1,0 +1,22 @@
+id\tstatus\tstartTime\tendTime\tstaff\tservice\tcanceledReason\tupdatedAt
+fd0307cb-d752-4485-af4b-0e5e39b5ddd5\tCANCELED\t2026-07-15 21:00:00\t2026-07-15 21:45:00\tKelly\tPedicure\tKhách yêu cầu hủy\t2026-07-14 01:48:11.799
+580f7d97-c4f1-4246-830c-a856177d3050\tCANCELED\t2026-07-14 21:00:00\t2026-07-14 21:45:00\tTrang\tPedicure\tKhách yêu cầu hủy\t2026-07-14 01:48:04.855
+8003e3f2-f844-403d-89a1-78aa5c4427f8\tCANCELED\t2026-07-14 18:00:00\t2026-07-14 19:40:00\tTrang\tFull Set\tKhách yêu cầu hủy\t2026-07-14 01:48:00.993
+f6dcc529-0dea-4e04-b092-151d5c84d678\tCANCELED\t2026-07-14 15:10:00\t2026-07-14 16:20:00\tLinh\tDip Powder\tKhách yêu cầu hủy\t2026-07-14 01:47:59.001
+a0c72f3c-7d83-4d3b-8a88-4e3b81b4c600\tCANCELED\t2026-07-14 15:00:00\t2026-07-14 15:45:00\tAmy\tPedicure\tCustomer data permanently deleted by salon owner\t2026-07-13 09:34:15.541
+2783ee7b-712a-40cd-8a76-4eb11239f971\tCANCELED\t2026-07-14 17:00:00\t2026-07-14 18:40:00\tTrang\tFull Set\tCodex synthetic smoke cleanup\t2026-07-13 09:18:09.671
+dcac728f-cb55-42ee-a117-16c2feb441c4\tCANCELED\t2026-07-13 16:00:00\t2026-07-13 17:40:00\tTrang\tFull Set\tKhách yêu cầu hủy\t2026-07-13 09:18:09.671
+96e40e46-5c7b-4bd8-b818-f61c2efbf885\tCANCELED\t2026-07-13 17:00:00\t2026-07-13 17:45:00\tKevin\tPedicure\tKhách yêu cầu hủy\t2026-07-13 09:18:09.671
+a7f8ecde-e7db-4310-a532-f48c1849868d\tCANCELED\t2026-07-14 17:00:00\t2026-07-14 18:40:00\tTrang\tFull Set\tCodex synthetic smoke cleanup\t2026-07-13 09:18:09.671
+0235cde8-e887-4b26-936c-705d28adddd2\tCANCELED\t2026-07-14 15:00:00\t2026-07-14 15:45:00\tAmy\tPedicure\tKhách yêu cầu hủy\t2026-07-13 09:18:09.671
+22c69165-15dc-4725-8b34-fd7834380a6a\tCANCELED\t2026-07-13 16:00:00\t2026-07-13 16:45:00\tKevin\tPedicure\tKhách yêu cầu hủy\t2026-07-13 05:06:15.269
+2b1a04fc-9ff1-4916-91dd-88938a8896f1\tCANCELED\t2026-07-13 18:00:00\t2026-07-13 19:40:00\tTrang\tFull Set\tCustomer data permanently deleted by salon owner\t2026-07-12 14:08:52.619
+843d034d-5d36-4426-870c-84cdc1b09d2e\tCANCELED\t2026-07-13 18:45:00\t2026-07-13 20:25:00\tAmy\tFull Set\tKhách yêu cầu hủy\t2026-07-12 14:05:08.825
+721baef2-b5d4-489c-8729-ca9ddaa50a4a\tCANCELED\t2026-07-13 17:00:00\t2026-07-13 18:40:00\tAmy\tFull Set\tKhách yêu cầu hủy\t2026-07-12 14:05:08.825
+36a5ba0e-e810-481c-b317-580f9751ecbb\tCANCELED\t2026-07-13 15:00:00\t2026-07-13 15:45:00\tKelly\tPedicure\tKhách yêu cầu hủy\t2026-07-12 14:05:08.825
+12210157-600d-439c-85d9-47bcac40a486\tCANCELED\t2026-06-22 15:35:00\t2026-06-22 17:15:00\tduy\tFull Set\tCustomer data permanently deleted by salon owner\t2026-07-12 09:24:03.938
+276d4f44-6eeb-41ff-a45a-57010ce21e29\tCANCELED\t2026-06-29 14:55:01\t2026-06-29 15:40:01\tKelly\tPedicure\tCustomer data permanently deleted by salon owner\t2026-07-12 09:24:03.938
+946b114b-162c-44f4-856a-1e7a8a57bd87\tCANCELED\t2026-07-12 19:50:00\t2026-07-12 21:30:00\tAmy\tFull Set\tCustomer data permanently deleted by salon owner\t2026-07-12 09:23:39.908
+fffcb039-e800-45c7-8926-6b6e78025089\tCANCELED\t2026-07-12 14:00:00\t2026-07-12 15:40:00\tAmy\tFull Set\tCustomer data permanently deleted by salon owner\t2026-07-12 09:20:42.136
+228dd5d0-cdbc-442a-9dca-102f7f790232\tCANCELED\t2026-07-13 17:00:00\t2026-07-13 17:45:00\tKelly\tPedicure\tCustomer data permanently deleted by salon owner\t2026-07-12 09:20:42.136
+(20 rows)

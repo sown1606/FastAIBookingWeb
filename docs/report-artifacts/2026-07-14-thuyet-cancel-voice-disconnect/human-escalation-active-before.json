@@ -1,0 +1,246 @@
+{
+  "Version": "2019-10-30",
+  "StartAction": "1e4ddb16-2022-43cd-adef-1b263b08bcb4",
+  "Metadata": {
+    "entryPointPosition": {
+      "x": 40,
+      "y": 40
+    },
+    "ActionMetadata": {
+      "1e4ddb16-2022-43cd-adef-1b263b08bcb4": {
+        "position": {
+          "x": 200,
+          "y": 40
+        },
+        "parameters": {
+          "TextToSpeechVoice": {
+            "languageCode": "en-US"
+          }
+        }
+      },
+      "8b1827c6-e89a-4794-87ad-3894cb4e2982": {
+        "position": {
+          "x": 640,
+          "y": 40
+        },
+        "parameters": {
+          "QueueId": {
+            "displayName": "FastAIBooking Operator Queue"
+          }
+        },
+        "queue": {
+          "text": "FastAIBooking Operator Queue"
+        }
+      },
+      "set-customer-queue-flow": {
+        "position": {
+          "x": 760,
+          "y": 160
+        },
+        "parameters": {
+          "EventHooks": {
+            "CustomerQueue": {
+              "displayName": "Default customer queue"
+            }
+          }
+        }
+      },
+      "check-operator-available": {
+        "position": {
+          "x": 800,
+          "y": 40
+        },
+        "parameters": {
+          "MetricType": "NumberOfAgentsAvailable",
+          "QueueId": {
+            "displayName": "FastAIBooking Operator Queue"
+          }
+        },
+        "queue": {
+          "text": "FastAIBooking Operator Queue"
+        }
+      },
+      "record-no-agent-unavailable": {
+        "position": {
+          "x": 800,
+          "y": 280
+        },
+        "parameters": {
+          "LambdaFunctionARN": {
+            "displayName": "fastaibooking-booking-handler"
+          }
+        }
+      },
+      "aa49aa8c-76f5-43f1-a8dd-d818f103fa62": {
+        "position": {
+          "x": 980,
+          "y": 40
+        }
+      },
+      "eab531ca-686c-470f-9ed2-426e5ead1400": {
+        "position": {
+          "x": 1300,
+          "y": 80
+        }
+      },
+      "queue-fallback-message": {
+        "position": {
+          "x": 1080,
+          "y": 160
+        }
+      }
+    },
+    "Annotations": []
+  },
+  "Actions": [
+    {
+      "Parameters": {
+        "TextToSpeechVoice": "Joanna"
+      },
+      "Identifier": "1e4ddb16-2022-43cd-adef-1b263b08bcb4",
+      "Type": "UpdateContactTextToSpeechVoice",
+      "Transitions": {
+        "NextAction": "8b1827c6-e89a-4794-87ad-3894cb4e2982",
+        "Errors": [
+          {
+            "NextAction": "8b1827c6-e89a-4794-87ad-3894cb4e2982",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {
+        "QueueId": "arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/queue/d0f2a5d8-e983-4609-9bbc-efb0881a465d"
+      },
+      "Identifier": "8b1827c6-e89a-4794-87ad-3894cb4e2982",
+      "Type": "UpdateContactTargetQueue",
+      "Transitions": {
+        "NextAction": "check-operator-available",
+        "Errors": [
+          {
+            "NextAction": "queue-fallback-message",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "check-operator-available",
+      "Type": "CheckMetricData",
+      "Parameters": {
+        "MetricType": "NumberOfAgentsAvailable",
+        "QueueId": "arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/queue/d0f2a5d8-e983-4609-9bbc-efb0881a465d"
+      },
+      "Transitions": {
+        "NextAction": "record-no-agent-unavailable",
+        "Conditions": [
+          {
+            "NextAction": "set-customer-queue-flow",
+            "Condition": {
+              "Operator": "NumberGreaterThan",
+              "Operands": [
+                "0"
+              ]
+            }
+          }
+        ],
+        "Errors": [
+          {
+            "NextAction": "record-no-agent-unavailable",
+            "ErrorType": "NoMatchingCondition"
+          },
+          {
+            "NextAction": "record-no-agent-unavailable",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "record-no-agent-unavailable",
+      "Type": "InvokeLambdaFunction",
+      "Parameters": {
+        "LambdaFunctionARN": "arn:aws:lambda:us-east-1:197452633989:function:fastaibooking-booking-handler",
+        "InvocationTimeLimitSeconds": 3,
+        "InvocationType": "SYNCHRONOUS",
+        "LambdaInvocationAttributes": {
+          "fastAiOperatorQueueOutcome": "AGENTS_UNAVAILABLE",
+          "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147"
+        },
+        "ResponseValidation": {
+          "ResponseType": "STRING_MAP"
+        }
+      },
+      "Transitions": {
+        "NextAction": "queue-fallback-message",
+        "Errors": [
+          {
+            "NextAction": "queue-fallback-message",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "set-customer-queue-flow",
+      "Type": "UpdateContactEventHooks",
+      "Parameters": {
+        "EventHooks": {
+          "CustomerQueue": "arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/contact-flow/6bdf546e-4e3a-4bf5-954f-fb78fa6a3d5b"
+        }
+      },
+      "Transitions": {
+        "NextAction": "aa49aa8c-76f5-43f1-a8dd-d818f103fa62",
+        "Errors": [
+          {
+            "NextAction": "aa49aa8c-76f5-43f1-a8dd-d818f103fa62",
+            "ErrorType": "NoMatchingError"
+          }
+        ],
+        "Conditions": []
+      }
+    },
+    {
+      "Parameters": {},
+      "Identifier": "aa49aa8c-76f5-43f1-a8dd-d818f103fa62",
+      "Type": "TransferContactToQueue",
+      "Transitions": {
+        "NextAction": "eab531ca-686c-470f-9ed2-426e5ead1400",
+        "Errors": [
+          {
+            "NextAction": "queue-fallback-message",
+            "ErrorType": "QueueAtCapacity"
+          },
+          {
+            "NextAction": "queue-fallback-message",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {},
+      "Identifier": "eab531ca-686c-470f-9ed2-426e5ead1400",
+      "Type": "DisconnectParticipant",
+      "Transitions": {}
+    },
+    {
+      "Identifier": "queue-fallback-message",
+      "Type": "MessageParticipant",
+      "Parameters": {
+        "SkipWhenDTMFBufferEnabled": "false",
+        "Text": "All of our operators are currently busy. Please call back later."
+      },
+      "Transitions": {
+        "NextAction": "eab531ca-686c-470f-9ed2-426e5ead1400",
+        "Errors": [
+          {
+            "NextAction": "eab531ca-686c-470f-9ed2-426e5ead1400",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    }
+  ]
+}

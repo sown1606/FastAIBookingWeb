@@ -1,0 +1,181 @@
+{
+  "ranAt": "2026-07-14T04:36:32.964Z",
+  "summaries": [
+    {
+      "contactId": "smoke-20260714-api-frank",
+      "phrase": "book full set tomorrow at two pm with frank",
+      "httpStatus": 200,
+      "outcome": "MISSING_INFO",
+      "dialogAction": {
+        "type": "ConfirmIntent"
+      },
+      "message": "<speak>Smoke Voice, just to confirm: Full Set tomorrow at 2 PM with Trang. <break time=\"300ms\"/> Is that correct?</speak>",
+      "slots": {
+        "serviceName": "Full Set",
+        "requestedDate": "2026-07-15",
+        "requestedTime": "14:00",
+        "staffPreference": "Trang",
+        "staffId": "903511ee-4849-43dd-85fb-73595e79a233"
+      },
+      "callSession": {
+        "id": "d779dff5-d2cc-428a-93e5-d79fca406a9b",
+        "providerCallId": "smoke-20260714-api-frank",
+        "status": "IN_PROGRESS",
+        "routingOutcome": "AI_RECEPTION"
+      },
+      "bookingAttemptCount": 1,
+      "aiInteractionCount": 1,
+      "appointmentIds": [],
+      "attempts": [
+        {
+          "id": "b516309e-136c-4009-be86-201a2ce697f6",
+          "status": "NEEDS_INPUT",
+          "requestedService": "Full Set",
+          "requestedStaff": "Trang",
+          "appointmentId": null,
+          "failureReason": "Booking confirmation required before creating appointment."
+        }
+      ],
+      "logs": [
+        {
+          "id": "ca825c0d-191f-4511-95e3-b6cd07188647",
+          "taskType": "amazon_connect_booking_fulfillment",
+          "isValid": true,
+          "bookingAttemptId": "b516309e-136c-4009-be86-201a2ce697f6"
+        }
+      ]
+    },
+    {
+      "contactId": "smoke-20260714-api-princess-jen",
+      "phrase": "book princess tomorrow at two pm with jen",
+      "httpStatus": 200,
+      "outcome": "MISSING_INFO",
+      "dialogAction": {
+        "type": "ConfirmIntent"
+      },
+      "message": "<speak>Smoke Voice, just to confirm: Full Set tomorrow at 2 PM with Trang. <break time=\"300ms\"/> Is that correct?</speak>",
+      "slots": {
+        "serviceName": "Full Set",
+        "requestedDate": "2026-07-15",
+        "requestedTime": "14:00",
+        "staffPreference": "Trang",
+        "staffId": "903511ee-4849-43dd-85fb-73595e79a233"
+      },
+      "callSession": {
+        "id": "f7860e65-f49d-436b-9195-82536f17ba66",
+        "providerCallId": "smoke-20260714-api-princess-jen",
+        "status": "IN_PROGRESS",
+        "routingOutcome": "AI_RECEPTION"
+      },
+      "bookingAttemptCount": 1,
+      "aiInteractionCount": 1,
+      "appointmentIds": [],
+      "attempts": [
+        {
+          "id": "33433031-094e-42c4-bb34-a7b40efa99e8",
+          "status": "NEEDS_INPUT",
+          "requestedService": "Full Set",
+          "requestedStaff": "Trang",
+          "appointmentId": null,
+          "failureReason": "Booking confirmation required before creating appointment."
+        }
+      ],
+      "logs": [
+        {
+          "id": "b166b1bd-3220-45e2-988d-1a592a19789d",
+          "taskType": "amazon_connect_booking_fulfillment",
+          "isValid": true,
+          "bookingAttemptId": "33433031-094e-42c4-bb34-a7b40efa99e8"
+        }
+      ]
+    },
+    {
+      "contactId": "smoke-20260714-api-food-hang",
+      "phrase": "food set tomorrow at two p m with hang",
+      "httpStatus": 200,
+      "outcome": "MISSING_INFO",
+      "dialogAction": {
+        "type": "ConfirmIntent"
+      },
+      "message": "<speak>Smoke Voice, just to confirm: Full Set tomorrow at 2 PM with Trang. <break time=\"300ms\"/> Is that correct?</speak>",
+      "slots": {
+        "serviceName": "Full Set",
+        "requestedDate": "2026-07-15",
+        "requestedTime": "14:00",
+        "staffPreference": "Trang",
+        "staffId": "903511ee-4849-43dd-85fb-73595e79a233"
+      },
+      "callSession": {
+        "id": "c0118c3d-ce9c-4d70-b9c5-c73209b50700",
+        "providerCallId": "smoke-20260714-api-food-hang",
+        "status": "IN_PROGRESS",
+        "routingOutcome": "AI_RECEPTION"
+      },
+      "bookingAttemptCount": 1,
+      "aiInteractionCount": 1,
+      "appointmentIds": [],
+      "attempts": [
+        {
+          "id": "38fcd935-e5c1-4ba0-8e5e-efd872de4718",
+          "status": "NEEDS_INPUT",
+          "requestedService": "Full Set",
+          "requestedStaff": "Trang",
+          "appointmentId": null,
+          "failureReason": "Booking confirmation required before creating appointment."
+        }
+      ],
+      "logs": [
+        {
+          "id": "89fda999-ac95-4694-9f2a-ff63671fe983",
+          "taskType": "amazon_connect_booking_fulfillment",
+          "isValid": true,
+          "bookingAttemptId": "38fcd935-e5c1-4ba0-8e5e-efd872de4718"
+        }
+      ]
+    },
+    {
+      "contactId": "smoke-20260714-api-trang",
+      "phrase": "book full set tomorrow at two pm with trang",
+      "httpStatus": 200,
+      "outcome": "MISSING_INFO",
+      "dialogAction": {
+        "type": "ConfirmIntent"
+      },
+      "message": "<speak>Smoke Voice, just to confirm: Full Set tomorrow at 2 PM with Trang. <break time=\"300ms\"/> Is that correct?</speak>",
+      "slots": {
+        "serviceName": "Full Set",
+        "requestedDate": "2026-07-15",
+        "requestedTime": "14:00",
+        "staffPreference": "Trang",
+        "staffId": "903511ee-4849-43dd-85fb-73595e79a233"
+      },
+      "callSession": {
+        "id": "c0aaa838-a47a-43d1-8a04-490be79b5037",
+        "providerCallId": "smoke-20260714-api-trang",
+        "status": "IN_PROGRESS",
+        "routingOutcome": "AI_RECEPTION"
+      },
+      "bookingAttemptCount": 1,
+      "aiInteractionCount": 1,
+      "appointmentIds": [],
+      "attempts": [
+        {
+          "id": "2ce45d3b-4142-465a-8001-b4bbd0d489c4",
+          "status": "NEEDS_INPUT",
+          "requestedService": "Full Set",
+          "requestedStaff": "Trang",
+          "appointmentId": null,
+          "failureReason": "Booking confirmation required before creating appointment."
+        }
+      ],
+      "logs": [
+        {
+          "id": "e05b3fa7-185b-4574-b879-854d9ae3e79b",
+          "taskType": "amazon_connect_booking_fulfillment",
+          "isValid": true,
+          "bookingAttemptId": "2ce45d3b-4142-465a-8001-b4bbd0d489c4"
+        }
+      ]
+    }
+  ]
+}

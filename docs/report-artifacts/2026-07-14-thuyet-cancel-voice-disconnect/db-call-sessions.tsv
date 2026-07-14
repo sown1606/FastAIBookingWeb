@@ -1,0 +1,5 @@
+id\tproviderCallId\tcallerPhone\tdialedPhone\tstatus\troutingOutcome\tstartedAt\tendedAt\tfailureReason\tfinalResolution
+31a39e9a-a313-49ab-8940-34409e208995\t68ea028d-99f5-43a9-8f23-3d533dba18de\t+84798171999\t+18483487681\tIN_PROGRESS\tAI_RECEPTION\t2026-07-14 01:52:20.418\t\tMissing fields: staffPreference\t<speak>Got it, Full Set. Which staff would you like, Kevin, Thien Le, Alex, Amy, or first available?</speak>
+90f096f0-1e1a-43b7-954a-e6b846ff858a\t99bee132-e91e-470d-931d-9f1f51912350\t+84798171999\t+18483487681\tIN_PROGRESS\tAI_RECEPTION\t2026-07-14 01:55:40.07\t\tMissing fields: staffPreference\t<speak>Got it, Full Set. Which staff would you like, Kevin, Thien Le, Alex, Amy, or first available?</speak>
+806f7385-d8da-4a8a-8e62-ba03c42ff3b1\t1d5020e9-fdfa-466a-8224-9f68280ccf6f\t+84798171999\t+18483487681\tIN_PROGRESS\tAI_RECEPTION\t2026-07-14 01:58:33.563\t\tBooking confirmation required before creating appointment.\t<speak>Please say yes to confirm, or tell me what you would like to change.</speak>
+(3 rows)
