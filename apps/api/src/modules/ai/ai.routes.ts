@@ -84,7 +84,15 @@ const operatorQueueOutcomeSchema = z.object({
   amazonConnectContactId: z.string().trim().min(1).max(160).optional(),
   contactId: z.string().trim().min(1).max(160).optional(),
   callerPhone: z.string().trim().min(3).max(40).optional(),
-  outcome: z.enum(["AGENTS_UNAVAILABLE", "AGENTS_BUSY", "QUEUE_WAIT_TIMEOUT", "CONNECT_FLOW_ERROR"])
+  outcome: z.enum([
+    "AMAZON_CONNECT_ENQUEUED",
+    "PROVIDER_ENQUEUED",
+    "AGENTS_UNAVAILABLE",
+    "AGENTS_BUSY",
+    "QUEUE_WAIT_TIMEOUT",
+    "QUEUE_AT_CAPACITY",
+    "CONNECT_FLOW_ERROR"
+  ])
 });
 
 const extractInternalToken = (authorizationHeader?: string, internalHeader?: string | string[]) => {

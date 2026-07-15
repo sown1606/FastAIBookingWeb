@@ -33,12 +33,19 @@ export const DebugBulkActions = ({
   return (
     <div className="bulk-debug-toolbar" aria-live="polite">
       <div className="bulk-debug-toolbar__count">
-        <strong>{t("debugBulk.selectedCount", { count: selectedCount })}</strong>
-        {preparedByteSize ? (
-          <span>{t("debugBulk.approximateSize", { size: preparedByteSize })}</span>
-        ) : null}
+        <strong>
+          {preparedByteSize
+            ? t("debugBulk.selectionStatusWithSize", {
+                selected: selectedCount,
+                visible: totalVisible,
+                size: preparedByteSize
+              })
+            : t("debugBulk.selectionStatus", {
+                selected: selectedCount,
+                visible: totalVisible
+              })}
+        </strong>
         {busy ? <span>{t("debugBulk.preparing", { count: selectedCount })}</span> : null}
-        {!busy && totalVisible > 0 ? <span>{t("debugBulk.visibleCount", { count: totalVisible })}</span> : null}
         <span>{t("debugBulk.shiftHint")}</span>
         <span>{t("debugBulk.canonicalNote")}</span>
       </div>

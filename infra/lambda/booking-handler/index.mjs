@@ -255,7 +255,7 @@ const CONTEXTUAL_ANY_STAFF_ALIASES = [
 const ANY_STAFF_TRAILING_FILLER_PATTERN =
   "\\s+(?:is\\s+(?:fine|okay|ok)|works\\s+for\\s+me|if\\s+i|please)$";
 const OPERATOR_TRANSFER_PROMPT = "Let me check for an available operator.";
-const OPERATOR_BUSY_PROMPT = "All of our operators are currently busy. Please call back later.";
+const OPERATOR_BUSY_PROMPT = "All of our operators are currently busy. Please call back later. Goodbye.";
 const SERVICE_DTMF_PROMPT =
   "Hi, thanks for calling Kiet Nails. What would you like to book? You can say everything in one sentence, or press 0 for a person.";
 const SERVICE_KEYPAD_PROMPT =
@@ -604,8 +604,55 @@ function isFunFactsFullSetAsr(value) {
   return /\bfun\s+facts?\b/.test(normalizeForMatch(value));
 }
 
+function isObservedSunsetFullSetAsr(value) {
+  return /\bsun\s*set\b/.test(normalizeForMatch(value));
+}
+
+function getObservedSunsetFullSetAsrRaw(value) {
+  const normalized = normalizeForMatch(value);
+  if (!normalized) {
+    return "";
+  }
+  return /\bsun\s+set\b/.test(normalized) ? "sun set" : /\bsunset\b/.test(normalized) ? "sunset" : "";
+}
+
 function isPayTheBillPedicureAsr(value) {
   return /\bpay\s+the\s+bill\b/.test(normalizeForMatch(value));
+}
+
+function hasExactConfiguredServiceName(value, sessionAttributes = {}) {
+  const normalized = normalizeForMatch(value);
+  return Boolean(
+    normalized &&
+      getDynamicServiceNames(sessionAttributes).some(
+        (serviceName) => normalizeForMatch(serviceName) === normalized
+      )
+  );
+}
+
+function getExactConfiguredServiceName(value, sessionAttributes = {}) {
+  const normalized = normalizeForMatch(value);
+  if (!normalized) {
+    return "";
+  }
+  return (
+    getDynamicServiceNames(sessionAttributes).find(
+      (serviceName) => normalizeForMatch(serviceName) === normalized
+    ) || ""
+  );
+}
+
+function hasStrongObservedSunsetServiceContext(event, text) {
+  const previous = event.sessionState?.sessionAttributes || {};
+  if (previous.lastAskedSlot === "serviceName" || previous.activeDtmfMenu === "service") {
+    return true;
+  }
+  const normalized = normalizeForMatch(text);
+  return Boolean(
+    hasCurrentTurnDatePhrase(text) ||
+      hasCurrentTurnTimePhrase(text, previous) ||
+      /\bwith\s+[a-z][a-z'-]*\b/.test(normalized)
+  );
 }
 
 function isServiceCollectionContext(event) {
@@ -622,18 +669,33 @@ function getScopedServiceAliasCorrectionRaw(event) {
   if (!isServiceCollectionContext(event)) {
     return "";
   }
+  const previous = event.sessionState?.sessionAttributes || {};
   const slots = event.sessionState?.intent?.slots || {};
   const candidates = [
     getCurrentTurnTranscript(event),
     getSlotValue(slots, slotNames.serviceName, { preferOriginal: true })
   ];
-  return candidates.some(isPrincessFullSetAsr) ? "princess" : "";
+  if (candidates.some(isPrincessFullSetAsr)) {
+    return "princess";
+  }
+  const sunsetCandidate = candidates.find(isObservedSunsetFullSetAsr);
+  if (
+    sunsetCandidate &&
+    hasStrongObservedSunsetServiceContext(event, candidates.filter(Boolean).join(" ")) &&
+    !hasExactConfiguredServiceName("Sunset", previous)
+  ) {
+    return getObservedSunsetFullSetAsrRaw(sunsetCandidate);
+  }
+  return "";
 }
 
 function currentTurnServiceMention(event) {
   const transcript = getCurrentTurnTranscript(event);
   if (isServiceCollectionContext(event)) {
     if (isFunFactsFullSetAsr(transcript)) {
+      return "Full Set";
+    }
+    if (getScopedServiceAliasCorrectionRaw(event)) {
       return "Full Set";
     }
     if (isPayTheBillPedicureAsr(transcript)) {
@@ -643,9 +705,6 @@ function currentTurnServiceMention(event) {
   const transcriptService = extractServiceFromTranscript(transcript);
   if (transcriptService) {
     return transcriptService;
-  }
-  if (getScopedServiceAliasCorrectionRaw(event)) {
-    return "Full Set";
   }
   return "";
 }
@@ -817,6 +876,29 @@ function resolveTrangAsrConfusionFromText(value, sessionAttributes = {}) {
     return "";
   }
   return hasDynamicStaffExactCollision(token, sessionAttributes) ? "" : "Trang";
+}
+
+function resolveOneLetterStaffPrefixFromText(value, sessionAttributes = {}) {
+  if (
+    sessionAttributes?.lastAskedSlot === "customerName" &&
+    sessionAttributes?.activeDtmfMenu !== "staff"
+  ) {
+    return "";
+  }
+  const normalized = normalizeForMatch(value);
+  const match = normalized.match(/\bwith\s+([a-z])$/);
+  const prefix = match?.[1] || "";
+  if (!prefix) {
+    return "";
+  }
+  const candidates = Array.from(
+    new Set(
+      Object.values(getStaffDtmfOptions(sessionAttributes))
+        .filter((staffName) => normalizeForMatch(staffName) !== "any staff")
+        .filter((staffName) => normalizeForMatch(String(staffName).split(/\s+/)[0]).startsWith(prefix))
+    )
+  );
+  return candidates.length === 1 ? candidates[0] : "";
 }
 
 function isExactKnownStaffAliasText(value, sessionAttributes = {}) {
@@ -1017,6 +1099,10 @@ function extractStaffFromTranscript(text, sessionAttributes = {}) {
   }
   if (normalizeAnyStaffPhrase(text, sessionAttributes)) {
     return "Any staff";
+  }
+  const oneLetterPrefixStaff = resolveOneLetterStaffPrefixFromText(text, sessionAttributes);
+  if (oneLetterPrefixStaff) {
+    return oneLetterPrefixStaff;
   }
   const scopedCandidate = normalizeScopedStaffCandidatePhrase(text, sessionAttributes);
   const searchText = scopedCandidate && normalizeForMatch(scopedCandidate) !== "any staff"
@@ -1875,7 +1961,15 @@ function currentTurnRecognizedService(event) {
   const previous = event.sessionState?.sessionAttributes || {};
   const slots = event.sessionState?.intent?.slots || {};
   const transcriptService = currentTurnServiceMention(event) || getCurrentTurnBookingDetails(event).serviceName;
-  const slotService = normalizeServiceName(getSlotValue(slots, slotNames.serviceName, { preferOriginal: true }));
+  const exactSlotService =
+    getExactConfiguredServiceName(getSlotValue(slots, slotNames.serviceName), previous) ||
+    getExactConfiguredServiceName(
+      getSlotValue(slots, slotNames.serviceName, { preferOriginal: true }),
+      previous
+    );
+  const slotService =
+    exactSlotService ||
+    normalizeServiceName(getSlotValue(slots, slotNames.serviceName, { preferOriginal: true }));
   const candidate = normalizeServiceName(transcriptService || slotService);
   return DEMO_SERVICE_NAMES.includes(candidate) || isDynamicServiceName(candidate, previous) ? candidate : "";
 }
@@ -2284,6 +2378,7 @@ function sanitizeLexEvent(event, analysis) {
     delete sessionAttributes.serviceNameDigit;
     delete sessionAttributes.serviceDtmf;
     delete sessionAttributes.serviceDigit;
+    sessionAttributes.serviceRecognitionFailureCount = "0";
     delete sessionAttributes.serviceFallbackCount;
     delete sessionAttributes.invalidServiceCount;
     delete sessionAttributes.serviceClarificationAttempts;
@@ -5338,6 +5433,9 @@ function commitDialogState(response, options = {}) {
   ) {
     sessionAttributes.operatorHelpMentioned = "true";
   }
+  if (responseMessage) {
+    sessionAttributes.connectContinuationPrompt = responseMessage;
+  }
   const previousTurnSequence = parseAttemptCount(sessionAttributes.turnSequence);
   sessionAttributes.turnSequence = String(previousTurnSequence + 1);
   if (options.providerTurnId) {
@@ -6112,9 +6210,6 @@ async function handleLexEvent(event, analysis = {}) {
     }
 
     if (shouldEscalate) {
-      if (isHumanAvailabilityBlocked(event)) {
-        return buildNoAgentsAvailableResponse(event);
-      }
       const result = await postInternalAppointment(
         buildInternalPayload(event, intentName, escalationAttributes),
         {

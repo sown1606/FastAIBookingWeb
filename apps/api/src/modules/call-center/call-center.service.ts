@@ -34,7 +34,7 @@ const toJson = (value: unknown): Prisma.InputJsonValue => {
 
 const AMAZON_CONNECT_OPERATOR_QUEUE_NAME = "FastAIBooking Operator Queue";
 const OPERATOR_TRANSFER_PROMPT = "Let me check for an available operator.";
-const OPERATOR_BUSY_PROMPT = "All of our operators are currently busy. Please call back later.";
+const OPERATOR_BUSY_PROMPT = "All of our operators are currently busy. Please call back later. Goodbye.";
 
 type OperatorQueueMetrics = {
   staffedAgents: number;
@@ -615,7 +615,7 @@ export const createOrUpdateCallEscalation = async (input: {
     operatorQueueOutcome === "CONNECT_METRICS_DEFERRED_TO_CONNECT_FLOW"
   ) {
     status = CallEscalationStatus.PENDING;
-    routingOutcome = CallRoutingOutcome.QUEUED;
+    routingOutcome = CallRoutingOutcome.CALL_CENTER_ESCALATION;
     finalResolution = "Human operator transfer requested; waiting for Amazon Connect queue evidence.";
     queuedAt = null;
   } else {
@@ -625,7 +625,7 @@ export const createOrUpdateCallEscalation = async (input: {
     closedAt = new Date();
   }
   const messageToCaller =
-    routingOutcome === CallRoutingOutcome.QUEUED
+    status === CallEscalationStatus.PENDING || status === CallEscalationStatus.QUEUED
       ? input.messageToCaller ?? OPERATOR_TRANSFER_PROMPT
       : OPERATOR_BUSY_PROMPT;
   const metadata =
@@ -649,9 +649,25 @@ export const createOrUpdateCallEscalation = async (input: {
       callSessionId: input.callSessionId
     },
     select: {
-      status: true
+      status: true,
+      queuedAt: true,
+      closedAt: true
     }
   });
+  if (
+    status === CallEscalationStatus.QUEUED &&
+    previousEscalation?.status === CallEscalationStatus.QUEUED &&
+    previousEscalation.queuedAt
+  ) {
+    queuedAt = previousEscalation.queuedAt;
+  }
+  if (
+    status === CallEscalationStatus.CLOSED &&
+    previousEscalation?.status === CallEscalationStatus.CLOSED &&
+    previousEscalation.closedAt
+  ) {
+    closedAt = previousEscalation.closedAt;
+  }
 
   const escalation = await prisma.callEscalation.upsert({
     where: {
@@ -743,7 +759,14 @@ export const recordOperatorQueueOutcome = async (input: {
   callSessionId?: string | null;
   amazonConnectContactId?: string | null;
   callerPhone?: string | null;
-  operatorQueueOutcome: "AGENTS_UNAVAILABLE" | "AGENTS_BUSY" | "QUEUE_WAIT_TIMEOUT" | "CONNECT_FLOW_ERROR";
+  operatorQueueOutcome:
+    | "AMAZON_CONNECT_ENQUEUED"
+    | "PROVIDER_ENQUEUED"
+    | "AGENTS_UNAVAILABLE"
+    | "AGENTS_BUSY"
+    | "QUEUE_WAIT_TIMEOUT"
+    | "QUEUE_AT_CAPACITY"
+    | "CONNECT_FLOW_ERROR";
 }) => {
   const contactId = input.amazonConnectContactId?.trim();
   const callSession = input.callSessionId
@@ -766,6 +789,9 @@ export const recordOperatorQueueOutcome = async (input: {
   if (!salonId) {
     throw new AppError("Salon is required for operator queue outcome.", 400, "SALON_REQUIRED");
   }
+  const isQueueEntry =
+    input.operatorQueueOutcome === "AMAZON_CONNECT_ENQUEUED" ||
+    input.operatorQueueOutcome === "PROVIDER_ENQUEUED";
 
   const existingCallSession =
     callSession ??
@@ -776,9 +802,13 @@ export const recordOperatorQueueOutcome = async (input: {
             provider: ExternalProvider.AMAZON_CONNECT,
             providerCallId: contactId,
             callerPhone: input.callerPhone ?? null,
-            status: CallSessionStatus.COMPLETED,
-            routingOutcome: CallRoutingOutcome.CALL_CENTER_ESCALATION,
-            finalResolution: OPERATOR_BUSY_PROMPT,
+            status: isQueueEntry ? CallSessionStatus.IN_PROGRESS : CallSessionStatus.COMPLETED,
+            routingOutcome: isQueueEntry
+              ? CallRoutingOutcome.QUEUED
+              : CallRoutingOutcome.CALL_CENTER_ESCALATION,
+            finalResolution: isQueueEntry
+              ? "Waiting in the human operator queue."
+              : OPERATOR_BUSY_PROMPT,
             rawPayload: toJson({
               source: "amazon_connect_operator_queue_outcome",
               operatorQueueOutcome: input.operatorQueueOutcome
@@ -796,11 +826,15 @@ export const recordOperatorQueueOutcome = async (input: {
     callSessionId: existingCallSession.id,
     requestedBy: "AMAZON_CONNECT_FLOW",
     escalationReason:
-      input.operatorQueueOutcome === "QUEUE_WAIT_TIMEOUT"
+      isQueueEntry
+        ? "Caller entered the Amazon Connect operator queue."
+        : input.operatorQueueOutcome === "QUEUE_WAIT_TIMEOUT"
         ? "Operator queue wait timed out."
-        : "No operator was available in Amazon Connect.",
+        : input.operatorQueueOutcome === "QUEUE_AT_CAPACITY"
+          ? "Amazon Connect operator queue was at capacity."
+          : "Amazon Connect operator queue flow ended without enqueue.",
     customerPhone: input.callerPhone ?? existingCallSession.callerPhone ?? null,
-    messageToCaller: OPERATOR_BUSY_PROMPT,
+    messageToCaller: isQueueEntry ? OPERATOR_TRANSFER_PROMPT : OPERATOR_BUSY_PROMPT,
     operatorQueueOutcome: input.operatorQueueOutcome,
     suppressAlert: true,
     metadata: {

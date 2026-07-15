@@ -909,8 +909,12 @@ const setupPrismaMock = () => {
     if (!escalation) {
       return null;
     }
-    if (args.select?.status) {
-      return { status: escalation.status };
+    if (args.select) {
+      return Object.fromEntries(
+        Object.keys(args.select)
+          .filter((key) => args.select[key])
+          .map((key) => [key, escalation[key]])
+      );
     }
     return escalation;
   });
@@ -2442,6 +2446,171 @@ test("Full Set speech aliases resolve to the active Full Set service", async () 
     assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Full Set", phrase);
     assert.notEqual(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName", phrase);
   }
+});
+
+test("observed sunset ASR resolves Full Set today at 3 PM with unique Amy prefix", async () => {
+  const today = DateTime.now().setZone("America/New_York").toFormat("yyyy-MM-dd");
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      staffId: undefined,
+      confirmationState: undefined,
+      currentTurnTranscript: "sunset today at three p m with a",
+      transcript: "sunset today at three p m with a",
+      attributes: {
+        lastAskedSlot: "serviceName"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedServiceName, "Full Set");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.requestedDate, today);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "15:00");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Amy");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffId, ids.amy);
+  assert.notEqual(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
+  assert.doesNotMatch(result.body.data.lexResponse.message, /Please tell me what you need|which service/i);
+});
+
+test("observed sunset ASR with bare with preserves service date time and asks only for staff", async () => {
+  const today = DateTime.now().setZone("America/New_York").toFormat("yyyy-MM-dd");
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      staffId: undefined,
+      confirmationState: undefined,
+      currentTurnTranscript: "sunset today at three pm with",
+      transcript: "sunset today at three pm with",
+      attributes: {
+        lastAskedSlot: "serviceName"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedServiceName, "Full Set");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.requestedDate, today);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "15:00");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, undefined);
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitSlot");
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "staffPreference");
+  assert.doesNotMatch(result.body.data.lexResponse.message, /Please tell me what you need|which service/i);
+  assert.equal(state.appointments.length, 0);
+});
+
+test("unrelated sunset sentence does not resolve a nail service", async () => {
+  const result = await postInternalAppointment(
+    bookingPayload({
+      intentName: "FallbackIntent",
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      staffId: undefined,
+      confirmationState: undefined,
+      currentTurnTranscript: "The sunset is beautiful",
+      transcript: "The sunset is beautiful"
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.notEqual(result.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
+  assert.notEqual(result.body.data.lexResponse.sessionAttributes.confirmedServiceName, "Full Set");
+  assert.notEqual(result.body.data.lexResponse.dialogAction?.slotToElicit, "bookingConfirmation");
+});
+
+test("active exact Sunset service wins over observed Full Set correction", async () => {
+  const today = DateTime.now().setZone("America/New_York").toFormat("yyyy-MM-dd");
+  state.services.push({
+    id: "20000000-0000-4000-8000-000000000099",
+    salonId: ids.salonA,
+    name: "Sunset",
+    durationMinutes: 30,
+    priceCents: 3000,
+    isActive: true,
+    createdAt: new Date("2026-01-01T00:00:00.000Z")
+  } as any);
+
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Sunset",
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      staffId: undefined,
+      confirmationState: undefined,
+      currentTurnTranscript: "sunset today at three pm",
+      transcript: "sunset today at three pm",
+      attributes: {
+        activeServiceNames: JSON.stringify(["Sunset", "Full Set"]),
+        lastAskedSlot: "serviceName"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Sunset");
+  assert.notEqual(result.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.requestedDate, today);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "15:00");
+});
+
+test("repeated observed sunset transcript keeps one canonical log and no generic loop", async () => {
+  const contactId = "connect-repeated-sunset-observed";
+  const today = DateTime.now().setZone("America/New_York").toFormat("yyyy-MM-dd");
+  const base = bookingPayload({
+    serviceName: undefined,
+    requestedDate: undefined,
+    requestedTime: undefined,
+    staffPreference: undefined,
+    staffId: undefined,
+    confirmationState: undefined,
+    amazonConnectContactId: contactId,
+    currentTurnTranscript: "sunset today at three pm with a",
+    transcript: "sunset today at three pm with a",
+    attributes: {
+      AmazonConnectContactId: contactId,
+      currentTurnTranscript: "sunset today at three pm with a",
+      lastAskedSlot: "serviceName",
+      humanTurnId: `${contactId}:sunset-repeat-1`,
+      providerTurnId: `${contactId}:DialogCodeHook:Speech:sunset-repeat-1`,
+      lexPhase: "DialogCodeHook"
+    }
+  });
+
+  const first = await postInternalAppointment(base);
+  const second = await postInternalAppointment({
+    ...base,
+    attributes: {
+      ...(base.attributes as Record<string, unknown>),
+      providerTurnId: `${contactId}:FulfillmentCodeHook:Speech:sunset-repeat-1`,
+      lexPhase: "FulfillmentCodeHook"
+    }
+  });
+
+  assert.equal(first.response.status, 200);
+  assert.equal(second.response.status, 200);
+  assert.equal(first.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
+  assert.equal(second.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
+  assert.equal(second.body.data.lexResponse.sessionAttributes.requestedDate, today);
+  assert.equal(second.body.data.lexResponse.sessionAttributes.requestedTime, "15:00");
+  assert.equal(second.body.data.lexResponse.sessionAttributes.staffPreference, "Amy");
+  assert.doesNotMatch(second.body.data.lexResponse.message, /Please tell me what you need/i);
+  assert.equal(state.appointments.length, 0);
+  assert.equal(state.callSessions.length, 1);
+  assert.equal(state.bookingAttempts.length, 1);
+  assert.equal(state.aiInteractionLogs.length, 1);
 });
 
 test("invalid placeholder services are cleared and active service menu excludes inactive Gel", async () => {
@@ -7271,9 +7440,80 @@ test("explicit human intent requests Connect transfer without provider queue con
   assert.equal(result.body.data.lexResponse.sessionAttributes.transferToQueue, "true");
   assert.equal(result.body.data.lexResponse.sessionAttributes.queueId, "queue-default");
   assert.equal(state.escalations[0].status, CallEscalationStatus.PENDING);
-  assert.equal(state.escalations[0].routingOutcome, CallRoutingOutcome.QUEUED);
+  assert.equal(state.escalations[0].routingOutcome, CallRoutingOutcome.CALL_CENTER_ESCALATION);
   assert.equal(state.escalations[0].queueId, "queue-default");
+  assert.equal(state.escalations[0].queuedAt, null);
   assert.equal(state.escalations[0].messageToCaller, "Let me check for an available operator.");
+  assert.equal(state.callSessions[0].routingOutcome, CallRoutingOutcome.CALL_CENTER_ESCALATION);
+  assert.equal(state.bookingAttempts[0].requestedService, undefined);
+  assert.equal(state.bookingAttempts[0].requestedStaff, undefined);
+  assert.equal((state.bookingAttempts[0].normalizedRequest as any).serviceName, undefined);
+  assert.equal((state.bookingAttempts[0].normalizedRequest as any).staffPreference, undefined);
+});
+
+test("DTMF zero uses the same pending operator route without booking pollution", async () => {
+  const result = await postInternalAppointment(
+    bookingPayload({
+      intentName: "BookAppointmentIntent",
+      amazonConnectContactId: "connect-dtmf-zero-operator",
+      serviceName: "Full Set",
+      staffPreference: "speak person",
+      staffId: ids.amy,
+      currentTurnTranscript: "0",
+      transcript: "0"
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "HUMAN_ESCALATION");
+  assert.equal(result.body.data.lexResponse.message, "Let me check for an available operator.");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.transferToQueue, "true");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.forceHumanEscalation, "true");
+  assert.equal(state.escalations[0].status, CallEscalationStatus.PENDING);
+  assert.equal(state.escalations[0].routingOutcome, CallRoutingOutcome.CALL_CENTER_ESCALATION);
+  assert.equal(state.bookingAttempts[0].requestedService, undefined);
+  assert.equal(state.bookingAttempts[0].requestedStaff, undefined);
+  assert.equal((state.bookingAttempts[0].normalizedRequest as any).serviceName, undefined);
+  assert.equal((state.bookingAttempts[0].normalizedRequest as any).staffPreference, undefined);
+});
+
+test("operator queue entry callback transitions pending escalation to queued once", async () => {
+  const contactId = "connect-queue-entry";
+  const pending = await postInternalAppointment(
+    bookingPayload({
+      intentName: "HumanEscalationIntent",
+      amazonConnectContactId: contactId,
+      transcript: "I want to speak with a person."
+    })
+  );
+
+  assert.equal(pending.response.status, 200);
+  assert.equal(state.escalations.length, 1);
+  assert.equal(state.escalations[0].status, CallEscalationStatus.PENDING);
+  assert.equal(state.escalations[0].routingOutcome, CallRoutingOutcome.CALL_CENTER_ESCALATION);
+
+  const callback = await postOperatorQueueOutcome({
+    salonId: ids.salonA,
+    contactId,
+    outcome: "AMAZON_CONNECT_ENQUEUED"
+  });
+  const firstQueuedAtMs = state.escalations[0].queuedAt?.getTime();
+  const secondCallback = await postOperatorQueueOutcome({
+    salonId: ids.salonA,
+    contactId,
+    outcome: "AMAZON_CONNECT_ENQUEUED"
+  });
+
+  assert.equal(callback.response.status, 200);
+  assert.equal(secondCallback.response.status, 200);
+  assert.equal(state.escalations.length, 1);
+  assert.equal(state.escalations[0].status, CallEscalationStatus.QUEUED);
+  assert.equal(state.escalations[0].routingOutcome, CallRoutingOutcome.QUEUED);
+  assert.ok(state.escalations[0].queuedAt);
+  assert.equal(state.escalations[0].queuedAt?.getTime(), firstQueuedAtMs);
+  assert.equal(state.escalations[0].metadata.operatorQueueOutcome, "AMAZON_CONNECT_ENQUEUED");
+  assert.equal(state.callSessions[0].routingOutcome, CallRoutingOutcome.QUEUED);
+  assert.equal(state.callSessions[0].finalResolution, "Waiting in the human operator queue.");
 });
 
 test("operator queue timeout callback closes the existing escalation once", async () => {
@@ -7295,15 +7535,23 @@ test("operator queue timeout callback closes the existing escalation once", asyn
     contactId,
     outcome: "QUEUE_WAIT_TIMEOUT"
   });
+  const firstClosedAtMs = state.escalations[0].closedAt?.getTime();
+  const secondCallback = await postOperatorQueueOutcome({
+    salonId: ids.salonA,
+    contactId,
+    outcome: "QUEUE_WAIT_TIMEOUT"
+  });
 
   assert.equal(callback.response.status, 200);
+  assert.equal(secondCallback.response.status, 200);
   assert.equal(state.escalations.length, 1);
   assert.equal(callback.body.data.status, CallEscalationStatus.CLOSED);
   assert.equal(state.escalations[0].status, CallEscalationStatus.CLOSED);
+  assert.equal(state.escalations[0].closedAt?.getTime(), firstClosedAtMs);
   assert.equal(state.escalations[0].routingOutcome, CallRoutingOutcome.CALL_CENTER_ESCALATION);
-  assert.equal(state.escalations[0].messageToCaller, "All of our operators are currently busy. Please call back later.");
+  assert.equal(state.escalations[0].messageToCaller, "All of our operators are currently busy. Please call back later. Goodbye.");
   assert.equal(state.escalations[0].metadata.operatorQueueOutcome, "QUEUE_WAIT_TIMEOUT");
-  assert.equal(state.callSessions[0].finalResolution, "All of our operators are currently busy. Please call back later.");
+  assert.equal(state.callSessions[0].finalResolution, "All of our operators are currently busy. Please call back later. Goodbye.");
 });
 
 test("cancel and reschedule intents use upcoming appointment context without transfer", async () => {
@@ -7385,18 +7633,18 @@ test("explicit human intent does not transfer when no agents are assigned", asyn
 
   assert.equal(result.response.status, 200);
   assert.equal(result.body.data.outcome, "HUMAN_ESCALATION");
-  assert.equal(result.body.data.lexResponse.message, "All of our operators are currently busy. Please call back later.");
+  assert.equal(result.body.data.lexResponse.message, "All of our operators are currently busy. Please call back later. Goodbye.");
   assert.equal(result.body.data.lexResponse.sessionAttributes.transferToQueue, "false");
   assert.equal(result.body.data.lexResponse.sessionAttributes.forceHumanEscalation, "false");
   assert.equal(result.body.data.lexResponse.sessionAttributes.queueId, undefined);
   assert.equal(result.body.data.lexResponse.sessionAttributes.conversationComplete, "true");
   assert.equal(state.escalations[0].status, CallEscalationStatus.CLOSED);
   assert.equal(state.escalations[0].routingOutcome, CallRoutingOutcome.CALL_CENTER_ESCALATION);
-  assert.equal(state.escalations[0].messageToCaller, "All of our operators are currently busy. Please call back later.");
+  assert.equal(state.escalations[0].messageToCaller, "All of our operators are currently busy. Please call back later. Goodbye.");
   assert.equal(state.escalations[0].metadata.operatorQueueOutcome, "NO_ASSIGNED_AGENTS");
 });
 
-test("explicit human intent queues when assigned agents are currently busy", async () => {
+test("explicit human intent requests queue transfer when assigned agents are currently busy", async () => {
   process.env.AMAZON_CONNECT_STAFFED_AGENTS_OVERRIDE = "1";
   process.env.AMAZON_CONNECT_AVAILABLE_AGENTS_OVERRIDE = "0";
 
@@ -7415,7 +7663,8 @@ test("explicit human intent queues when assigned agents are currently busy", asy
   assert.equal(result.body.data.lexResponse.sessionAttributes.forceHumanEscalation, "true");
   assert.equal(result.body.data.lexResponse.sessionAttributes.conversationComplete, "false");
   assert.equal(state.escalations[0].status, CallEscalationStatus.PENDING);
-  assert.equal(state.escalations[0].routingOutcome, CallRoutingOutcome.QUEUED);
+  assert.equal(state.escalations[0].routingOutcome, CallRoutingOutcome.CALL_CENTER_ESCALATION);
+  assert.equal(state.escalations[0].queuedAt, null);
   assert.equal(state.escalations[0].metadata.operatorQueueOutcome, "AGENTS_BUSY");
 });
 
@@ -7442,7 +7691,7 @@ test("press 0 and voice human request do not transfer with no staffed Connect ag
 
     assert.equal(result.response.status, 200, transcript);
     assert.equal(result.body.data.outcome, "HUMAN_ESCALATION", transcript);
-    assert.equal(result.body.data.lexResponse.message, "All of our operators are currently busy. Please call back later.", transcript);
+    assert.equal(result.body.data.lexResponse.message, "All of our operators are currently busy. Please call back later. Goodbye.", transcript);
     assert.equal(result.body.data.lexResponse.sessionAttributes.transferToQueue, "false", transcript);
     assert.equal(result.body.data.lexResponse.sessionAttributes.forceHumanEscalation, "false", transcript);
     assert.equal(result.body.data.lexResponse.sessionAttributes.conversationComplete, "true", transcript);

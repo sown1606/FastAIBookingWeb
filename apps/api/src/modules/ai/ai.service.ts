@@ -3,6 +3,7 @@ import { DateTime } from "luxon";
 import {
   AppointmentStatus,
   BookingAttemptStatus,
+  CallEscalationStatus,
   CallRoutingOutcome,
   CallSessionStatus,
   ExternalProvider,
@@ -459,7 +460,7 @@ const CONTEXTUAL_ANY_STAFF_PHRASES = new Set([
   "available"
 ]);
 const OPERATOR_TRANSFER_PROMPT = "Let me check for an available operator.";
-const OPERATOR_BUSY_PROMPT = "All of our operators are currently busy. Please call back later.";
+const OPERATOR_BUSY_PROMPT = "All of our operators are currently busy. Please call back later. Goodbye.";
 
 const SERVICE_DTMF_OPTIONS: Record<string, string> = {
   "0": "__operator__"
@@ -1198,6 +1199,28 @@ const resolveTrangAsrConfusionStaff = (
     return undefined;
   }
   return staff.find((member) => normalizeForMatch(member.fullName.split(/\s+/)[0]) === "trang");
+};
+
+const resolveOneLetterStaffPrefix = (
+  staff: StaffCandidate[],
+  value?: string | null,
+  context: StaffPhraseContext = {}
+): StaffCandidate | undefined => {
+  if (
+    context.lastAskedSlot === "customerName" &&
+    context.activeDtmfMenu !== "staff"
+  ) {
+    return undefined;
+  }
+  const match = normalizeForMatch(value).match(/\bwith\s+([a-z])$/);
+  const prefix = match?.[1];
+  if (!prefix) {
+    return undefined;
+  }
+  const candidates = dedupeStaffById(
+    staff.filter((member) => normalizeForMatch(member.fullName.split(/\s+/)[0]).startsWith(prefix))
+  );
+  return candidates.length === 1 ? candidates[0] : undefined;
 };
 
 const isUnsupportedServiceRequestPhrase = (value?: string | null): boolean => {
@@ -3383,6 +3406,8 @@ const applyGuardedObservedServiceAsrCorrection = async (
   const normalizedHeard = normalizeForMatch(heardValues);
   const requestedCanonical = /\bfun\s+facts?\b/.test(normalizedHeard)
     ? "full set"
+    : /\bsun\s*set\b/.test(normalizedHeard)
+      ? "full set"
     : /\bpay\s+the\s+bill\b/.test(normalizedHeard)
       ? "pedicure"
       : "";
@@ -3393,7 +3418,7 @@ const applyGuardedObservedServiceAsrCorrection = async (
   const serviceContext =
     readStringAttribute(attributes, ["lastAskedSlot"]) === "serviceName" ||
     readStringAttribute(attributes, ["activeDtmfMenu"]) === "service" ||
-    /\b(?:book|booking|appointment|service|nail|today|tomorrow|with|at|for)\b/i.test(
+    /\b(?:book|booking|appointment|service|nail|today|tomorrow|with|at|for|sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/i.test(
       [currentTurnTranscript, transcriptText].filter(Boolean).join(" ")
     );
   if (!serviceContext) {
@@ -3424,6 +3449,14 @@ const applyGuardedObservedServiceAsrCorrection = async (
   );
   if (exactHeardService) {
     return getCustomerFacingServiceName(exactHeardService.name) ?? exactHeardService.name;
+  }
+  const exactSunsetService = activeServices.find(
+    (service) =>
+      normalizeForMatch(service.name) === "sunset" &&
+      /\bsun\s*set\b/.test(normalizeForMatch([currentTurnTranscript, transcriptText].filter(Boolean).join(" ")))
+  );
+  if (exactSunsetService) {
+    return getCustomerFacingServiceName(exactSunsetService.name) ?? exactSunsetService.name;
   }
 
   const targetService = activeServices.find(
@@ -3596,6 +3629,10 @@ const findStaffMentionInText = async (
   }
 
   const staff = await getStaffCandidates({ salonId });
+  const oneLetterPrefixStaff = resolveOneLetterStaffPrefix(staff, text, context);
+  if (oneLetterPrefixStaff) {
+    return oneLetterPrefixStaff.fullName;
+  }
   const scopedCandidate = normalizeScopedStaffCandidatePhrase(text, context);
   const searchText = scopedCandidate && scopedCandidate !== "any staff" ? scopedCandidate : normalizedText;
   const aliasMatches = staff.flatMap((member) => {
@@ -4064,6 +4101,20 @@ const resolveStaffPreferenceFromCandidates = (
       allStaff,
       rawStaffPreference,
       invalidReason: "explicit_any"
+    };
+  }
+  const oneLetterPrefixStaff = resolveOneLetterStaffPrefix(
+    allStaff,
+    scopedStaffPreference ?? rawStaffPreference,
+    context
+  );
+  if (oneLetterPrefixStaff) {
+    return {
+      status: "matched",
+      candidates: [oneLetterPrefixStaff],
+      allStaff,
+      rawStaffPreference: rawStaffPreference ?? scopedStaffPreference ?? oneLetterPrefixStaff.fullName,
+      matchedStaff: oneLetterPrefixStaff
     };
   }
   if (isClearlyInvalidStaffPreference(requested)) {
@@ -7876,7 +7927,20 @@ export const createAmazonConnectAIAppointment = async (
     escalation?: Awaited<ReturnType<typeof createOrUpdateCallEscalation>> | null,
     extra: Record<string, string | number | null | undefined> = {}
   ): Record<string, string> => {
-    const canTransferToQueue = escalation?.routingOutcome === CallRoutingOutcome.QUEUED;
+    const operatorQueueOutcome =
+      escalation?.metadata &&
+      typeof escalation.metadata === "object" &&
+      !Array.isArray(escalation.metadata)
+        ? String((escalation.metadata as Record<string, unknown>).operatorQueueOutcome ?? "")
+        : "";
+    const canTransferToQueue =
+      escalation?.status === CallEscalationStatus.PENDING &&
+      Boolean(escalation.queueId) &&
+      [
+        "AGENT_AVAILABLE",
+        "AGENTS_BUSY",
+        "CONNECT_METRICS_DEFERRED_TO_CONNECT_FLOW"
+      ].includes(operatorQueueOutcome);
     return buildKnownSessionAttributes({
       conversationState: canTransferToQueue ? "TRANSFER" : "COMPLETE",
       conversationOutcome: canTransferToQueue ? "NEEDS_INPUT" : "CALL_CENTER_ESCALATION",
@@ -7884,14 +7948,9 @@ export const createAmazonConnectAIAppointment = async (
       forceHumanEscalation: canTransferToQueue ? "true" : "false",
       transferToQueue: canTransferToQueue ? "true" : "false",
       escalationReason: reason,
-      fallbackMode: escalation?.routingOutcome ?? "operator_queue",
+      fallbackMode: "operator_queue",
       queueId: canTransferToQueue ? escalation?.queueId : undefined,
-      operatorQueueOutcome:
-        escalation?.metadata &&
-        typeof escalation.metadata === "object" &&
-        !Array.isArray(escalation.metadata)
-          ? String((escalation.metadata as Record<string, unknown>).operatorQueueOutcome ?? "")
-          : undefined,
+      operatorQueueOutcome,
       ...extra
     });
   };
@@ -8585,6 +8644,10 @@ export const createAmazonConnectAIAppointment = async (
       humanEscalationReason === "customer_pressed_zero"
         ? "Caller pressed zero for operator."
         : "Caller requested a human operator.";
+    normalized.serviceName = undefined;
+    normalized.staffPreference = undefined;
+    normalized.staffId = undefined;
+    normalized.unrecognizedStaffUtterance = undefined;
     const bookingAttempt = await createAttempt({
       status: BookingAttemptStatus.NEEDS_INPUT,
       failureReason: humanFailureReason,
@@ -8609,10 +8672,21 @@ export const createAmazonConnectAIAppointment = async (
           }
         })
       : null;
-    const message =
-      escalation?.routingOutcome === CallRoutingOutcome.QUEUED
-        ? OPERATOR_TRANSFER_PROMPT
-        : OPERATOR_BUSY_PROMPT;
+    const operatorQueueOutcome =
+      escalation?.metadata &&
+      typeof escalation.metadata === "object" &&
+      !Array.isArray(escalation.metadata)
+        ? String((escalation.metadata as Record<string, unknown>).operatorQueueOutcome ?? "")
+        : "";
+    const canTransferToQueue =
+      escalation?.status === CallEscalationStatus.PENDING &&
+      Boolean(escalation.queueId) &&
+      [
+        "AGENT_AVAILABLE",
+        "AGENTS_BUSY",
+        "CONNECT_METRICS_DEFERRED_TO_CONNECT_FLOW"
+      ].includes(operatorQueueOutcome);
+    const message = canTransferToQueue ? OPERATOR_TRANSFER_PROMPT : OPERATOR_BUSY_PROMPT;
     const parsed = buildInternalParsedIntent({
       intentType: "LIVE_PERSON_REQUEST",
       customerName: normalized.customerName,
@@ -8647,7 +8721,7 @@ export const createAmazonConnectAIAppointment = async (
       message,
       escalation,
       routingOutcome:
-        escalation?.routingOutcome === "QUEUED"
+        escalation?.routingOutcome === CallRoutingOutcome.QUEUED
           ? CallRoutingOutcome.QUEUED
           : CallRoutingOutcome.CALL_CENTER_ESCALATION,
       failureReason: bookingAttempt.failureReason ?? undefined

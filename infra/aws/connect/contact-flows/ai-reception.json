@@ -398,11 +398,12 @@
           "serviceDtmfServiceIds": "$.Lex.SessionAttributes.serviceDtmfServiceIds",
           "staffDtmfOptions": "$.Lex.SessionAttributes.staffDtmfOptions",
           "staffDtmfStaffIds": "$.Lex.SessionAttributes.staffDtmfStaffIds",
+          "connectContinuationPrompt": "$.Lex.SessionAttributes.connectContinuationPrompt",
           "outerRecoveryAttempt": "true",
           "connectRecoveryStage": "retry_after_initial_error",
           "connectFlowSourceVersion": "2026-07-14-thuyet-service-staff-exclusion-disconnect"
         },
-        "Text": "Please tell me what you need, or press 0 for a person."
+        "Text": "$.Lex.SessionAttributes.connectContinuationPrompt"
       },
       "Transitions": {
         "NextAction": "check-transfer-to-queue",
@@ -535,6 +536,7 @@
           "serviceDtmfServiceIds": "$.Lex.SessionAttributes.serviceDtmfServiceIds",
           "staffDtmfOptions": "$.Lex.SessionAttributes.staffDtmfOptions",
           "staffDtmfStaffIds": "$.Lex.SessionAttributes.staffDtmfStaffIds",
+          "connectContinuationPrompt": "$.Lex.SessionAttributes.connectContinuationPrompt",
           "outerRecoveryAttempt": "final",
           "connectRecoveryStage": "final_dtmf_opportunity",
           "connectFlowSourceVersion": "2026-07-14-thuyet-service-staff-exclusion-disconnect"

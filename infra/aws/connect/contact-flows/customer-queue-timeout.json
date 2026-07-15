@@ -1,6 +1,6 @@
 {
   "Version": "2019-10-30",
-  "StartAction": "queue-loop-prompts",
+  "StartAction": "record-queue-entry",
   "Metadata": {
     "entryPointPosition": {
       "x": 243,
@@ -8,6 +8,17 @@
     },
     "snapToGrid": false,
     "ActionMetadata": {
+      "record-queue-entry": {
+        "position": {
+          "x": 280,
+          "y": 236
+        },
+        "parameters": {
+          "LambdaFunctionARN": {
+            "displayName": "fastaibooking-booking-handler"
+          }
+        }
+      },
       "queue-loop-prompts": {
         "position": {
           "x": 433,
@@ -24,6 +35,10 @@
               "id": "arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/prompt/d298b273-621e-4503-9038-e6ac432b299f",
               "text": "Music_Pop_ThisAndThatIsLife_Inst.wav"
             }
+          },
+          {
+            "type": "Text",
+            "tts": "Please continue to hold. An operator will be with you as soon as possible."
           }
         ],
         "timeoutUnit": {
@@ -58,6 +73,31 @@
   },
   "Actions": [
     {
+      "Identifier": "record-queue-entry",
+      "Type": "InvokeLambdaFunction",
+      "Parameters": {
+        "LambdaFunctionARN": "arn:aws:lambda:us-east-1:197452633989:function:fastaibooking-booking-handler",
+        "InvocationTimeLimitSeconds": 3,
+        "InvocationType": "SYNCHRONOUS",
+        "LambdaInvocationAttributes": {
+          "fastAiOperatorQueueOutcome": "AMAZON_CONNECT_ENQUEUED",
+          "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147"
+        },
+        "ResponseValidation": {
+          "ResponseType": "STRING_MAP"
+        }
+      },
+      "Transitions": {
+        "NextAction": "queue-loop-prompts",
+        "Errors": [
+          {
+            "NextAction": "queue-loop-prompts",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
       "Identifier": "queue-loop-prompts",
       "Parameters": {
         "Messages": [
@@ -66,9 +106,12 @@
           },
           {
             "PromptId": "arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/prompt/d298b273-621e-4503-9038-e6ac432b299f"
+          },
+          {
+            "Text": "Please continue to hold. An operator will be with you as soon as possible."
           }
         ],
-        "InterruptFrequencySeconds": "21"
+        "InterruptFrequencySeconds": "90"
       },
       "Transitions": {
         "Conditions": [
@@ -121,7 +164,7 @@
       "Type": "MessageParticipant",
       "Parameters": {
         "SkipWhenDTMFBufferEnabled": "false",
-        "Text": "All of our operators are currently busy. Please call back later."
+        "Text": "All of our operators are currently busy. Please call back later. Goodbye."
       },
       "Transitions": {
         "NextAction": "disconnect-after-timeout",
