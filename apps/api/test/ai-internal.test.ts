@@ -1407,6 +1407,51 @@ test("known caller initial booking turn skips name and preserves all booking fie
   assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "14:00");
 });
 
+test("known caller Full Set today at 3 PM with Amy confirms directly", async () => {
+  state.customers.push({
+    id: "customer-lee-fullset-amy",
+    salonId: ids.salonA,
+    firstName: "Lee",
+    lastName: "Stored",
+    phone: "84798171999",
+    createdAt: new Date("2026-01-10T00:00:00.000Z")
+  } as any);
+
+  const today = DateTime.now().setZone("America/New_York").toFormat("yyyy-MM-dd");
+  const result = await postInternalAppointment(
+    bookingPayload({
+      customerName: undefined,
+      customerPhone: undefined,
+      callerPhone: "+84798171999",
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      amazonConnectContactId: "connect-known-lee-fullset-amy",
+      currentTurnTranscript: "Full Set today at 3 PM with Amy.",
+      transcript: "Full Set today at 3 PM with Amy.",
+      attributes: {
+        CustomerEndpointAddress: "+84798171999"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assertBookingConfirmationDialog(result.body.data.lexResponse.dialogAction);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.requestedDate, today);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "15:00");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Amy");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffId, ids.amy);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.customerName, "Lee");
+  assert.match(
+    result.body.data.lexResponse.message,
+    /Lee, just to confirm: Full Set today at 3 PM with Amy\..*Is that correct\?/i
+  );
+  assert.doesNotMatch(result.body.data.lexResponse.message, /I can help you book or cancel|Which service/i);
+});
+
 test("production g p s transcript resolves Full Set, 3 PM, Trang, and known caller", async () => {
   state.customers.push({
     id: "customer-lee-gps",
@@ -2439,6 +2484,7 @@ test("Full Set speech aliases resolve to the active Full Set service", async () 
     "fall set",
     "four set",
     "phone set",
+    "phone chat",
     "room set",
     "pull set",
     "pull step",
@@ -2446,12 +2492,20 @@ test("Full Set speech aliases resolve to the active Full Set service", async () 
     "food set",
     "fool set",
     "foot set",
+    "fo set",
     "boom set",
     "book a set",
     "want a set",
     "a nail set",
     "full step",
     "full said",
+    "full sit",
+    "full sat",
+    "full sell",
+    "full sad",
+    "full cet",
+    "so we'll set",
+    "we'll set",
     "fullsat",
     "set of nails"
   ]) {
@@ -2474,7 +2528,7 @@ test("Full Set speech aliases resolve to the active Full Set service", async () 
   }
 });
 
-test("observed sunset ASR with one-letter staff preserves Full Set date time and asks staff", async () => {
+test("observed sunset ASR with one-letter staff asks service and preserves date time", async () => {
   const today = DateTime.now().setZone("America/New_York").toFormat("yyyy-MM-dd");
   const result = await postInternalAppointment(
     bookingPayload({
@@ -2494,20 +2548,19 @@ test("observed sunset ASR with one-letter staff preserves Full Set date time and
 
   assert.equal(result.response.status, 200);
   assert.equal(result.body.data.outcome, "MISSING_INFO");
-  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
-  assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedServiceName, "Full Set");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, undefined);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedServiceName, undefined);
   assert.equal(result.body.data.lexResponse.sessionAttributes.requestedDate, today);
   assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "15:00");
   assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, undefined);
   assert.equal(result.body.data.lexResponse.sessionAttributes.staffId, undefined);
   assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitSlot");
-  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "staffPreference");
-  assert.notEqual(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
-  assert.doesNotMatch(result.body.data.lexResponse.message, /Please tell me what you need|which service/i);
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
+  assert.doesNotMatch(result.body.data.lexResponse.message, /just to confirm/i);
   assert.equal(state.appointments.length, 0);
 });
 
-test("observed sunset ASR with bare with preserves service date time and asks only for staff", async () => {
+test("observed sunset ASR with bare with asks service and preserves date time", async () => {
   const today = DateTime.now().setZone("America/New_York").toFormat("yyyy-MM-dd");
   const result = await postInternalAppointment(
     bookingPayload({
@@ -2527,14 +2580,14 @@ test("observed sunset ASR with bare with preserves service date time and asks on
 
   assert.equal(result.response.status, 200);
   assert.equal(result.body.data.outcome, "MISSING_INFO");
-  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
-  assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedServiceName, "Full Set");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, undefined);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedServiceName, undefined);
   assert.equal(result.body.data.lexResponse.sessionAttributes.requestedDate, today);
   assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "15:00");
   assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, undefined);
   assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitSlot");
-  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "staffPreference");
-  assert.doesNotMatch(result.body.data.lexResponse.message, /Please tell me what you need|which service/i);
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
+  assert.doesNotMatch(result.body.data.lexResponse.message, /just to confirm/i);
   assert.equal(state.appointments.length, 0);
 });
 
@@ -2700,7 +2753,7 @@ test("unrelated sunset sentence does not resolve a nail service", async () => {
   assert.notEqual(result.body.data.lexResponse.dialogAction?.slotToElicit, "bookingConfirmation");
 });
 
-test("active exact Sunset service wins over observed Full Set correction", async () => {
+test("sunset transcript does not resolve Full Set or an exact Sunset service", async () => {
   const today = DateTime.now().setZone("America/New_York").toFormat("yyyy-MM-dd");
   state.services.push({
     id: "20000000-0000-4000-8000-000000000099",
@@ -2730,13 +2783,15 @@ test("active exact Sunset service wins over observed Full Set correction", async
   );
 
   assert.equal(result.response.status, 200);
-  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Sunset");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, undefined);
   assert.notEqual(result.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
   assert.equal(result.body.data.lexResponse.sessionAttributes.requestedDate, today);
   assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "15:00");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitSlot");
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
 });
 
-test("repeated observed sunset transcript keeps one canonical log and no generic loop", async () => {
+test("repeated observed sunset transcript asks service and avoids generic loop", async () => {
   const contactId = "connect-repeated-sunset-observed";
   const today = DateTime.now().setZone("America/New_York").toFormat("yyyy-MM-dd");
   const base = bookingPayload({
@@ -2771,13 +2826,13 @@ test("repeated observed sunset transcript keeps one canonical log and no generic
 
   assert.equal(first.response.status, 200);
   assert.equal(second.response.status, 200);
-  assert.equal(first.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
-  assert.equal(second.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
+  assert.equal(first.body.data.lexResponse.sessionAttributes.serviceName, undefined);
+  assert.equal(second.body.data.lexResponse.sessionAttributes.serviceName, undefined);
   assert.equal(second.body.data.lexResponse.sessionAttributes.requestedDate, today);
   assert.equal(second.body.data.lexResponse.sessionAttributes.requestedTime, "15:00");
   assert.equal(second.body.data.lexResponse.sessionAttributes.staffPreference, undefined);
   assert.equal(second.body.data.lexResponse.dialogAction.type, "ElicitSlot");
-  assert.equal(second.body.data.lexResponse.dialogAction.slotToElicit, "staffPreference");
+  assert.equal(second.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
   assert.doesNotMatch(second.body.data.lexResponse.message, /Please tell me what you need/i);
   assert.equal(state.appointments.length, 0);
   assert.equal(state.callSessions.length, 1);
@@ -2785,7 +2840,7 @@ test("repeated observed sunset transcript keeps one canonical log and no generic
   assert.equal(state.aiInteractionLogs.length, 1);
 });
 
-test("invalid placeholder services are cleared and active service menu excludes inactive Gel", async () => {
+test("invalid placeholder services are cleared and preferred service menu is stable", async () => {
   const result = await postInternalAppointment(
     bookingPayload({
       serviceName: "test service",
@@ -2812,13 +2867,15 @@ test("invalid placeholder services are cleared and active service menu excludes 
   assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, undefined);
   assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedServiceName, undefined);
   assert.doesNotMatch(result.body.data.lexResponse.message, /I have your service/i);
-  assert.doesNotMatch(result.body.data.lexResponse.sessionAttributes.activeDtmfOptionsJson, /Gel Manicure/);
-  assert.doesNotMatch(result.body.data.lexResponse.sessionAttributes.activeServiceNames, /Gel Manicure/);
+  assert.match(result.body.data.lexResponse.sessionAttributes.activeDtmfOptionsJson, /"3":"Gel Manicure"/);
+  assert.match(result.body.data.lexResponse.sessionAttributes.activeDtmfOptionsJson, /"4":"Full Set"/);
+  assert.match(result.body.data.lexResponse.sessionAttributes.activeDtmfOptionsJson, /"5":"Dip Powder"/);
+  assert.match(result.body.data.lexResponse.sessionAttributes.activeServiceNames, /Gel Manicure/);
   assert.equal(state.bookingAttempts.at(-1)?.requestedService, undefined);
 });
 
 test("unsupported service requests activate service DTMF and never become staff", async () => {
-  for (const phrase of ["I want gel", "I want gel nails", "I want haircut", "I want a facial"]) {
+  for (const phrase of ["I want haircut", "I want a facial"]) {
     resetMockState();
     const result = await postInternalAppointment(
       bookingPayload({
@@ -2846,8 +2903,9 @@ test("unsupported service requests activate service DTMF and never become staff"
     assert.equal(result.body.data.lexResponse.sessionAttributes.staffId, undefined, phrase);
     assert.equal(state.bookingAttempts.at(-1)?.requestedStaff, undefined, phrase);
     assert.equal(state.bookingAttempts.at(-1)?.normalizedRequest.serviceClarificationReason, "unsupported_service", phrase);
-    assert.doesNotMatch(result.body.data.lexResponse.sessionAttributes.activeServiceNames, /Gel Manicure/, phrase);
-    assert.doesNotMatch(result.body.data.lexResponse.sessionAttributes.activeDtmfOptionsJson, /Gel Manicure/, phrase);
+    assert.match(result.body.data.lexResponse.sessionAttributes.activeServiceNames, /Gel Manicure/, phrase);
+    assert.match(result.body.data.lexResponse.sessionAttributes.activeDtmfOptionsJson, /"3":"Gel Manicure"/, phrase);
+    assert.match(result.body.data.lexResponse.sessionAttributes.activeDtmfOptionsJson, /"4":"Full Set"/, phrase);
     assert.match(result.body.data.lexResponse.message, /available services|Press 1/i, phrase);
     assert.equal(state.appointments.length, 0, phrase);
   }
@@ -2942,8 +3000,11 @@ test("first unresolved service attempt provides stable numbered menu and DTMF 1 
   assert.equal(first.body.data.outcome, "MISSING_INFO");
   assert.equal(first.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
   assert.equal(firstAttrs.activeDtmfMenu, "service");
-  assert.match(first.body.data.lexResponse.message, /Press 1 for Pedicure.*Press 2 for Manicure.*Press 3 for Full Set.*Press 4 for Dip Powder/i);
+  assert.match(first.body.data.lexResponse.message, /Press 1 for Pedicure.*Press 2 for Manicure.*Press 3 for Gel Manicure.*Press 4 for Full Set.*Press 5 for Dip Powder/i);
   assert.equal(JSON.parse(firstAttrs.activeDtmfOptionsJson)["1"], "Pedicure");
+  assert.equal(JSON.parse(firstAttrs.activeDtmfOptionsJson)["3"], "Gel Manicure");
+  assert.equal(JSON.parse(firstAttrs.activeDtmfOptionsJson)["4"], "Full Set");
+  assert.equal(JSON.parse(firstAttrs.activeDtmfOptionsJson)["5"], "Dip Powder");
   assert.equal(JSON.parse(firstAttrs.serviceDtmfServiceIds)["1"], ids.pedicure);
   assert.equal(firstAttrs.serviceRecognitionFailureCount, "1");
 
@@ -3053,7 +3114,7 @@ test("mini q in service context resolves to Manicure and preserves trusted slots
   assert.equal(state.appointments.length, 0);
 });
 
-test("generic gel asks before selecting the one active gel-related alternative", async () => {
+test("generic gel resolves the preferred Gel Manicure service", async () => {
   state.services.push({
     id: "20000000-0000-4000-8000-000000000006",
     salonId: ids.salonA,
@@ -3082,10 +3143,11 @@ test("generic gel asks before selecting the one active gel-related alternative",
   );
 
   assert.equal(result.body.data.outcome, "MISSING_INFO");
-  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
-  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, undefined);
-  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceSuggestionName, "Builder Gel Fill Update");
-  assert.match(result.body.data.lexResponse.message, /Did you mean Builder Gel Fill Update/i);
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "requestedDate");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Gel Manicure");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedServiceName, "Gel Manicure");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceSuggestionName, undefined);
+  assert.doesNotMatch(result.body.data.lexResponse.message, /Did you mean Builder Gel Fill Update/i);
   assert.equal(state.appointments.length, 0);
 });
 
@@ -3431,8 +3493,9 @@ test("unclear service asks the canonical service list without escalation", async
   assert.equal(result.body.data.lexResponse.sessionAttributes.forceHumanEscalation, undefined);
   assert.match(result.body.data.lexResponse.message, /1 for Pedicure/i);
   assert.match(result.body.data.lexResponse.message, /2 for Manicure/i);
-  assert.match(result.body.data.lexResponse.message, /4 for Dip Powder/i);
-  assert.doesNotMatch(result.body.data.lexResponse.message, /Gel Manicure/i);
+  assert.match(result.body.data.lexResponse.message, /3 for Gel Manicure/i);
+  assert.match(result.body.data.lexResponse.message, /4 for Full Set/i);
+  assert.match(result.body.data.lexResponse.message, /5 for Dip Powder/i);
   assert.match(result.body.data.lexResponse.message, /0 for a person/i);
   assert.equal(result.body.data.lexResponse.sessionAttributes.activeDtmfMenu, "service");
   assert.equal(state.escalations.length, 0);
@@ -3515,7 +3578,14 @@ test("service DTMF 4 maps to Full Set", async () => {
       attributes: {
         lastAskedSlot: "serviceName",
         activeDtmfMenu: "service",
-        activeDtmfOptionsJson: JSON.stringify({ "4": "Full Set", "0": "__operator__" }),
+        activeDtmfOptionsJson: JSON.stringify({
+          "1": "Pedicure",
+          "2": "Manicure",
+          "3": "Gel Manicure",
+          "4": "Full Set",
+          "5": "Dip Powder",
+          "0": "__operator__"
+        }),
         serviceName: "unclear",
         requestedDate: "2026-05-28",
         requestedTime: "3 PM",
@@ -3686,7 +3756,13 @@ test("active service DTMF menu maps 4 to Full Set before stale lastAskedSlot", a
       attributes: {
         lastAskedSlot: "requestedDate",
         activeDtmfMenu: "service",
-        activeDtmfOptionsJson: JSON.stringify({ "4": "Full Set" }),
+        activeDtmfOptionsJson: JSON.stringify({
+          "1": "Pedicure",
+          "2": "Manicure",
+          "3": "Gel Manicure",
+          "4": "Full Set",
+          "5": "Dip Powder"
+        }),
         customerName: "Kiet Nguyen",
         customerPhone: "+17325956266"
       }
@@ -4033,7 +4109,7 @@ test("repeat service while asking customer name keeps context in AI log response
   assert.equal(result.body.data.outcome, "MISSING_INFO");
   assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "customerName");
   assert.match(result.body.data.lexResponse.message, /I already have Full Set for/i);
-  assert.match(result.body.data.lexResponse.message, /May I have your name/i);
+  assert.match(result.body.data.lexResponse.message, /What name should I put on the appointment/i);
   assert.doesNotMatch(result.body.data.lexResponse.message, /could you spell the name/i);
   assert.equal(state.aiInteractionLogs[0].responsePayload.turnHistory[0].lastAskedSlotAfter, "customerName");
   assert.match(
@@ -4088,7 +4164,14 @@ test("after service DTMF 4, name and date turns keep Full Set", async () => {
       attributes: {
         lastAskedSlot: "serviceName",
         activeDtmfMenu: "service",
-        activeDtmfOptionsJson: JSON.stringify({ "4": "Full Set", "0": "__operator__" }),
+        activeDtmfOptionsJson: JSON.stringify({
+          "1": "Pedicure",
+          "2": "Manicure",
+          "3": "Gel Manicure",
+          "4": "Full Set",
+          "5": "Dip Powder",
+          "0": "__operator__"
+        }),
         customerPhone: "+18483487681"
       }
     })
@@ -4159,6 +4242,7 @@ test("staff DTMF applies only to staffPreference and reaches confirmation", asyn
       transcript: "1",
       attributes: {
         lastAskedSlot: "staffPreference",
+        activeDtmfMenu: "staff",
         serviceName: "Pedicure",
         requestedDate: "2026-05-28",
         requestedTime: "5 PM",
@@ -4190,6 +4274,7 @@ test("staff DTMF 3 maps to Kelly and does not ask staff again", async () => {
       transcript: "3",
       attributes: {
         lastAskedSlot: "staffPreference",
+        activeDtmfMenu: "staff",
         serviceName: "Pedicure",
         requestedDate: "2026-05-28",
         requestedTime: "2 PM",
@@ -4217,6 +4302,7 @@ test("staff DTMF 4 maps to any staff and resolves before confirmation", async ()
       transcript: "4",
       attributes: {
         lastAskedSlot: "staffPreference",
+        activeDtmfMenu: "staff",
         serviceName: "Pedicure",
         requestedDate: "2026-05-28",
         requestedTime: "2 PM",
@@ -4244,6 +4330,7 @@ test("staff DTMF uses session staffId mapping instead of name-only matching", as
       transcript: "2",
       attributes: {
         lastAskedSlot: "staffPreference",
+        activeDtmfMenu: "staff",
         staffDtmfOptions: JSON.stringify({
           "1": "Trang",
           "2": "Amy",
@@ -4412,6 +4499,7 @@ test("invalid staff DTMF repeats staff options without booking", async () => {
       transcript: "9",
       attributes: {
         lastAskedSlot: "staffPreference",
+        activeDtmfMenu: "staff",
         serviceName: "Pedicure",
         requestedDate: "2026-05-28",
         requestedTime: "2 PM",
@@ -5852,6 +5940,65 @@ test("staff change before final confirmation requires a fresh confirmation befor
   assert.equal(confirmResult.body.data.outcome, "BOOKED");
   assert.equal(state.appointments.length, 1);
   assert.equal(state.appointments[0].staffId, ids.amy);
+});
+
+test("final confirmation no with Trang or Jang instead updates staff and reconfirms", async () => {
+  const today = DateTime.now().setZone("America/New_York").toFormat("yyyy-MM-dd");
+
+  for (const phrase of ["No, with Trang instead.", "No, with Jang instead."]) {
+    resetMockState();
+    const result = await postInternalAppointment(
+      bookingPayload({
+        customerName: "Lee",
+        customerPhone: "+84798171999",
+        serviceName: "Full Set",
+        requestedDate: today,
+        requestedTime: "3 PM",
+        staffPreference: "Amy",
+        staffId: ids.amy,
+        confirmationState: "None",
+        amazonConnectContactId: `connect-final-trang-instead-${phrase.replace(/\W+/g, "-")}`,
+        currentTurnTranscript: phrase,
+        transcript: phrase,
+        attributes: {
+          lastAskedSlot: "bookingConfirmation",
+          awaitingFinalBookingConfirmation: "true",
+          bookingConfirmationAsked: "true",
+          serviceName: "Full Set",
+          confirmedServiceName: "Full Set",
+          requestedDate: today,
+          requestedTime: "3 PM",
+          staffPreference: "Amy",
+          staffId: ids.amy,
+          selectedStaffId: ids.amy,
+          confirmedStaffId: ids.amy,
+          confirmedStaffName: "Amy",
+          customerName: "Lee",
+          customerPhone: "+84798171999"
+        }
+      })
+    );
+
+    const attrs = result.body.data.lexResponse.sessionAttributes;
+    assert.equal(result.response.status, 200, phrase);
+    assert.equal(result.body.data.outcome, "MISSING_INFO", phrase);
+    assertBookingConfirmationDialog(result.body.data.lexResponse.dialogAction, phrase);
+    assert.equal(attrs.serviceName, "Full Set", phrase);
+    assert.equal(attrs.requestedDate, today, phrase);
+    assert.equal(attrs.requestedTime, "3 PM", phrase);
+    assert.equal(attrs.customerName, "Lee", phrase);
+    assert.equal(attrs.staffPreference, "Trang", phrase);
+    assert.equal(attrs.staffId, ids.trang, phrase);
+    assert.equal(attrs.selectedStaffId, ids.trang, phrase);
+    assert.equal(attrs.confirmedStaffId, ids.trang, phrase);
+    assert.equal(attrs.confirmedStaffName, "Trang", phrase);
+    assert.match(
+      result.body.data.lexResponse.message,
+      /Got it, with Trang instead\. Lee, just to confirm: Full Set today at 3 PM with Trang\..*Is that correct\?/i,
+      phrase
+    );
+    assert.equal(state.appointments.length, 0, phrase);
+  }
 });
 
 test("active booking staff change to Kevin wins over previous Trang without name pollution", async () => {

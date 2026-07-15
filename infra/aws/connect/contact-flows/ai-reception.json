@@ -261,9 +261,9 @@
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference": "1600",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:customerName": "2000",
           "connectRecoveryStage": "initial",
-          "connectFlowSourceVersion": "2026-07-14-thuyet-service-staff-exclusion-disconnect"
+          "connectFlowSourceVersion": "2026-07-15-thuyet-voice-recognition-fullset-staff"
         },
-        "Text": "Hi, thanks for calling Kiet Nails. What would you like to book? You can say everything in one sentence, or press 0 for a person."
+        "Text": "Hi, I can help book your appointment. Tell me the service, day, time, and staff. You can press 0 for a person."
       },
       "Identifier": "3b2877ca-bc16-4019-a8e6-04200c0ded06",
       "Type": "ConnectParticipantWithLexBot",
@@ -401,7 +401,7 @@
           "connectContinuationPrompt": "$.Lex.SessionAttributes.connectContinuationPrompt",
           "outerRecoveryAttempt": "true",
           "connectRecoveryStage": "retry_after_initial_error",
-          "connectFlowSourceVersion": "2026-07-14-thuyet-service-staff-exclusion-disconnect"
+          "connectFlowSourceVersion": "2026-07-15-thuyet-voice-recognition-fullset-staff"
         },
         "Text": "$.Lex.SessionAttributes.connectContinuationPrompt"
       },
@@ -539,7 +539,7 @@
           "connectContinuationPrompt": "$.Lex.SessionAttributes.connectContinuationPrompt",
           "outerRecoveryAttempt": "final",
           "connectRecoveryStage": "final_dtmf_opportunity",
-          "connectFlowSourceVersion": "2026-07-14-thuyet-service-staff-exclusion-disconnect"
+          "connectFlowSourceVersion": "2026-07-15-thuyet-voice-recognition-fullset-staff"
         },
         "Text": "Press 0 for a person, or tell me your appointment again."
       },
@@ -642,7 +642,7 @@
           "initialContactId": "$.InitialContactId",
           "connectRecoveryStage": "initial",
           "connectLastErrorBranch": "none",
-          "connectFlowSourceVersion": "2026-07-14-thuyet-service-staff-exclusion-disconnect"
+          "connectFlowSourceVersion": "2026-07-15-thuyet-voice-recognition-fullset-staff"
         },
         "TargetContact": "Current"
       },
@@ -750,7 +750,7 @@
         "Attributes": {
           "connectRecoveryStage": "initial_lex_error",
           "connectLastErrorBranch": "$.ErrorCode",
-          "connectFlowSourceVersion": "2026-07-14-thuyet-service-staff-exclusion-disconnect",
+          "connectFlowSourceVersion": "2026-07-15-thuyet-voice-recognition-fullset-staff",
           "conversationComplete": "false"
         },
         "TargetContact": "Current"
@@ -789,7 +789,7 @@
         "Attributes": {
           "connectRecoveryStage": "retry_lex_error",
           "connectLastErrorBranch": "$.ErrorCode",
-          "connectFlowSourceVersion": "2026-07-14-thuyet-service-staff-exclusion-disconnect",
+          "connectFlowSourceVersion": "2026-07-15-thuyet-voice-recognition-fullset-staff",
           "conversationComplete": "false"
         },
         "TargetContact": "Current"

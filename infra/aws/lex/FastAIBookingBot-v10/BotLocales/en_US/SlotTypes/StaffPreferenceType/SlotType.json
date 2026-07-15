@@ -1,6 +1,6 @@
 {
   "name": "StaffPreferenceType",
-  "identifier": "STAFFPREF",
+  "identifier": "DFQYFYRZNC",
   "description": "Compact staff preference slot used with salon-scoped runtime hints.",
   "slotTypeValues": [
     {
@@ -9,10 +9,40 @@
           "value": "any staff"
         },
         {
+          "value": "any staff is fine"
+        },
+        {
+          "value": "any staff is ok"
+        },
+        {
+          "value": "any staff is okay"
+        },
+        {
           "value": "anyone"
         },
         {
+          "value": "anyone is fine"
+        },
+        {
+          "value": "anyone available"
+        },
+        {
           "value": "first available"
+        },
+        {
+          "value": "any available"
+        },
+        {
+          "value": "no preference"
+        },
+        {
+          "value": "doesn't matter"
+        },
+        {
+          "value": "any stop"
+        },
+        {
+          "value": "any stuff"
         },
         {
           "value": "available staff"
@@ -29,6 +59,70 @@
       ],
       "sampleValue": {
         "value": "Any staff"
+      }
+    },
+    {
+      "synonyms": [
+        {
+          "value": "trang"
+        },
+        {
+          "value": "chang"
+        },
+        {
+          "value": "jang"
+        },
+        {
+          "value": "jan"
+        },
+        {
+          "value": "jen"
+        }
+      ],
+      "sampleValue": {
+        "value": "Trang"
+      }
+    },
+    {
+      "synonyms": [
+        {
+          "value": "amy"
+        },
+        {
+          "value": "emmy"
+        },
+        {
+          "value": "aimee"
+        }
+      ],
+      "sampleValue": {
+        "value": "Amy"
+      }
+    },
+    {
+      "synonyms": [
+        {
+          "value": "kelly"
+        },
+        {
+          "value": "keli"
+        }
+      ],
+      "sampleValue": {
+        "value": "Kelly"
+      }
+    },
+    {
+      "synonyms": [
+        {
+          "value": "kevin"
+        },
+        {
+          "value": "kenvin"
+        }
+      ],
+      "sampleValue": {
+        "value": "Kevin"
       }
     }
   ],

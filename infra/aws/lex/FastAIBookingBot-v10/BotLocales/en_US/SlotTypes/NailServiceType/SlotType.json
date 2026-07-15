@@ -131,13 +131,44 @@
     {
       "synonyms": [
         {
+          "value": "gel manicure"
+        },
+        {
+          "value": "gel mani"
+        },
+        {
+          "value": "gel mani cure"
+        },
+        {
+          "value": "gel many cure"
+        },
+        {
+          "value": "gel manny cure"
+        },
+        {
+          "value": "jell manicure"
+        },
+        {
+          "value": "jail manicure"
+        },
+        {
+          "value": "gel nail"
+        },
+        {
+          "value": "gel nails"
+        },
+        {
+          "value": "gel hand service"
+        }
+      ],
+      "sampleValue": {
+        "value": "Gel Manicure"
+      }
+    },
+    {
+      "synonyms": [
+        {
           "value": "full set"
-        },
-        {
-          "value": "sunset"
-        },
-        {
-          "value": "sun set"
         },
         {
           "value": "fullset"
@@ -177,6 +208,9 @@
         },
         {
           "value": "phone set"
+        },
+        {
+          "value": "phone chat"
         },
         {
           "value": "room set"
@@ -227,10 +261,19 @@
           "value": "full sad"
         },
         {
+          "value": "full cet"
+        },
+        {
           "value": "full send"
         },
         {
           "value": "fo set"
+        },
+        {
+          "value": "so we'll set"
+        },
+        {
+          "value": "we'll set"
         },
         {
           "value": "fuel set"

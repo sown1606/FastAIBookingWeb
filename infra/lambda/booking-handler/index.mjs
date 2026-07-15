@@ -146,10 +146,16 @@ const PEDICURE_ALIASES = [
 const DEMO_SERVICE_NAMES = [
   "Manicure",
   "Pedicure",
+  "Gel Manicure",
   "Full Set",
   "Dip Powder"
 ];
 const SERVICE_DTMF_OPTIONS = {
+  "1": "Pedicure",
+  "2": "Manicure",
+  "3": "Gel Manicure",
+  "4": "Full Set",
+  "5": "Dip Powder",
   "0": "__operator__"
 };
 const STAFF_DTMF_OPTIONS = {
@@ -205,9 +211,10 @@ const CUSTOMER_NAME_NOISE = new Set([
   "timed out"
 ]);
 const STAFF_ALIAS_GROUPS = {
-  Trang: ["trang", "chang", "train", "trangg", "dang"],
-  Amy: ["amy", "amie", "emmy", "emmie", "a me"],
-  Kelly: ["kelly", "kelley", "keli", "ke li"]
+  Trang: ["trang", "chang", "jang", "jan", "jen", "train", "trangg", "dang"],
+  Amy: ["amy", "amie", "aimee", "emmy", "emmie", "a me"],
+  Kelly: ["kelly", "kelley", "keli", "ke li"],
+  Kevin: ["kevin", "kenvin"]
 };
 const TRANG_ASR_CONFUSION_ALIASES = new Set(["frank", "jen", "hang"]);
 const ANY_STAFF_ALIASES = [
@@ -216,14 +223,22 @@ const ANY_STAFF_ALIASES = [
   "anybody",
   "any body",
   "any available staff",
+  "any available",
   "any staff",
+  "any staff is fine",
+  "any staff is ok",
+  "any staff is okay",
   "any technician",
   "any tech",
   "no preference",
+  "doesn't matter",
+  "doesnt matter",
   "no staff preference",
   "no specific staff",
   "whoever is available",
   "who is available",
+  "anyone is fine",
+  "anyone available",
   "first available",
   "the first available",
   "for available",
@@ -257,7 +272,7 @@ const ANY_STAFF_TRAILING_FILLER_PATTERN =
 const OPERATOR_TRANSFER_PROMPT = "Let me check for an available operator.";
 const OPERATOR_BUSY_PROMPT = "All of our operators are currently busy. Please call back later. Goodbye.";
 const SERVICE_DTMF_PROMPT =
-  "Hi, thanks for calling Kiet Nails. What would you like to book? You can say everything in one sentence, or press 0 for a person.";
+  "Hi, I can help book your appointment. Tell me the service, day, time, and staff. You can press 0 for a person.";
 const SERVICE_KEYPAD_PROMPT =
   "Sure. Which service would you like?";
 const SERVICE_DTMF_SHORT_PROMPT =
@@ -321,6 +336,7 @@ const SERVICE_ALIAS_GROUPS = {
     "fall set",
     "four set",
     "phone set",
+    "phone chat",
     "room set",
     "pull set",
     "pull step",
@@ -339,8 +355,11 @@ const SERVICE_ALIAS_GROUPS = {
     "full sat",
     "full sell",
     "full sad",
+    "full cet",
     "full send",
     "fo set",
+    "so we'll set",
+    "we'll set",
     "fuel set",
     "fake nails",
     "extension nails",
@@ -370,6 +389,31 @@ const SERVICE_ALIAS_GROUPS = {
 };
 
 const SERVICE_ALIASES = Object.values(SERVICE_ALIAS_GROUPS).flat();
+const DEDICATED_FULL_SET_ALIASES = [
+  "full set",
+  "fullset",
+  "full-set",
+  "phone set",
+  "phone chat",
+  "pool set",
+  "food set",
+  "fo set",
+  "full said",
+  "full sit",
+  "full sat",
+  "full sell",
+  "full sad",
+  "full cet",
+  "so we'll set",
+  "we'll set",
+  "pull set",
+  "fool set"
+];
+const LOW_CONFIDENCE_FULL_SET_ALIASES = new Set(
+  DEDICATED_FULL_SET_ALIASES
+    .filter((alias) => !["full set", "fullset", "full-set"].includes(alias))
+    .map(compactForMatch)
+);
 
 const WEEKDAY_INDEXES = {
   sunday: 0,
@@ -587,11 +631,77 @@ function normalizeServiceName(value) {
   return value;
 }
 
+function findDedicatedFullSetAlias(text) {
+  const normalized = normalizeForMatch(text);
+  const compact = compactForMatch(text);
+  if (!normalized || !compact) {
+    return "";
+  }
+  return DEDICATED_FULL_SET_ALIASES.find((alias) => {
+    const aliasNormalized = normalizeForMatch(alias);
+    const aliasCompact = compactForMatch(alias);
+    if (!aliasNormalized || !aliasCompact) {
+      return false;
+    }
+    if (aliasNormalized.includes(" ")) {
+      return normalized.includes(aliasNormalized) || compact.includes(aliasCompact);
+    }
+    return new RegExp(`\\b${escapeRegExp(aliasNormalized)}\\b`).test(normalized);
+  }) || "";
+}
+
+function hasUnsafeSunsetWithoutExplicitFullSetAlias(text) {
+  const normalized = normalizeForMatch(text);
+  return Boolean(
+    normalized &&
+      /\bsun\s*set\b/.test(normalized) &&
+      !findDedicatedFullSetAlias(text)
+  );
+}
+
+function hasFullSetBookingContext(text, sessionAttributes = {}) {
+  const normalized = normalizeForMatch(text);
+  if (!normalized) {
+    return false;
+  }
+  return Boolean(
+    sessionAttributes?.lastAskedSlot === "serviceName" ||
+      sessionAttributes?.activeDtmfMenu === "service" ||
+      isBookingLikeUtterance(text) ||
+      hasCurrentTurnDatePhrase(text) ||
+      hasCurrentTurnTimePhrase(text, sessionAttributes) ||
+      /\bwith\s+[a-z][a-z'-]*\b/.test(normalized) ||
+      /\bat\s+(?:\d{1,2}|one|two|three|tree|tri|four|five|fife|six|seven|eight|nine|ten|eleven|twelve)\b/.test(normalized)
+  );
+}
+
+function recognizeFullSetFromTranscript(text, sessionAttributes = {}) {
+  if (hasUnsafeSunsetWithoutExplicitFullSetAlias(text)) {
+    return "";
+  }
+  const alias = findDedicatedFullSetAlias(text);
+  if (!alias) {
+    return "";
+  }
+  const aliasCompact = compactForMatch(alias);
+  if (!LOW_CONFIDENCE_FULL_SET_ALIASES.has(aliasCompact)) {
+    return "Full Set";
+  }
+  return hasFullSetBookingContext(text, sessionAttributes) ? "Full Set" : "";
+}
+
 function normalizePedicureService(value) {
   return normalizeServiceName(value);
 }
 
-function extractServiceFromTranscript(text) {
+function extractServiceFromTranscript(text, sessionAttributes = {}) {
+  const fullSet = recognizeFullSetFromTranscript(text, sessionAttributes);
+  if (fullSet) {
+    return fullSet;
+  }
+  if (hasUnsafeSunsetWithoutExplicitFullSetAlias(text)) {
+    return "";
+  }
   const serviceName = normalizeServiceName(text);
   return DEMO_SERVICE_NAMES.includes(serviceName) ? serviceName : "";
 }
@@ -669,7 +779,6 @@ function getScopedServiceAliasCorrectionRaw(event) {
   if (!isServiceCollectionContext(event)) {
     return "";
   }
-  const previous = event.sessionState?.sessionAttributes || {};
   const slots = event.sessionState?.intent?.slots || {};
   const candidates = [
     getCurrentTurnTranscript(event),
@@ -678,19 +787,19 @@ function getScopedServiceAliasCorrectionRaw(event) {
   if (candidates.some(isPrincessFullSetAsr)) {
     return "princess";
   }
-  const sunsetCandidate = candidates.find(isObservedSunsetFullSetAsr);
-  if (
-    sunsetCandidate &&
-    hasStrongObservedSunsetServiceContext(event, candidates.filter(Boolean).join(" ")) &&
-    !hasExactConfiguredServiceName("Sunset", previous)
-  ) {
-    return getObservedSunsetFullSetAsrRaw(sunsetCandidate);
-  }
   return "";
 }
 
 function currentTurnServiceMention(event) {
+  const previous = event.sessionState?.sessionAttributes || {};
   const transcript = getCurrentTurnTranscript(event);
+  if (hasUnsafeSunsetWithoutExplicitFullSetAlias(transcript)) {
+    return "";
+  }
+  const fullSet = recognizeFullSetFromTranscript(transcript, previous);
+  if (fullSet) {
+    return fullSet;
+  }
   if (isServiceCollectionContext(event)) {
     if (isFunFactsFullSetAsr(transcript)) {
       return "Full Set";
@@ -702,7 +811,7 @@ function currentTurnServiceMention(event) {
       return "Pedicure";
     }
   }
-  const transcriptService = extractServiceFromTranscript(transcript);
+  const transcriptService = extractServiceFromTranscript(transcript, previous);
   if (transcriptService) {
     return transcriptService;
   }
@@ -838,9 +947,10 @@ function isScopedDangAliasAllowed(normalizedText, sessionAttributes = {}) {
 
 function shouldSkipStaffAlias(staffName, alias, normalizedText, sessionAttributes = {}) {
   return (
-    normalizeForMatch(staffName) === "trang" &&
-    normalizeForMatch(alias) === "dang" &&
-    !isScopedDangAliasAllowed(normalizedText, sessionAttributes)
+    (normalizeForMatch(staffName) === "trang" &&
+      normalizeForMatch(alias) === "dang" &&
+      !isScopedDangAliasAllowed(normalizedText, sessionAttributes)) ||
+    staffAliasCollidesWithDynamicStaff(staffName, alias, sessionAttributes)
   );
 }
 
@@ -860,6 +970,25 @@ function hasDynamicStaffExactCollision(token, sessionAttributes = {}) {
     const fullName = normalizeForMatch(staffName);
     const firstName = normalizeForMatch(String(staffName).split(/\s+/)[0]);
     return token === fullName || token === firstName;
+  });
+}
+
+function staffAliasCollidesWithDynamicStaff(staffName, alias, sessionAttributes = {}) {
+  const normalizedAlias = normalizeForMatch(alias);
+  const normalizedStaffName = normalizeForMatch(staffName);
+  if (!normalizedAlias || !normalizedStaffName) {
+    return false;
+  }
+  return Object.values(getStaffDtmfOptions(sessionAttributes)).some((dynamicStaffName) => {
+    if (normalizeForMatch(dynamicStaffName) === "any staff") {
+      return false;
+    }
+    const dynamicFullName = normalizeForMatch(dynamicStaffName);
+    const dynamicFirstName = normalizeForMatch(String(dynamicStaffName).split(/\s+/)[0]);
+    if (normalizedStaffName === dynamicFullName || normalizedStaffName === dynamicFirstName) {
+      return false;
+    }
+    return normalizedAlias === dynamicFullName || normalizedAlias === dynamicFirstName;
   });
 }
 
@@ -1933,6 +2062,10 @@ function getCurrentTurnBookingDetails(event) {
 function currentTurnRecognizedService(event) {
   const previous = event.sessionState?.sessionAttributes || {};
   const slots = event.sessionState?.intent?.slots || {};
+  const transcript = getCurrentTurnTranscript(event);
+  if (hasUnsafeSunsetWithoutExplicitFullSetAlias(transcript)) {
+    return "";
+  }
   const transcriptService = currentTurnServiceMention(event) || getCurrentTurnBookingDetails(event).serviceName;
   const exactSlotService =
     getExactConfiguredServiceName(getSlotValue(slots, slotNames.serviceName), previous) ||
@@ -1988,6 +2121,7 @@ function analyzeLexTurnSanitization(event) {
   const currentTurnHasExplicitStaffPhrase = customerNameTurnOwnsTranscript || finalConfirmationOnlyPhrase
     ? false
     : hasExplicitStaffPhrase(currentTurnTranscript, previous);
+  const unsafeSunsetServiceSlot = hasUnsafeSunsetWithoutExplicitFullSetAlias(currentTurnTranscript);
   const previousStaffPreferenceForAnalysis =
     getSessionAttribute(previous, slotNames.staffPreference) || previous.confirmedStaffName;
   const authoritativePreviousStaffPreference = getAuthoritativePreviousStaffPreference(
@@ -2054,6 +2188,15 @@ function analyzeLexTurnSanitization(event) {
       ignoredPollutedSlots.push("sessionAttributes.confirmedServiceName");
     }
     changed = true;
+  }
+
+  if (unsafeSunsetServiceSlot) {
+    const { name: serviceSlotName, slot: serviceSlot } = getSlotObject(slots, slotNames.serviceName);
+    if (serviceSlot && sanitizedSlots[serviceSlotName] !== undefined) {
+      delete sanitizedSlots[serviceSlotName];
+      ignoredUngroundedSlots.push("serviceName_unsafe_sunset");
+      changed = true;
+    }
   }
 
   if (scopedStaffDigit && scopedStaffDigit !== "0" && dtmfRouting.accepted && dtmfRouting.route === "staff_menu") {
@@ -3141,7 +3284,7 @@ function isClearlyInvalidServiceName(value) {
 
 function extractBookingDetailsFromText(text, timeZone = DEFAULT_SALON_TIMEZONE, context = {}) {
   const raw = String(text || "");
-  const serviceName = extractServiceFromTranscript(raw);
+  const serviceName = extractServiceFromTranscript(raw, context);
   const dateMatch = getPreferredDateCandidate(raw);
   const requestedDate = dateMatch?.text ? resolveDatePhrase(dateMatch.text, timeZone) : "";
   let requestedTime = "";
@@ -3390,7 +3533,7 @@ function isBookingInProgress(event) {
 }
 
 function shouldTreatFallbackAsBooking(event, intentName) {
-  if (!isBookingFallbackIntent(intentName) || !isBookingInProgress(event)) {
+  if (!isBookingFallbackIntent(intentName)) {
     return false;
   }
   if (isFinalBookingConfirmationActive(event)) {
@@ -3399,6 +3542,17 @@ function shouldTreatFallbackAsBooking(event, intentName) {
   const transcript = getCurrentTurnTranscript(event);
   const previous = event.sessionState?.sessionAttributes || {};
   const recognizedService = currentTurnRecognizedService(event);
+  const staffAnswer = extractStaffFromTranscript(transcript, previous);
+  if (!isBookingInProgress(event)) {
+    return Boolean(
+      transcript &&
+        (recognizedService ||
+          ((hasCurrentTurnTimePhrase(transcript) ||
+            hasCurrentTurnDatePhrase(transcript) ||
+            staffAnswer) &&
+            isBookingLikeUtterance(transcript)))
+    );
+  }
   if (
     recognizedService &&
     (previous.lastAskedSlot === "serviceName" || previous.activeDtmfMenu === "service")
@@ -3411,13 +3565,14 @@ function shouldTreatFallbackAsBooking(event, intentName) {
         hasCurrentTurnDatePhrase(transcript) ||
         extractCustomerNameFromText(transcript) ||
         extractBareCustomerNameAnswer(transcript) ||
+        staffAnswer ||
         readCurrentTurnDigit(event) ||
         isBookingLikeUtterance(transcript))
   );
 }
 
 function isBookingLikeUtterance(text) {
-  return /\b(book|booking|schedule|appointment|service|nail|pedicure|manicure|today|tomorrow)\b/i.test(
+  return /\b(book|booking|schedule|appointment|service|nail|nails|pedicure|manicure|full\s*set|today|tomorrow|any\s+staff|first\s+available)\b/i.test(
     text || ""
   );
 }
@@ -3778,7 +3933,7 @@ function buildCustomerNamePrompt(event, options = {}) {
     return "Sorry, I didn't catch your name. Could you say your first name slowly?";
   }
   if (options.already && summary) {
-    return `I already have ${summary}. May I have your name, please?`;
+    return `I already have ${summary}. What name should I put on the appointment?`;
   }
   if (summary) {
     return `I have your ${summary}. May I have your name, please?`;
@@ -3801,6 +3956,9 @@ function getServiceAwareElicitPrompt(event, slotName, attemptCount) {
   const serviceName = normalizeServiceName(known.confirmedServiceName || known.serviceName);
   if (!serviceName || /^got it[, ]/i.test(prompt)) {
     return prompt;
+  }
+  if (currentTurnRepeatsKnownBookingField(event)) {
+    return `I already have ${serviceName}. ${prompt}`;
   }
   return `Got it, ${serviceName}. ${prompt}`;
 }
@@ -4153,6 +4311,20 @@ function mergeKnownSlots(event) {
 
 function getBookingSlotToElicit(event) {
   const sessionAttributes = buildKnownBookingSessionAttributes(event);
+  const currentTurnTranscript = getCurrentTurnTranscript(event);
+  const currentServiceSlot = getSlotValue(event.sessionState?.intent?.slots || {}, slotNames.serviceName, {
+    preferOriginal: true
+  });
+  const unresolvedServiceAnswer =
+    sessionAttributes.lastAskedSlot === "serviceName" &&
+    sessionAttributes.activeDtmfMenu !== "staff" &&
+    Boolean(String(currentTurnTranscript || "").trim()) &&
+    !currentTurnRecognizedService(event) &&
+    (hasUnsafeSunsetWithoutExplicitFullSetAlias(currentTurnTranscript) ||
+      Boolean(currentServiceSlot));
+  if (unresolvedServiceAnswer) {
+    return "serviceName";
+  }
   const customerName = getSessionAttribute(sessionAttributes, slotNames.customerName);
   const hasRecognizedCustomerName =
     Boolean(sessionAttributes.recognizedCustomerName) ||

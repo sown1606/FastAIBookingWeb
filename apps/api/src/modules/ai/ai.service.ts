@@ -118,7 +118,7 @@ type StaffIntentParseResult = {
 };
 
 type ServiceMenuCandidate = {
-  id: string;
+  id?: string;
   name: string;
 };
 
@@ -281,6 +281,7 @@ const SERVICE_ALIASES: Record<string, string[]> = {
     "fall set",
     "four set",
     "phone set",
+    "phone chat",
     "room set",
     "pull set",
     "pull step",
@@ -299,8 +300,11 @@ const SERVICE_ALIASES: Record<string, string[]> = {
     "full sat",
     "full sell",
     "full sad",
+    "full cet",
     "full send",
     "fo set",
+    "so we'll set",
+    "we'll set",
     "fuel set",
     "fake nails",
     "extension nails",
@@ -421,10 +425,16 @@ const ANY_STAFF_PHRASES = new Set([
   "anybody",
   "any body",
   "any available staff",
+  "any available",
   "any staff",
+  "any staff is fine",
+  "any staff is ok",
+  "any staff is okay",
   "any technician",
   "any tech",
   "no preference",
+  "doesn't matter",
+  "doesnt matter",
   "no staff preference",
   "no specific staff",
   "first available",
@@ -433,6 +443,8 @@ const ANY_STAFF_PHRASES = new Set([
   "first avaiable",
   "first available one",
   "someone available",
+  "anyone is fine",
+  "anyone available",
   "whoever is available",
   "whoever s available",
   "whoever's available",
@@ -463,6 +475,11 @@ const OPERATOR_TRANSFER_PROMPT = "Let me check for an available operator.";
 const OPERATOR_BUSY_PROMPT = "All of our operators are currently busy. Please call back later. Goodbye.";
 
 const SERVICE_DTMF_OPTIONS: Record<string, string> = {
+  "1": "Pedicure",
+  "2": "Manicure",
+  "3": "Gel Manicure",
+  "4": "Full Set",
+  "5": "Dip Powder",
   "0": "__operator__"
 };
 const STAFF_DTMF_OPTIONS: Record<string, string> = {
@@ -518,7 +535,7 @@ const CUSTOMER_NAME_NOISE = new Set([
   "timed out"
 ]);
 const SERVICE_DTMF_PROMPT =
-  "Hi, thanks for calling Kiet Nails. What would you like to book? You can say everything in one sentence, or press 0 for a person.";
+  "Hi, I can help book your appointment. Tell me the service, day, time, and staff. You can press 0 for a person.";
 const SERVICE_DTMF_OPTIONS_PROMPT =
   "I can list the services once. Please say the service name, or press 0 for a person.";
 const SERVICE_FIRST_RETRY_PROMPT = "Sure. Which service would you like?";
@@ -537,6 +554,84 @@ const normalizeForMatch = (value?: string | null): string => {
 };
 
 const compactForMatch = (value?: string | null): string => normalizeForMatch(value).replace(/\s/g, "");
+
+const DEDICATED_FULL_SET_ALIASES = [
+  "full set",
+  "fullset",
+  "full-set",
+  "phone set",
+  "phone chat",
+  "pool set",
+  "food set",
+  "fo set",
+  "full said",
+  "full sit",
+  "full sat",
+  "full sell",
+  "full sad",
+  "full cet",
+  "so we'll set",
+  "we'll set",
+  "pull set",
+  "fool set"
+];
+const LOW_CONFIDENCE_FULL_SET_ALIAS_COMPACTS = new Set(
+  DEDICATED_FULL_SET_ALIASES
+    .filter((alias) => !["full set", "fullset", "full-set"].includes(alias))
+    .map((alias) => compactForMatch(alias))
+);
+
+const findDedicatedFullSetAlias = (value?: string | null): string | undefined => {
+  const compact = compactForMatch(value);
+  if (!compact) {
+    return undefined;
+  }
+  return DEDICATED_FULL_SET_ALIASES.find((alias) => compact.includes(compactForMatch(alias)));
+};
+
+const hasUnsafeSunsetWithoutExplicitFullSetAlias = (value?: string | null): boolean => {
+  const normalized = normalizeForMatch(value);
+  return Boolean(
+    normalized &&
+      /\bsun\s*set\b/.test(normalized) &&
+      !findDedicatedFullSetAlias(value)
+  );
+};
+
+const hasFullSetBookingContext = (
+  value?: string | null,
+  context: { lastAskedSlot?: string; activeDtmfMenu?: string } = {}
+): boolean => {
+  const normalized = normalizeForMatch(value);
+  return Boolean(
+    normalized &&
+      (context.lastAskedSlot === "serviceName" ||
+        context.activeDtmfMenu === "service" ||
+        /\b(?:book|booking|schedule|appointment|service|nail|nails|today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|with|at|am|pm)\b/.test(
+          normalized
+        ) ||
+        hasGroundedDatePhrase(value) ||
+        hasGroundedTimePhrase(value))
+  );
+};
+
+const recognizeFullSetFromText = (
+  value?: string | null,
+  context: { lastAskedSlot?: string; activeDtmfMenu?: string } = {}
+): "Full Set" | undefined => {
+  if (hasUnsafeSunsetWithoutExplicitFullSetAlias(value)) {
+    return undefined;
+  }
+  const alias = findDedicatedFullSetAlias(value);
+  if (!alias) {
+    return undefined;
+  }
+  const aliasCompact = compactForMatch(alias);
+  if (!LOW_CONFIDENCE_FULL_SET_ALIAS_COMPACTS.has(aliasCompact)) {
+    return "Full Set";
+  }
+  return hasFullSetBookingContext(value, context) ? "Full Set" : undefined;
+};
 
 const INVALID_SERVICE_PLACEHOLDERS = new Set([
   "service",
@@ -994,9 +1089,10 @@ const isReusableCallerName = (value?: string | null): value is string => {
 };
 
 const STAFF_ALIAS_PHRASES: Record<string, string[]> = {
-  trang: ["trang", "chang", "train", "trangg", "dang"],
-  amy: ["amy", "amie", "emmy", "emmie", "a me"],
-  kelly: ["kelly", "kelley", "keli", "ke li"]
+  trang: ["trang", "chang", "jang", "jan", "jen", "train", "trangg", "dang"],
+  amy: ["amy", "amie", "aimee", "emmy", "emmie", "a me"],
+  kelly: ["kelly", "kelley", "keli", "ke li"],
+  kevin: ["kevin", "kenvin"]
 };
 const TRANG_ASR_CONFUSION_ALIASES = new Set(["frank", "jen", "hang"]);
 const TRANG_NEGATIVE_ASR_EXCLUSION_ALIASES = new Set([
@@ -1159,10 +1255,15 @@ const shouldSkipStaffAlias = (
   alias: string,
   normalizedText: string,
   context: StaffPhraseContext = {}
-): boolean =>
-  normalizeForMatch(staffName) === "trang" &&
-  normalizeForMatch(alias) === "dang" &&
-  !isScopedDangAliasAllowed(normalizedText, context);
+): boolean => {
+  const normalizedStaffName = normalizeForMatch(staffName);
+  const normalizedAlias = normalizeForMatch(alias);
+  return (
+    (normalizedStaffName === "trang" &&
+      normalizedAlias === "dang" &&
+      !isScopedDangAliasAllowed(normalizedText, context))
+  );
+};
 
 const extractTrangAsrConfusionToken = (value?: string | null): string | undefined => {
   const normalized = normalizeForMatch(value);
@@ -1178,6 +1279,29 @@ const hasExactActiveStaffNameCollision = (staff: StaffCandidate[], token: string
     const firstName = normalizeForMatch(member.fullName.split(/\s+/)[0]);
     return token === fullName || token === firstName;
   });
+
+const staffAliasCollidesWithExactActiveStaff = (
+  staff: StaffCandidate[],
+  staffName: string,
+  alias: string
+): boolean => {
+  if (normalizeForMatch(staffName) !== "trang") {
+    return false;
+  }
+  const normalizedAlias = normalizeForMatch(alias);
+  const normalizedStaffName = normalizeForMatch(staffName);
+  if (!normalizedAlias || !normalizedStaffName) {
+    return false;
+  }
+  return staff.some((member) => {
+    const fullName = normalizeForMatch(member.fullName);
+    const firstName = normalizeForMatch(member.fullName.split(/\s+/)[0]);
+    if (normalizedStaffName === fullName || normalizedStaffName === firstName) {
+      return false;
+    }
+    return normalizedAlias === fullName || normalizedAlias === firstName;
+  });
+};
 
 const resolveTrangAsrConfusionStaff = (
   staff: StaffCandidate[],
@@ -3183,6 +3307,13 @@ const rankServiceMatch = (
   const serviceName = normalizeForMatch(service.name);
   const requestedCompact = compactForMatch(requested);
   const serviceCompact = compactForMatch(serviceName);
+  if (hasUnsafeSunsetWithoutExplicitFullSetAlias(requestedServiceName)) {
+    return null;
+  }
+  const dedicatedFullSet = recognizeFullSetFromText(requestedServiceName);
+  if (dedicatedFullSet && serviceName === "full set") {
+    return { service, confidence: 0.98, exact: false, matchedBy: "alias" };
+  }
 
   if (requestedCompact === serviceCompact) {
     return { service, confidence: 1, exact: true, matchedBy: "exact" };
@@ -3382,10 +3513,13 @@ const applyGuardedObservedServiceAsrCorrection = async (
 ): Promise<string | undefined> => {
   const heardValues = [serviceName, currentTurnTranscript, transcriptText].filter(Boolean).join(" ");
   const normalizedHeard = normalizeForMatch(heardValues);
+  if (hasUnsafeSunsetWithoutExplicitFullSetAlias(heardValues)) {
+    return serviceName && !["full set", "sunset", "sun set"].includes(normalizeForMatch(serviceName))
+      ? serviceName
+      : undefined;
+  }
   const requestedCanonical = /\bfun\s+facts?\b/.test(normalizedHeard)
     ? "full set"
-    : /\bsun\s*set\b/.test(normalizedHeard)
-      ? "full set"
     : /\bpay\s+the\s+bill\b/.test(normalizedHeard)
       ? "pedicure"
       : "";
@@ -3428,15 +3562,6 @@ const applyGuardedObservedServiceAsrCorrection = async (
   if (exactHeardService) {
     return getCustomerFacingServiceName(exactHeardService.name) ?? exactHeardService.name;
   }
-  const exactSunsetService = activeServices.find(
-    (service) =>
-      normalizeForMatch(service.name) === "sunset" &&
-      /\bsun\s*set\b/.test(normalizeForMatch([currentTurnTranscript, transcriptText].filter(Boolean).join(" ")))
-  );
-  if (exactSunsetService) {
-    return getCustomerFacingServiceName(exactSunsetService.name) ?? exactSunsetService.name;
-  }
-
   const targetService = activeServices.find(
     (service) => normalizeForMatch(service.name) === requestedCanonical
   );
@@ -3605,6 +3730,13 @@ const findStaffMentionInText = async (
   if (!normalizedText) {
     return undefined;
   }
+  if (
+    context.lastAskedSlot === "customerName" &&
+    context.activeDtmfMenu !== "staff" &&
+    !hasExplicitStaffContextCue(normalizedText, context)
+  ) {
+    return undefined;
+  }
 
   const staff = await getStaffCandidates({ salonId });
   const scopedCandidate = normalizeScopedStaffCandidatePhrase(text, context);
@@ -3612,7 +3744,8 @@ const findStaffMentionInText = async (
   const aliasMatches = staff.flatMap((member) => {
     const aliases = new Set(getStaffAliasPhrases(member.fullName).map((alias) => normalizeForMatch(alias)));
     return Array.from(aliases.values()).flatMap((alias) =>
-      shouldSkipStaffAlias(member.fullName, alias, searchText, context)
+      shouldSkipStaffAlias(member.fullName, alias, searchText, context) ||
+      staffAliasCollidesWithExactActiveStaff(staff, member.fullName, alias)
         ? []
         : staffAliasMatchesInText(searchText, alias).map((index) => ({
             member,
@@ -3732,6 +3865,11 @@ const staffAliasTexts = (member: StaffCandidate): string[] =>
     ].map((value) => normalizeForMatch(value)).filter(Boolean))
   );
 
+const staffAliasTextsForActiveStaff = (member: StaffCandidate, staff: StaffCandidate[]): string[] =>
+  staffAliasTexts(member).filter(
+    (alias) => !staffAliasCollidesWithExactActiveStaff(staff, member.fullName, alias)
+  );
+
 const staffMatchesName = (member: StaffCandidate, value?: string | null): boolean => {
   const normalized = normalizeForMatch(value);
   if (!normalized) {
@@ -3832,7 +3970,7 @@ const parseStaffIntent = (input: {
   }
 
   for (const member of input.staff) {
-    const aliases = staffAliasTexts(member);
+    const aliases = staffAliasTextsForActiveStaff(member, input.staff);
     const hasExcludedAlias = aliases.some((alias) => textHasGovernedStaffExclusion(normalized, alias));
     if (hasExcludedAlias) {
       excludedStaff.push(member);
@@ -3879,7 +4017,7 @@ const parseStaffIntent = (input: {
     if (excludedStaff.some((excluded) => excluded.id === member.id)) {
       return false;
     }
-    return staffAliasTexts(member).some((alias) => !textHasGovernedStaffExclusion(normalized, alias) && textContainsStaffAlias(normalized, alias));
+    return staffAliasTextsForActiveStaff(member, input.staff).some((alias) => !textHasGovernedStaffExclusion(normalized, alias) && textContainsStaffAlias(normalized, alias));
   });
   const selectionMode: StaffIntentParseResult["selectionMode"] = positiveStaff
     ? "SPECIFIC"
@@ -4095,7 +4233,9 @@ const resolveStaffPreferenceFromCandidates = (
     ]);
     return Array.from(aliases).some(
       (alias) =>
-        alias === requested && !shouldSkipStaffAlias(member.fullName, alias, requested, context)
+        alias === requested &&
+        !shouldSkipStaffAlias(member.fullName, alias, requested, context) &&
+        !staffAliasCollidesWithExactActiveStaff(allStaff, member.fullName, alias)
     );
   });
 
@@ -4127,6 +4267,7 @@ const resolveStaffPreferenceFromCandidates = (
     return aliases.some(
       (alias) =>
         !shouldSkipStaffAlias(member.fullName, alias, requested, context) &&
+        !staffAliasCollidesWithExactActiveStaff(allStaff, member.fullName, alias) &&
         requested.length >= 3 &&
         (alias.includes(requested) ||
           requested.includes(alias) ||
@@ -4160,7 +4301,12 @@ const resolveStaffPreferenceFromCandidates = (
         normalizeForMatch(member.fullName),
         normalizeForMatch(member.fullName.split(/\s+/)[0]),
         ...getStaffAliasPhrases(member.fullName).map((alias) => normalizeForMatch(alias))
-      ].filter((alias) => alias && !shouldSkipStaffAlias(member.fullName, alias, requested, context));
+      ].filter(
+        (alias) =>
+          alias &&
+          !shouldSkipStaffAlias(member.fullName, alias, requested, context) &&
+          !staffAliasCollidesWithExactActiveStaff(allStaff, member.fullName, alias)
+      );
       const score = Math.max(...aliases.map((alias) => similarityScore(alias, requested)));
       const editDistanceMatch = aliases.some((alias) =>
         isConservativeStaffFuzzyMatch(alias, requested)
@@ -5006,8 +5152,8 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
     "serviceSuggestionName",
     "aiSuggestedServiceName"
   ]);
-  const serviceDtmfScoped = activeDtmfMenu === "service" || lastAskedSlot === "serviceName";
-  const staffDtmfScoped = activeDtmfMenu === "staff" || lastAskedSlot === "staffPreference";
+  const serviceDtmfScoped = activeDtmfMenu === "service";
+  const staffDtmfScoped = activeDtmfMenu === "staff";
   const serviceDtmfSelection =
     readScopedDtmfSelection(
       serviceDtmfScoped,
@@ -5069,10 +5215,23 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
     rawServiceName && isAffirmative(rawServiceName) && suggestedServiceName
       ? suggestedServiceName
       : rawServiceName;
+  const serviceRecognitionText = [serviceCandidate, currentTurnTranscript, transcriptText]
+    .filter(Boolean)
+    .join(" ");
+  const normalizedServiceCandidate = normalizeForMatch(serviceCandidate);
+  const fullSetFromTranscript = recognizeFullSetFromText(serviceRecognitionText, {
+    lastAskedSlot,
+    activeDtmfMenu
+  });
+  const unsafeSunsetServiceSlot =
+    hasUnsafeSunsetWithoutExplicitFullSetAlias(serviceRecognitionText) &&
+    (normalizedServiceCandidate === "full set" ||
+      /\bsun\s*set\b/.test(normalizedServiceCandidate));
   const serviceName =
-    serviceCandidate && !isClearlyInvalidServiceName(serviceCandidate)
+    fullSetFromTranscript ??
+    (serviceCandidate && !unsafeSunsetServiceSlot && !isClearlyInvalidServiceName(serviceCandidate)
       ? getCustomerFacingServiceName(serviceCandidate)
-      : undefined;
+      : undefined);
   const previousRequestedDate = readBookingFieldAttribute(attributes, "requestedDate");
   const previousRequestedTime = readBookingFieldAttribute(attributes, "requestedTime");
   const inputRequestedDate =
@@ -5353,10 +5512,7 @@ const getActiveServiceMenuServices = async (salonId: string): Promise<ServiceMen
   });
 
   const seen = new Set<string>();
-  const preferredOrder = new Map(
-    ["pedicure", "manicure", "full set", "dip powder"].map((name, index) => [name, index])
-  );
-  return services
+  const activeServices = services
     .map((service) => ({
       id: service.id,
       name: getCustomerFacingServiceName(service.name) ?? service.name
@@ -5368,12 +5524,14 @@ const getActiveServiceMenuServices = async (salonId: string): Promise<ServiceMen
       }
       seen.add(key);
       return true;
-    })
-    .sort((left, right) => {
-      const leftRank = preferredOrder.get(normalizeForMatch(left.name)) ?? 99;
-      const rightRank = preferredOrder.get(normalizeForMatch(right.name)) ?? 99;
-      return leftRank - rightRank;
     });
+  const byName = new Map(activeServices.map((service) => [normalizeForMatch(service.name), service]));
+  const canonicalNames = ["Pedicure", "Manicure", "Gel Manicure", "Full Set", "Dip Powder"];
+  const canonical = canonicalNames.map((name) => byName.get(normalizeForMatch(name)) ?? { name });
+  const extra = activeServices.filter(
+    (service) => !canonicalNames.some((name) => normalizeForMatch(name) === normalizeForMatch(service.name))
+  );
+  return [...canonical, ...extra].slice(0, 9);
 };
 
 const buildServiceDtmfOptionMaps = (services: ServiceMenuCandidate[]) => {
@@ -5382,7 +5540,9 @@ const buildServiceDtmfOptionMaps = (services: ServiceMenuCandidate[]) => {
   services.slice(0, 9).forEach((service, index) => {
     const digit = String(index + 1);
     options[digit] = service.name;
-    serviceIds[digit] = service.id;
+    if (service.id) {
+      serviceIds[digit] = service.id;
+    }
   });
   return { options, serviceIds };
 };
@@ -5399,7 +5559,7 @@ const buildServiceDtmfPromptText = (services: ServiceMenuCandidate[]): string =>
 
 const buildServicePromptSessionAttributes = (services: ServiceMenuCandidate[]): Record<string, string> => {
   const { options, serviceIds } = buildServiceDtmfOptionMaps(services);
-  const activeServiceIds = services.map((service) => service.id);
+  const activeServiceIds = services.map((service) => service.id).filter((id): id is string => Boolean(id));
   const activeServiceNames = services.map((service) => service.name);
   const serviceMenuVersion = createHash("sha1")
     .update(JSON.stringify({ activeServiceIds, activeServiceNames }))
@@ -5842,6 +6002,7 @@ const buildBookingConfirmationMessage = (input: {
   requestedAnyStaff?: boolean;
   customerNameFallbackNotice?: string;
   excludedStaffNames?: string[];
+  changeAcknowledgement?: string;
 }): string => {
   const service = input.serviceName;
   const appointmentTime = formatFinalConfirmationDateTimeForSpeech(
@@ -5857,9 +6018,12 @@ const buildBookingConfirmationMessage = (input: {
   const exclusionNotice = input.excludedStaffNames?.length
     ? `Okay, I'll exclude ${escapeSsml(formatNameList(input.excludedStaffNames))}. <break time="300ms"/> `
     : "";
+  const changeAcknowledgement = input.changeAcknowledgement
+    ? `${escapeSsml(input.changeAcknowledgement)} `
+    : "";
   const customerPrefix = input.customerName ? `${escapeSsml(input.customerName)}, ` : "";
   return speak(
-    `${exclusionNotice}${fallbackNotice}${selectedStaffPrefix}${customerPrefix}just to confirm: ${escapeSsml(service)} ${escapeSsml(appointmentTime)} with ${escapeSsml(input.staffName)}. <break time="300ms"/> Is that correct?`
+    `${exclusionNotice}${fallbackNotice}${selectedStaffPrefix}${changeAcknowledgement}${customerPrefix}just to confirm: ${escapeSsml(service)} ${escapeSsml(appointmentTime)} with ${escapeSsml(input.staffName)}. <break time="300ms"/> Is that correct?`
   );
 };
 
@@ -6002,7 +6166,7 @@ const buildLexMessage = (input: {
       );
       return speak(
         input.repeatedKnownFieldWhileAskingName && summary
-          ? `I already have ${escapeSsml(summary)}. <break time="300ms"/> May I have your name, please?`
+          ? `I already have ${escapeSsml(summary)}. <break time="300ms"/> What name should I put on the appointment?`
           : (input.attemptCount ?? 1) >= 3
           ? "Could you spell your first name, one letter at a time?"
           : isRetry
@@ -7092,6 +7256,7 @@ export const createAmazonConnectAIAppointment = async (
     staffExclusionState.ids.size > 0 || staffExclusionState.names.size > 0;
   let shouldAutoSelectAnyStaffAfterExclusion = false;
   let finalConfirmationRequiresStaffSelection = false;
+  let finalConfirmationStaffChangeAcknowledgement: string | undefined;
   let finalConfirmationOutcome: ReturnType<typeof classifyFinalBookingConfirmation> = "UNKNOWN";
 
   if (!requestedDayIsClosedBeforeStaff) {
@@ -7246,6 +7411,7 @@ export const createAmazonConnectAIAppointment = async (
           normalized.staffPreference = changedStaff;
           normalized.staffId = undefined;
           finalConfirmationRequiresStaffSelection = false;
+          finalConfirmationStaffChangeAcknowledgement = `Got it, with ${changedStaff} instead.`;
         } else if (requestsStaffChange) {
           normalized.staffPreference = undefined;
           normalized.staffId = undefined;
@@ -10337,7 +10503,8 @@ export const createAmazonConnectAIAppointment = async (
                 : undefined,
             excludedStaffNames: staffIntent.hasExplicitExclusion
               ? staffIntent.excludedStaff.map((member) => member.fullName)
-              : undefined
+              : undefined,
+            changeAcknowledgement: finalConfirmationStaffChangeAcknowledgement
           });
     const parsed = buildInternalParsedIntent({
       intentType: "BOOK_APPOINTMENT",
