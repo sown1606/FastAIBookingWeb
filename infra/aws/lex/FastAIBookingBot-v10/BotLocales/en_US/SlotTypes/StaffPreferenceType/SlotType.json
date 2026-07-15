@@ -1,0 +1,40 @@
+{
+  "name": "StaffPreferenceType",
+  "identifier": "STAFFPREF",
+  "description": "Compact staff preference slot used with salon-scoped runtime hints.",
+  "slotTypeValues": [
+    {
+      "synonyms": [
+        {
+          "value": "any staff"
+        },
+        {
+          "value": "anyone"
+        },
+        {
+          "value": "first available"
+        },
+        {
+          "value": "available staff"
+        },
+        {
+          "value": "any technician"
+        },
+        {
+          "value": "any tech"
+        },
+        {
+          "value": "whoever is available"
+        }
+      ],
+      "sampleValue": {
+        "value": "Any staff"
+      }
+    }
+  ],
+  "valueSelectionSetting": {
+    "resolutionStrategy": "TopResolution",
+    "regexFilter": null
+  },
+  "parentSlotTypeSignature": null
+}

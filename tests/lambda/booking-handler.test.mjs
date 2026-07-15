@@ -1360,7 +1360,7 @@ test("DialogCodeHook recognizes production Full Set speech aliases without DTMF"
   }
 });
 
-test("DialogCodeHook corrects observed sunset ASR with unique one-letter Amy prefix", async () => {
+test("DialogCodeHook preserves sunset service date and time when staff is one letter", async () => {
   const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
   const fetchCalls = installFetchMock((_url, _options, body) =>
     jsonResponse(
@@ -1369,25 +1369,24 @@ test("DialogCodeHook corrects observed sunset ASR with unique one-letter Amy pre
         appointment: null,
         lexResponse: {
           fulfillmentState: "InProgress",
-          message: "Jane, just to confirm: Full Set today at 3 PM with Amy. Is that correct?",
+          message: "Got it, Full Set today at 3 PM. Which staff would you like?",
           messageContentType: "PlainText",
           dialogAction: {
-            type: "ElicitIntent"
+            type: "ElicitSlot",
+            slotToElicit: "staffPreference"
           },
           sessionAttributes: {
-            awaitingFinalBookingConfirmation: "true",
-            bookingConfirmationAsked: "true",
+            ...dynamicStaffAttributes(),
             customerName: body.customerName,
             customerPhone: body.customerPhone,
             serviceName: body.serviceName,
             confirmedServiceName: body.serviceName,
             requestedDate: body.requestedDate,
             requestedTime: body.requestedTime,
-            staffPreference: body.staffPreference,
-            confirmedStaffName: body.staffPreference
+            lastAskedSlot: "staffPreference"
           }
         },
-        missingFields: []
+        missingFields: ["staffPreference"]
       })
     )
   );
@@ -1428,11 +1427,13 @@ test("DialogCodeHook corrects observed sunset ASR with unique one-letter Amy pre
   assert.equal(fetchCalls[0].body.serviceName, "Full Set");
   assert.equal(fetchCalls[0].body.requestedDate, usEasternDate(0));
   assert.equal(fetchCalls[0].body.requestedTime, "3 PM");
-  assert.equal(fetchCalls[0].body.staffPreference, "Amy");
+  assert.equal(fetchCalls[0].body.staffPreference, undefined);
   assert.equal(fetchCalls[0].body.attributes.serviceAliasCorrectionRaw, "sunset");
-  assert.equal(response.sessionState.dialogAction.type, "ElicitIntent");
+  assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "staffPreference");
   assert.equal(response.sessionState.sessionAttributes.serviceName, "Full Set");
-  assert.equal(response.sessionState.sessionAttributes.staffPreference, "Amy");
+  assert.equal(response.sessionState.sessionAttributes.requestedTime, "3 PM");
+  assert.equal(response.sessionState.sessionAttributes.staffPreference, undefined);
   assert.doesNotMatch(response.messages[0].content, /Please tell me what you need|which service|what service/i);
 });
 
@@ -1508,6 +1509,152 @@ test("DialogCodeHook preserves sunset service date and time when staff is bare w
   assert.equal(response.sessionState.sessionAttributes.serviceName, "Full Set");
   assert.equal(response.sessionState.sessionAttributes.requestedTime, "3 PM");
   assert.doesNotMatch(response.messages[0].content, /Please tell me what you need|which service|what service/i);
+});
+
+test("DialogCodeHook adds compact staff runtime hints only for staff elicitation", async () => {
+  const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
+  installFetchMock((_url, _options, body) =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "MISSING_INFO",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "InProgress",
+          message: "Which staff would you like?",
+          messageContentType: "PlainText",
+          dialogAction: {
+            type: "ElicitSlot",
+            slotToElicit: "staffPreference"
+          },
+          sessionAttributes: {
+            customerName: body.customerName,
+            customerPhone: body.customerPhone,
+            serviceName: body.serviceName,
+            confirmedServiceName: body.serviceName,
+            requestedDate: body.requestedDate,
+            requestedTime: body.requestedTime,
+            lastAskedSlot: "staffPreference",
+            staffDtmfOptions: JSON.stringify({
+              "1": "Alice",
+              "2": "Kelly",
+              "3": "Any staff"
+            }),
+            staffDtmfStaffIds: JSON.stringify({
+              "1": "staff-alice",
+              "2": "staff-kelly"
+            })
+          }
+        },
+        missingFields: ["staffPreference"]
+      })
+    )
+  );
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "sunset today at three p m with a",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: "connect-staff-runtime-hints",
+          customerName: "Jane",
+          customerPhone: "+17325956266",
+          staffDtmfOptions: JSON.stringify({
+            "1": "Amy",
+            "2": "Any staff"
+          })
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          name: "BookAppointmentIntent",
+          state: "InProgress",
+          confirmationState: "None",
+          slots: {
+            serviceName: slotWith({
+              originalValue: "sunset",
+              interpretedValue: "sunset",
+              resolvedValues: ["sunset"]
+            })
+          }
+        }
+      }
+    })
+  );
+
+  const slotHints = response.sessionState.runtimeHints.slotHints.BookAppointmentIntent;
+  const phrases = slotHints.staffPreference.runtimeHintValues.map((item) => item.phrase);
+  assert.deepEqual(phrases, ["Alice", "Kelly", "Any staff"]);
+  assert.equal(slotHints.serviceName, undefined);
+  assert.doesNotMatch(JSON.stringify(response.sessionState.runtimeHints), /Amy/);
+});
+
+test("DialogCodeHook adds compact service runtime hints only for service elicitation", async () => {
+  const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
+  installFetchMock(() =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "MISSING_INFO",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "InProgress",
+          message: "Which service would you like?",
+          messageContentType: "PlainText",
+          dialogAction: {
+            type: "ElicitSlot",
+            slotToElicit: "serviceName"
+          },
+          sessionAttributes: {
+            customerName: "Jane",
+            customerPhone: "+17325956266",
+            requestedDate: usEasternDate(0),
+            requestedTime: "3 PM",
+            staffPreference: "Amy",
+            lastAskedSlot: "serviceName",
+            activeServiceNames: JSON.stringify(["Pedicure", "Full Set"]),
+            serviceDtmfOptions: JSON.stringify({
+              "1": "Pedicure",
+              "2": "Full Set"
+            })
+          }
+        },
+        missingFields: ["serviceName"]
+      })
+    )
+  );
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "today at three p m with Amy",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: "connect-service-runtime-hints",
+          customerName: "Jane",
+          customerPhone: "+17325956266"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          name: "BookAppointmentIntent",
+          state: "InProgress",
+          confirmationState: "None",
+          slots: {}
+        }
+      }
+    })
+  );
+
+  const slotHints = response.sessionState.runtimeHints.slotHints.BookAppointmentIntent;
+  const phrases = slotHints.serviceName.runtimeHintValues.map((item) => item.phrase);
+  assert.deepEqual(phrases, ["Pedicure", "Full Set"]);
+  assert.equal(slotHints.staffPreference, undefined);
 });
 
 test("DialogCodeHook maps sunset while serviceName was last asked", async () => {

@@ -2,7 +2,7 @@
   "name": "staffPreference",
   "identifier": "4YN5NBP9ZR",
   "description": null,
-  "slotTypeName": "AMAZON.AlphaNumeric",
+  "slotTypeName": "StaffPreferenceType",
   "obfuscationSetting": null,
   "valueElicitationSetting": {
     "slotCaptureSetting": {

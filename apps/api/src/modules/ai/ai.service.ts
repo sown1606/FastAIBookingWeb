@@ -1201,28 +1201,6 @@ const resolveTrangAsrConfusionStaff = (
   return staff.find((member) => normalizeForMatch(member.fullName.split(/\s+/)[0]) === "trang");
 };
 
-const resolveOneLetterStaffPrefix = (
-  staff: StaffCandidate[],
-  value?: string | null,
-  context: StaffPhraseContext = {}
-): StaffCandidate | undefined => {
-  if (
-    context.lastAskedSlot === "customerName" &&
-    context.activeDtmfMenu !== "staff"
-  ) {
-    return undefined;
-  }
-  const match = normalizeForMatch(value).match(/\bwith\s+([a-z])$/);
-  const prefix = match?.[1];
-  if (!prefix) {
-    return undefined;
-  }
-  const candidates = dedupeStaffById(
-    staff.filter((member) => normalizeForMatch(member.fullName.split(/\s+/)[0]).startsWith(prefix))
-  );
-  return candidates.length === 1 ? candidates[0] : undefined;
-};
-
 const isUnsupportedServiceRequestPhrase = (value?: string | null): boolean => {
   const normalized = normalizeForMatch(value);
   return Boolean(
@@ -3629,10 +3607,6 @@ const findStaffMentionInText = async (
   }
 
   const staff = await getStaffCandidates({ salonId });
-  const oneLetterPrefixStaff = resolveOneLetterStaffPrefix(staff, text, context);
-  if (oneLetterPrefixStaff) {
-    return oneLetterPrefixStaff.fullName;
-  }
   const scopedCandidate = normalizeScopedStaffCandidatePhrase(text, context);
   const searchText = scopedCandidate && scopedCandidate !== "any staff" ? scopedCandidate : normalizedText;
   const aliasMatches = staff.flatMap((member) => {
@@ -4101,20 +4075,6 @@ const resolveStaffPreferenceFromCandidates = (
       allStaff,
       rawStaffPreference,
       invalidReason: "explicit_any"
-    };
-  }
-  const oneLetterPrefixStaff = resolveOneLetterStaffPrefix(
-    allStaff,
-    scopedStaffPreference ?? rawStaffPreference,
-    context
-  );
-  if (oneLetterPrefixStaff) {
-    return {
-      status: "matched",
-      candidates: [oneLetterPrefixStaff],
-      allStaff,
-      rawStaffPreference: rawStaffPreference ?? scopedStaffPreference ?? oneLetterPrefixStaff.fullName,
-      matchedStaff: oneLetterPrefixStaff
     };
   }
   if (isClearlyInvalidStaffPreference(requested)) {

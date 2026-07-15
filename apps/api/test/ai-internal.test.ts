@@ -49,6 +49,7 @@ const ids = {
   kelly: "10000000-0000-4000-8000-000000000007",
   kevin: "10000000-0000-4000-8000-000000000008",
   alex: "10000000-0000-4000-8000-000000000009",
+  alice: "10000000-0000-4000-8000-000000000010",
   pedicure: "20000000-0000-4000-8000-000000000001",
   fullSet: "20000000-0000-4000-8000-000000000004",
   kietCustomer: "30000000-0000-4000-8000-000000000001"
@@ -1052,6 +1053,30 @@ const addAlexStaff = (options: { mapFullSet?: boolean } = {}) => {
   );
 };
 
+const addAliceStaff = () => {
+  state.staff.push({
+    id: ids.alice,
+    salonId: ids.salonA,
+    fullName: "Alice",
+    status: StaffStatus.ACTIVE,
+    isBookable: true,
+    createdAt: new Date("2026-01-06T00:00:00.000Z")
+  });
+  state.staffServiceMappings?.push(
+    ...[
+      "20000000-0000-4000-8000-000000000000",
+      ids.pedicure,
+      "20000000-0000-4000-8000-000000000003",
+      ids.fullSet,
+      "20000000-0000-4000-8000-000000000005"
+    ].map((serviceId) => ({
+      salonId: ids.salonA,
+      staffId: ids.alice,
+      serviceId
+    }))
+  );
+};
+
 const repoRootPath = fileURLToPath(new URL("../../../", import.meta.url));
 
 const collectTextFiles = (path: string): string[] => {
@@ -2008,6 +2033,7 @@ test("current turn staff alias overrides stale staff while preserving Jane", asy
 test("Emmy and correction staff phrases resolve to Amy without selecting Trang", async () => {
   const phrases = [
     "Amy",
+    "with Amy",
     "Amie",
     "Emmy",
     "Emmie",
@@ -2448,7 +2474,7 @@ test("Full Set speech aliases resolve to the active Full Set service", async () 
   }
 });
 
-test("observed sunset ASR resolves Full Set today at 3 PM with unique Amy prefix", async () => {
+test("observed sunset ASR with one-letter staff preserves Full Set date time and asks staff", async () => {
   const today = DateTime.now().setZone("America/New_York").toFormat("yyyy-MM-dd");
   const result = await postInternalAppointment(
     bookingPayload({
@@ -2472,10 +2498,13 @@ test("observed sunset ASR resolves Full Set today at 3 PM with unique Amy prefix
   assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedServiceName, "Full Set");
   assert.equal(result.body.data.lexResponse.sessionAttributes.requestedDate, today);
   assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "15:00");
-  assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Amy");
-  assert.equal(result.body.data.lexResponse.sessionAttributes.staffId, ids.amy);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, undefined);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffId, undefined);
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitSlot");
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "staffPreference");
   assert.notEqual(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
   assert.doesNotMatch(result.body.data.lexResponse.message, /Please tell me what you need|which service/i);
+  assert.equal(state.appointments.length, 0);
 });
 
 test("observed sunset ASR with bare with preserves service date time and asks only for staff", async () => {
@@ -2505,6 +2534,147 @@ test("observed sunset ASR with bare with preserves service date time and asks on
   assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, undefined);
   assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitSlot");
   assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "staffPreference");
+  assert.doesNotMatch(result.body.data.lexResponse.message, /Please tell me what you need|which service/i);
+  assert.equal(state.appointments.length, 0);
+});
+
+test("with a does not select Amy when Amy is the only active A-prefix staff", async () => {
+  state.staff = state.staff.filter((member) => member.salonId !== ids.salonA || member.id === ids.amy);
+  state.staffServiceMappings =
+    state.staffServiceMappings?.filter((mapping) => mapping.salonId !== ids.salonA || mapping.staffId === ids.amy) ?? null;
+
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Full Set",
+      requestedDate: DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd"),
+      requestedTime: "3 PM",
+      staffPreference: undefined,
+      staffId: undefined,
+      confirmationState: undefined,
+      currentTurnTranscript: "with a",
+      transcript: "with a",
+      attributes: {
+        lastAskedSlot: "staffPreference"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitSlot");
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "staffPreference");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, undefined);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffId, undefined);
+  assert.match(result.body.data.lexResponse.message, /Amy|first available/i);
+  assert.equal(state.appointments.length, 0);
+});
+
+test("with a does not select Amy or Alice when both are active", async () => {
+  state.staff = state.staff.filter((member) => member.salonId !== ids.salonA || member.id === ids.amy);
+  state.staffServiceMappings =
+    state.staffServiceMappings?.filter((mapping) => mapping.salonId !== ids.salonA || mapping.staffId === ids.amy) ?? null;
+  addAliceStaff();
+
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Full Set",
+      requestedDate: DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd"),
+      requestedTime: "3 PM",
+      staffPreference: undefined,
+      staffId: undefined,
+      confirmationState: undefined,
+      currentTurnTranscript: "with a",
+      transcript: "with a",
+      attributes: {
+        lastAskedSlot: "staffPreference"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitSlot");
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "staffPreference");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, undefined);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffId, undefined);
+  assert.match(result.body.data.lexResponse.message, /Amy/i);
+  assert.match(result.body.data.lexResponse.message, /Alice/i);
+  assert.equal(state.appointments.length, 0);
+});
+
+test("exact Alice resolves canonical staff id after catalog refresh", async () => {
+  addAliceStaff();
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      staffId: undefined,
+      confirmationState: undefined,
+      currentTurnTranscript: "Full Set tomorrow at 3 PM with Alice",
+      transcript: "Full Set tomorrow at 3 PM with Alice"
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assertBookingConfirmationDialog(result.body.data.lexResponse.dialogAction);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.requestedDate, requestedDate);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "15:00");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Alice");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffId, ids.alice);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedStaffId, ids.alice);
+  assert.equal(state.appointments.length, 0);
+});
+
+test("near-full partial staff candidates ask one focused clarification without selection", async () => {
+  state.staff = state.staff.filter((member) => member.salonId !== ids.salonA);
+  state.staffServiceMappings =
+    state.staffServiceMappings?.filter((mapping) => mapping.salonId !== ids.salonA) ?? null;
+  addAliceStaff();
+  const aliciaId = "10000000-0000-4000-8000-000000000011";
+  state.staff.push({
+    id: aliciaId,
+    salonId: ids.salonA,
+    fullName: "Alicia",
+    status: StaffStatus.ACTIVE,
+    isBookable: true,
+    createdAt: new Date("2026-01-07T00:00:00.000Z")
+  });
+  state.staffServiceMappings?.push({
+    salonId: ids.salonA,
+    staffId: aliciaId,
+    serviceId: ids.fullSet
+  });
+
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Full Set",
+      requestedDate: DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd"),
+      requestedTime: "3 PM",
+      staffPreference: undefined,
+      staffId: undefined,
+      confirmationState: undefined,
+      currentTurnTranscript: "with Ali",
+      transcript: "with Ali",
+      attributes: {
+        lastAskedSlot: "staffPreference"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitSlot");
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "staffPreference");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, undefined);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffId, undefined);
+  assert.match(result.body.data.lexResponse.message, /Alice/i);
+  assert.match(result.body.data.lexResponse.message, /Alicia/i);
   assert.doesNotMatch(result.body.data.lexResponse.message, /Please tell me what you need|which service/i);
   assert.equal(state.appointments.length, 0);
 });
@@ -2605,7 +2775,9 @@ test("repeated observed sunset transcript keeps one canonical log and no generic
   assert.equal(second.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
   assert.equal(second.body.data.lexResponse.sessionAttributes.requestedDate, today);
   assert.equal(second.body.data.lexResponse.sessionAttributes.requestedTime, "15:00");
-  assert.equal(second.body.data.lexResponse.sessionAttributes.staffPreference, "Amy");
+  assert.equal(second.body.data.lexResponse.sessionAttributes.staffPreference, undefined);
+  assert.equal(second.body.data.lexResponse.dialogAction.type, "ElicitSlot");
+  assert.equal(second.body.data.lexResponse.dialogAction.slotToElicit, "staffPreference");
   assert.doesNotMatch(second.body.data.lexResponse.message, /Please tell me what you need/i);
   assert.equal(state.appointments.length, 0);
   assert.equal(state.callSessions.length, 1);

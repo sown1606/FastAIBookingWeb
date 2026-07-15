@@ -878,29 +878,6 @@ function resolveTrangAsrConfusionFromText(value, sessionAttributes = {}) {
   return hasDynamicStaffExactCollision(token, sessionAttributes) ? "" : "Trang";
 }
 
-function resolveOneLetterStaffPrefixFromText(value, sessionAttributes = {}) {
-  if (
-    sessionAttributes?.lastAskedSlot === "customerName" &&
-    sessionAttributes?.activeDtmfMenu !== "staff"
-  ) {
-    return "";
-  }
-  const normalized = normalizeForMatch(value);
-  const match = normalized.match(/\bwith\s+([a-z])$/);
-  const prefix = match?.[1] || "";
-  if (!prefix) {
-    return "";
-  }
-  const candidates = Array.from(
-    new Set(
-      Object.values(getStaffDtmfOptions(sessionAttributes))
-        .filter((staffName) => normalizeForMatch(staffName) !== "any staff")
-        .filter((staffName) => normalizeForMatch(String(staffName).split(/\s+/)[0]).startsWith(prefix))
-    )
-  );
-  return candidates.length === 1 ? candidates[0] : "";
-}
-
 function isExactKnownStaffAliasText(value, sessionAttributes = {}) {
   const normalized = normalizeForMatch(value);
   if (!normalized) {
@@ -1099,10 +1076,6 @@ function extractStaffFromTranscript(text, sessionAttributes = {}) {
   }
   if (normalizeAnyStaffPhrase(text, sessionAttributes)) {
     return "Any staff";
-  }
-  const oneLetterPrefixStaff = resolveOneLetterStaffPrefixFromText(text, sessionAttributes);
-  if (oneLetterPrefixStaff) {
-    return oneLetterPrefixStaff;
   }
   const scopedCandidate = normalizeScopedStaffCandidatePhrase(text, sessionAttributes);
   const searchText = scopedCandidate && normalizeForMatch(scopedCandidate) !== "any staff"
@@ -3316,6 +3289,50 @@ function getDynamicServiceNames(sessionAttributes = {}) {
   return names.filter(Boolean);
 }
 
+function uniqueRuntimeHintNames(values = []) {
+  const seen = new Set();
+  return values
+    .map((value) => String(value || "").trim())
+    .filter((value) => value && value !== "__operator__")
+    .filter((value) => {
+      const key = normalizeForMatch(value);
+      if (!key || seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 25);
+}
+
+function buildRuntimeHintsForSlot(slotToElicit, sessionAttributes = {}) {
+  if (slotToElicit !== "serviceName" && slotToElicit !== "staffPreference") {
+    return undefined;
+  }
+  const hintValues =
+    slotToElicit === "serviceName"
+      ? uniqueRuntimeHintNames([
+          ...parseStringListAttribute(sessionAttributes.activeServiceNames),
+          ...Object.values(getServiceDtmfOptions(sessionAttributes))
+        ])
+      : uniqueRuntimeHintNames([
+          ...Object.values(getStaffDtmfOptions(sessionAttributes)),
+          "Any staff"
+        ]);
+  if (!hintValues.length) {
+    return undefined;
+  }
+  return {
+    slotHints: {
+      BookAppointmentIntent: {
+        [slotToElicit]: {
+          runtimeHintValues: hintValues.map((phrase) => ({ phrase }))
+        }
+      }
+    }
+  };
+}
+
 function isDynamicServiceName(value, sessionAttributes = {}) {
   const normalized = normalizeForMatch(value);
   return Boolean(
@@ -5445,12 +5462,20 @@ function commitDialogState(response, options = {}) {
     sessionAttributes.lastHumanTurnId = options.humanTurnId;
   }
 
+  const finalSessionAttributes = clearExcludedStaffSelection(sessionAttributes);
+  const runtimeHints = buildRuntimeHintsForSlot(slotToElicit, finalSessionAttributes);
+  const sessionState = {
+    ...(response.sessionState || {}),
+    sessionAttributes: finalSessionAttributes
+  };
+  if (runtimeHints) {
+    sessionState.runtimeHints = runtimeHints;
+  } else {
+    delete sessionState.runtimeHints;
+  }
   return {
     ...response,
-    sessionState: {
-      ...(response.sessionState || {}),
-      sessionAttributes: clearExcludedStaffSelection(sessionAttributes)
-    }
+    sessionState
   };
 }
 
