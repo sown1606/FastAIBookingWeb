@@ -1,0 +1,13 @@
+{
+    "logGroups": [
+        {
+            "logGroupName": "/aws/connect/fastaibooking",
+            "creationTime": 1776853291105,
+            "metricFilterCount": 0,
+            "arn": "arn:aws:logs:us-east-1:197452633989:log-group:/aws/connect/fastaibooking:*",
+            "storedBytes": 0,
+            "logGroupClass": "STANDARD",
+            "logGroupArn": "arn:aws:logs:us-east-1:197452633989:log-group:/aws/connect/fastaibooking"
+        }
+    ]
+}

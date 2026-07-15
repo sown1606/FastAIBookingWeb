@@ -277,12 +277,12 @@ test("salon staff title is canonical in owner UI and API", () => {
   assert.match(i18n, /"option\.staffTitle\.nailTechnician":\s*"Nail Technician"/);
 });
 
-test("admin AI logs hide synthetic logs by default and create-salon nav is exclusive", () => {
+test("admin AI logs show Smoke Tests by default and create-salon nav is exclusive", () => {
   const aiLogsPage = readRepo("apps/admin/src/pages/ai-logs-page.tsx");
   const layout = readRepo("apps/admin/src/components/layout.tsx");
 
-  assert.match(aiLogsPage, /const \[includeSynthetic,\s*setIncludeSynthetic\]\s*=\s*useState\(false\)/);
-  assert.match(aiLogsPage, /params\.set\("includeSynthetic",\s*"true"\)/);
+  assert.match(aiLogsPage, /const \[includeSynthetic,\s*setIncludeSynthetic\]\s*=\s*useState\(true\)/);
+  assert.match(aiLogsPage, /params\.set\("includeSynthetic",\s*String\(includeSynthetic\)\)/);
   assert.match(layout, /normalizedPathname\s*=\s*pathname\.replace\(/);
   assert.match(layout, /target === "\/salons\/new"[\s\S]*normalizedPathname === "\/salons\/new"/);
   assert.match(layout, /target === "\/salons"[\s\S]*normalizedPathname !== "\/salons\/new"/);

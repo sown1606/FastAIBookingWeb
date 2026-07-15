@@ -85,6 +85,7 @@ const reconcileAmazonConnectCallSessions = async <T extends {
   startedAt: Date | null;
   endedAt: Date | null;
   durationSeconds: number | null;
+  rawPayload?: Prisma.JsonValue | null;
 }>(items: T[]): Promise<T[]> => {
   const instanceId = env.AMAZON_CONNECT_INSTANCE_ID;
   if (!instanceId || process.env.NODE_ENV === "test") {
@@ -94,7 +95,6 @@ const reconcileAmazonConnectCallSessions = async <T extends {
     .filter(
       (item) =>
         item.provider === ExternalProvider.AMAZON_CONNECT &&
-        item.status === CallSessionStatus.IN_PROGRESS &&
         !/^codex-/i.test(item.providerCallId)
     )
     .slice(0, 8);
@@ -127,20 +127,37 @@ const reconcileAmazonConnectCallSessions = async <T extends {
         if (!contact?.DisconnectTimestamp) {
           return;
         }
-        const startedAt = item.startedAt ?? contact.InitiationTimestamp ?? null;
+        const startedAt = contact.InitiationTimestamp ?? item.startedAt ?? null;
         const endedAt = contact.DisconnectTimestamp;
         const durationSeconds = startedAt
           ? Math.max(0, Math.round((endedAt.getTime() - startedAt.getTime()) / 1000))
           : item.durationSeconds;
+        const existingRawPayload =
+          item.rawPayload && typeof item.rawPayload === "object" && !Array.isArray(item.rawPayload)
+            ? (item.rawPayload as Record<string, unknown>)
+            : {};
+        const rawPayload = toJson({
+          ...existingRawPayload,
+          providerTiming: {
+            source: "amazon_connect_describe_contact",
+            providerInitiatedAt: contact.InitiationTimestamp?.toISOString() ?? null,
+            providerDisconnectedAt: contact.DisconnectTimestamp.toISOString(),
+            applicationFirstSeenAt: item.startedAt?.toISOString() ?? null,
+            answeredAt: null,
+            limitations: ["answeredAt_unavailable_from_describe_contact"]
+          }
+        });
         const update: {
           status: CallSessionStatus;
           startedAt?: Date;
           endedAt: Date;
           durationSeconds: number | null;
+          rawPayload: Prisma.InputJsonValue;
         } = {
-          status: CallSessionStatus.COMPLETED,
+          status: terminalCallStatuses.has(item.status) ? item.status : CallSessionStatus.COMPLETED,
           endedAt,
-          durationSeconds
+          durationSeconds,
+          rawPayload
         };
         if (startedAt) {
           update.startedAt = startedAt;
@@ -922,7 +939,7 @@ export const listCallsForAdmin = async (input: ListAdminCallsInput) => {
   const where: Prisma.CallSessionWhereInput = {
     ...(input.status ? { status: input.status } : {}),
     ...(input.salonId ? { salonId: input.salonId } : {}),
-    ...(!input.includeSynthetic
+    ...(input.includeSynthetic === false
       ? {
           NOT: [
             {

@@ -1,0 +1,13 @@
+{
+    "botId": "KHMIXGA2US",
+    "botVersion": "31",
+    "localeId": "en_US",
+    "slotTypeSummaries": [
+        {
+            "slotTypeId": "CRPHEOWTHG",
+            "slotTypeName": "NailServiceType",
+            "lastUpdatedDateTime": "2026-07-12T06:32:27.786000-04:00",
+            "slotTypeCategory": "Custom"
+        }
+    ]
+}

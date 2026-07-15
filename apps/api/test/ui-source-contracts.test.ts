@@ -173,24 +173,24 @@ test("owner Basic UI exposes and validates Business Hours", () => {
   assert.match(i18nSource, /"hours\.invalidRange"/);
 });
 
-test("admin log pages hide synthetic rows by default and expose opt-in filters", () => {
+test("admin log pages show Smoke Tests by default and allow hiding them", () => {
   const callsSource = readRepoFile("apps/admin/src/pages/calls-page.tsx");
   const aiLogsSource = readRepoFile("apps/admin/src/pages/ai-logs-page.tsx");
   const i18nSource = readRepoFile("apps/admin/src/lib/i18n.tsx");
   const routesSource = readRepoFile("apps/api/src/modules/admin/admin.routes.ts");
   const callsServiceSource = readRepoFile("apps/api/src/modules/calls/calls.service.ts");
 
-  assert.match(callsSource, /const \[includeSynthetic, setIncludeSynthetic\] = useState\(false\)/);
-  assert.match(aiLogsSource, /const \[includeSynthetic, setIncludeSynthetic\] = useState\(false\)/);
-  assert.match(callsSource, /params\.set\("includeSynthetic", "true"\)/);
-  assert.match(aiLogsSource, /params\.set\("includeSynthetic", "true"\)/);
+  assert.match(callsSource, /const \[includeSynthetic, setIncludeSynthetic\] = useState\(true\)/);
+  assert.match(aiLogsSource, /const \[includeSynthetic, setIncludeSynthetic\] = useState\(true\)/);
+  assert.match(callsSource, /params\.set\("includeSynthetic", String\(includeSynthetic\)\)/);
+  assert.match(aiLogsSource, /params\.set\("includeSynthetic", String\(includeSynthetic\)\)/);
   assert.match(callsSource, /calls\.includeSynthetic/);
   assert.match(aiLogsSource, /aiLogs\.includeSynthetic/);
   assert.match(callsSource, /calls\.synthetic/);
   assert.match(aiLogsSource, /aiLogs\.synthetic/);
-  assert.match(i18nSource, /"calls\.includeSynthetic": "Include test\/smoke"/);
-  assert.match(i18nSource, /"aiLogs\.includeSynthetic": "Include test\/smoke"/);
-  assert.match(routesSource, /includeSynthetic: z\.coerce\.boolean\(\)\.default\(false\)/);
+  assert.match(i18nSource, /"calls\.includeSynthetic": "Show Smoke Tests"/);
+  assert.match(i18nSource, /"aiLogs\.includeSynthetic": "Show Smoke Tests"/);
+  assert.match(routesSource, /includeSynthetic: z\.coerce\.boolean\(\)\.default\(true\)/);
   assert.match(callsServiceSource, /providerCallId:\s*\{\s*startsWith: "codex-"/);
   assert.match(callsServiceSource, /rawPayload:\s*\{\s*path: \["metadata", "isSynthetic"\]/);
 });

@@ -1,0 +1,13 @@
+{
+    "logGroups": [
+        {
+            "logGroupName": "/aws/lambda/fastaibooking-booking-handler",
+            "creationTime": 1778222567440,
+            "metricFilterCount": 0,
+            "arn": "arn:aws:logs:us-east-1:197452633989:log-group:/aws/lambda/fastaibooking-booking-handler:*",
+            "storedBytes": 1482762,
+            "logGroupClass": "STANDARD",
+            "logGroupArn": "arn:aws:logs:us-east-1:197452633989:log-group:/aws/lambda/fastaibooking-booking-handler"
+        }
+    ]
+}

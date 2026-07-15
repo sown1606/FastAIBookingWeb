@@ -40,7 +40,7 @@ const interactionsQuerySchema = z.object({
   contactId: z.string().trim().min(1).max(160).optional(),
   callerPhone: z.string().trim().min(3).max(40).optional(),
   q: z.string().trim().min(1).max(160).optional(),
-  includeSynthetic: z.coerce.boolean().default(false)
+  includeSynthetic: z.coerce.boolean().default(true)
 });
 
 const createAIAppointmentSchema = z
@@ -205,10 +205,10 @@ const safeRecoverableResponse = (
       ? "I'm sorry, I couldn't save the appointment just yet. What name should I put on the appointment?"
       : "I'm sorry, I couldn't save the appointment just yet. Please repeat that detail so I can keep the booking moving.";
   const dialogAction =
-    slotToElicit === undefined
-      ? {
-          type: "ConfirmIntent"
-        }
+	    slotToElicit === undefined
+	      ? {
+	          type: "ElicitIntent"
+	        }
       : {
           type: "ElicitSlot",
           slotToElicit

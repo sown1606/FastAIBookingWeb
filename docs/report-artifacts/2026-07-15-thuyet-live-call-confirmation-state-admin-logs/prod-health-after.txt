@@ -1,0 +1,2 @@
+{"success":true,"message":"Success","data":{"status":"ok","timestamp":"2026-07-15T05:00:57.249Z"}}
+{"success":true,"message":"Success","data":{"status":"ready","integrations":{"amazonConnect":{"configured":true,"activeIntegrationConfigCount":12,"ready":true,"missing":[]},"pushNotifications":{"configured":true,"ready":true,"status":"configured","code":"PUSH_NOTIFICATIONS_CONFIGURED","missing":["FIREBASE_WEB_PUSH_VAPID_KEY"]}},"timestamp":"2026-07-15T05:00:58.059Z"}}

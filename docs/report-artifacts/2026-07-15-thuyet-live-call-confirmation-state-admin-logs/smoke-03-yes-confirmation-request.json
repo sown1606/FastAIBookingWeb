@@ -1,0 +1,92 @@
+{
+  "invocationSource": "DialogCodeHook",
+  "inputTranscript": "Yes",
+  "interpretations": [
+    {
+      "nluConfidence": {
+        "score": 0.95
+      },
+      "intent": {
+        "name": "BookAppointmentIntent",
+        "state": "InProgress",
+        "confirmationState": "None",
+        "slots": {
+          "customerName": null,
+          "customerPhone": null,
+          "serviceName": null,
+          "requestedDate": null,
+          "requestedTime": null,
+          "staffPreference": null
+        }
+      }
+    }
+  ],
+  "sessionId": "codex-session-codex-20260715-live-confirm",
+  "inputMode": "Speech",
+  "sessionState": {
+    "sessionAttributes": {
+      "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147",
+      "CalledNumber": "+18483487681",
+      "SystemEndpointAddress": "+18483487681",
+      "CustomerEndpointAddress": "+15552060715",
+      "AmazonConnectContactId": "codex-20260715-live-confirm",
+      "isSynthetic": "true",
+      "customerName": "Codex Smoke",
+      "customerPhone": "+15552060715",
+      "customerNameSource": "current_turn_explicit",
+      "serviceName": "Full Set",
+      "confirmedServiceName": "Full Set",
+      "staffPreference": "Amy",
+      "confirmedStaffName": "Amy",
+      "staffSource": "current_turn_alias",
+      "requestedDate": "2026-07-15",
+      "requestedTime": "2 PM",
+      "initialBookingUtterance": "Full Set today at 2 PM with Amy",
+      "conversationState": "CONTINUE",
+      "conversationOutcome": "NEEDS_INPUT",
+      "conversationComplete": "false",
+      "knownCallerLookupAttempted": "true",
+      "knownCallerLookupStatus": "NOT_FOUND",
+      "customerProfileSource": "current_turn_explicit",
+      "staffId": "e75b9b6d-ad6a-4060-b945-43f1358e3a79",
+      "selectedStaffId": "e75b9b6d-ad6a-4060-b945-43f1358e3a79",
+      "confirmedStaffId": "e75b9b6d-ad6a-4060-b945-43f1358e3a79",
+      "callSessionId": "d5a6cf1e-19fb-4bd7-9348-7e6dd9b646e6",
+      "amazonConnectContactId": "codex-20260715-live-confirm",
+      "aiAlternativeSlots": "[]",
+      "awaitingAlternativeSelection": "false",
+      "awaitingFinalBookingConfirmation": "true",
+      "bookingConfirmationAsked": "true",
+      "confirmationFingerprint": "0f255b06df95c3a113e0ca8ea617f23f3a0de9e6b5e42c4513495e7345481e66",
+      "lastAskedSlot": "bookingConfirmation",
+      "askedSlotsCount": "1",
+      "fallbackCount": "1",
+      "errorCount": "1",
+      "bookingOutcome": "MISSING_INFO",
+      "bookingAttemptId": "02887efd-3388-4d1b-ab50-9f1a49da513d",
+      "turnSequence": "1",
+      "lastProviderTurnId": "codex-session-codex-20260715-live-confirm:DialogCodeHook:Speech:Full Set today at 2 PM with Amy"
+    },
+    "dialogAction": {
+      "type": "Delegate"
+    },
+    "intent": {
+      "name": "BookAppointmentIntent",
+      "state": "InProgress",
+      "confirmationState": "None",
+      "slots": {
+        "customerName": null,
+        "customerPhone": null,
+        "serviceName": null,
+        "requestedDate": null,
+        "requestedTime": null,
+        "staffPreference": null
+      }
+    }
+  },
+  "requestAttributes": {
+    "SystemEndpointAddress": "+18483487681",
+    "ContactId": "codex-20260715-live-confirm",
+    "RequestId": "codex-20260715-live-confirm-1784091748178"
+  }
+}

@@ -30,6 +30,9 @@
           "value": "pay the cure"
         },
         {
+          "value": "pay the bill"
+        },
+        {
           "value": "paydy cure"
         },
         {
@@ -180,6 +183,12 @@
         },
         {
           "value": "food set"
+        },
+        {
+          "value": "fun fact"
+        },
+        {
+          "value": "fun facts"
         },
         {
           "value": "fool set"

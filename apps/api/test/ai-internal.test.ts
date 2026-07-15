@@ -1196,7 +1196,7 @@ test("known Amazon Connect caller phone keeps Kiet instead of bad Lex name text"
 
   assert.equal(result.response.status, 200);
   assert.equal(result.body.data.outcome, "MISSING_INFO");
-  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(result.body.data.lexResponse.sessionAttributes.customerId, ids.kietCustomer);
   assert.equal(result.body.data.lexResponse.sessionAttributes.customerName, "Kiet");
   assert.equal(result.body.data.lexResponse.sessionAttributes.recognizedCustomerName, "Kiet");
@@ -1358,7 +1358,7 @@ test("known caller initial booking turn skips name and preserves all booking fie
   );
 
   assert.equal(result.response.status, 200);
-  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.doesNotMatch(result.body.data.lexResponse.message, /may i have your name|what name/i);
   assert.equal(result.body.data.lexResponse.sessionAttributes.customerName, "Lee");
   assert.equal(result.body.data.lexResponse.sessionAttributes.customerNameSource, "phone_lookup");
@@ -1401,7 +1401,7 @@ test("production g p s transcript resolves Full Set, 3 PM, Trang, and known call
   );
 
   assert.equal(result.response.status, 200);
-  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.doesNotMatch(result.body.data.lexResponse.message, /what time|may i have your name|what name/i);
   assert.equal(result.body.data.lexResponse.sessionAttributes.customerName, "Lee");
   assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
@@ -1583,7 +1583,7 @@ test("customerName turn rejects with Kevin noise and accepts clear call-me phras
   );
 
   assert.equal(clearName.response.status, 200);
-  assert.equal(clearName.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(clearName.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(clearName.body.data.lexResponse.sessionAttributes.customerName, "Lee");
   assert.equal(state.appointments.length, 0);
 });
@@ -1772,7 +1772,7 @@ test("Full Set phrase reaches confirmation without asking service again", async 
 
   assert.equal(result.response.status, 200);
   assert.equal(result.body.data.outcome, "MISSING_INFO");
-  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
   assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
   assert.notEqual(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
@@ -1807,7 +1807,7 @@ test("production Full Set and Trang ASR variants reach one final confirmation", 
 
     assert.equal(result.response.status, 200, phrase);
     assert.equal(result.body.data.outcome, "MISSING_INFO", phrase);
-    assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent", phrase);
+    assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent", phrase);
     assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Full Set", phrase);
     assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedServiceName, "Full Set", phrase);
     assert.equal(result.body.data.lexResponse.sessionAttributes.requestedDate, expectedDate, phrase);
@@ -1856,7 +1856,7 @@ test("Trang ASR confusion does not override active exact Frank Jen or Hang staff
     );
 
     assert.equal(result.response.status, 200, staffName);
-    assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent", staffName);
+    assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent", staffName);
     assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Full Set", staffName);
     assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, staffName, staffName);
     assert.equal(result.body.data.lexResponse.sessionAttributes.staffId, staffId, staffName);
@@ -1975,7 +1975,7 @@ test("current turn staff alias overrides stale staff while preserving Jane", asy
 
   assert.equal(result.response.status, 200);
   assert.equal(result.body.data.outcome, "MISSING_INFO");
-  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(result.body.data.lexResponse.sessionAttributes.customerId, "89e51525-297d-4b2a-b438-f64c4848683a");
   assert.equal(result.body.data.lexResponse.sessionAttributes.customerName, "Jane");
   assert.equal(result.body.data.lexResponse.sessionAttributes.customerPhone, "+84978634886");
@@ -2021,7 +2021,7 @@ test("Emmy and correction staff phrases resolve to Amy without selecting Trang",
 
     assert.equal(result.response.status, 200, phrase);
     assert.equal(result.body.data.outcome, "MISSING_INFO", phrase);
-    assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent", phrase);
+    assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent", phrase);
     assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Amy", phrase);
     assert.equal(result.body.data.lexResponse.sessionAttributes.staffId, ids.amy, phrase);
     assert.equal(result.body.data.lexResponse.sessionAttributes.selectedStaffId, ids.amy, phrase);
@@ -2118,7 +2118,7 @@ test("final confirmation correction from Emmy replaces Trang and books Amy only 
 
   assert.equal(correction.response.status, 200);
   assert.equal(correction.body.data.outcome, "MISSING_INFO");
-  assert.equal(correction.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(correction.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(correction.body.data.lexResponse.sessionAttributes.serviceName, "Pedicure");
   assert.equal(correction.body.data.lexResponse.sessionAttributes.requestedDate, requestedDate);
   assert.equal(correction.body.data.lexResponse.sessionAttributes.requestedTime, "11 AM");
@@ -2193,7 +2193,7 @@ test("not Trang without replacement excludes Trang and confirms next eligible st
 
   assert.equal(result.response.status, 200);
   assert.equal(result.body.data.outcome, "MISSING_INFO");
-  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Pedicure");
   assert.equal(result.body.data.lexResponse.sessionAttributes.requestedDate, requestedDate);
   assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "11 AM");
@@ -2288,7 +2288,7 @@ test("one-shot Full Set greeting with spoken p m captures time before confirmati
   );
 
   assert.equal(result.response.status, 200);
-  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(result.body.data.lexResponse.sessionAttributes.customerName, "Jane");
   assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
   assert.equal(result.body.data.lexResponse.sessionAttributes.requestedDate, requestedDate);
@@ -2722,7 +2722,7 @@ test("current food set wins over stale placeholder service", async () => {
 
   assert.equal(result.response.status, 200);
   assert.equal(result.body.data.outcome, "MISSING_INFO");
-  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
   assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedServiceName, "Full Set");
   assert.match(result.body.data.lexResponse.message, /just to confirm: Full Set .* with Trang/i);
@@ -2814,7 +2814,7 @@ test("scoped princess ASR resolves to Full Set unless Princess is an active exac
 
   assert.equal(result.response.status, 200);
   assert.equal(result.body.data.outcome, "MISSING_INFO");
-  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Princess");
   assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedServiceName, "Princess");
   assert.match(result.body.data.lexResponse.message, /Princess/i);
@@ -2833,7 +2833,7 @@ test("any-staff phrases resolve to an actual staff member before final confirmat
 
     assert.equal(result.response.status, 200);
     assert.equal(result.body.data.outcome, "MISSING_INFO");
-    assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+    assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent");
     assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
     assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedStaffName, "Trang");
     assert.match(result.body.data.lexResponse.message, /I found Trang available/i);
@@ -2883,7 +2883,7 @@ test("transcript recovery normalizes pedicure aliases and confirms without re-as
 
     assert.equal(result.response.status, 200);
     assert.equal(result.body.data.outcome, "MISSING_INFO");
-    assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+    assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent");
     assert.equal(result.body.data.lexResponse.sessionAttributes.customerName, "Kiet Nguyen");
     assert.equal(result.body.data.lexResponse.sessionAttributes.customerPhone, "7325956266");
     assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Pedicure");
@@ -2914,7 +2914,7 @@ test("logged eddie here utterance matches Pedicure for known caller without over
 
   assert.equal(result.response.status, 200);
   assert.equal(result.body.data.outcome, "MISSING_INFO");
-  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(result.body.data.lexResponse.sessionAttributes.customerName, "Kiet");
   assert.equal(result.body.data.lexResponse.sessionAttributes.recognizedCustomerName, "Kiet");
   assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Pedicure");
@@ -2963,7 +2963,7 @@ test("Kiet demo phrase confirms Pedicure with Trang tomorrow at 3 PM", async () 
 
   assert.equal(result.response.status, 200);
   assert.equal(result.body.data.outcome, "MISSING_INFO");
-  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Pedicure");
   assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
   assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "15:00");
@@ -2988,7 +2988,7 @@ test("Kiet demo phrase confirms Pedicure with Kelly tomorrow at 2 PM", async () 
 
   assert.equal(result.response.status, 200);
   assert.equal(result.body.data.outcome, "MISSING_INFO");
-  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Pedicure");
   assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Kelly");
   assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedStaffName, "Kelly");
@@ -3137,11 +3137,86 @@ test("service DTMF 4 maps to Full Set", async () => {
 
   assert.equal(result.response.status, 200);
   assert.equal(result.body.data.outcome, "MISSING_INFO");
-  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
   assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedServiceName, "Full Set");
   assert.match(result.body.data.lexResponse.message, /just to confirm: Full Set .* with Trang/i);
   assert.deepEqual(new Set(state.validationStaffIds), new Set([ids.trang]));
+  assert.equal(state.appointments.length, 0);
+});
+
+test("observed fun facts ASR resolves to Full Set only in booking context", async () => {
+  const booking = await postInternalAppointment(
+    bookingPayload({
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      currentTurnTranscript: "fun facts today at two p m with amy",
+      transcript: "fun facts today at two p m with amy",
+      attributes: {
+        currentTurnTranscript: "fun facts today at two p m with amy"
+      }
+    })
+  );
+
+  assert.equal(booking.response.status, 200);
+  assert.equal(booking.body.data.outcome, "MISSING_INFO");
+  assert.equal(booking.body.data.lexResponse.dialogAction.type, "ElicitIntent");
+  assert.equal(booking.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
+  assert.equal(booking.body.data.lexResponse.sessionAttributes.confirmedServiceName, "Full Set");
+  assert.equal(booking.body.data.lexResponse.sessionAttributes.staffPreference, "Amy");
+  assert.equal(state.appointments.length, 0);
+
+  resetMockState();
+  const nonBooking = await postInternalAppointment(
+    bookingPayload({
+      intentName: "FallbackIntent",
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      currentTurnTranscript: "tell me a fun fact",
+      transcript: "tell me a fun fact",
+      attributes: {
+        currentTurnTranscript: "tell me a fun fact"
+      }
+    })
+  );
+
+  assert.equal(nonBooking.response.status, 200);
+  assert.notEqual(nonBooking.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
+  assert.equal(state.appointments.length, 0);
+});
+
+test("observed pay the bill ASR resolves Pedicure, Today, 2 PM, and Any staff", async () => {
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      currentTurnTranscript: "pay the bill today at two p m with any stop",
+      transcript: "pay the bill today at two p m with any stop",
+      attributes: {
+        currentTurnTranscript: "pay the bill today at two p m with any stop",
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Pedicure");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedServiceName, "Pedicure");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
+  assert.match(result.body.data.lexResponse.message, /Pedicure/i);
+  assert.match(result.body.data.lexResponse.message, /2 PM/i);
   assert.equal(state.appointments.length, 0);
 });
 
@@ -3235,6 +3310,35 @@ test("active service DTMF menu maps 4 to Full Set before stale lastAskedSlot", a
   assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "requestedDate");
 });
 
+test("missing service prompt acknowledges retained date time and staff", async () => {
+  const requestedDate = DateTime.now().setZone("America/New_York").toFormat("yyyy-MM-dd");
+  const first = await postInternalAppointment(
+    bookingPayload({
+      serviceName: undefined,
+      requestedDate,
+      requestedTime: "2 PM",
+      staffPreference: "Amy",
+      confirmationState: undefined,
+      currentTurnTranscript: "I want to book today at 2 PM with Amy",
+      transcript: "I want to book today at 2 PM with Amy",
+      attributes: {
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266"
+      }
+    })
+  );
+
+  assert.equal(first.response.status, 200);
+  assert.equal(first.body.data.outcome, "MISSING_INFO");
+  assert.equal(first.body.data.lexResponse.dialogAction.type, "ElicitSlot");
+  assert.equal(first.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
+  assert.equal(first.body.data.lexResponse.sessionAttributes.activeDtmfMenu, "service");
+  assert.match(first.body.data.lexResponse.message, /I have .*2 PM with Amy/i);
+  assert.doesNotMatch(first.body.data.lexResponse.message, /How may I help you today/i);
+
+  assert.equal(state.appointments.length, 0);
+});
+
 test("active staff DTMF menu maps digit without polluting service or time", async () => {
   const result = await postInternalAppointment(
     bookingPayload({
@@ -3265,7 +3369,7 @@ test("active staff DTMF menu maps digit without polluting service or time", asyn
   );
 
   assert.equal(result.response.status, 200);
-  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Pedicure");
   assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "2 PM");
   assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Amy");
@@ -3339,8 +3443,7 @@ test("international caller provides Jane while customerName is the active slot",
 
   assert.equal(result.response.status, 200);
   assert.equal(result.body.data.outcome, "MISSING_INFO");
-  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
-  assert.notEqual(result.body.data.lexResponse.dialogAction.type, "ElicitIntent");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(result.body.data.lexResponse.sessionAttributes.customerName, "Jane");
   assert.equal(result.body.data.lexResponse.sessionAttributes.customerPhone, "+84978634886");
   assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
@@ -3436,7 +3539,7 @@ test("customer names colliding with staff names are accepted while asking custom
     );
 
     assert.equal(result.response.status, 200, name);
-    assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent", name);
+    assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent", name);
     assert.equal(result.body.data.lexResponse.sessionAttributes.customerName, name);
     assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
   }
@@ -3472,7 +3575,7 @@ test("spoken spelling is collapsed for customerName answers", async () => {
     );
 
     assert.equal(result.response.status, 200, spoken);
-    assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent", spoken);
+    assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent", spoken);
     assert.equal(result.body.data.lexResponse.sessionAttributes.customerName, expected);
   }
 });
@@ -3503,7 +3606,7 @@ test("repeated unclear customerName uses temporary phone fallback and continues"
   );
 
   assert.equal(result.response.status, 200);
-  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(result.body.data.lexResponse.sessionAttributes.customerName, "Guest 4886");
   assert.equal(result.body.data.lexResponse.sessionAttributes.customerNameSource, "phone_fallback");
   assert.equal(result.body.data.lexResponse.sessionAttributes.customerNameNeedsReview, "true");
@@ -3572,7 +3675,7 @@ test("stale production full-set service row stays Full Set in phone flow", async
   );
 
   assert.equal(result.response.status, 200);
-  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
   assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedServiceName, "Full Set");
   assert.match(result.body.data.lexResponse.message, /just to confirm: Full Set .* with Trang/i);
@@ -3677,7 +3780,7 @@ test("staff DTMF applies only to staffPreference and reaches confirmation", asyn
 
   assert.equal(result.response.status, 200);
   assert.equal(result.body.data.outcome, "MISSING_INFO");
-  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Pedicure");
   assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
   assert.equal(result.body.data.lexResponse.sessionAttributes.staffId, ids.trang);
@@ -3708,7 +3811,7 @@ test("staff DTMF 3 maps to Kelly and does not ask staff again", async () => {
 
   assert.equal(result.response.status, 200);
   assert.equal(result.body.data.outcome, "MISSING_INFO");
-  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Kelly");
   assert.equal(result.body.data.lexResponse.sessionAttributes.staffId, ids.kelly);
   assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedStaffName, "Kelly");
@@ -3735,7 +3838,7 @@ test("staff DTMF 4 maps to any staff and resolves before confirmation", async ()
 
   assert.equal(result.response.status, 200);
   assert.equal(result.body.data.outcome, "MISSING_INFO");
-  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
   assert.equal(result.body.data.lexResponse.sessionAttributes.staffId, ids.trang);
   assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedStaffName, "Trang");
@@ -3773,7 +3876,7 @@ test("staff DTMF uses session staffId mapping instead of name-only matching", as
 
   assert.equal(result.response.status, 200);
   assert.equal(result.body.data.outcome, "MISSING_INFO");
-  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Amy");
   assert.equal(result.body.data.lexResponse.sessionAttributes.staffId, ids.amy);
   assert.deepEqual(new Set(state.validationStaffIds), new Set([ids.amy]));
@@ -3808,7 +3911,7 @@ test("missing staff asks once, then first available resolves before confirmation
 
   assert.equal(second.response.status, 200);
   assert.equal(second.body.data.outcome, "MISSING_INFO");
-  assert.equal(second.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(second.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(second.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
   assert.equal(second.body.data.lexResponse.sessionAttributes.staffId, ids.trang);
   assert.match(second.body.data.lexResponse.message, /I found Trang available/i);
@@ -3830,7 +3933,7 @@ test("Any staff exact phrase and live ASR variants never persist raw unmatched s
   );
 
   assert.equal(exact.response.status, 200);
-  assert.equal(exact.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(exact.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.doesNotMatch(exact.body.data.lexResponse.message, /didn.t find that technician/i);
   assert.notEqual(state.bookingAttempts.at(-1)?.requestedStaff, "anystop");
 
@@ -3874,7 +3977,7 @@ test("Any staff exact phrase and live ASR variants never persist raw unmatched s
     );
 
     assert.equal(result.response.status, 200, phrase);
-    assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent", phrase);
+    assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent", phrase);
     assert.doesNotMatch(result.body.data.lexResponse.message, /didn.t find that technician/i, phrase);
     assert.notEqual(result.body.data.lexResponse.sessionAttributes.staffPreference, phrase, phrase);
     assert.notEqual(state.bookingAttempts.at(-1)?.requestedStaff, "anystop", phrase);
@@ -4021,7 +4124,7 @@ test("staff DTMF mapping stays stable across failed speech retries", async () =>
     })
   );
 
-  assert.equal(selected.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(selected.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(selected.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
   assert.equal(selected.body.data.lexResponse.sessionAttributes.staffId, ids.trang);
   assert.equal(state.appointments.length, 0);
@@ -4141,7 +4244,7 @@ test("yes to a single alternative asks final confirmation before booking", async
 
   assert.equal(second.response.status, 200);
   assert.equal(second.body.data.outcome, "MISSING_INFO");
-  assert.equal(second.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(second.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(second.body.data.lexResponse.sessionAttributes.awaitingAlternativeSelection, "false");
   assert.equal(second.body.data.lexResponse.sessionAttributes.awaitingFinalBookingConfirmation, "true");
   assert.equal(second.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
@@ -4173,11 +4276,22 @@ test("natural final confirmations create or return one appointment for the conta
   const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
 
   for (const phrase of [
+    "yes",
+    "yeah",
+    "yep",
     "yes this is correct",
     "yeah correct",
     "correct yes yes correct yes",
     "that's right",
+    "that is correct",
+    "right",
+    "sure",
+    "okay",
+    "confirm",
+    "confirmed",
+    "go ahead",
     "please book it",
+    "book it",
     "correct"
   ]) {
     resetMockState();
@@ -4199,7 +4313,7 @@ test("natural final confirmations create or return one appointment for the conta
         customerPhone: "+17325956266"
       }
     }));
-    assert.equal(confirmation.body.data.lexResponse.dialogAction.type, "ConfirmIntent", phrase);
+    assert.equal(confirmation.body.data.lexResponse.dialogAction.type, "ElicitIntent", phrase);
     assert.ok(confirmation.body.data.lexResponse.sessionAttributes.confirmationFingerprint, phrase);
     const payload = bookingPayload({
       serviceName: "Full Set",
@@ -4275,7 +4389,7 @@ test("final confirmation-only phrases preserve trusted Alex and book exactly onc
       })
     );
     const attrs = confirmation.body.data.lexResponse.sessionAttributes;
-    assert.equal(confirmation.body.data.lexResponse.dialogAction.type, "ConfirmIntent", phrase);
+    assert.equal(confirmation.body.data.lexResponse.dialogAction.type, "ElicitIntent", phrase);
     assert.equal(attrs.staffPreference, "Alex", phrase);
     assert.equal(attrs.staffId, ids.alex, phrase);
     assert.equal(attrs.selectedStaffId, ids.alex, phrase);
@@ -4411,7 +4525,7 @@ test("final confirmation change request updates only the requested time before r
   assert.equal(result.response.status, 200);
   assert.equal(result.body.data.outcome, "MISSING_INFO");
   assert.equal(state.appointments.length, 0);
-  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
   assert.equal(result.body.data.lexResponse.sessionAttributes.requestedDate, requestedDate);
   assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "10:00");
@@ -4448,7 +4562,7 @@ test("active booking change date preserves time and staff before fresh confirmat
   const updatedDate = result.body.data.lexResponse.sessionAttributes.requestedDate;
   assert.equal(result.response.status, 200);
   assert.equal(result.body.data.outcome, "MISSING_INFO");
-  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(DateTime.fromISO(updatedDate).weekday, 1);
   assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "1 PM");
   assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
@@ -4485,7 +4599,7 @@ test("active booking change date and time updates both values once", async () =>
 
   assert.equal(result.response.status, 200);
   assert.equal(result.body.data.outcome, "MISSING_INFO");
-  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(DateTime.fromISO(result.body.data.lexResponse.sessionAttributes.requestedDate).weekday, 1);
   assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "14:00");
   assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
@@ -4506,7 +4620,7 @@ test("final confirmation slot changes beat affirmation tokens and update fields 
     })
   );
   const attrs = confirmation.body.data.lexResponse.sessionAttributes;
-  assert.equal(confirmation.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(confirmation.body.data.lexResponse.dialogAction.type, "ElicitIntent");
 
   const change = await postInternalAppointment(
     bookingPayload({
@@ -4525,7 +4639,7 @@ test("final confirmation slot changes beat affirmation tokens and update fields 
   );
 
   assert.equal(change.body.data.outcome, "MISSING_INFO");
-  assert.equal(change.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(change.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(change.body.data.lexResponse.sessionAttributes.requestedDate, attrs.requestedDate);
   assert.equal(change.body.data.lexResponse.sessionAttributes.requestedTime, "16:00");
   assert.equal(change.body.data.lexResponse.sessionAttributes.staffPreference, "Amy");
@@ -4687,7 +4801,7 @@ test("staff prompt scoped dang resolves to Trang and generic words do not", asyn
     })
   );
 
-  assert.equal(dang.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(dang.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(dang.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
   assert.equal(dang.body.data.lexResponse.sessionAttributes.staffId, ids.trang);
   assert.doesNotMatch(dang.body.data.lexResponse.message, /didn't find that technician/i);
@@ -4835,7 +4949,7 @@ test("canceled Alex overlap does not block booking", async () => {
       amazonConnectContactId: contactId
     })
   );
-  assert.equal(confirmation.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(confirmation.body.data.lexResponse.dialogAction.type, "ElicitIntent");
 
   const booked = await postInternalAppointment(
     bookingPayload({
@@ -4992,7 +5106,7 @@ test("Kevin trailing okay does not affirm stale Amy state", async () => {
   );
 
   assert.equal(result.body.data.outcome, "MISSING_INFO");
-  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "kenvin");
   assert.equal(state.appointments.length, 0);
   assert.doesNotMatch(result.body.data.lexResponse.message, /with Amy/i);
@@ -5029,7 +5143,7 @@ test("final confirmation uses trusted 11 AM instead of stale initial 10 PM trans
       }
     })
   );
-  assert.equal(confirmation.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(confirmation.body.data.lexResponse.dialogAction.type, "ElicitIntent");
 
   const result = await postInternalAppointment(
     bookingPayload({
@@ -5171,7 +5285,7 @@ test("noisy ten eight ten transcript asks for 10 AM confirmation before availabi
 
   assert.equal(confirmed.response.status, 200);
   assert.equal(confirmed.body.data.outcome, "MISSING_INFO");
-  assert.equal(confirmed.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(confirmed.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(confirmed.body.data.lexResponse.sessionAttributes.requestedTime, "10 AM");
   assert.equal(state.appointments.length, 0);
 });
@@ -5252,22 +5366,17 @@ test("10 AM remains valid inside 9 to 6 business hours", async () => {
   assert.equal(localStart.hour, 10);
 });
 
-test("bare okay at final confirmation reprompts and does not create appointment", async () => {
+test("bare okay at final confirmation books only after the confirmation prompt", async () => {
   const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
-  const result = await postInternalAppointment(
+  const confirmation = await postInternalAppointment(
     bookingPayload({
       serviceName: "Full Set",
       requestedDate,
       requestedTime: "3 PM",
       staffPreference: "Amy",
-      confirmationState: "Confirmed",
+      confirmationState: undefined,
       amazonConnectContactId: "connect-final-bare-okay",
-      currentTurnTranscript: "okay",
-      transcript: "okay",
       attributes: {
-        lastAskedSlot: "bookingConfirmation",
-        awaitingFinalBookingConfirmation: "true",
-        bookingConfirmationAsked: "true",
         serviceName: "Full Set",
         requestedDate,
         requestedTime: "3 PM",
@@ -5277,13 +5386,26 @@ test("bare okay at final confirmation reprompts and does not create appointment"
       }
     })
   );
+  assert.equal(confirmation.body.data.lexResponse.dialogAction.type, "ElicitIntent");
 
-  assert.equal(result.response.status, 200);
-  assert.equal(result.body.data.outcome, "MISSING_INFO");
-  assert.equal(state.appointments.length, 0);
-  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
-  assert.match(result.body.data.lexResponse.message, /Please say yes to confirm/i);
-  assert.equal(result.body.data.lexResponse.sessionAttributes.conversationComplete, "false");
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Full Set",
+      requestedDate,
+      requestedTime: "3 PM",
+      staffPreference: "Amy",
+      confirmationState: "None",
+      amazonConnectContactId: "connect-final-bare-okay",
+      currentTurnTranscript: "okay",
+      transcript: "okay",
+      attributes: confirmation.body.data.lexResponse.sessionAttributes
+    })
+  );
+
+  assert.equal(result.response.status, 201);
+  assert.equal(result.body.data.outcome, "BOOKED");
+  assert.equal(state.appointments.length, 1);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.conversationComplete, "true");
 });
 
 test("staff change before final confirmation requires a fresh confirmation before booking", async () => {
@@ -5316,7 +5438,7 @@ test("staff change before final confirmation requires a fresh confirmation befor
   assert.equal(changeResult.response.status, 200);
   assert.equal(changeResult.body.data.outcome, "MISSING_INFO");
   assert.equal(state.appointments.length, 0);
-  assert.equal(changeResult.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(changeResult.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(changeResult.body.data.lexResponse.sessionAttributes.staffPreference, "Amy");
   assert.equal(changeResult.body.data.lexResponse.sessionAttributes.staffId, ids.amy);
   assert.equal(changeResult.body.data.lexResponse.sessionAttributes.conversationComplete, "false");
@@ -5380,7 +5502,7 @@ test("active booking staff change to Kevin wins over previous Trang without name
 
     assert.equal(result.response.status, 200, phrase);
     assert.equal(result.body.data.outcome, "MISSING_INFO", phrase);
-    assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent", phrase);
+    assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent", phrase);
     assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Kevin", phrase);
     assert.equal(result.body.data.lexResponse.sessionAttributes.staffId, ids.kevin, phrase);
     assert.equal(result.body.data.lexResponse.sessionAttributes.selectedStaffId, ids.kevin, phrase);
@@ -5423,7 +5545,7 @@ test("active booking multi-field change updates date time and staff in one turn"
 
   assert.equal(result.response.status, 200);
   assert.equal(result.body.data.outcome, "MISSING_INFO");
-  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(DateTime.fromISO(result.body.data.lexResponse.sessionAttributes.requestedDate).weekday, 1);
   assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "14:00");
   assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Kevin");
@@ -5468,7 +5590,7 @@ test("time-only final correction preserves non-first Kevin staff identity", asyn
   const attrs = result.body.data.lexResponse.sessionAttributes;
   assert.equal(result.response.status, 200);
   assert.equal(result.body.data.outcome, "MISSING_INFO");
-  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(attrs.serviceName, "Full Set");
   assert.equal(attrs.requestedDate, requestedDate);
   assert.equal(attrs.requestedTime, "16:00");
@@ -5521,7 +5643,7 @@ test("production Alex time correction then go ahead keeps Alex through booking",
 
   assert.equal(correction.response.status, 200);
   assert.equal(correction.body.data.outcome, "MISSING_INFO");
-  assert.equal(correction.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(correction.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(attrs.requestedTime, "14:00");
   assert.equal(attrs.staffPreference, "Alex");
   assert.equal(attrs.staffId, ids.alex);
@@ -5646,7 +5768,7 @@ test("first available ASR variants enter explicit-any flow without staff clarifi
     );
 
     assert.equal(result.body.data.outcome, "MISSING_INFO", phrase);
-    assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent", phrase);
+    assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent", phrase);
     assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Trang", phrase);
     assert.equal(result.body.data.lexResponse.sessionAttributes.staffId, ids.trang, phrase);
     assert.doesNotMatch(result.body.data.lexResponse.message, /didn't find that technician/i, phrase);
@@ -5822,7 +5944,7 @@ test("generic services clarification preserves date time and Amy when service is
       assert.equal(state.appointments.length, 0, serviceName);
       continue;
     }
-    assert.equal(second.body.data.lexResponse.dialogAction.type, "ConfirmIntent", serviceName);
+    assert.equal(second.body.data.lexResponse.dialogAction.type, "ElicitIntent", serviceName);
     assert.equal(attrs.serviceName, serviceName, serviceName);
     assert.equal(attrs.requestedDate, today, serviceName);
     assert.equal(attrs.requestedTime, "2 PM", serviceName);
@@ -5867,7 +5989,7 @@ test("staff exclusions select first available while excluding Amy for explicit a
 
     const attrs = result.body.data.lexResponse.sessionAttributes;
     assert.equal(result.response.status, 200, phrase);
-    assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent", phrase);
+    assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent", phrase);
     assert.equal(attrs.staffPreference, "Trang", phrase);
     assert.equal(attrs.staffId, ids.trang, phrase);
     assert.notEqual(attrs.selectedStaffId, ids.amy, phrase);
@@ -5923,7 +6045,7 @@ test("Trang negative ASR variants stay excluded through Any staff selection", as
 
     const attrs = result.body.data.lexResponse.sessionAttributes;
     assert.equal(result.response.status, 200, phrase);
-    assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent", phrase);
+    assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent", phrase);
     assert.equal(attrs.staffPreference, "Amy", phrase);
     assert.equal(attrs.staffId, ids.amy, phrase);
     assert.match(attrs.excludedStaffIds, new RegExp(ids.trang), phrase);
@@ -5989,7 +6111,7 @@ test("production staff exclusion sequence keeps booking fields sticky and does n
   );
   assert.match(rejectTrang.body.data.lexResponse.sessionAttributes.excludedStaffNames, /trang/i);
   assert.doesNotMatch(rejectTrang.body.data.lexResponse.message, /Which detail would you like to change/i);
-  assert.equal(rejectTrang.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(rejectTrang.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(rejectTrang.body.data.lexResponse.sessionAttributes.staffPreference, "Amy");
   assert.equal(rejectTrang.body.data.lexResponse.sessionAttributes.staffId, ids.amy);
   assert.match(rejectTrang.body.data.lexResponse.message, /exclude Trang/i);
@@ -6033,7 +6155,7 @@ test("production staff exclusion sequence keeps booking fields sticky and does n
 
   const attrs = final.body.data.lexResponse.sessionAttributes;
   assert.equal(final.response.status, 200);
-  assert.equal(final.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(final.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(attrs.serviceName, "Manicure");
   assert.equal(attrs.requestedDate, requestedDate);
   assert.equal(attrs.requestedTime, "11 AM");
@@ -6173,7 +6295,7 @@ test("staff exclusion control phrases exclude Amy and confirm the next eligible 
     const attrs = result.body.data.lexResponse.sessionAttributes;
     assert.equal(result.response.status, 200, phrase);
     assert.equal(result.body.data.outcome, "MISSING_INFO", phrase);
-    assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent", phrase);
+    assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent", phrase);
     assert.notEqual(attrs.staffPreference, "Amy", phrase);
     assert.notEqual(attrs.staffId, ids.amy, phrase);
     assert.equal(attrs.selectedStaffId, attrs.staffId, phrase);
@@ -6218,7 +6340,7 @@ test("explicit Amy request removes Amy from staff exclusions", async () => {
 
   const attrs = result.body.data.lexResponse.sessionAttributes;
   assert.equal(result.response.status, 200);
-  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(attrs.staffPreference, "Amy");
   assert.equal(attrs.staffId, ids.amy);
   assert.equal(attrs.excludedStaffIds, undefined);
@@ -6255,7 +6377,7 @@ test("explicit Trang request removes Trang from staff exclusions", async () => {
 
   const attrs = result.body.data.lexResponse.sessionAttributes;
   assert.equal(result.response.status, 200);
-  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(attrs.staffPreference, "Trang");
   assert.equal(attrs.staffId, ids.trang);
   assert.equal(attrs.excludedStaffIds, undefined);
@@ -6498,7 +6620,7 @@ test("closed Friday is not kept trusted and Monday replacement works", async () 
 
   assert.equal(monday.response.status, 200);
   assert.equal(monday.body.data.outcome, "MISSING_INFO");
-  assert.equal(monday.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(monday.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(DateTime.fromISO(monday.body.data.lexResponse.sessionAttributes.requestedDate).weekday, 1);
   assert.equal(monday.body.data.lexResponse.sessionAttributes.requestedTime, "2 PM");
   assert.equal(monday.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
@@ -6535,7 +6657,7 @@ test("change the person before final confirmation confirms next eligible staff w
   assert.equal(result.response.status, 200);
   assert.equal(result.body.data.outcome, "MISSING_INFO");
   assert.equal(state.appointments.length, 0);
-  assert.equal(result.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(result.body.data.lexResponse.sessionAttributes.conversationComplete, "false");
   assert.notEqual(result.body.data.lexResponse.sessionAttributes.staffId, ids.amy);
   assert.match(result.body.data.lexResponse.sessionAttributes.excludedStaffIds, new RegExp(ids.amy));
@@ -6595,7 +6717,7 @@ test("reschedule confirmation updates the existing appointment without creating 
     })
   );
   assert.equal(confirm.body.data.outcome, "MISSING_INFO");
-  assert.equal(confirm.body.data.lexResponse.dialogAction.type, "ConfirmIntent");
+  assert.equal(confirm.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(state.appointments.length, 1);
 
   const done = await postInternalAppointment(
@@ -6786,7 +6908,37 @@ test("Amazon Connect booking fulfillment creates separate AI log rows for differ
   assert.notEqual(state.aiInteractionLogs[0].interactionKey, state.aiInteractionLogs[1].interactionKey);
 });
 
-test("Admin AI logs exclude synthetic ContactIds by default and include them when requested", async () => {
+test("Admin AI logs collapse legacy duplicate rows before pagination", async () => {
+  const contactId = "connect-ai-log-legacy-duplicate";
+  await postInternalAppointment(
+    bookingPayload({
+      amazonConnectContactId: contactId,
+      currentTurnTranscript: "pedicure",
+      transcript: "pedicure",
+      attributes: {
+        AmazonConnectContactId: contactId,
+        currentTurnTranscript: "pedicure"
+      }
+    })
+  );
+  const original = state.aiInteractionLogs[0];
+  state.aiInteractionLogs.push({
+    ...original,
+    id: "ai-log-legacy-duplicate",
+    interactionKey: `${original.interactionKey}:legacy`,
+    createdAt: new Date(original.createdAt.getTime() + 1000),
+    responseText: "legacy duplicate row"
+  });
+
+  const result = await listAIInteractionsForAdmin({ page: 1, limit: 50 });
+
+  assert.equal(state.aiInteractionLogs.length, 2);
+  assert.equal(result.items.length, 1);
+  assert.equal(result.pagination.total, 1);
+  assert.equal(result.items[0].callSession?.providerCallId, contactId);
+});
+
+test("Admin AI logs show synthetic ContactIds by default and hide them when requested", async () => {
   const realContactId = "7a82c651-5091-4f32-84f0-bf37d004317c";
   const syntheticContactId = "codex-name-smoke-test";
   await postInternalAppointment(
@@ -6813,10 +6965,10 @@ test("Admin AI logs exclude synthetic ContactIds by default and include them whe
   );
 
   const defaultList = await listAIInteractionsForAdmin({ page: 1, limit: 50 });
-  const includedList = await listAIInteractionsForAdmin({
+  const hiddenList = await listAIInteractionsForAdmin({
     page: 1,
     limit: 50,
-    includeSynthetic: true
+    includeSynthetic: false
   });
 
   assert.equal(state.aiInteractionLogs.length, 2);
@@ -6826,13 +6978,13 @@ test("Admin AI logs exclude synthetic ContactIds by default and include them whe
       ?.isSynthetic,
     false
   );
-  assert.equal(defaultList.items.length, 1);
-  assert.equal(defaultList.items[0].callSession?.providerCallId, realContactId);
-  assert.equal(includedList.items.length, 2);
-  assert.ok(includedList.items.some((item) => item.callSession?.providerCallId === syntheticContactId));
+  assert.equal(defaultList.items.length, 2);
+  assert.ok(defaultList.items.some((item) => item.callSession?.providerCallId === syntheticContactId));
+  assert.equal(hiddenList.items.length, 1);
+  assert.equal(hiddenList.items[0].callSession?.providerCallId, realContactId);
 });
 
-test("Admin call logs exclude synthetic ContactIds by default and label them when requested", async () => {
+test("Admin call logs show synthetic ContactIds by default and hide them when requested", async () => {
   const realContactId = "8b82c651-5091-4f32-84f0-bf37d004318d";
   const syntheticContactId = "codex-call-smoke-test";
   await postInternalAppointment(
@@ -6863,16 +7015,16 @@ test("Admin call logs exclude synthetic ContactIds by default and label them whe
   syntheticSession.rawPayload = { metadata: { isSynthetic: true } };
 
   const defaultList = await listCallsForAdmin({ page: 1, limit: 50 });
-  const includedList = await listCallsForAdmin({
+  const hiddenList = await listCallsForAdmin({
     page: 1,
     limit: 50,
-    includeSynthetic: true
+    includeSynthetic: false
   });
 
-  assert.equal(defaultList.items.length, 1);
-  assert.equal(defaultList.items[0].providerCallId, realContactId);
-  assert.equal(includedList.items.length, 2);
-  assert.equal(includedList.items.find((item) => item.providerCallId === syntheticContactId)?.isSynthetic, true);
+  assert.equal(defaultList.items.length, 2);
+  assert.equal(defaultList.items.find((item) => item.providerCallId === syntheticContactId)?.isSynthetic, true);
+  assert.equal(hiddenList.items.length, 1);
+  assert.equal(hiddenList.items[0].providerCallId, realContactId);
 });
 
 test("repeated identical closed-day turns reuse one logical BookingAttempt", async () => {
@@ -7236,7 +7388,7 @@ test("recoverable backend error preserves slots and appends invalid turn to exis
 
   assert.equal(second.response.status, 200);
   assert.equal(second.body.data.outcome, "MISSING_INFO");
-  assert.notEqual(second.body.data.lexResponse.dialogAction.type, "ElicitIntent");
+  assert.equal(second.body.data.lexResponse.dialogAction.type, "ElicitIntent");
   assert.equal(second.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
   assert.equal(second.body.data.lexResponse.sessionAttributes.requestedDate, requestedDate);
   assert.equal(second.body.data.lexResponse.sessionAttributes.requestedTime, "3 PM");

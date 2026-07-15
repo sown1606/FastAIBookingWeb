@@ -1,0 +1,35 @@
+{
+    "botId": "KHMIXGA2US",
+    "botVersion": "DRAFT",
+    "localeId": "en_US",
+    "localeName": "English (US)",
+    "nluIntentConfidenceThreshold": 0.4,
+    "intentsCount": 5,
+    "slotTypesCount": 1,
+    "botLocaleStatus": "ReadyExpressTesting",
+    "creationDateTime": "2026-05-07T10:07:04.284000-04:00",
+    "lastUpdatedDateTime": "2026-07-12T06:33:38.795000-04:00",
+    "lastBuildSubmittedDateTime": "2026-07-15T00:58:44.716000-04:00",
+    "botLocaleHistoryEvents": [
+        {
+            "event": "Included in V31 from DRAFT",
+            "eventDate": "2026-07-12T06:33:38.795000-04:00"
+        },
+        {
+            "event": "Included in V30 from DRAFT",
+            "eventDate": "2026-07-12T02:56:29.123000-04:00"
+        },
+        {
+            "event": "Included in V29 from DRAFT",
+            "eventDate": "2026-07-12T00:18:45.222000-04:00"
+        },
+        {
+            "event": "Included in V28 from DRAFT",
+            "eventDate": "2026-07-12T00:14:45.277000-04:00"
+        },
+        {
+            "event": "Included in V27 from DRAFT",
+            "eventDate": "2026-07-10T10:10:44.699000-04:00"
+        }
+    ]
+}

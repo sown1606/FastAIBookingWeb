@@ -1354,6 +1354,28 @@ const compactAsrDiagnosticsForGpt = (value: unknown) => {
   return Object.values(compact).some((item) => item !== undefined) ? compact : null;
 };
 
+const compactProviderTimingForGpt = (rawPayload: unknown) => {
+  const timing = readRecord(readRecord(rawPayload).providerTiming);
+  const compact = {
+    source: timing.source,
+    providerInitiatedAt: timing.providerInitiatedAt,
+    providerDisconnectedAt: timing.providerDisconnectedAt,
+    applicationFirstSeenAt: timing.applicationFirstSeenAt,
+    answeredAt: timing.answeredAt ?? null,
+    limitations: Array.isArray(timing.limitations) ? timing.limitations : undefined
+  };
+  return Object.values(compact).some((item) => item !== undefined && item !== null)
+    ? compact
+    : {
+        source: "application_session",
+        providerInitiatedAt: null,
+        providerDisconnectedAt: null,
+        applicationFirstSeenAt: null,
+        answeredAt: null,
+        limitations: ["Provider timing reconciliation has not populated this call session."]
+      };
+};
+
 const readStateValue = (
   diagnostics: Record<string, unknown>,
   sessionAttributes: Record<string, unknown>,
@@ -1389,13 +1411,32 @@ const buildCompactTurnStateSnapshot = (turn: Record<string, unknown>) => {
 };
 
 const normalizeTurnForGpt = (turn: Record<string, unknown>) => {
+  const diagnostics = readRecord(turn.turnStateDiagnostics);
   const turnStateSnapshot = buildCompactTurnStateSnapshot(turn);
   const asrDiagnostics = compactAsrDiagnosticsForGpt(
-    readRecord(turn.turnStateDiagnostics).asrDiagnostics ??
+    diagnostics.asrDiagnostics ??
       readRecord(turn.sessionAttributesAfter).asrDiagnostics
   );
+  const latencyMetrics = {
+    providerContactInitiatedAt: diagnostics.providerContactInitiatedAt,
+    providerInputStartedAt: diagnostics.providerInputStartedAt,
+    providerInputEndedAt: diagnostics.providerInputEndedAt,
+    lexRequestReceivedAt: diagnostics.lexRequestReceivedAt,
+    lambdaHandlerStartedAt: diagnostics.lambdaHandlerStartedAt,
+    internalApiStartedAt: diagnostics.internalApiStartedAt,
+    internalApiCompletedAt: diagnostics.internalApiCompletedAt,
+    availabilityQueryDurationMs: diagnostics.availabilityQueryDurationMs,
+    lambdaDurationMs: diagnostics.lambdaDurationMs,
+    unavailable: diagnostics.latencyUnavailableReason
+  };
   const item: Record<string, unknown> = {
     index: turn.index,
+    providerTurnId: diagnostics.providerTurnId ?? null,
+    lexRequestId: diagnostics.lexRequestId ?? null,
+    turnSequence: {
+      before: diagnostics.turnSequenceBefore ?? null,
+      after: diagnostics.turnSequenceAfter ?? null
+    },
     timestamp: isoStringOrNull(turn.createdAt),
     callerTranscript: turn.currentTurnTranscript ?? null,
     aiResponse: turn.responseText ?? null,
@@ -1409,7 +1450,23 @@ const normalizeTurnForGpt = (turn: Record<string, unknown>) => {
     dtmfRoute: readRecord(turn.dtmfRouting).route ?? null,
     missingFields: turn.missingFields ?? null,
     turnStateSnapshot: Object.keys(turnStateSnapshot).length ? turnStateSnapshot : null,
-    asrDiagnostics
+    asrDiagnostics,
+    latencyMetrics: Object.values(latencyMetrics).some((value) => value !== undefined)
+      ? latencyMetrics
+      : {
+          unavailable: "Provider speech endpointing and prompt playback timestamps are not present in current Lex events."
+        },
+    finalConnectBranch: diagnostics.finalConnectBranch ?? diagnostics.connectLastErrorBranch ?? null,
+    lexDiagnostics: {
+      noInput: diagnostics.lexNoInputReason ?? null,
+      noMatch: diagnostics.lexNoMatchReason ?? null,
+      error: diagnostics.lexErrorReason ?? null
+    },
+    stateVersion: {
+      before: diagnostics.stateVersionBefore ?? diagnostics.turnSequenceBefore ?? null,
+      after: diagnostics.stateVersionAfter ?? diagnostics.turnSequenceAfter ?? null
+    },
+    staleOrDuplicateRejectionReason: diagnostics.staleOrDuplicateRejectionReason ?? null
   };
   writeRecordIfPresent(item, "slotDecisions", turn.slotDecisions);
   writeRecordIfPresent(item, "trustedSlotsBefore", turn.trustedSlotsBefore);
@@ -1450,6 +1507,7 @@ const buildGptCallSummary = (call: CallDebugSession) => ({
   answeredAt: call.answeredAt,
   endedAt: call.endedAt,
   durationSeconds: call.durationSeconds,
+  providerTiming: compactProviderTimingForGpt(call.rawPayload),
   bookingResult: call.bookingResult,
   failureReason: call.failureReason,
   finalResolution: call.finalResolution

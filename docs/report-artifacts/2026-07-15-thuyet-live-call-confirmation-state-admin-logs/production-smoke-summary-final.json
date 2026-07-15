@@ -1,0 +1,176 @@
+[
+  {
+    "name": "Pedicure speech",
+    "file": "smoke-01-pedicure-response.json",
+    "dialogAction": {
+      "type": "ElicitSlot",
+      "slotToElicit": "requestedDate"
+    },
+    "message": "What day would you like? You can say today or tomorrow.",
+    "serviceName": "Pedicure",
+    "requestedDate": null,
+    "requestedTime": null,
+    "staffPreference": null,
+    "activeDtmfMenu": null,
+    "bookingOutcome": null,
+    "conversationOutcome": null,
+    "conversationComplete": null,
+    "transferToQueue": null,
+    "appointmentCreated": false,
+    "appointmentId": null
+  },
+  {
+    "name": "Full Set confirmation prompt",
+    "file": "smoke-02-full-set-confirmation-prompt-response.json",
+    "dialogAction": {
+      "type": "ElicitIntent"
+    },
+    "message": "<speak>Codex Smoke, just to confirm: Full Set today at 2 PM with Amy. <break time=\"300ms\"/> Is that correct?</speak>",
+    "serviceName": "Full Set",
+    "requestedDate": "2026-07-15",
+    "requestedTime": "2 PM",
+    "staffPreference": "Amy",
+    "activeDtmfMenu": null,
+    "bookingOutcome": "MISSING_INFO",
+    "conversationOutcome": "NEEDS_INPUT",
+    "conversationComplete": "false",
+    "transferToQueue": null,
+    "appointmentCreated": false,
+    "appointmentId": null
+  },
+  {
+    "name": "Yes confirmation books once",
+    "file": "smoke-03-yes-confirmation-response.json",
+    "dialogAction": {
+      "type": "Close"
+    },
+    "message": "<speak>You're all set. <break time=\"300ms\"/> Your full set is booked for today at 2 PM with Amy. Thank you for calling.</speak>",
+    "serviceName": "Full Set",
+    "requestedDate": "2026-07-15",
+    "requestedTime": "2 PM",
+    "staffPreference": "Amy",
+    "activeDtmfMenu": null,
+    "bookingOutcome": "BOOKED",
+    "conversationOutcome": "BOOKED",
+    "conversationComplete": "true",
+    "transferToQueue": null,
+    "appointmentCreated": true,
+    "appointmentId": "4334c10a-b4ea-4241-821f-8d88bad5c4eb"
+  },
+  {
+    "name": "fun facts service alias",
+    "file": "smoke-04-funfacts-response.json",
+    "dialogAction": {
+      "type": "ElicitSlot",
+      "slotToElicit": "requestedTime"
+    },
+    "message": "<speak>Amy already has an appointment at 2 PM. <break time=\"300ms\"/> press 1 for 2 PM with Kevin, or press 2 for 3:45 PM with Amy.</speak>",
+    "serviceName": "Full Set",
+    "requestedDate": "2026-07-15",
+    "requestedTime": "2 PM",
+    "staffPreference": "Amy",
+    "activeDtmfMenu": null,
+    "bookingOutcome": "NO_AVAILABILITY",
+    "conversationOutcome": "NO_AVAILABILITY",
+    "conversationComplete": "false",
+    "transferToQueue": null,
+    "appointmentCreated": false,
+    "appointmentId": null
+  },
+  {
+    "name": "Pedicure with any staff",
+    "file": "smoke-05-pedicure-any-staff-response.json",
+    "dialogAction": {
+      "type": "ElicitIntent"
+    },
+    "message": "<speak>I found Trang available. <break time=\"300ms\"/> Codex, just to confirm: Pedicure today at 2 PM with Trang. <break time=\"300ms\"/> Is that correct?</speak>",
+    "serviceName": "Pedicure",
+    "requestedDate": "2026-07-15",
+    "requestedTime": "2 PM",
+    "staffPreference": "Trang",
+    "activeDtmfMenu": null,
+    "bookingOutcome": "MISSING_INFO",
+    "conversationOutcome": "NEEDS_INPUT",
+    "conversationComplete": "false",
+    "transferToQueue": null,
+    "appointmentCreated": false,
+    "appointmentId": null
+  },
+  {
+    "name": "pay the bill with any stop",
+    "file": "smoke-06-paybill-anystop-response.json",
+    "dialogAction": {
+      "type": "ElicitIntent"
+    },
+    "message": "<speak>I found Trang available. <break time=\"300ms\"/> Codex, just to confirm: Pedicure today at 2 PM with Trang. <break time=\"300ms\"/> Is that correct?</speak>",
+    "serviceName": "Pedicure",
+    "requestedDate": "2026-07-15",
+    "requestedTime": "2 PM",
+    "staffPreference": "Trang",
+    "activeDtmfMenu": null,
+    "bookingOutcome": "MISSING_INFO",
+    "conversationOutcome": "NEEDS_INPUT",
+    "conversationComplete": "false",
+    "transferToQueue": null,
+    "appointmentCreated": false,
+    "appointmentId": null
+  },
+  {
+    "name": "missing service prompt final",
+    "file": "smoke-recheck-missing-service-final-response.json",
+    "dialogAction": {
+      "type": "ElicitSlot",
+      "slotToElicit": "serviceName"
+    },
+    "message": "<speak>I have that down for today at 2 PM with Amy. <break time=\"300ms\"/> Sure. Which service would you like?</speak>",
+    "serviceName": null,
+    "requestedDate": "2026-07-15",
+    "requestedTime": "2 PM",
+    "staffPreference": "Amy",
+    "activeDtmfMenu": "service",
+    "bookingOutcome": "MISSING_INFO",
+    "conversationOutcome": "NEEDS_INPUT",
+    "conversationComplete": "false",
+    "transferToQueue": null,
+    "appointmentCreated": false,
+    "appointmentId": null
+  },
+  {
+    "name": "spoken Manicure while service menu active",
+    "file": "smoke-recheck-manicure-after-menu-final-response.json",
+    "dialogAction": {
+      "type": "Delegate"
+    },
+    "message": "Please give me a moment while I finish your appointment.",
+    "serviceName": "Manicure",
+    "requestedDate": "2026-07-15",
+    "requestedTime": "2 PM",
+    "staffPreference": "Amy",
+    "activeDtmfMenu": null,
+    "bookingOutcome": "MISSING_INFO",
+    "conversationOutcome": "NEEDS_INPUT",
+    "conversationComplete": "false",
+    "transferToQueue": null,
+    "appointmentCreated": false,
+    "appointmentId": null
+  },
+  {
+    "name": "DTMF 0 explicit transfer",
+    "file": "smoke-09-zero-transfer-response.json",
+    "dialogAction": {
+      "type": "ElicitIntent"
+    },
+    "message": "Let me check for an available operator.",
+    "serviceName": null,
+    "requestedDate": null,
+    "requestedTime": null,
+    "staffPreference": null,
+    "activeDtmfMenu": null,
+    "bookingOutcome": "HUMAN_ESCALATION",
+    "conversationOutcome": "NEEDS_INPUT",
+    "conversationComplete": "false",
+    "transferToQueue": "true",
+    "appointmentCreated": false,
+    "appointmentId": null
+  }
+]

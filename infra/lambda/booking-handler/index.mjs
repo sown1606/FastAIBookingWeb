@@ -596,6 +596,14 @@ function isPrincessFullSetAsr(value) {
   return /\bprincess\b/.test(normalizeForMatch(value));
 }
 
+function isFunFactsFullSetAsr(value) {
+  return /\bfun\s+facts?\b/.test(normalizeForMatch(value));
+}
+
+function isPayTheBillPedicureAsr(value) {
+  return /\bpay\s+the\s+bill\b/.test(normalizeForMatch(value));
+}
+
 function isServiceCollectionContext(event) {
   const previous = event.sessionState?.sessionAttributes || {};
   const transcript = getCurrentTurnTranscript(event);
@@ -620,6 +628,14 @@ function getScopedServiceAliasCorrectionRaw(event) {
 
 function currentTurnServiceMention(event) {
   const transcript = getCurrentTurnTranscript(event);
+  if (isServiceCollectionContext(event)) {
+    if (isFunFactsFullSetAsr(transcript)) {
+      return "Full Set";
+    }
+    if (isPayTheBillPedicureAsr(transcript)) {
+      return "Pedicure";
+    }
+  }
   const transcriptService = extractServiceFromTranscript(transcript);
   if (transcriptService) {
     return transcriptService;
@@ -691,6 +707,7 @@ function isStaffSelectionContext(normalizedText, sessionAttributes = {}) {
   return Boolean(
     sessionAttributes?.lastAskedSlot === "staffPreference" ||
       sessionAttributes?.activeDtmfMenu === "staff" ||
+      hasExplicitStaffContextCue(normalizedText, sessionAttributes) ||
       /\b(?:staff|technician|tech)\b/.test(normalizedText) ||
       /\b(?:any\s+staff|any\s+technician|any\s+tech|first\s+avai?lable|the\s+first\s+available|for\s+available)\b/.test(
         normalizedText
@@ -733,7 +750,11 @@ function normalizeAnyStaffPhrase(text, context = {}) {
   return CONTEXTUAL_ANY_STAFF_ALIASES.some((alias) => {
     const aliasNormalized = normalizeForMatch(alias);
     const aliasCompact = compactForMatch(alias);
-    return contextualCandidate === aliasNormalized || contextualCompact === aliasCompact;
+    return (
+      contextualCandidate === aliasNormalized ||
+      contextualCompact === aliasCompact ||
+      textContainsStaffAlias(contextualCandidate, aliasNormalized)
+    );
   })
     ? "Any staff"
     : "";
@@ -1118,6 +1139,12 @@ function getScopedDtmfDigit(event, expectedSlot) {
   const previous = event.sessionState?.sessionAttributes || {};
   const lastAskedSlot = previous.lastAskedSlot;
   const activeDtmfMenu = previous.activeDtmfMenu;
+  if (expectedSlot === "serviceName" && activeDtmfMenu !== "service") {
+    return "";
+  }
+  if (expectedSlot === "staffPreference" && activeDtmfMenu !== "staff") {
+    return "";
+  }
   if (activeDtmfMenu === "service" && expectedSlot !== "serviceName") {
     return "";
   }
@@ -1513,15 +1540,6 @@ function buildDtmfRouting(event) {
 
   if (activeDtmfMenuBefore) {
     return routeByMenu(activeDtmfMenuBefore);
-  }
-  if (lastAskedSlotBefore === "serviceName") {
-    return routeByMenu("service");
-  }
-  if (lastAskedSlotBefore === "staffPreference") {
-    return routeByMenu("staff");
-  }
-  if (!lastAskedSlotBefore) {
-    return routeByMenu("service");
   }
 
   const nextSlot = ["requestedDate", "requestedTime", "customerName", "customerPhone"].includes(lastAskedSlotBefore)
@@ -2256,6 +2274,12 @@ function sanitizeLexEvent(event, analysis) {
   if (analysis.currentTurnServiceMention && DEMO_SERVICE_NAMES.includes(analysis.currentTurnServiceMention)) {
     sessionAttributes.serviceName = analysis.currentTurnServiceMention;
     sessionAttributes.confirmedServiceName = analysis.currentTurnServiceMention;
+    delete sessionAttributes.activeDtmfMenu;
+    delete sessionAttributes.activeDtmfOptionsJson;
+    delete sessionAttributes.serviceNameDtmf;
+    delete sessionAttributes.serviceNameDigit;
+    delete sessionAttributes.serviceDtmf;
+    delete sessionAttributes.serviceDigit;
     delete sessionAttributes.serviceFallbackCount;
     delete sessionAttributes.invalidServiceCount;
     delete sessionAttributes.serviceClarificationAttempts;
@@ -3253,6 +3277,9 @@ function shouldTreatFallbackAsBooking(event, intentName) {
   if (!isBookingFallbackIntent(intentName) || !isBookingInProgress(event)) {
     return false;
   }
+  if (isFinalBookingConfirmationActive(event)) {
+    return true;
+  }
   const transcript = getCurrentTurnTranscript(event);
   const previous = event.sessionState?.sessionAttributes || {};
   const recognizedService = currentTurnRecognizedService(event);
@@ -3324,7 +3351,7 @@ function isNoInputEvent(event) {
 }
 
 function isAffirmativeUtterance(value) {
-  return /^(?:yes|yeah|yep|correct|right|sure|ok|okay|please|connect me)$/i.test(
+  return /^(?:yes|yeah|yep|correct|right|sure|ok|okay|confirm|confirmed|go ahead|book it|that is correct|please|connect me)$/i.test(
     normalizeForMatch(value)
   );
 }
@@ -3341,12 +3368,18 @@ const FINAL_CONFIRMATION_ONLY_PHRASES = new Set([
   "that s right",
   "thats right",
   "that is right",
+  "that is correct",
   "sounds good",
   "go ahead",
   "please go ahead",
   "book it",
   "please book it",
   "confirm it",
+  "confirm",
+  "confirmed",
+  "sure",
+  "ok",
+  "okay",
   "proceed",
   "do it"
 ]);
@@ -3365,9 +3398,6 @@ const FINAL_CONFIRMATION_OUTCOME = {
 function classifyFinalBookingConfirmation(value) {
   const normalized = normalizeForMatch(value);
   if (!normalized) {
-    return FINAL_CONFIRMATION_OUTCOME.UNKNOWN;
-  }
-  if (/^(?:ok|okay)$/.test(normalized)) {
     return FINAL_CONFIRMATION_OUTCOME.UNKNOWN;
   }
   if (isFinalConfirmationOnlyPhrase(normalized)) {
@@ -4112,11 +4142,12 @@ function buildElicitSlotResponse(event, slotName, extraAttributes = {}, messageO
 	      }
 	    ]
 	  };
-  return commitDialogState(response, {
-    slotToElicit: slotName,
-    trustedSlots: responseSessionAttributes,
-    responseMessage
-  });
+	  return commitDialogState(response, {
+	    slotToElicit: slotName,
+	    trustedSlots: responseSessionAttributes,
+	    responseMessage,
+	    providerTurnId: getProviderTurnId(event)
+	  });
 	}
 
 function getNoInputPrompt(slotName, noInputCount, event) {
@@ -4644,12 +4675,13 @@ function buildLexResponse(event, message, state = "Fulfilled", sessionAttributes
 	      }
 	    ]
   };
-  return commitDialogState(response, {
-    slotToElicit: dialogAction.type === "ElicitSlot" ? dialogAction.slotToElicit : requestedSlotToElicit,
-    trustedSlots: responseSessionAttributes,
-    responseMessage,
-    ...(dialogAction.type !== "ElicitSlot" && requestedSlotToElicit ? { activeDtmfMenu: "" } : {})
-  });
+	  return commitDialogState(response, {
+	    slotToElicit: dialogAction.type === "ElicitSlot" ? dialogAction.slotToElicit : requestedSlotToElicit,
+	    trustedSlots: responseSessionAttributes,
+	    responseMessage,
+	    providerTurnId: getProviderTurnId(event),
+	    ...(dialogAction.type !== "ElicitSlot" && requestedSlotToElicit ? { activeDtmfMenu: "" } : {})
+	  });
 	}
 
 function buildDelegateResponse(event) {
@@ -5065,10 +5097,13 @@ function buildInternalPayload(event, intentName, extraAttributes = {}) {
     slots,
     attributes: {
       ...sessionAttributes,
-      ...extraAttributes,
-      currentTurnTranscript,
-      aggregatedBookingTranscript: transcript,
-      asrDiagnostics: JSON.stringify(getAsrDiagnostics(event)),
+	      ...extraAttributes,
+	      currentTurnTranscript,
+	      aggregatedBookingTranscript: transcript,
+	      providerTurnId: getProviderTurnId(event),
+	      lexRequestId: event.requestId || event.invocationId || "",
+	      turnSequence: sessionAttributes.turnSequence || "0",
+	      asrDiagnostics: JSON.stringify(getAsrDiagnostics(event)),
       asrNBestAlternatives: JSON.stringify(getAsrDiagnostics(event).nBestAlternatives),
       ...(event.lexTurnDebug ? { lexTurnDebug: event.lexTurnDebug } : {})
     }
@@ -5274,6 +5309,11 @@ function commitDialogState(response, options = {}) {
   ) {
     sessionAttributes.operatorHelpMentioned = "true";
   }
+  const previousTurnSequence = parseAttemptCount(sessionAttributes.turnSequence);
+  sessionAttributes.turnSequence = String(previousTurnSequence + 1);
+  if (options.providerTurnId) {
+    sessionAttributes.lastProviderTurnId = options.providerTurnId;
+  }
 
   return {
     ...response,
@@ -5297,6 +5337,17 @@ function redactLogObject(value) {
 
 function getInputMode(event) {
   return event.inputMode || (readDtmfDigit(event.inputTranscript) ? "DTMF" : "Speech");
+}
+
+function getProviderTurnId(event) {
+  const sessionAttributes = event.sessionState?.sessionAttributes || {};
+  return String(
+    event.requestId ||
+      event.invocationId ||
+      event.invocationSourceRequestId ||
+      sessionAttributes["x-amz-lex:request-id"] ||
+      `${event.sessionId || "session"}:${event.invocationSource || "unknown"}:${event.inputMode || "input"}:${event.inputTranscript || ""}`
+  );
 }
 
 function getAsrDiagnostics(event) {
@@ -5419,11 +5470,14 @@ function logStructuredLexTurn(event, response, analysis = {}) {
   const sessionAttributesAfter = response?.sessionState?.sessionAttributes || {};
   const slots = event.sessionState?.intent?.slots || {};
   const logPayload = {
-    contactId:
-      getAttribute(event, attributeNames.contactId) ||
-      event.sessionId ||
-      sessionAttributesAfter.AmazonConnectContactId,
-    currentTurnTranscript: analysis.currentTurnTranscript ?? getCurrentTurnTranscript(event),
+	    contactId:
+	      getAttribute(event, attributeNames.contactId) ||
+	      event.sessionId ||
+	      sessionAttributesAfter.AmazonConnectContactId,
+	    providerTurnId: getProviderTurnId(event),
+	    turnSequenceBefore: sessionAttributesBefore.turnSequence,
+	    turnSequenceAfter: sessionAttributesAfter.turnSequence,
+	    currentTurnTranscript: analysis.currentTurnTranscript ?? getCurrentTurnTranscript(event),
     inputTranscript: event.inputTranscript || "",
     inputMode: getInputMode(event),
     lastAskedSlotBefore: sessionAttributesBefore.lastAskedSlot,
@@ -5746,7 +5800,6 @@ async function handleLexEvent(event, analysis = {}) {
 
 	    if (
 	      !shouldEscalate &&
-	      intentName === "BookAppointmentIntent" &&
 	      isFinalBookingConfirmationActive(event) &&
 	      finalConfirmationOutcome === FINAL_CONFIRMATION_OUTCOME.AFFIRMED
 	    ) {
@@ -5766,10 +5819,10 @@ async function handleLexEvent(event, analysis = {}) {
 	          }
 	        }
 	      };
-	      const result = await postInternalAppointment(
-	        buildInternalPayload(confirmedEvent, intentName, {
-	          awaitingFinalBookingConfirmation: "false",
-	          bookingConfirmationAsked: "false"
+		      const result = await postInternalAppointment(
+		        buildInternalPayload(confirmedEvent, "BookAppointmentIntent", {
+		          awaitingFinalBookingConfirmation: "false",
+		          bookingConfirmationAsked: "false"
 	        }),
 	        {
 	          operationName: "booking_final_confirmation",
@@ -5791,12 +5844,11 @@ async function handleLexEvent(event, analysis = {}) {
 	      );
 	    }
 
-	    if (
-	      !shouldEscalate &&
-	      intentName === "BookAppointmentIntent" &&
-	      isFinalBookingConfirmationActive(event) &&
-	      finalConfirmationOutcome === FINAL_CONFIRMATION_OUTCOME.DENIED
-	    ) {
+		    if (
+		      !shouldEscalate &&
+		      isFinalBookingConfirmationActive(event) &&
+		      finalConfirmationOutcome === FINAL_CONFIRMATION_OUTCOME.DENIED
+		    ) {
 	      const deniedEvent = {
 	        ...event,
 	        sessionState: {
@@ -5813,10 +5865,10 @@ async function handleLexEvent(event, analysis = {}) {
 	          }
 	        }
 	      };
-	      const result = await postInternalAppointment(
-	        buildInternalPayload(deniedEvent, intentName, {
-	          awaitingFinalBookingConfirmation: "false",
-	          bookingConfirmationAsked: "false"
+		      const result = await postInternalAppointment(
+		        buildInternalPayload(deniedEvent, "BookAppointmentIntent", {
+		          awaitingFinalBookingConfirmation: "false",
+		          bookingConfirmationAsked: "false"
 	        }),
 	        {
 	          operationName: "booking_final_confirmation_denied",
@@ -5838,12 +5890,11 @@ async function handleLexEvent(event, analysis = {}) {
 	      );
 	    }
 
-	    if (
-	      !shouldEscalate &&
-	      intentName === "BookAppointmentIntent" &&
-	      isFinalBookingConfirmationActive(event) &&
-	      finalConfirmationOutcome === FINAL_CONFIRMATION_OUTCOME.CHANGE_REQUEST
-	    ) {
+		    if (
+		      !shouldEscalate &&
+		      isFinalBookingConfirmationActive(event) &&
+		      finalConfirmationOutcome === FINAL_CONFIRMATION_OUTCOME.CHANGE_REQUEST
+		    ) {
 	      const changeEvent = {
 	        ...event,
 	        sessionState: {
@@ -5860,10 +5911,10 @@ async function handleLexEvent(event, analysis = {}) {
 	          }
 	        }
 	      };
-	      const result = await postInternalAppointment(
-	        buildInternalPayload(changeEvent, intentName, {
-	          awaitingFinalBookingConfirmation: "false",
-	          bookingConfirmationAsked: "false",
+		      const result = await postInternalAppointment(
+		        buildInternalPayload(changeEvent, "BookAppointmentIntent", {
+		          awaitingFinalBookingConfirmation: "false",
+		          bookingConfirmationAsked: "false",
 	          finalConfirmationChangeRequest: "true"
 	        }),
 	        {
@@ -5883,10 +5934,36 @@ async function handleLexEvent(event, analysis = {}) {
 	        data.lexResponse?.fulfillmentState || "InProgress",
 	        buildSessionAttributesFromResult(data),
 	        data.lexResponse
+		      );
+		    }
+
+	    if (
+	      !shouldEscalate &&
+	      isFinalBookingConfirmationActive(event) &&
+	      finalConfirmationOutcome === FINAL_CONFIRMATION_OUTCOME.UNKNOWN &&
+	      isNoInputEvent(event)
+	    ) {
+	      return buildLexResponse(
+	        event,
+	        "Please say yes to confirm, or tell me what you would like to change.",
+	        "InProgress",
+	        {
+	          awaitingFinalBookingConfirmation: "true",
+	          bookingConfirmationAsked: "true",
+	          lastAskedSlot: "bookingConfirmation",
+	          forceHumanEscalation: "false",
+	          transferToQueue: "false"
+	        },
+	        {
+	          dialogAction: {
+	            type: "ElicitIntent"
+	          },
+	          messageContentType: "PlainText"
+	        }
 	      );
 	    }
 
-	    if (event.invocationSource === "DialogCodeHook" && !shouldEscalate && isNoInputEvent(event)) {
+		    if (event.invocationSource === "DialogCodeHook" && !shouldEscalate && isNoInputEvent(event)) {
 	      const slotToElicit = getBookingSlotToElicit(event);
       const noInputCount = parseAttemptCount(sessionAttributes.noInputCount) + 1;
       if (

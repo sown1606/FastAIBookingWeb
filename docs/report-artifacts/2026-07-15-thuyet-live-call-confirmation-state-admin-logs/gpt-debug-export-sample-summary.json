@@ -1,0 +1,105 @@
+{
+  "aiExport": {
+    "bytes": 22437,
+    "coverage": {
+      "applicationSessionFound": true,
+      "limitations": [],
+      "providerContactFound": true,
+      "providerTraceFound": true
+    },
+    "firstTurnKeys": [
+      "aiResponse",
+      "asrDiagnostics",
+      "callerTranscript",
+      "dtmfRoute",
+      "finalConnectBranch",
+      "index",
+      "lastAskedSlot",
+      "latencyMetrics",
+      "lexDiagnostics",
+      "lexRequestId",
+      "missingFields",
+      "promptMissingFields",
+      "providerTurnId",
+      "slotDecisions",
+      "slotToElicit",
+      "staleOrDuplicateRejectionReason",
+      "stateVersion",
+      "timestamp",
+      "trustedSlotsAfter",
+      "trustedSlotsBefore",
+      "turnSequence",
+      "turnStateSnapshot"
+    ],
+    "providerTiming": {
+      "answeredAt": null,
+      "applicationFirstSeenAt": "2026-07-15T00:16:51.368Z",
+      "limitations": [
+        "answeredAt_unavailable_from_describe_contact"
+      ],
+      "providerDisconnectedAt": "2026-07-15T00:19:33.506Z",
+      "providerInitiatedAt": "2026-07-15T00:16:27.127Z",
+      "source": "amazon_connect_describe_contact"
+    },
+    "recordCount": 1,
+    "schemaVersion": 2,
+    "selectedFrom": {
+      "selectedAiInteractionIds": [
+        "dab7cc9f-1b2f-4f76-9af2-d2958bc68746"
+      ],
+      "sourcePage": "ai_logs"
+    }
+  },
+  "callExport": {
+    "bytes": 22394,
+    "coverage": {
+      "applicationSessionFound": true,
+      "limitations": [],
+      "providerContactFound": true,
+      "providerTraceFound": true
+    },
+    "firstTurnKeys": [
+      "aiResponse",
+      "asrDiagnostics",
+      "callerTranscript",
+      "dtmfRoute",
+      "finalConnectBranch",
+      "index",
+      "lastAskedSlot",
+      "latencyMetrics",
+      "lexDiagnostics",
+      "lexRequestId",
+      "missingFields",
+      "promptMissingFields",
+      "providerTurnId",
+      "slotDecisions",
+      "slotToElicit",
+      "staleOrDuplicateRejectionReason",
+      "stateVersion",
+      "timestamp",
+      "trustedSlotsAfter",
+      "trustedSlotsBefore",
+      "turnSequence",
+      "turnStateSnapshot"
+    ],
+    "providerTiming": {
+      "answeredAt": null,
+      "applicationFirstSeenAt": "2026-07-15T00:16:51.368Z",
+      "limitations": [
+        "answeredAt_unavailable_from_describe_contact"
+      ],
+      "providerDisconnectedAt": "2026-07-15T00:19:33.506Z",
+      "providerInitiatedAt": "2026-07-15T00:16:27.127Z",
+      "source": "amazon_connect_describe_contact"
+    },
+    "recordCount": 1,
+    "schemaVersion": 2,
+    "selectedFrom": {
+      "selectedCallSessionIds": [
+        "2ad84bdb-c345-4bdb-a855-7a292e65f916"
+      ],
+      "sourcePage": "call_logs"
+    }
+  },
+  "canonicalSameCall": true
+}

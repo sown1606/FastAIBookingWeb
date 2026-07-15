@@ -1,0 +1,60 @@
+{
+  "invocationSource": "DialogCodeHook",
+  "inputTranscript": "Pedicure",
+  "interpretations": [
+    {
+      "nluConfidence": {
+        "score": 0.95
+      },
+      "intent": {
+        "name": "BookAppointmentIntent",
+        "state": "InProgress",
+        "confirmationState": "None",
+        "slots": {
+          "customerName": null,
+          "customerPhone": null,
+          "serviceName": null,
+          "requestedDate": null,
+          "requestedTime": null,
+          "staffPreference": null
+        }
+      }
+    }
+  ],
+  "sessionId": "codex-session-codex-20260715-live-pedicure",
+  "inputMode": "Speech",
+  "sessionState": {
+    "sessionAttributes": {
+      "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147",
+      "CalledNumber": "+18483487681",
+      "SystemEndpointAddress": "+18483487681",
+      "CustomerEndpointAddress": "+15552060715",
+      "AmazonConnectContactId": "codex-20260715-live-pedicure",
+      "isSynthetic": "true",
+      "customerName": "Codex Smoke",
+      "customerPhone": "+15552060715",
+      "customerNameSource": "current_turn_explicit"
+    },
+    "dialogAction": {
+      "type": "Delegate"
+    },
+    "intent": {
+      "name": "BookAppointmentIntent",
+      "state": "InProgress",
+      "confirmationState": "None",
+      "slots": {
+        "customerName": null,
+        "customerPhone": null,
+        "serviceName": null,
+        "requestedDate": null,
+        "requestedTime": null,
+        "staffPreference": null
+      }
+    }
+  },
+  "requestAttributes": {
+    "SystemEndpointAddress": "+18483487681",
+    "ContactId": "codex-20260715-live-pedicure",
+    "RequestId": "codex-20260715-live-pedicure-1784091739561"
+  }
+}

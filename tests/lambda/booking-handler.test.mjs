@@ -109,6 +109,14 @@ const successfulBackendPayload = (overrides = {}) => ({
 });
 
 const dynamicStaffAttributes = () => ({
+  activeDtmfMenu: "staff",
+  activeDtmfOptionsJson: JSON.stringify({
+    "1": "Trang",
+    "2": "Amy",
+    "3": "Kelly",
+    "4": "Any staff",
+    "0": "__operator__"
+  }),
   staffDtmfOptions: JSON.stringify({
     "1": "Trang",
     "2": "Amy",
@@ -859,7 +867,7 @@ test("Lambda confirmed noisy time posts 10 AM to the backend", async () => {
           message: "Please confirm.",
           messageContentType: "PlainText",
           dialogAction: {
-            type: "ConfirmIntent"
+            type: "ElicitIntent"
           },
           sessionAttributes: {
             serviceName: "Manicure",
@@ -912,7 +920,7 @@ test("Lambda confirmed noisy time posts 10 AM to the backend", async () => {
   assert.equal(fetchCalls.length, 1);
   assert.equal(fetchCalls[0].body.requestedTime, "10 AM");
   assert.equal(fetchCalls[0].body.attributes.awaitingTimeConfirmation, "false");
-  assert.equal(response.sessionState.dialogAction.type, "ConfirmIntent");
+  assert.equal(response.sessionState.dialogAction.type, "ElicitIntent");
   assert.equal(response.sessionState.sessionAttributes.requestedTime, "10 AM");
 });
 
@@ -928,7 +936,7 @@ test("Lambda clear time phrases post deterministic requested times", async () =>
           message: "Please confirm.",
           messageContentType: "PlainText",
           dialogAction: {
-            type: "ConfirmIntent"
+            type: "ElicitIntent"
           },
           sessionAttributes: {
             serviceName: "Manicure",
@@ -989,7 +997,7 @@ test("Lambda clear time phrases post deterministic requested times", async () =>
     const latestFetch = fetchCalls.at(-1);
 
     assert.equal(latestFetch.body.requestedTime, expected, phrase);
-    assert.equal(response.sessionState.dialogAction.type, "ConfirmIntent", phrase);
+    assert.equal(response.sessionState.dialogAction.type, "ElicitIntent", phrase);
     assert.equal(response.sessionState.sessionAttributes.requestedTime, expected, phrase);
   }
 });
@@ -1006,7 +1014,7 @@ test("Fulfillment current staff alias overrides stale marvell while preserving J
           message: "Jane, just to confirm: Full Set tomorrow at 3 PM with Trang. Is that correct?",
           messageContentType: "PlainText",
           dialogAction: {
-            type: "ConfirmIntent"
+            type: "ElicitIntent"
           },
           sessionAttributes: {
             customerId: "89e51525-297d-4b2a-b438-f64c4848683a",
@@ -1099,7 +1107,7 @@ test("Fulfillment current staff alias overrides stale marvell while preserving J
   assert.equal(fetchCalls[0].body.attributes.lexTurnDebug.sanitization.discardedStaleStaff, "marvell");
   assert.notEqual(fetchCalls[0].body.attributes.staffPreference, "marvell");
   assert.notEqual(fetchCalls[0].body.attributes.confirmedStaffName, "marvell");
-  assert.equal(response.sessionState.dialogAction.type, "ConfirmIntent");
+  assert.equal(response.sessionState.dialogAction.type, "ElicitIntent");
   assert.equal(response.sessionState.sessionAttributes.staffPreference, "Trang");
   assert.equal(response.sessionState.sessionAttributes.confirmedStaffName, "Trang");
   assert.equal(response.sessionState.sessionAttributes.customerName, "Jane");
@@ -1118,7 +1126,7 @@ test("DialogCodeHook one-shot Full Set phrase captures spoken p m before asking 
           message: "Jane, just to confirm: Full Set tomorrow at 3 PM with Trang. Is that correct?",
           messageContentType: "PlainText",
           dialogAction: {
-            type: "ConfirmIntent"
+            type: "ElicitIntent"
           },
           sessionAttributes: {
             awaitingFinalBookingConfirmation: "true",
@@ -1173,7 +1181,7 @@ test("DialogCodeHook one-shot Full Set phrase captures spoken p m before asking 
   assert.equal(fetchCalls[0].body.requestedTime, "3 PM");
   assert.equal(fetchCalls[0].body.staffPreference, "Trang");
   assert.equal(fetchCalls[0].body.customerName, "Jane");
-  assert.equal(response.sessionState.dialogAction.type, "ConfirmIntent");
+  assert.equal(response.sessionState.dialogAction.type, "ElicitIntent");
   assert.equal(response.sessionState.sessionAttributes.requestedTime, "3 PM");
   assert.doesNotMatch(response.messages[0].content, /What time|what service|what name|Which staff/i);
 });
@@ -1190,7 +1198,7 @@ test("DialogCodeHook recognizes production Full Set speech aliases without DTMF"
           message: "Jane, just to confirm: Full Set tomorrow at 3 PM with Trang. Is that correct?",
           messageContentType: "PlainText",
           dialogAction: {
-            type: "ConfirmIntent"
+            type: "ElicitIntent"
           },
           sessionAttributes: {
             awaitingFinalBookingConfirmation: "true",
@@ -1220,6 +1228,8 @@ test("DialogCodeHook recognizes production Full Set speech aliases without DTMF"
     "I want to book a food set tomorrow at 3 PM with Trang.",
     "I want to book a fool set tomorrow at 3 PM with Trang.",
     "I want to book a foot set tomorrow at 3 PM with Trang.",
+    "I want to book fun fact tomorrow at 3 PM with Trang.",
+    "fun facts tomorrow at 3 PM with Trang.",
     "I want a set of nails tomorrow at 3 PM with Trang."
   ]) {
     const fetchCountBefore = fetchCalls.length;
@@ -1265,7 +1275,7 @@ test("DialogCodeHook recognizes production Full Set speech aliases without DTMF"
       assert.equal(latestFetch.body.requestedDate, usEasternDate(1), inputTranscript);
       assert.equal(latestFetch.body.requestedTime, "3 PM", inputTranscript);
       assert.equal(latestFetch.body.staffPreference, "Trang", inputTranscript);
-      assert.equal(response.sessionState.dialogAction.type, "ConfirmIntent", inputTranscript);
+      assert.equal(response.sessionState.dialogAction.type, "ElicitIntent", inputTranscript);
     } else {
       assert.equal(fetchCalls.length, fetchCountBefore, inputTranscript);
       assert.equal(response.sessionState.dialogAction.type, "ElicitSlot", inputTranscript);
@@ -1275,6 +1285,179 @@ test("DialogCodeHook recognizes production Full Set speech aliases without DTMF"
     assert.equal(response.sessionState.sessionAttributes.serviceName, "Full Set", inputTranscript);
     assert.equal(response.sessionState.sessionAttributes.confirmedServiceName, "Full Set", inputTranscript);
   }
+});
+
+test("DialogCodeHook does not treat non-booking fun fact as Full Set", async () => {
+  const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
+  const fetchCalls = installFetchMock(() => {
+    throw new Error("non-booking fun fact should not call the booking API");
+  });
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "tell me a fun fact",
+      sessionState: {
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+84978634886",
+          AmazonConnectContactId: "connect-nonbooking-fun-fact"
+        },
+        intent: {
+          name: "FallbackIntent",
+          state: "InProgress",
+          confirmationState: "None",
+          slots: {}
+        }
+      }
+    })
+  );
+
+  assert.equal(fetchCalls.length, 0);
+  assert.notEqual(response.sessionState.sessionAttributes.serviceName, "Full Set");
+  assert.notEqual(response.sessionState.dialogAction?.slotToElicit, "serviceName");
+  assert.doesNotMatch(response.messages?.[0]?.content || "", /Full Set/i);
+});
+
+test("DialogCodeHook resolves pay the bill today at two p m with any stop in one turn", async () => {
+  const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
+  const fetchCalls = installFetchMock((_url, _options, body) =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "MISSING_INFO",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "InProgress",
+          message: "Please confirm Pedicure today at 2 PM with first available.",
+          messageContentType: "PlainText",
+          dialogAction: {
+            type: "ElicitIntent"
+          },
+          sessionAttributes: {
+            awaitingFinalBookingConfirmation: "true",
+            bookingConfirmationAsked: "true",
+            customerName: body.customerName,
+            customerPhone: body.customerPhone,
+            serviceName: body.serviceName,
+            confirmedServiceName: body.serviceName,
+            requestedDate: body.requestedDate,
+            requestedTime: body.requestedTime,
+            staffPreference: body.staffPreference,
+            confirmedStaffName: body.staffPreference
+          }
+        },
+        missingFields: []
+      })
+    )
+  );
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "pay the bill today at two p m with any stop",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+84978634886",
+          AmazonConnectContactId: "connect-pay-bill-any-stop",
+          customerName: "Jane",
+          customerPhone: "+84978634886"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          name: "BookAppointmentIntent",
+          state: "InProgress",
+          confirmationState: "None",
+          slots: {}
+        }
+      }
+    })
+  );
+
+  assert.equal(fetchCalls.length, 1);
+  assert.equal(fetchCalls[0].body.serviceName, "Pedicure");
+  assert.equal(fetchCalls[0].body.requestedDate, usEasternDate(0));
+  assert.equal(fetchCalls[0].body.requestedTime, "2 PM");
+  assert.equal(fetchCalls[0].body.staffPreference, "Any staff");
+  assert.equal(response.sessionState.sessionAttributes.serviceName, "Pedicure");
+  assert.equal(response.sessionState.sessionAttributes.confirmedServiceName, "Pedicure");
+});
+
+test("DialogCodeHook stale service digit cannot replace spoken Manicure after menu closes", async () => {
+  const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
+  const fetchCalls = installFetchMock((_url, _options, body) =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "MISSING_INFO",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "InProgress",
+          message: "Please confirm Manicure today at 2 PM with Amy.",
+          messageContentType: "PlainText",
+          dialogAction: {
+            type: "ElicitIntent"
+          },
+          sessionAttributes: {
+            awaitingFinalBookingConfirmation: "true",
+            bookingConfirmationAsked: "true",
+            customerName: body.customerName,
+            customerPhone: body.customerPhone,
+            serviceName: body.serviceName,
+            confirmedServiceName: body.serviceName,
+            requestedDate: body.requestedDate,
+            requestedTime: body.requestedTime,
+            staffPreference: body.staffPreference,
+            confirmedStaffName: body.staffPreference
+          }
+        },
+        missingFields: []
+      })
+    )
+  );
+
+  await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "1",
+      inputMode: "Text",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+84978634886",
+          AmazonConnectContactId: "connect-stale-service-digit",
+          customerName: "Jane",
+          customerPhone: "+84978634886",
+          serviceName: "Manicure",
+          confirmedServiceName: "Manicure",
+          requestedDate: usEasternDate(0),
+          requestedTime: "2 PM",
+          staffPreference: "Amy",
+          confirmedStaffName: "Amy",
+          lastAskedSlot: "serviceName",
+          serviceDtmfOptions: JSON.stringify({ "1": "Pedicure", "2": "Manicure", "0": "__operator__" })
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          name: "BookAppointmentIntent",
+          state: "InProgress",
+          confirmationState: "None",
+          slots: {
+            serviceName: null
+          }
+        }
+      }
+    })
+  );
+
+  assert.equal(fetchCalls.length, 1);
+  assert.equal(fetchCalls[0].body.serviceName, "Manicure");
+  assert.notEqual(fetchCalls[0].body.serviceName, "Pedicure");
+  assert.equal(fetchCalls[0].body.attributes.lexTurnDebug.dtmfRouting.accepted, false);
 });
 
 test("DialogCodeHook production Full Set and Trang ASR confusions preserve collected slots", async () => {
@@ -1289,7 +1472,7 @@ test("DialogCodeHook production Full Set and Trang ASR confusions preserve colle
           message: "Jane, just to confirm: Full Set tomorrow at 2 PM with Trang. Is that correct?",
           messageContentType: "PlainText",
           dialogAction: {
-            type: "ConfirmIntent"
+            type: "ElicitIntent"
           },
           sessionAttributes: {
             awaitingFinalBookingConfirmation: "true",
@@ -1353,7 +1536,7 @@ test("DialogCodeHook production Full Set and Trang ASR confusions preserve colle
     if (inputTranscript.includes("princess")) {
       assert.equal(latestFetch.body.attributes.serviceAliasCorrectionRaw, "princess", inputTranscript);
     }
-    assert.equal(response.sessionState.dialogAction.type, "ConfirmIntent", inputTranscript);
+    assert.equal(response.sessionState.dialogAction.type, "ElicitIntent", inputTranscript);
     assert.equal(response.sessionState.sessionAttributes.serviceName, "Full Set", inputTranscript);
     assert.equal(response.sessionState.sessionAttributes.requestedDate, usEasternDate(1), inputTranscript);
     assert.equal(response.sessionState.sessionAttributes.requestedTime, "2 PM", inputTranscript);
@@ -1376,7 +1559,7 @@ test("DialogCodeHook exact dynamic Frank Jen Hang staff names win over Trang ASR
             message: `Jane, just to confirm: Full Set tomorrow at 2 PM with ${body.staffPreference}. Is that correct?`,
             messageContentType: "PlainText",
             dialogAction: {
-              type: "ConfirmIntent"
+              type: "ElicitIntent"
             },
             sessionAttributes: {
               customerName: body.customerName,
@@ -1496,7 +1679,7 @@ test("Fallback and empty intent service recovery recognize Full Set aliases", as
           message: "Jane, just to confirm: Full Set tomorrow at 3 PM with Trang. Is that correct?",
           messageContentType: "PlainText",
           dialogAction: {
-            type: "ConfirmIntent"
+            type: "ElicitIntent"
           },
           sessionAttributes: {
             awaitingFinalBookingConfirmation: "true",
@@ -1552,7 +1735,7 @@ test("Fallback and empty intent service recovery recognize Full Set aliases", as
     assert.equal(latestFetch.body.requestedDate, usEasternDate(1), inputTranscript);
     assert.equal(latestFetch.body.requestedTime, "3 PM", inputTranscript);
     assert.equal(latestFetch.body.staffPreference, "Trang", inputTranscript);
-    assert.equal(response.sessionState.dialogAction.type, "ConfirmIntent", inputTranscript);
+    assert.equal(response.sessionState.dialogAction.type, "ElicitIntent", inputTranscript);
     assert.doesNotMatch(response.messages[0].content, /press 4|operator|what service/i, inputTranscript);
   }
 });
@@ -1569,7 +1752,7 @@ test("serviceName turn maps scoped princess ASR to Full Set with correction mark
           message: "Jane, just to confirm: Full Set tomorrow at 3 PM with Trang. Is that correct?",
           messageContentType: "PlainText",
           dialogAction: {
-            type: "ConfirmIntent"
+            type: "ElicitIntent"
           },
           sessionAttributes: {
             awaitingFinalBookingConfirmation: "true",
@@ -3530,7 +3713,7 @@ test("Fulfillment accepts international caller Jane at customerName stage", asyn
             "Thanks, Jane. Just to confirm, Full Set tomorrow at 3 PM with the first available technician. Is that correct?",
           messageContentType: "PlainText",
           dialogAction: {
-            type: "ConfirmIntent"
+            type: "ElicitIntent"
           },
           sessionAttributes: {
             customerName: body.customerName,
@@ -3602,8 +3785,7 @@ test("Fulfillment accepts international caller Jane at customerName stage", asyn
   assert.equal(fetchCalls[0].body.requestedTime, "3 PM");
   assert.equal(fetchCalls[0].body.staffPreference, "Any staff");
   assert.equal(fetchCalls[0].body.currentTurnTranscript, "Jane");
-  assert.equal(response.sessionState.dialogAction.type, "ConfirmIntent");
-  assert.notEqual(response.sessionState.dialogAction.type, "ElicitIntent");
+  assert.equal(response.sessionState.dialogAction.type, "ElicitIntent");
   assert.notEqual(response.sessionState.dialogAction.slotToElicit, "serviceName");
   assert.equal(response.sessionState.sessionAttributes.customerName, "Jane");
   assert.equal(response.sessionState.sessionAttributes.customerPhone, "+84978634886");
@@ -3750,7 +3932,7 @@ test("Fulfillment collapses spoken spelling for customerName", async () => {
           message: `Thanks, ${body.customerName}. Just to confirm.`,
           messageContentType: "PlainText",
           dialogAction: {
-            type: "ConfirmIntent"
+            type: "ElicitIntent"
           },
           sessionAttributes: {
             customerName: body.customerName,
@@ -3804,7 +3986,7 @@ test("Fulfillment collapses spoken spelling for customerName", async () => {
       })
     );
 
-    assert.equal(response.sessionState.dialogAction.type, "ConfirmIntent");
+    assert.equal(response.sessionState.dialogAction.type, "ElicitIntent");
     assert.equal(response.sessionState.sessionAttributes.customerName, expectedName);
   }
 
@@ -3826,7 +4008,7 @@ test("Repeated no-input customerName uses temporary phone fallback and continues
             "I couldn't clearly hear the name, so I'll use Guest ending in 4886 for now. Just to confirm, Full Set tomorrow at 3 PM with the first available technician. Is that correct?",
           messageContentType: "PlainText",
           dialogAction: {
-            type: "ConfirmIntent"
+            type: "ElicitIntent"
           },
           sessionAttributes: {
             customerName: body.customerName,
@@ -3884,7 +4066,7 @@ test("Repeated no-input customerName uses temporary phone fallback and continues
   assert.equal(fetchCalls[0].body.attributes.customerNameSource, "phone_fallback");
   assert.equal(fetchCalls[0].body.attributes.customerNameNeedsReview, "true");
   assert.equal(fetchCalls[0].body.currentTurnTranscript, "no input");
-  assert.equal(response.sessionState.dialogAction.type, "ConfirmIntent");
+  assert.equal(response.sessionState.dialogAction.type, "ElicitIntent");
   assert.equal(response.sessionState.sessionAttributes.customerName, "Guest 4886");
   assert.equal(response.sessionState.sessionAttributes.customerNameSource, "phone_fallback");
   assert.equal(response.sessionState.sessionAttributes.customerNameNeedsReview, "true");
@@ -3986,11 +4168,22 @@ test("DialogCodeHook final confirmation yes posts confirmed booking", async () =
 test("DialogCodeHook natural final confirmations post confirmed booking once", async () => {
   const handler = await loadHandler();
   const acceptedPhrases = [
+    "yes",
+    "yeah",
+    "yep",
     "yes this is correct",
     "yeah correct",
     "correct yes yes correct yes",
     "that's right",
+    "that is correct",
+    "right",
+    "sure",
+    "okay",
+    "confirm",
+    "confirmed",
+    "go ahead",
     "please book it",
+    "book it",
     "correct"
   ];
 
@@ -4208,7 +4401,7 @@ test("DialogCodeHook final confirmation value-only changes route as draft update
             message: "Sure. Just to confirm the updated appointment.",
             messageContentType: "PlainText",
             dialogAction: {
-              type: "ConfirmIntent"
+              type: "ElicitIntent"
             },
             sessionAttributes: {
               customerName: body.customerName,
@@ -4273,7 +4466,7 @@ test("DialogCodeHook final confirmation value-only changes route as draft update
     assert.equal(fetchCalls[0].body.confirmationState, "None", phrase);
     assert.equal(fetchCalls[0].body.attributes.finalConfirmationChangeRequest, "true", phrase);
     assert.equal(fetchCalls[0].body.currentTurnTranscript, phrase, phrase);
-    assert.equal(response.sessionState.dialogAction.type, "ConfirmIntent", phrase);
+    assert.equal(response.sessionState.dialogAction.type, "ElicitIntent", phrase);
   }
 });
 
@@ -4289,7 +4482,7 @@ test("DialogCodeHook canonicalizes with emmy to Amy while staffPreference is bei
           message: "Sure. Pedicure tomorrow at 11 AM with Amy. Is that correct?",
           messageContentType: "PlainText",
           dialogAction: {
-            type: "ConfirmIntent"
+            type: "ElicitIntent"
           },
           sessionAttributes: {
             serviceName: body.serviceName,
@@ -4454,7 +4647,7 @@ test("DialogCodeHook final confirmation correction no i want emmy not chang repl
           message: "Sure. Pedicure tomorrow at 11 AM with Amy. Is that correct?",
           messageContentType: "PlainText",
           dialogAction: {
-            type: "ConfirmIntent"
+            type: "ElicitIntent"
           },
           sessionAttributes: {
             serviceName: body.serviceName,
@@ -4534,7 +4727,7 @@ test("DialogCodeHook final confirmation correction no i want emmy not chang repl
     fetchCalls[0].body.attributes.lexTurnDebug.sanitization.currentTurnStaffMention,
     "Amy"
   );
-  assert.equal(response.sessionState.dialogAction.type, "ConfirmIntent");
+  assert.equal(response.sessionState.dialogAction.type, "ElicitIntent");
   assert.equal(response.sessionState.sessionAttributes.staffPreference, "Amy");
   assert.equal(response.sessionState.sessionAttributes.staffId, "staff-amy");
   assert.equal(response.sessionState.sessionAttributes.confirmationFingerprint, "new-amy-fingerprint");
@@ -4760,7 +4953,7 @@ test("DialogCodeHook time-only final correction preserves Alex staff identity", 
           message: "Lee, just to confirm: Full Set tomorrow at 4 PM with Alex. Is that correct?",
           messageContentType: "PlainText",
           dialogAction: {
-            type: "ConfirmIntent"
+            type: "ElicitIntent"
           },
           sessionAttributes: {
             ...body.attributes,
@@ -4834,7 +5027,7 @@ test("DialogCodeHook time-only final correction preserves Alex staff identity", 
   assert.equal(fetchCalls[0].body.attributes.confirmedStaffId, "staff-alex");
   assert.equal(fetchCalls[0].body.attributes.confirmedStaffName, "Alex");
   assert.notEqual(fetchCalls[0].body.attributes.staffPreference, "Trang");
-  assert.equal(response.sessionState.dialogAction.type, "ConfirmIntent");
+  assert.equal(response.sessionState.dialogAction.type, "ElicitIntent");
   assert.equal(response.sessionState.sessionAttributes.staffId, "staff-alex");
 });
 
@@ -4879,7 +5072,7 @@ test("DialogCodeHook Alex time correction then go ahead books with trusted Alex"
               message: "Lee, just to confirm: Full Set tomorrow at 2 PM with Alex. Is that correct?",
               messageContentType: "PlainText",
               dialogAction: {
-                type: "ConfirmIntent"
+                type: "ElicitIntent"
               },
               sessionAttributes: {
                 ...body.attributes,
@@ -4948,7 +5141,7 @@ test("DialogCodeHook Alex time correction then go ahead books with trusted Alex"
   assert.equal(fetchCalls[0].body.staffPreference, "Alex");
   assert.equal(fetchCalls[0].body.staffId, "staff-alex");
   assert.equal(correctedAttrs.staffId, "staff-alex");
-  assert.equal(correction.sessionState.dialogAction.type, "ConfirmIntent");
+  assert.equal(correction.sessionState.dialogAction.type, "ElicitIntent");
 
   const booked = await handler(
     baseEvent({
@@ -5008,7 +5201,7 @@ test("DialogCodeHook spoken minute correction preserves Alex staff identity", as
           message: "Lee, just to confirm: Full Set tomorrow at 3:50 PM with Alex. Is that correct?",
           messageContentType: "PlainText",
           dialogAction: {
-            type: "ConfirmIntent"
+            type: "ElicitIntent"
           },
           sessionAttributes: {
             ...body.attributes,
@@ -5234,7 +5427,7 @@ test("DialogCodeHook repairs reschedule NLU to booking draft change during final
           message: "Sure. Just to confirm the updated appointment.",
           messageContentType: "PlainText",
           dialogAction: {
-            type: "ConfirmIntent"
+            type: "ElicitIntent"
           },
           sessionAttributes: {
             customerName: body.customerName,
@@ -5301,7 +5494,7 @@ test("DialogCodeHook repairs reschedule NLU to booking draft change during final
   assert.equal(fetchCalls[0].body.attributes.finalConfirmationChangeRequest, "true");
   assert.equal(fetchCalls[0].body.currentTurnTranscript, phrase);
   assert.equal(response.sessionState.intent.name, "BookAppointmentIntent");
-  assert.equal(response.sessionState.dialogAction.type, "ConfirmIntent");
+  assert.equal(response.sessionState.dialogAction.type, "ElicitIntent");
 });
 
 test("DialogCodeHook denied final confirmations preserve slots and ask what to change", async () => {
@@ -5405,7 +5598,7 @@ test("DialogCodeHook final-confirmation another staff preserves selected staff f
           message: "Okay, I'll exclude Amy. I found Kelly available.",
           messageContentType: "PlainText",
           dialogAction: {
-            type: "ConfirmIntent"
+            type: "ElicitIntent"
           },
           sessionAttributes: {
             serviceName: body.serviceName,

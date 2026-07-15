@@ -374,7 +374,7 @@ const adminCallsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(100).default(20),
   status: z.nativeEnum(CallSessionStatus).optional(),
   salonId: z.string().uuid().optional(),
-  includeSynthetic: z.coerce.boolean().default(false)
+  includeSynthetic: z.coerce.boolean().default(true)
 });
 
 const adminAiQuerySchema = z.object({
@@ -386,7 +386,7 @@ const adminAiQuerySchema = z.object({
   contactId: z.string().trim().min(1).max(160).optional(),
   callerPhone: z.string().trim().min(3).max(40).optional(),
   q: z.string().trim().min(1).max(160).optional(),
-  includeSynthetic: z.coerce.boolean().default(false)
+  includeSynthetic: z.coerce.boolean().default(true)
 });
 
 const adminAiReceptionCallLogsQuerySchema = z.object({

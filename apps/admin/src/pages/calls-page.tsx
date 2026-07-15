@@ -91,7 +91,7 @@ export const CallsPage = () => {
   const [status, setStatus] = useState("");
   const [salonId, setSalonId] = useState("");
   const [querySalon, setQuerySalon] = useState("");
-  const [includeSynthetic, setIncludeSynthetic] = useState(false);
+  const [includeSynthetic, setIncludeSynthetic] = useState(true);
   const [data, setData] = useState<CallsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -161,9 +161,7 @@ export const CallsPage = () => {
       if (salonId) {
         params.set("salonId", salonId);
       }
-      if (includeSynthetic) {
-        params.set("includeSynthetic", "true");
-      }
+      params.set("includeSynthetic", String(includeSynthetic));
       const response = await apiGet<CallsResponse>(`/api/v1/admin/calls?${params.toString()}`);
       setData(response);
     } catch (loadError) {

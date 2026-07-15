@@ -698,7 +698,7 @@ const similarityScore = (left: string, right: string): number => {
 };
 
 const isAffirmative = (value?: string | null): boolean => {
-  return /^(yes|yeah|yep|correct|right|that is right|that's right|sure|ok|okay)$/i.test(
+  return /^(yes|yeah|yep|correct|right|that is right|that's right|that is correct|sure|ok|okay|confirm|confirmed|go ahead|book it)$/i.test(
     normalizeForMatch(value)
   );
 };
@@ -717,12 +717,18 @@ const FINAL_CONFIRMATION_ONLY_PHRASES = new Set([
   "that s right",
   "thats right",
   "that is right",
+  "that is correct",
   "sounds good",
   "go ahead",
   "please go ahead",
   "book it",
   "please book it",
   "confirm it",
+  "confirm",
+  "confirmed",
+  "sure",
+  "ok",
+  "okay",
   "proceed",
   "do it"
 ]);
@@ -750,9 +756,6 @@ const classifyFinalBookingConfirmation = (
 ): FinalBookingConfirmationOutcome => {
   const normalized = normalizeForMatch(value);
   if (!normalized) {
-    return "UNKNOWN";
-  }
-  if (/^(?:ok|okay)$/.test(normalized)) {
     return "UNKNOWN";
   }
   if (isFinalConfirmationOnlyPhrase(normalized)) {
@@ -1073,6 +1076,7 @@ const isStaffSelectionContext = (
   Boolean(
     context.lastAskedSlot === "staffPreference" ||
       context.activeDtmfMenu === "staff" ||
+      hasExplicitStaffContextCue(normalizedText, context) ||
       /\b(?:staff|technician|tech)\b/.test(normalizedText) ||
       /\b(?:any\s+staff|any\s+technician|any\s+tech|first\s+avai?lable|the\s+first\s+available|for\s+available)\b/.test(
         normalizedText
@@ -1116,7 +1120,11 @@ const normalizeAnyStaffPhrase = (
   const contextualCompact = compactForMatch(contextualCandidate);
   return Array.from(CONTEXTUAL_ANY_STAFF_PHRASES).some((phrase) => {
     const normalizedPhrase = normalizeForMatch(phrase);
-    return contextualCandidate === normalizedPhrase || contextualCompact === compactForMatch(phrase);
+    return (
+      contextualCandidate === normalizedPhrase ||
+      contextualCompact === compactForMatch(phrase) ||
+      (normalizedPhrase !== "available" && textContainsStaffAlias(contextualCandidate, normalizedPhrase))
+    );
   })
     ? "Any staff"
     : undefined;
@@ -3178,6 +3186,66 @@ const applyGuardedPedicureServiceCorrection = async (
 
   const pedicure = activeServices.find((service) => normalizeForMatch(service.name) === "pedicure");
   return pedicure ? getCustomerFacingServiceName(pedicure.name) ?? pedicure.name : serviceName;
+};
+
+const applyGuardedObservedServiceAsrCorrection = async (
+  salonId: string,
+  serviceName: string | undefined,
+  attributes: Record<string, unknown>,
+  currentTurnTranscript?: string,
+  transcriptText?: string
+): Promise<string | undefined> => {
+  const heardValues = [serviceName, currentTurnTranscript, transcriptText].filter(Boolean).join(" ");
+  const normalizedHeard = normalizeForMatch(heardValues);
+  const requestedCanonical = /\bfun\s+facts?\b/.test(normalizedHeard)
+    ? "full set"
+    : /\bpay\s+the\s+bill\b/.test(normalizedHeard)
+      ? "pedicure"
+      : "";
+  if (!requestedCanonical) {
+    return serviceName;
+  }
+
+  const serviceContext =
+    readStringAttribute(attributes, ["lastAskedSlot"]) === "serviceName" ||
+    readStringAttribute(attributes, ["activeDtmfMenu"]) === "service" ||
+    /\b(?:book|booking|appointment|service|nail|today|tomorrow|with|at|for)\b/i.test(
+      [currentTurnTranscript, transcriptText].filter(Boolean).join(" ")
+    );
+  if (!serviceContext) {
+    return serviceName;
+  }
+
+  const activeServices = await prisma.service.findMany({
+    where: {
+      salonId,
+      isActive: true,
+      deletedAt: null
+    },
+    select: {
+      id: true,
+      name: true,
+      durationMinutes: true,
+      priceCents: true
+    },
+    orderBy: {
+      createdAt: "asc"
+    }
+  });
+  const exactHeardService = activeServices.find((service) =>
+    [serviceName, currentTurnTranscript]
+      .map((value) => normalizeForMatch(value))
+      .filter(Boolean)
+      .some((value) => value === normalizeForMatch(service.name))
+  );
+  if (exactHeardService) {
+    return getCustomerFacingServiceName(exactHeardService.name) ?? exactHeardService.name;
+  }
+
+  const targetService = activeServices.find(
+    (service) => normalizeForMatch(service.name) === requestedCanonical
+  );
+  return targetService ? getCustomerFacingServiceName(targetService.name) ?? targetService.name : serviceName;
 };
 
 const shouldAutoAcceptServiceMatch = (
@@ -5777,6 +5845,22 @@ const buildLexMessage = (input: {
       const servicePrompt = isRetry || input.collectingServiceName
         ? input.servicePromptText ?? SERVICE_DTMF_OPTIONS_PROMPT
         : SERVICE_FIRST_RETRY_PROMPT;
+      const retainedDetails = buildKnownBookingPromptSummary(
+        {
+          requestedDate: input.knownFields?.requestedDate,
+          requestedTime: input.knownFields?.requestedTime,
+          staffPreference: input.knownFields?.staffPreference
+        },
+        input.salonTimezone,
+        {
+          forPhrase: true
+        }
+      );
+      if (retainedDetails) {
+        return speak(
+          `${knownCallerIntro}I have that down ${escapeSsml(retainedDetails)}. <break time="300ms"/> ${servicePrompt}`
+        );
+      }
       const shouldUseKnownCallerGreeting = !isRetry && !input.collectingServiceName;
       return speak(
         knownCallerIntro && shouldUseKnownCallerGreeting
@@ -6260,7 +6344,7 @@ export const createAmazonConnectAIRecoverableFailure = async (
       lastAskedSlot: readStringAttribute(normalized.attributes, ["lastAskedSlot"]) ?? "bookingConfirmation"
     });
     dialogAction = {
-      type: "ConfirmIntent"
+      type: "ElicitIntent"
     };
   }
 
@@ -6471,6 +6555,15 @@ export const createAmazonConnectAIAppointment = async (
   normalized.customerPhone ??=
     asTrimmedString(activeBookingAttempt?.customerPhone ?? undefined) ??
     readStringAttribute(activeNormalizedRequest, ["customerPhone"]);
+  const currentTurnServiceAnswer =
+    (readStringAttribute(normalized.attributes, ["lastAskedSlot"]) === "serviceName" ||
+      readStringAttribute(normalized.attributes, ["activeDtmfMenu"]) === "service") &&
+    normalized.currentTurnTranscript
+      ? await findServiceMentionInText(salon.id, normalized.currentTurnTranscript)
+      : null;
+  if (currentTurnServiceAnswer) {
+    normalized.serviceName = getCustomerFacingServiceName(currentTurnServiceAnswer.service.name);
+  }
   normalized.serviceName ??=
     getCustomerFacingServiceName(activeBookingAttempt?.requestedService ?? undefined) ??
     getCustomerFacingServiceName(
@@ -6521,6 +6614,13 @@ export const createAmazonConnectAIAppointment = async (
     normalized.transcriptText
   );
   normalized.serviceName = await applyGuardedPedicureServiceCorrection(
+    salon.id,
+    normalized.serviceName,
+    recordFromUnknown(normalized.attributes),
+    normalized.currentTurnTranscript,
+    normalized.transcriptText
+  );
+  normalized.serviceName = await applyGuardedObservedServiceAsrCorrection(
     salon.id,
     normalized.serviceName,
     recordFromUnknown(normalized.attributes),
@@ -7375,6 +7475,10 @@ export const createAmazonConnectAIAppointment = async (
         ? (responseDebugRecord.sanitization as Record<string, unknown>)
         : undefined;
     const turnStateDiagnostics = {
+      providerTurnId: input.attributes?.providerTurnId,
+      lexRequestId: input.attributes?.lexRequestId,
+      turnSequenceBefore: input.attributes?.turnSequence,
+      turnSequenceAfter: inferredResponseSessionAttributes.turnSequence,
       turnDirective:
         responsePayloadBase.turnDirective ??
         responsePayloadBase.confirmationOutcome ??
@@ -8123,7 +8227,7 @@ export const createAmazonConnectAIAppointment = async (
         });
     return returnRescheduleNeedsInput({
       message,
-      dialogAction: { type: "ConfirmIntent" },
+      dialogAction: { type: "ElicitIntent" },
       failureReason: "Reschedule confirmation required before updating appointment.",
       responsePayload: {
         existingAppointmentId: existingAppointment.id,
@@ -10068,7 +10172,7 @@ export const createAmazonConnectAIAppointment = async (
         message,
         messageContentType: "SSML",
         dialogAction: {
-          type: "ConfirmIntent"
+          type: "ElicitIntent"
         },
         sessionAttributes: confirmationSessionAttributes
       },
@@ -11172,7 +11276,7 @@ const buildAIInteractionWhere = (input: AIInteractionFilters): Prisma.AiInteract
   if (input.taskType) {
     and.push({ taskType: input.taskType });
   }
-  if (!input.includeSynthetic) {
+  if (input.includeSynthetic === false) {
     and.push({
       isSynthetic: false,
       NOT: [
@@ -11659,6 +11763,67 @@ export const getAIInteractionCallDebugForAdmin = async (interactionId: string) =
   return buildAIInteractionCallDebugForAdminPayload(interaction, callSession);
 };
 
+const getAIInteractionCanonicalKey = (interaction: {
+  id: string;
+  callSessionId: string | null;
+  interactionKey: string | null;
+  callSession?: {
+    id: string;
+    providerCallId: string | null;
+  } | null;
+  requestPayload?: Prisma.JsonValue | null;
+  responsePayload?: Prisma.JsonValue | null;
+}): string => {
+  if (interaction.callSessionId) {
+    return `call:${interaction.callSessionId}`;
+  }
+  if (interaction.callSession?.id) {
+    return `call:${interaction.callSession.id}`;
+  }
+  if (interaction.callSession?.providerCallId) {
+    return `provider:${interaction.callSession.providerCallId}`;
+  }
+  const requestPayload = recordFromUnknown(interaction.requestPayload);
+  const responsePayload = recordFromUnknown(interaction.responsePayload);
+  const requestAttributes = recordFromUnknown(requestPayload.attributes);
+  const responseDebug = recordFromUnknown(responsePayload.lexTurnDebug);
+  const contactId =
+    asTrimmedString(requestPayload.amazonConnectContactId) ??
+    asTrimmedString(requestPayload.contactId) ??
+    asTrimmedString(requestAttributes.AmazonConnectContactId) ??
+    asTrimmedString(requestAttributes.amazonConnectContactId) ??
+    asTrimmedString(responseDebug.contactId);
+  if (contactId) {
+    return `provider:${contactId}`;
+  }
+  return `interaction:${interaction.interactionKey ?? interaction.id}`;
+};
+
+const canonicalizeAIInteractions = <T extends {
+  id: string;
+  callSessionId: string | null;
+  interactionKey: string | null;
+  createdAt: Date;
+  callSession?: {
+    id: string;
+    providerCallId: string | null;
+  } | null;
+  requestPayload?: Prisma.JsonValue | null;
+  responsePayload?: Prisma.JsonValue | null;
+}>(items: T[]): T[] => {
+  const grouped = new Map<string, T>();
+  for (const item of items) {
+    const key = getAIInteractionCanonicalKey(item);
+    const current = grouped.get(key);
+    if (!current || item.createdAt > current.createdAt) {
+      grouped.set(key, item);
+    }
+  }
+  return Array.from(grouped.values()).sort(
+    (left, right) => right.createdAt.getTime() - left.createdAt.getTime()
+  );
+};
+
 export const listAIInteractionsForAdmin = async (input: {
   page: number;
   limit: number;
@@ -11673,32 +11838,29 @@ export const listAIInteractionsForAdmin = async (input: {
   const skip = (input.page - 1) * input.limit;
   const where = buildAIInteractionWhere(input);
 
-  const [items, total] = await Promise.all([
-    prisma.aiInteractionLog.findMany({
-      where,
-      skip,
-      take: input.limit,
-      orderBy: { createdAt: "desc" },
-      include: {
-        salon: {
-          select: {
-            id: true,
-            name: true
-          }
-        },
-        bookingAttempt: true,
-        callSession: true
-      }
-    }),
-    prisma.aiInteractionLog.count({ where })
-  ]);
+  const rawItems = await prisma.aiInteractionLog.findMany({
+    where,
+    orderBy: { createdAt: "desc" },
+    include: {
+      salon: {
+        select: {
+          id: true,
+          name: true
+        }
+      },
+      bookingAttempt: true,
+      callSession: true
+    }
+  });
+  const canonicalItems = canonicalizeAIInteractions(rawItems);
+  const items = canonicalItems.slice(skip, skip + input.limit);
 
   return {
     items,
     pagination: {
       page: input.page,
       limit: input.limit,
-      total
+      total: canonicalItems.length
     }
   };
 };
@@ -11732,5 +11894,5 @@ export const exportAIInteractionsForAdmin = async (input: {
       }
     }
   });
-  return items.map(toAIInteractionExportItem);
+  return canonicalizeAIInteractions(items).map(toAIInteractionExportItem);
 };

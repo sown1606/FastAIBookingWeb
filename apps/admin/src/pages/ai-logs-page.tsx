@@ -164,7 +164,7 @@ export const AiLogsPage = () => {
   const [querySalonId, setQuerySalonId] = useState("");
   const [search, setSearch] = useState("");
   const [querySearch, setQuerySearch] = useState("");
-  const [includeSynthetic, setIncludeSynthetic] = useState(false);
+  const [includeSynthetic, setIncludeSynthetic] = useState(true);
   const [data, setData] = useState<AiLogsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -226,9 +226,7 @@ export const AiLogsPage = () => {
       if (search.trim()) {
         params.set("q", search.trim());
       }
-      if (includeSynthetic) {
-        params.set("includeSynthetic", "true");
-      }
+      params.set("includeSynthetic", String(includeSynthetic));
       const response = await apiGet<AiLogsResponse>(`/api/v1/admin/ai-logs?${params.toString()}`);
       setData(response);
     } catch (loadError) {
