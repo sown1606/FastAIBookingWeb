@@ -1,0 +1,109 @@
+{
+    "messages": [
+        {
+            "content": "Let me check for an available operator.",
+            "contentType": "PlainText"
+        }
+    ],
+    "sessionState": {
+        "dialogAction": {
+            "type": "ElicitIntent"
+        },
+        "sessionAttributes": {
+            "AmazonConnectContactId": "codex-20260715-postreg-0711-session-d2-human",
+            "CalledNumber": "+18483487681",
+            "ContactId": "codex-20260715-postreg-0711-session-d2-human",
+            "CustomerEndpointAddress": "+15552067204",
+            "InitialContactId": "codex-20260715-postreg-0711-session-d2-human",
+            "SystemEndpointAddress": "+18483487681",
+            "amazonConnectContactId": "codex-20260715-postreg-0711-session-d2-human",
+            "bookingAttemptId": "2121bd96-7bc8-45f7-b0e9-9bbcd0940c98",
+            "bookingOutcome": "HUMAN_ESCALATION",
+            "callSessionId": "cdacf592-8c14-4869-bfc5-153b8fdce8c9",
+            "calledNumber": "+18483487681",
+            "callerPhone": "+15552067204",
+            "confirmedStaffName": "speak person",
+            "contactId": "codex-20260715-postreg-0711-session-d2-human",
+            "conversationComplete": "false",
+            "conversationOutcome": "NEEDS_INPUT",
+            "conversationState": "TRANSFER",
+            "customerId": "d16689ad-9cb1-4255-a955-6594fb5cebac",
+            "customerName": "Codex",
+            "customerNameSource": "phone_lookup",
+            "customerPhone": "+15552067204",
+            "customerProfileSource": "active_customer",
+            "escalationId": "069e4d75-67d6-443c-916d-3468291c0ec5",
+            "escalationReason": "caller_requested_human",
+            "fallbackMode": "QUEUED",
+            "forceHumanEscalation": "true",
+            "initialBookingUtterance": "I want to speak with a person",
+            "isSynthetic": "true",
+            "knownCallerAcknowledged": "true",
+            "knownCallerLookupAttempted": "true",
+            "knownCallerLookupStatus": "FOUND",
+            "lastHumanTurnId": "codex-20260715-postreg-0711-session-d2-human:cf8e702f-49d5-44b8-9aaa-b5990a9549d9:i want to speak with a person",
+            "lastProviderTurnId": "codex-20260715-postreg-0711-session-d2-human:cf8e702f-49d5-44b8-9aaa-b5990a9549d9:i want to speak with a person:FulfillmentCodeHook",
+            "operatorQueueOutcome": "AGENTS_BUSY",
+            "persistedCustomerFirstName": "Codex",
+            "persistedCustomerLastName": "PostregC2",
+            "provider": "AMAZON_CONNECT",
+            "queueId": "d0f2a5d8-e983-4609-9bbc-efb0881a465d",
+            "recognizedCustomerId": "d16689ad-9cb1-4255-a955-6594fb5cebac",
+            "recognizedCustomerName": "Codex",
+            "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147",
+            "staffPreference": "speak person",
+            "syntheticSource": "codex-post-deploy-regression-2026-07-15",
+            "transferToQueue": "true",
+            "turnSequence": "1"
+        },
+        "originatingRequestId": "cf8e702f-49d5-44b8-9aaa-b5990a9549d9"
+    },
+    "interpretations": [
+        {
+            "nluConfidence": {
+                "score": 1.0
+            },
+            "intent": {
+                "name": "HumanEscalationIntent",
+                "slots": {}
+            },
+            "interpretationSource": "Lex"
+        },
+        {
+            "intent": {
+                "name": "FallbackIntent",
+                "slots": {}
+            },
+            "interpretationSource": "Lex"
+        },
+        {
+            "nluConfidence": {
+                "score": 0.46
+            },
+            "intent": {
+                "name": "BookAppointmentIntent",
+                "slots": {
+                    "bookingConfirmation": null,
+                    "customerName": null,
+                    "customerPhone": null,
+                    "requestedDate": null,
+                    "requestedTime": null,
+                    "serviceName": null,
+                    "staffPreference": null
+                }
+            },
+            "interpretationSource": "Lex"
+        },
+        {
+            "nluConfidence": {
+                "score": 0.33
+            },
+            "intent": {
+                "name": "RescheduleAppointmentIntent",
+                "slots": {}
+            },
+            "interpretationSource": "Lex"
+        }
+    ],
+    "sessionId": "codex-20260715-postreg-0711-session-d2-human"
+}

@@ -1,0 +1,5 @@
+{
+  "ResourceId": "arn:aws:connect:us-east-1:197452633989:phone-number/f2e36faa-5264-4955-8a18-e2f53755c102",
+  "FlowId": "arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/contact-flow/dcccf542-587c-426c-a644-a4c6f24da6e4",
+  "ResourceType": "VOICE_PHONE_NUMBER"
+}

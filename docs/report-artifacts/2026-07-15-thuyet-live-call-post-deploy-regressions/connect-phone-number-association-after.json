@@ -1,0 +1,16 @@
+{
+    "ClaimedPhoneNumberSummary": {
+        "PhoneNumberId": "f2e36faa-5264-4955-8a18-e2f53755c102",
+        "PhoneNumberArn": "arn:aws:connect:us-east-1:197452633989:phone-number/f2e36faa-5264-4955-8a18-e2f53755c102",
+        "PhoneNumber": "+18483487681",
+        "PhoneNumberCountryCode": "US",
+        "PhoneNumberType": "DID",
+        "PhoneNumberDescription": "",
+        "TargetArn": "arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc",
+        "InstanceId": "74f78377-766f-46b7-a745-4bc97b68a8dc",
+        "Tags": {},
+        "PhoneNumberStatus": {
+            "Status": "CLAIMED"
+        }
+    }
+}

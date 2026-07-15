@@ -1,0 +1,38 @@
+{
+  "turn1": {
+    "messages": [
+      "<speak>Codex Postreg A, just to confirm: Full Set today at 3 PM with Amy. <break time=\"300ms\"/> Is that correct?</speak>"
+    ],
+    "dialog": {
+      "type": "ElicitSlot",
+      "slotToElicit": "bookingConfirmation"
+    },
+    "attrs": {
+      "serviceName": "Full Set",
+      "requestedDate": "2026-07-15",
+      "requestedTime": "3 PM",
+      "staffPreference": "Amy",
+      "lastAskedSlot": "bookingConfirmation",
+      "awaitingFinalBookingConfirmation": "true",
+      "callSessionId": "8604da10-efa8-4de9-af5f-2e0d2e785c50"
+    }
+  },
+  "turn2": {
+    "messages": [
+      "<speak>Codex Postreg A, just to confirm: Full Set today at 3 PM with Amy. <break time=\"300ms\"/> Is that correct?</speak>"
+    ],
+    "dialog": {
+      "type": "ElicitIntent"
+    },
+    "intent": null,
+    "attrs": {
+      "appointmentId": null,
+      "bookingOutcome": "MISSING_INFO",
+      "conversationComplete": "false",
+      "callSessionId": "8604da10-efa8-4de9-af5f-2e0d2e785c50",
+      "serviceName": "Full Set",
+      "requestedTime": "3 PM",
+      "staffPreference": "Amy"
+    }
+  }
+}

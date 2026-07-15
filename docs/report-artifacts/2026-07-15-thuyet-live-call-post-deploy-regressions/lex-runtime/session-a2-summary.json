@@ -1,0 +1,41 @@
+{
+  "turn1": {
+    "messages": [
+      "<speak>I have your Full Set today at 3 PM with Amy. <break time=\"300ms\"/> May I have your name, please?</speak>"
+    ],
+    "dialog": {
+      "type": "ElicitSlot",
+      "slotToElicit": "customerName"
+    },
+    "attrs": {
+      "serviceName": "Full Set",
+      "requestedDate": "2026-07-15",
+      "requestedTime": "3 PM",
+      "staffPreference": "Amy",
+      "lastAskedSlot": "customerName",
+      "awaitingFinalBookingConfirmation": null,
+      "callSessionId": "d030fdbc-7077-41ce-bdf4-bdefbb10730f"
+    }
+  },
+  "turn2": {
+    "messages": [
+      "<speak>I have your Full Set today at 3 PM with Amy. <break time=\"300ms\"/> May I have your name, please?</speak>"
+    ],
+    "dialog": {
+      "type": "ElicitSlot",
+      "slotToElicit": "customerName"
+    },
+    "intent": "InProgress",
+    "attrs": {
+      "appointmentId": null,
+      "bookingOutcome": "MISSING_INFO",
+      "conversationComplete": "false",
+      "callSessionId": "d030fdbc-7077-41ce-bdf4-bdefbb10730f",
+      "serviceName": "Full Set",
+      "requestedTime": "3 PM",
+      "staffPreference": "Amy",
+      "lastProviderTurnId": "codex-20260715-postreg-0652-session-a2:18a478b9-0089-4128-b4c5-dc4b08ec3533:DialogCodeHook",
+      "lastHumanTurnId": "codex-20260715-postreg-0652-session-a2:18a478b9-0089-4128-b4c5-dc4b08ec3533"
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+    "Contact": {
+        "Arn": "arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/contact/ae7e79eb-02e2-4acd-8c3c-4dcbef1048db",
+        "Id": "ae7e79eb-02e2-4acd-8c3c-4dcbef1048db",
+        "InitiationMethod": "INBOUND",
+        "Channel": "VOICE",
+        "InitiationTimestamp": "2026-07-15T01:43:45.718000-04:00",
+        "DisconnectTimestamp": "2026-07-15T01:43:57.248000-04:00",
+        "LastUpdateTimestamp": "2026-07-15T01:44:04.897000-04:00",
+        "TotalPauseCount": 0,
+        "Tags": {
+            "aws:connect:instanceId": "74f78377-766f-46b7-a745-4bc97b68a8dc",
+            "aws:connect:systemEndpoint": "+18483487681"
+        },
+        "ConnectedToSystemTimestamp": "2026-07-15T01:43:46.448000-04:00",
+        "SegmentAttributes": {
+            "connect:Purpose": {},
+            "connect:Subtype": {
+                "ValueString": "connect:Telephony"
+            }
+        }
+    }
+}

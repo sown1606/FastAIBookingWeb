@@ -1,0 +1,35 @@
+{
+  "turn1": {
+    "messages": [
+      "<speak>Amy already has an appointment at 4 PM. <break time=\"300ms\"/> press 1 for 4 PM with Kevin, or press 2 for 11 AM with Amy.</speak>"
+    ],
+    "dialog": {
+      "type": "ElicitIntent"
+    },
+    "attrs": {
+      "serviceName": "Full Set",
+      "requestedTime": "4 PM",
+      "staffPreference": "Amy",
+      "lastAskedSlot": null
+    }
+  },
+  "turn2": {
+    "messages": [
+      "<speak>Amy already has an appointment at 4 PM. <break time=\"300ms\"/> press 1 for 4 PM with Kevin, or press 2 for 11 AM with Amy.</speak>"
+    ],
+    "dialog": {
+      "type": "ElicitSlot",
+      "slotToElicit": "requestedTime"
+    },
+    "intent": "InProgress",
+    "attrs": {
+      "appointmentId": null,
+      "bookingOutcome": "NO_AVAILABILITY",
+      "conversationComplete": "false",
+      "serviceName": "Full Set",
+      "requestedTime": "4 PM",
+      "staffPreference": "Amy",
+      "lastHumanTurnId": "codex-20260715-postreg-0712-dtmf-confirm:65059adc-351a-4594-8050-54056a448a69:1"
+    }
+  }
+}

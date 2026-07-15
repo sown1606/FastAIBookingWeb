@@ -1,0 +1,28 @@
+BEGIN
+SELECT 17
+SELECT 5
+SELECT 5
+ call_sessions | ai_logs | booking_attempts | transcripts | escalations | events | appointments | customers
+---------------+---------+------------------+-------------+-------------+--------+--------------+-----------
+            17 |      17 |               17 |          24 |           3 |      0 |            5 |         5
+(1 row)
+
+DELETE 17
+DELETE 3
+DELETE 17
+DELETE 24
+DELETE 0
+DELETE 17
+DELETE 0
+DELETE 10
+DELETE 0
+DELETE 5
+DELETE 5
+DELETE 5
+DELETE 5
+ remaining_call_sessions | remaining_customers
+-------------------------+---------------------
+                       0 |                   0
+(1 row)
+
+COMMIT

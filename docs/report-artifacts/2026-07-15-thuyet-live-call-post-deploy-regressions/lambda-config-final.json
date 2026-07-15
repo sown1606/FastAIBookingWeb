@@ -1,0 +1,38 @@
+{
+  "FunctionName": "fastaibooking-booking-handler",
+  "FunctionArn": "arn:aws:lambda:us-east-1:197452633989:function:fastaibooking-booking-handler",
+  "Runtime": "nodejs20.x",
+  "Role": "arn:aws:iam::197452633989:role/service-role/fastaibooking-booking-handler-role-e3acnre0",
+  "Handler": "index.handler",
+  "CodeSize": 40417,
+  "Description": "",
+  "Timeout": 15,
+  "MemorySize": 128,
+  "LastModified": "2026-07-15T07:06:32.000+0000",
+  "CodeSha256": "3qMPGC9oV5S7VLBxrW7aMAA0q+/CCemuHyXKviwT0NI=",
+  "Version": "$LATEST",
+  "TracingConfig": {
+    "Mode": "PassThrough"
+  },
+  "RevisionId": "06c97734-9307-48e9-b30b-c1670426867a",
+  "State": "Active",
+  "LastUpdateStatus": "Successful",
+  "PackageType": "Zip",
+  "Architectures": [
+    "x86_64"
+  ],
+  "EphemeralStorage": {
+    "Size": 512
+  },
+  "SnapStart": {
+    "ApplyOn": "None",
+    "OptimizationStatus": "Off"
+  },
+  "RuntimeVersionConfig": {
+    "RuntimeVersionArn": "arn:aws:lambda:us-east-1::runtime:18671876e7cc385452255180c58ca50cf8763398a4248ae92ed14410d196b942"
+  },
+  "LoggingConfig": {
+    "LogFormat": "Text",
+    "LogGroup": "/aws/lambda/fastaibooking-booking-handler"
+  }
+}

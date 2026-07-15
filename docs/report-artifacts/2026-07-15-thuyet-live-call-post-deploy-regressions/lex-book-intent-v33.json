@@ -1,0 +1,259 @@
+{
+    "intentId": "8DGNM1BMFC",
+    "intentName": "BookAppointmentIntent",
+    "description": "Collect booking details for a nail salon appointment.",
+    "sampleUtterances": [
+        {
+            "utterance": "Book a {serviceName} with {staffPreference} tomorrow at {requestedTime}"
+        },
+        {
+            "utterance": "Book me for a {serviceName}"
+        },
+        {
+            "utterance": "Book pedicure tomorrow five PM"
+        },
+        {
+            "utterance": "Book {serviceName} tomorrow {requestedTime}"
+        },
+        {
+            "utterance": "Can I book a {serviceName} for {requestedDate} at {requestedTime}"
+        },
+        {
+            "utterance": "Can I book pedicure tomorrow"
+        },
+        {
+            "utterance": "Can I book {serviceName} tomorrow"
+        },
+        {
+            "utterance": "Can I make a nail appointment"
+        },
+        {
+            "utterance": "I need a better cure tomorrow at five"
+        },
+        {
+            "utterance": "I need a pedi cure tomorrow at five"
+        },
+        {
+            "utterance": "I need a {serviceName} appointment"
+        },
+        {
+            "utterance": "I need a {serviceName} tomorrow at {requestedTime}"
+        },
+        {
+            "utterance": "I need my nails done"
+        },
+        {
+            "utterance": "I want to book a pedicure today at five PM"
+        },
+        {
+            "utterance": "I want to book a pedicure tomorrow at five PM"
+        },
+        {
+            "utterance": "I want to book a {serviceName} appointment tomorrow at {requestedTime}"
+        },
+        {
+            "utterance": "I want to book a {serviceName} appointment {requestedDate} at {requestedTime}"
+        },
+        {
+            "utterance": "I want to book a {serviceName} today at {requestedTime}"
+        },
+        {
+            "utterance": "I want to book a {serviceName} tomorrow at {requestedTime}"
+        },
+        {
+            "utterance": "I want to book a {serviceName} with {staffPreference} {requestedDate} at {requestedTime}"
+        },
+        {
+            "utterance": "I want to book an appointment"
+        },
+        {
+            "utterance": "Schedule a {serviceName} {requestedDate} at {requestedTime}"
+        },
+        {
+            "utterance": "Schedule pedicure today at 5 PM"
+        },
+        {
+            "utterance": "Schedule {serviceName} today at {requestedTime}"
+        },
+        {
+            "utterance": "I want to book a pedicure tomorrow at three PM with Trang"
+        },
+        {
+            "utterance": "I want to book a pedicure tomorrow at two PM with Kelly"
+        },
+        {
+            "utterance": "I want to book a pedicure tomorrow at two PM with anybody"
+        },
+        {
+            "utterance": "Book a {serviceName} with any staff {requestedDate} at {requestedTime}"
+        },
+        {
+            "utterance": "1"
+        },
+        {
+            "utterance": "2"
+        },
+        {
+            "utterance": "3"
+        },
+        {
+            "utterance": "4"
+        },
+        {
+            "utterance": "5"
+        },
+        {
+            "utterance": "press 1"
+        },
+        {
+            "utterance": "press 2"
+        },
+        {
+            "utterance": "press 3"
+        },
+        {
+            "utterance": "press 4"
+        },
+        {
+            "utterance": "press 5"
+        },
+        {
+            "utterance": "number 1"
+        },
+        {
+            "utterance": "number 2"
+        },
+        {
+            "utterance": "number 3"
+        },
+        {
+            "utterance": "number 4"
+        },
+        {
+            "utterance": "number 5"
+        },
+        {
+            "utterance": "{serviceName}"
+        }
+    ],
+    "dialogCodeHook": {
+        "enabled": true
+    },
+    "fulfillmentCodeHook": {
+        "enabled": true,
+        "postFulfillmentStatusSpecification": {
+            "successNextStep": {
+                "dialogAction": {
+                    "type": "EndConversation"
+                }
+            },
+            "failureNextStep": {
+                "dialogAction": {
+                    "type": "EndConversation"
+                }
+            },
+            "timeoutNextStep": {
+                "dialogAction": {
+                    "type": "EndConversation"
+                }
+            }
+        },
+        "fulfillmentUpdatesSpecification": {
+            "active": true,
+            "startResponse": {
+                "delayInSeconds": 1,
+                "messageGroups": [
+                    {
+                        "message": {
+                            "plainTextMessage": {
+                                "value": "Please give me a moment while I check availability."
+                            }
+                        }
+                    }
+                ],
+                "allowInterrupt": true
+            },
+            "updateResponse": {
+                "frequencyInSeconds": 5,
+                "messageGroups": [
+                    {
+                        "message": {
+                            "plainTextMessage": {
+                                "value": "I’m still checking the schedule."
+                            }
+                        }
+                    }
+                ],
+                "allowInterrupt": true
+            },
+            "timeoutInSeconds": 12
+        }
+    },
+    "slotPriorities": [
+        {
+            "priority": 1,
+            "slotId": "GHZKSCLGQP"
+        },
+        {
+            "priority": 2,
+            "slotId": "WEXCOCCQNX"
+        },
+        {
+            "priority": 3,
+            "slotId": "SW9BJ8LLP7"
+        },
+        {
+            "priority": 4,
+            "slotId": "4YN5NBP9ZR"
+        },
+        {
+            "priority": 5,
+            "slotId": "SISJOGRUU9"
+        },
+        {
+            "priority": 6,
+            "slotId": "A761CJWDBY"
+        },
+        {
+            "priority": 7,
+            "slotId": "SWYHP6J5EZ"
+        }
+    ],
+    "botId": "KHMIXGA2US",
+    "botVersion": "33",
+    "localeId": "en_US",
+    "creationDateTime": "2026-05-07T10:07:08.047000-04:00",
+    "lastUpdatedDateTime": "2026-07-15T02:47:08.219000-04:00",
+    "initialResponseSetting": {
+        "nextStep": {
+            "dialogAction": {
+                "type": "InvokeDialogCodeHook"
+            },
+            "intent": {}
+        },
+        "codeHook": {
+            "enableCodeHookInvocation": true,
+            "active": true,
+            "postCodeHookSpecification": {
+                "successNextStep": {
+                    "dialogAction": {
+                        "type": "ElicitIntent"
+                    },
+                    "intent": {}
+                },
+                "failureNextStep": {
+                    "dialogAction": {
+                        "type": "EndConversation"
+                    },
+                    "intent": {}
+                },
+                "timeoutNextStep": {
+                    "dialogAction": {
+                        "type": "EndConversation"
+                    },
+                    "intent": {}
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,8 @@
+Running read-only production checks. This script never creates test data.
+OK [admin frontend reachable] status=200
+OK [app frontend reachable] status=200
+OK [health liveness] status=200
+OK [health readiness] status=200
+OK [api health liveness] status=200
+OK [api health readiness] status=200
+Read-only production checks completed successfully.

@@ -1,0 +1,25 @@
+{
+  "text": "pay the bill today at two p m with any stop",
+  "messages": [
+    "<speak>I found Kevin available. <break time=\"300ms\"/> Codex, just to confirm: Pedicure today at 2 PM with Kevin. <break time=\"300ms\"/> Is that correct?</speak>"
+  ],
+  "dialog": {
+    "type": "ElicitSlot",
+    "slotToElicit": "bookingConfirmation"
+  },
+  "intent": "BookAppointmentIntent",
+  "state": "InProgress",
+  "attrs": {
+    "serviceName": "Pedicure",
+    "confirmedServiceName": "Pedicure",
+    "requestedDate": "2026-07-15",
+    "requestedTime": "2 PM",
+    "staffPreference": "Kevin",
+    "confirmedStaffName": "Kevin",
+    "lastAskedSlot": "bookingConfirmation",
+    "awaitingFinalBookingConfirmation": "true",
+    "transferToQueue": null,
+    "queueId": null,
+    "callSessionId": "9e138357-5b3e-4330-abf6-5a4b09c940a6"
+  }
+}

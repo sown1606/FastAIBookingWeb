@@ -1,0 +1,140 @@
+{
+  "botId": "KHMIXGA2US",
+  "botVersion": "DRAFT",
+  "localeId": "en_US",
+  "intentId": "DYAWWGBMCE",
+  "intentName": "HumanEscalationIntent",
+  "description": "Transfer caller to a real person.",
+  "sampleUtterances": [
+    {
+      "utterance": "I want to speak to a person"
+    },
+    {
+      "utterance": "I want to speak with a person"
+    },
+    {
+      "utterance": "speak with a person"
+    },
+    {
+      "utterance": "speak to a person"
+    },
+    {
+      "utterance": "talk with a person"
+    },
+    {
+      "utterance": "talk to a person"
+    },
+    {
+      "utterance": "speak with an operator"
+    },
+    {
+      "utterance": "speak to an operator"
+    },
+    {
+      "utterance": "speak with an agent"
+    },
+    {
+      "utterance": "talk to an agent"
+    },
+    {
+      "utterance": "representative please"
+    },
+    {
+      "utterance": "live person"
+    },
+    {
+      "utterance": "real person"
+    },
+    {
+      "utterance": "Can I talk to someone"
+    },
+    {
+      "utterance": "Connect me to a real person"
+    },
+    {
+      "utterance": "I need help from staff"
+    },
+    {
+      "utterance": "Can I speak with an agent"
+    },
+    {
+      "utterance": "I want to talk to the salon"
+    },
+    {
+      "utterance": "Please transfer me"
+    },
+    {
+      "utterance": "operator"
+    },
+    {
+      "utterance": "press zero"
+    },
+    {
+      "utterance": "zero"
+    },
+    {
+      "utterance": "representative"
+    },
+    {
+      "utterance": "speak to someone"
+    },
+    {
+      "utterance": "0"
+    },
+    {
+      "utterance": "press 0"
+    },
+    {
+      "utterance": "number 0"
+    }
+  ],
+  "fulfillmentCodeHook": {
+    "enabled": true,
+    "postFulfillmentStatusSpecification": {
+      "successNextStep": {
+        "dialogAction": {
+          "type": "EndConversation"
+        }
+      },
+      "failureNextStep": {
+        "dialogAction": {
+          "type": "EndConversation"
+        }
+      },
+      "timeoutNextStep": {
+        "dialogAction": {
+          "type": "EndConversation"
+        }
+      }
+    }
+  },
+  "intentClosingSetting": {
+    "closingResponse": {
+      "messageGroups": [
+        {
+          "message": {
+            "plainTextMessage": {
+              "value": "Please wait while I connect you to a real person."
+            }
+          }
+        }
+      ],
+      "allowInterrupt": true
+    },
+    "active": true,
+    "nextStep": {
+      "dialogAction": {
+        "type": "EndConversation"
+      },
+      "intent": {}
+    }
+  },
+  "initialResponseSetting": {
+    "nextStep": {
+      "dialogAction": {
+        "type": "FulfillIntent"
+      },
+      "intent": {}
+    }
+  }
+}

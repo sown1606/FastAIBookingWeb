@@ -1,0 +1,41 @@
+{
+  "turn1": {
+    "messages": [
+      "<speak>I found Trang available. <break time=\"300ms\"/> Codex, just to confirm: Pedicure today at 2 PM with Trang. <break time=\"300ms\"/> Is that correct?</speak>"
+    ],
+    "dialog": {
+      "type": "ElicitSlot",
+      "slotToElicit": "bookingConfirmation"
+    },
+    "intent": "BookAppointmentIntent",
+    "attrs": {
+      "serviceName": "Pedicure",
+      "requestedDate": "2026-07-15",
+      "requestedTime": "2 PM",
+      "staffPreference": "Trang",
+      "confirmedStaffName": "Trang",
+      "lastAskedSlot": "bookingConfirmation",
+      "awaitingFinalBookingConfirmation": "true"
+    }
+  },
+  "turn2": {
+    "messages": [
+      "I still have Pedicure. I had trouble checking the schedule. What day would you like?"
+    ],
+    "dialog": {
+      "type": "ElicitSlot",
+      "slotToElicit": "requestedDate"
+    },
+    "intent": "InProgress",
+    "attrs": {
+      "appointmentId": null,
+      "bookingOutcome": "MISSING_INFO",
+      "conversationComplete": "false",
+      "serviceName": "Pedicure",
+      "requestedTime": "2 PM",
+      "staffPreference": "Trang",
+      "confirmedStaffName": "Trang",
+      "lastHumanTurnId": "codex-20260715-postreg-0706-session-c:66b1dc52-65ea-4bb7-85c4-3ca3c4d69be8:yes"
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "sessionAttributes": {
+    "provider": "AMAZON_CONNECT",
+    "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147",
+    "CalledNumber": "+18483487681",
+    "calledNumber": "+18483487681",
+    "SystemEndpointAddress": "+18483487681",
+    "CustomerEndpointAddress": "+15552067203",
+    "callerPhone": "+15552067203",
+    "AmazonConnectContactId": "codex-20260715-postreg-0708-observed-annie-stop",
+    "amazonConnectContactId": "codex-20260715-postreg-0708-observed-annie-stop",
+    "contactId": "codex-20260715-postreg-0708-observed-annie-stop",
+    "ContactId": "codex-20260715-postreg-0708-observed-annie-stop",
+    "InitialContactId": "codex-20260715-postreg-0708-observed-annie-stop",
+    "isSynthetic": "true",
+    "syntheticSource": "codex-post-deploy-regression-2026-07-15"
+  }
+}

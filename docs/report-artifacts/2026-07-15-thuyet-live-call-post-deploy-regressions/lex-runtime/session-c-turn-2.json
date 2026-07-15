@@ -1,0 +1,218 @@
+{
+    "messages": [
+        {
+            "content": "I still have Pedicure. I had trouble checking the schedule. What day would you like?",
+            "contentType": "PlainText"
+        }
+    ],
+    "sessionState": {
+        "dialogAction": {
+            "type": "ElicitSlot",
+            "slotToElicit": "requestedDate"
+        },
+        "intent": {
+            "name": "BookAppointmentIntent",
+            "slots": {
+                "bookingConfirmation": {
+                    "value": {
+                        "originalValue": "Yes",
+                        "interpretedValue": "Confirm",
+                        "resolvedValues": [
+                            "Confirm"
+                        ]
+                    }
+                },
+                "customerName": {
+                    "value": {
+                        "interpretedValue": "Codex",
+                        "resolvedValues": []
+                    }
+                },
+                "customerPhone": {
+                    "value": {
+                        "interpretedValue": "+15552067201",
+                        "resolvedValues": []
+                    }
+                },
+                "requestedDate": null,
+                "requestedTime": {
+                    "value": {
+                        "interpretedValue": "2 PM",
+                        "resolvedValues": []
+                    }
+                },
+                "serviceName": {
+                    "value": {
+                        "originalValue": "Pedicure",
+                        "interpretedValue": "Pedicure",
+                        "resolvedValues": [
+                            "Pedicure"
+                        ]
+                    }
+                },
+                "staffPreference": {
+                    "value": {
+                        "originalValue": "Any staff",
+                        "interpretedValue": "Trang",
+                        "resolvedValues": [
+                            "Any staff"
+                        ]
+                    }
+                }
+            },
+            "state": "InProgress",
+            "confirmationState": "None"
+        },
+        "sessionAttributes": {
+            "AmazonConnectContactId": "codex-20260715-postreg-0706-session-c",
+            "CalledNumber": "+18483487681",
+            "ContactId": "codex-20260715-postreg-0706-session-c",
+            "CustomerEndpointAddress": "+15552067201",
+            "InitialContactId": "codex-20260715-postreg-0706-session-c",
+            "SystemEndpointAddress": "+18483487681",
+            "aiAlternativeSlots": "[]",
+            "amazonConnectContactId": "codex-20260715-postreg-0706-session-c",
+            "askedSlotsCount": "1",
+            "awaitingAlternativeSelection": "false",
+            "awaitingFinalBookingConfirmation": "false",
+            "backendFailureReason": "backend_timeout",
+            "bookingConfirmationAsked": "false",
+            "bookingOutcome": "MISSING_INFO",
+            "callSessionId": "6f4608e2-c5f6-4e0c-a45f-07b3fdf6d482",
+            "calledNumber": "+18483487681",
+            "callerPhone": "+15552067201",
+            "confirmationFingerprint": "b93bd7349efb832d12e4e5446e4b338acecba9d9f9e8767cf4011d90e15acac9",
+            "confirmedServiceName": "Pedicure",
+            "confirmedStaffId": "903511ee-4849-43dd-85fb-73595e79a233",
+            "confirmedStaffName": "Trang",
+            "contactId": "codex-20260715-postreg-0706-session-c",
+            "conversationComplete": "false",
+            "conversationOutcome": "NEEDS_INPUT",
+            "conversationState": "CONTINUE",
+            "customerId": "7e640c96-efd8-4548-8911-db03b947e98b",
+            "customerName": "Codex",
+            "customerNameSource": "phone_lookup",
+            "customerPhone": "+15552067201",
+            "customerProfileSource": "active_customer",
+            "errorCount": "1",
+            "fallbackCount": "1",
+            "forceHumanEscalation": "false",
+            "ignoredUngroundedSlots": "[\"staffPreference\"]",
+            "initialBookingUtterance": "Pedicure today at 2 PM with any staff",
+            "isSynthetic": "true",
+            "knownCallerAcknowledged": "true",
+            "knownCallerLookupAttempted": "true",
+            "knownCallerLookupStatus": "FOUND",
+            "lastAskedSlot": "requestedDate",
+            "lastHumanTurnId": "codex-20260715-postreg-0706-session-c:66b1dc52-65ea-4bb7-85c4-3ca3c4d69be8:yes",
+            "lastProviderTurnId": "codex-20260715-postreg-0706-session-c:66b1dc52-65ea-4bb7-85c4-3ca3c4d69be8:yes:DialogCodeHook",
+            "persistedCustomerFirstName": "Codex",
+            "persistedCustomerLastName": "PostregA",
+            "provider": "AMAZON_CONNECT",
+            "recognizedCustomerId": "7e640c96-efd8-4548-8911-db03b947e98b",
+            "recognizedCustomerName": "Codex",
+            "requestedTime": "2 PM",
+            "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147",
+            "selectedStaffId": "903511ee-4849-43dd-85fb-73595e79a233",
+            "serviceName": "Pedicure",
+            "slotToElicit": "requestedDate",
+            "staffId": "903511ee-4849-43dd-85fb-73595e79a233",
+            "staffPreference": "Trang",
+            "staffResolutionStatus": "explicit_any",
+            "staffSource": "current_turn_any_staff",
+            "syntheticSource": "codex-post-deploy-regression-2026-07-15",
+            "transferToQueue": "false",
+            "turnSequence": "2"
+        },
+        "originatingRequestId": "66b1dc52-65ea-4bb7-85c4-3ca3c4d69be8"
+    },
+    "interpretations": [
+        {
+            "nluConfidence": {
+                "score": 1.0
+            },
+            "intent": {
+                "name": "BookAppointmentIntent",
+                "slots": {
+                    "bookingConfirmation": {
+                        "value": {
+                            "originalValue": "Yes",
+                            "interpretedValue": "Confirm",
+                            "resolvedValues": [
+                                "Confirm"
+                            ]
+                        }
+                    },
+                    "customerName": {
+                        "value": {
+                            "interpretedValue": "Codex",
+                            "resolvedValues": []
+                        }
+                    },
+                    "customerPhone": {
+                        "value": {
+                            "interpretedValue": "+15552067201",
+                            "resolvedValues": []
+                        }
+                    },
+                    "requestedDate": null,
+                    "requestedTime": {
+                        "value": {
+                            "interpretedValue": "2 PM",
+                            "resolvedValues": []
+                        }
+                    },
+                    "serviceName": {
+                        "value": {
+                            "originalValue": "Pedicure",
+                            "interpretedValue": "Pedicure",
+                            "resolvedValues": [
+                                "Pedicure"
+                            ]
+                        }
+                    },
+                    "staffPreference": {
+                        "value": {
+                            "originalValue": "Any staff",
+                            "interpretedValue": "Trang",
+                            "resolvedValues": [
+                                "Any staff"
+                            ]
+                        }
+                    }
+                },
+                "state": "InProgress",
+                "confirmationState": "None"
+            },
+            "interpretationSource": "Lex"
+        },
+        {
+            "intent": {
+                "name": "FallbackIntent",
+                "slots": {}
+            },
+            "interpretationSource": "Lex"
+        },
+        {
+            "nluConfidence": {
+                "score": 0.34
+            },
+            "intent": {
+                "name": "HumanEscalationIntent",
+                "slots": {}
+            },
+            "interpretationSource": "Lex"
+        },
+        {
+            "nluConfidence": {
+                "score": 0.24
+            },
+            "intent": {
+                "name": "RescheduleAppointmentIntent",
+                "slots": {}
+            },
+            "interpretationSource": "Lex"
+        }
+    ],
+    "sessionId": "codex-20260715-postreg-0706-session-c"
+}

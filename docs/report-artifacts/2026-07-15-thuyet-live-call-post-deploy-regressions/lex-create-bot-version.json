@@ -1,0 +1,12 @@
+{
+    "botId": "KHMIXGA2US",
+    "description": "2026-07-15 live-call confirmation slot and ASR fixes",
+    "botVersion": "33",
+    "botVersionLocaleSpecification": {
+        "en_US": {
+            "sourceBotVersion": "DRAFT"
+        }
+    },
+    "botStatus": "Versioning",
+    "creationDateTime": "2026-07-15T02:49:04.346000-04:00"
+}

@@ -250,6 +250,59 @@ test("production Full Set aliases are present in Lambda, API, and Lex v10 source
   );
 });
 
+test("July 15 Lex v10 confirmation and ASR source contracts are present", () => {
+  const lambdaSource = readFileSync(lambdaPath, "utf8");
+  const apiSource = readFileSync(apiAiServicePath, "utf8");
+  const lexRoot = path.join(repoRoot, "infra/aws/lex/FastAIBookingBot-v10/BotLocales/en_US");
+  const bookIntent = JSON.parse(
+    readFileSync(path.join(lexRoot, "Intents/BookAppointmentIntent/Intent.json"), "utf8")
+  );
+  const confirmationSlot = JSON.parse(
+    readFileSync(
+      path.join(lexRoot, "Intents/BookAppointmentIntent/Slots/bookingConfirmation/Slot.json"),
+      "utf8"
+    )
+  );
+  const confirmationType = JSON.parse(
+    readFileSync(path.join(lexRoot, "SlotTypes/BookingConfirmationType/SlotType.json"), "utf8")
+  );
+  const nailServiceType = JSON.parse(
+    readFileSync(path.join(lexRoot, "SlotTypes/NailServiceType/SlotType.json"), "utf8")
+  );
+  const humanIntent = JSON.parse(
+    readFileSync(path.join(lexRoot, "Intents/HumanEscalationIntent/Intent.json"), "utf8")
+  );
+
+  assert.match(lambdaSource, /"mini q"/);
+  assert.match(apiSource, /"mini q"/);
+  assert.match(lambdaSource, /"annie stop"/);
+  assert.match(apiSource, /"annie stop"/);
+  assert.match(lambdaSource, /speak with a person/);
+  assert.match(apiSource, /speak with a person/);
+  assert.ok(bookIntent.slotPriorities.some((slotPriority) => slotPriority.slotName === "bookingConfirmation"));
+  assert.equal(confirmationSlot.slotTypeName, "BookingConfirmationType");
+  assert.equal(
+    confirmationSlot.valueElicitationSetting.promptSpecification.promptAttemptsSpecification.Initial.allowedInputTypes.allowAudioInput,
+    true
+  );
+  assert.equal(
+    confirmationSlot.valueElicitationSetting.promptSpecification.promptAttemptsSpecification.Initial.allowedInputTypes.allowDTMFInput,
+    true
+  );
+  assert.ok(
+    confirmationType.slotTypeValues.some((value) =>
+      value.synonyms.some((synonym) => synonym.value === "1")
+    )
+  );
+  const manicureLexValue = nailServiceType.slotTypeValues.find(
+    (entry) => entry.sampleValue?.value === "Manicure"
+  );
+  assert.ok(manicureLexValue.synonyms.some((synonym) => synonym.value === "mini q"));
+  assert.ok(
+    humanIntent.sampleUtterances.some((utterance) => utterance.utterance === "I want to speak with a person")
+  );
+});
+
 test("BookAppointmentIntent with complete slots posts the backend contract and maps session attributes", async () => {
   const handler = await loadHandler();
   const fetchCalls = installFetchMock(() => jsonResponse(successfulBackendPayload()));

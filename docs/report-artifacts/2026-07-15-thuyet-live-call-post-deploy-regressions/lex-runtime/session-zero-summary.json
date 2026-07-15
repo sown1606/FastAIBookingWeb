@@ -1,0 +1,24 @@
+{
+  "text": "0",
+  "messages": [
+    "Let me check for an available operator."
+  ],
+  "dialog": {
+    "type": "ElicitIntent"
+  },
+  "intent": null,
+  "state": null,
+  "attrs": {
+    "serviceName": null,
+    "confirmedServiceName": null,
+    "requestedDate": null,
+    "requestedTime": null,
+    "staffPreference": null,
+    "confirmedStaffName": null,
+    "lastAskedSlot": null,
+    "awaitingFinalBookingConfirmation": null,
+    "transferToQueue": "true",
+    "queueId": "d0f2a5d8-e983-4609-9bbc-efb0881a465d",
+    "callSessionId": "fcf62dc0-b909-49c6-bc30-7a259285cf4c"
+  }
+}

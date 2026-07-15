@@ -1,0 +1,11 @@
+Pager usage is off.
+                  id                  |            providerCallId            |  status   |        startedAt        |         endedAt         | durationSeconds | routingOutcome |                                                                                                                            finalResolution
+--------------------------------------+--------------------------------------+-----------+-------------------------+-------------------------+-----------------+----------------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ af875331-14a1-4dd0-9f7e-8aba5aec69e1 | a6731d1b-1da3-4692-bd36-a8c38d59f636 | COMPLETED | 2026-07-15 05:44:04.227 | 2026-07-15 05:44:40.025 |              36 | AI_RECEPTION   | <speak>Welcome back, lee. Got it, Pedicure. Which staff would you like, Trang, Amy, Kelly, Kevin, or first available?</speak>
+ a786f59e-0861-48ab-b1f3-e4932adce214 | 9a77c3d4-9638-418e-a321-32540b049bb1 | COMPLETED | 2026-07-15 05:45:33.389 | 2026-07-15 05:46:06.855 |              33 | AI_RECEPTION   | <speak>lee, just to confirm: Full Set today at 3 PM with Amy. <break time="300ms"/> Is that correct?</speak>
+ de38589f-7587-4b65-9ffe-3ba46bdd58a7 | e3070da7-62c0-43a1-a4e6-f894539ab983 | COMPLETED | 2026-07-15 05:46:52.564 | 2026-07-15 05:48:15.175 |              83 | AI_RECEPTION   | <speak>I heard Manicure, but I may have misheard Pedicure. I can list the services once. Press 1 for Pedicure, Press 2 for Manicure, Press 3 for Full Set, Press 4 for Dip Powder, Press 5 for Builder Gel Fill Update, Press 6 for Filter, or 0 for a person.</speak>
+(3 rows)
+
+ call_session_id | providerCallId | status | routingOutcome | queueId | queuedAt | closedAt | metadata
+-----------------+----------------+--------+----------------+---------+----------+----------+----------
+(0 rows)

@@ -1,0 +1,3 @@
+id	providerCallId	requestText	responseText	dialog_action	slot_to_elicit	last_asked
+80aa29dd-6adf-4d2c-aa85-1fb2b9f03044	codex-20260715-postreg-0658-session-a4	Full Set today at 3 PM with Amy	<speak>Codex, just to confirm: Full Set today at 3 PM with Amy. <break time="300ms"/> Is that correct?</speak>
+(1 row)

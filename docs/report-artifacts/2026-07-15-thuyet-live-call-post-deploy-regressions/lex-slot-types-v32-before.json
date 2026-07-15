@@ -1,0 +1,14 @@
+{
+    "botId": "KHMIXGA2US",
+    "botVersion": "32",
+    "localeId": "en_US",
+    "slotTypeSummaries": [
+        {
+            "slotTypeId": "CRPHEOWTHG",
+            "slotTypeName": "NailServiceType",
+            "description": "Demo nail salon services with speech synonyms",
+            "lastUpdatedDateTime": "2026-07-15T00:58:27.389000-04:00",
+            "slotTypeCategory": "Custom"
+        }
+    ]
+}

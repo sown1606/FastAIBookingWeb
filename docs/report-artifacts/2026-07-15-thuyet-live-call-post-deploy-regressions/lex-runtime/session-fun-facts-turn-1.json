@@ -1,0 +1,113 @@
+{
+    "messages": [
+        {
+            "content": "<speak>Amy already has an appointment at 2 PM. <break time=\"300ms\"/> press 1 for 2 PM with Kevin, or press 2 for 11 AM with Amy.</speak>",
+            "contentType": "SSML"
+        }
+    ],
+    "sessionState": {
+        "dialogAction": {
+            "type": "ElicitIntent"
+        },
+        "sessionAttributes": {
+            "AmazonConnectContactId": "codex-20260715-postreg-0714-fun-facts",
+            "CalledNumber": "+18483487681",
+            "ContactId": "codex-20260715-postreg-0714-fun-facts",
+            "CustomerEndpointAddress": "+15552067205",
+            "InitialContactId": "codex-20260715-postreg-0714-fun-facts",
+            "SystemEndpointAddress": "+18483487681",
+            "amazonConnectContactId": "codex-20260715-postreg-0714-fun-facts",
+            "bookingOutcome": "NO_AVAILABILITY",
+            "callSessionId": "fbd751da-ca3d-454c-bb01-a7db41ab6581",
+            "calledNumber": "+18483487681",
+            "callerPhone": "+15552067205",
+            "confirmedServiceName": "Full Set",
+            "confirmedStaffName": "Amy",
+            "contactId": "codex-20260715-postreg-0714-fun-facts",
+            "conversationComplete": "false",
+            "conversationOutcome": "NEEDS_INPUT",
+            "conversationState": "CONTINUE",
+            "customerId": "d8f388b2-bc6d-4540-b503-f1dfcca9e653",
+            "customerName": "Codex",
+            "customerNameSource": "phone_lookup",
+            "customerPhone": "+15552067205",
+            "customerProfileSource": "active_customer",
+            "initialBookingUtterance": "fun facts today at two p m with amy",
+            "isSynthetic": "true",
+            "knownCallerLookupAttempted": "true",
+            "knownCallerLookupStatus": "FOUND",
+            "lastHumanTurnId": "codex-20260715-postreg-0714-fun-facts:6a4693db-1041-481d-ac93-560eba296b2d:fun facts today at two p m with amy",
+            "lastProviderTurnId": "codex-20260715-postreg-0714-fun-facts:6a4693db-1041-481d-ac93-560eba296b2d:fun facts today at two p m with amy:DialogCodeHook",
+            "persistedCustomerFirstName": "Codex",
+            "persistedCustomerLastName": "PostregD",
+            "provider": "AMAZON_CONNECT",
+            "recognizedCustomerId": "d8f388b2-bc6d-4540-b503-f1dfcca9e653",
+            "recognizedCustomerName": "Codex",
+            "requestedDate": "2026-07-15",
+            "requestedTime": "2 PM",
+            "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147",
+            "serviceName": "Full Set",
+            "staffPreference": "Amy",
+            "staffSource": "current_turn_alias",
+            "syntheticSource": "codex-post-deploy-regression-2026-07-15",
+            "turnSequence": "1"
+        },
+        "originatingRequestId": "6a4693db-1041-481d-ac93-560eba296b2d"
+    },
+    "interpretations": [
+        {
+            "nluConfidence": {
+                "score": 0.9
+            },
+            "intent": {
+                "name": "BookAppointmentIntent",
+                "slots": {
+                    "bookingConfirmation": null,
+                    "customerName": null,
+                    "customerPhone": null,
+                    "requestedDate": null,
+                    "requestedTime": null,
+                    "serviceName": {
+                        "value": {
+                            "originalValue": "fun",
+                            "interpretedValue": "Full Set",
+                            "resolvedValues": [
+                                "Full Set"
+                            ]
+                        }
+                    },
+                    "staffPreference": null
+                }
+            },
+            "interpretationSource": "Lex"
+        },
+        {
+            "intent": {
+                "name": "FallbackIntent",
+                "slots": {}
+            },
+            "interpretationSource": "Lex"
+        },
+        {
+            "nluConfidence": {
+                "score": 0.48
+            },
+            "intent": {
+                "name": "HumanEscalationIntent",
+                "slots": {}
+            },
+            "interpretationSource": "Lex"
+        },
+        {
+            "nluConfidence": {
+                "score": 0.47
+            },
+            "intent": {
+                "name": "RescheduleAppointmentIntent",
+                "slots": {}
+            },
+            "interpretationSource": "Lex"
+        }
+    ],
+    "sessionId": "codex-20260715-postreg-0714-fun-facts"
+}

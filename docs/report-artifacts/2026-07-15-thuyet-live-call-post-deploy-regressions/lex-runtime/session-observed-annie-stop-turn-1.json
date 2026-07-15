@@ -1,0 +1,157 @@
+{
+    "messages": [
+        {
+            "content": "<speak>I found Kevin available. <break time=\"300ms\"/> Codex, just to confirm: Pedicure today at 2 PM with Kevin. <break time=\"300ms\"/> Is that correct?</speak>",
+            "contentType": "SSML"
+        }
+    ],
+    "sessionState": {
+        "dialogAction": {
+            "type": "ElicitSlot",
+            "slotToElicit": "bookingConfirmation"
+        },
+        "intent": {
+            "name": "BookAppointmentIntent",
+            "slots": {
+                "bookingConfirmation": null,
+                "customerName": null,
+                "customerPhone": null,
+                "requestedDate": null,
+                "requestedTime": null,
+                "serviceName": {
+                    "value": {
+                        "interpretedValue": "Pedicure",
+                        "resolvedValues": []
+                    }
+                },
+                "staffPreference": {
+                    "value": {
+                        "interpretedValue": "Any staff",
+                        "resolvedValues": []
+                    }
+                }
+            },
+            "state": "InProgress",
+            "confirmationState": "None"
+        },
+        "sessionAttributes": {
+            "AmazonConnectContactId": "codex-20260715-postreg-0708-observed-annie-stop",
+            "CalledNumber": "+18483487681",
+            "ContactId": "codex-20260715-postreg-0708-observed-annie-stop",
+            "CustomerEndpointAddress": "+15552067203",
+            "InitialContactId": "codex-20260715-postreg-0708-observed-annie-stop",
+            "SystemEndpointAddress": "+18483487681",
+            "aiAlternativeSlots": "[]",
+            "amazonConnectContactId": "codex-20260715-postreg-0708-observed-annie-stop",
+            "askedSlotsCount": "1",
+            "awaitingAlternativeSelection": "false",
+            "awaitingFinalBookingConfirmation": "true",
+            "bookingConfirmationAsked": "true",
+            "bookingOutcome": "MISSING_INFO",
+            "callSessionId": "bee8653d-7a9f-4ae8-80cf-7241c79211b6",
+            "calledNumber": "+18483487681",
+            "callerPhone": "+15552067203",
+            "confirmationFingerprint": "ce21239f97155c2c751bf50a954c8b1eca47d297ced2495a7ca688b363cc9bf7",
+            "confirmedServiceName": "Pedicure",
+            "confirmedStaffId": "0227f285-efb4-47ac-bc01-82b2c0cec3f5",
+            "confirmedStaffName": "Kevin",
+            "contactId": "codex-20260715-postreg-0708-observed-annie-stop",
+            "conversationComplete": "false",
+            "conversationOutcome": "NEEDS_INPUT",
+            "conversationState": "CONTINUE",
+            "customerId": "c71c8b1c-3c2c-4ee4-97e8-f032620739e3",
+            "customerName": "Codex",
+            "customerNameSource": "phone_lookup",
+            "customerPhone": "+15552067203",
+            "customerProfileSource": "active_customer",
+            "errorCount": "1",
+            "fallbackCount": "1",
+            "initialBookingUtterance": "pedicure today at two pm with annie stop",
+            "isSynthetic": "true",
+            "knownCallerAcknowledged": "true",
+            "knownCallerLookupAttempted": "true",
+            "knownCallerLookupStatus": "FOUND",
+            "lastAskedSlot": "bookingConfirmation",
+            "lastHumanTurnId": "codex-20260715-postreg-0708-observed-annie-stop:7eeef02f-efe4-4f1d-92a6-5ad3f228d654:pedicure today at two pm with annie stop",
+            "lastProviderTurnId": "codex-20260715-postreg-0708-observed-annie-stop:7eeef02f-efe4-4f1d-92a6-5ad3f228d654:pedicure today at two pm with annie stop:DialogCodeHook",
+            "persistedCustomerFirstName": "Codex",
+            "persistedCustomerLastName": "PostregC",
+            "provider": "AMAZON_CONNECT",
+            "recognizedCustomerId": "c71c8b1c-3c2c-4ee4-97e8-f032620739e3",
+            "recognizedCustomerName": "Codex",
+            "requestedDate": "2026-07-15",
+            "requestedTime": "2 PM",
+            "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147",
+            "selectedStaffId": "0227f285-efb4-47ac-bc01-82b2c0cec3f5",
+            "serviceName": "Pedicure",
+            "slotToElicit": "bookingConfirmation",
+            "staffId": "0227f285-efb4-47ac-bc01-82b2c0cec3f5",
+            "staffPreference": "Kevin",
+            "staffResolutionStatus": "explicit_any",
+            "staffSource": "current_turn_any_staff",
+            "syntheticSource": "codex-post-deploy-regression-2026-07-15",
+            "turnSequence": "1"
+        },
+        "originatingRequestId": "7eeef02f-efe4-4f1d-92a6-5ad3f228d654"
+    },
+    "interpretations": [
+        {
+            "nluConfidence": {
+                "score": 0.88
+            },
+            "intent": {
+                "name": "BookAppointmentIntent",
+                "slots": {
+                    "bookingConfirmation": null,
+                    "customerName": null,
+                    "customerPhone": null,
+                    "requestedDate": null,
+                    "requestedTime": null,
+                    "serviceName": {
+                        "value": {
+                            "interpretedValue": "Pedicure",
+                            "resolvedValues": []
+                        }
+                    },
+                    "staffPreference": {
+                        "value": {
+                            "interpretedValue": "Any staff",
+                            "resolvedValues": []
+                        }
+                    }
+                },
+                "state": "InProgress",
+                "confirmationState": "None"
+            },
+            "interpretationSource": "Lex"
+        },
+        {
+            "intent": {
+                "name": "FallbackIntent",
+                "slots": {}
+            },
+            "interpretationSource": "Lex"
+        },
+        {
+            "nluConfidence": {
+                "score": 0.58
+            },
+            "intent": {
+                "name": "HumanEscalationIntent",
+                "slots": {}
+            },
+            "interpretationSource": "Lex"
+        },
+        {
+            "nluConfidence": {
+                "score": 0.4
+            },
+            "intent": {
+                "name": "RescheduleAppointmentIntent",
+                "slots": {}
+            },
+            "interpretationSource": "Lex"
+        }
+    ],
+    "sessionId": "codex-20260715-postreg-0708-observed-annie-stop"
+}

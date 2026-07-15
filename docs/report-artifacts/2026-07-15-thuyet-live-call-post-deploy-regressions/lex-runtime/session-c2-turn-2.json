@@ -1,0 +1,187 @@
+{
+    "messages": [
+        {
+            "content": "<speak>You're all set. <break time=\"300ms\"/> Your pedicure is booked for today at 2 PM with Kelly. Thank you for calling.</speak>",
+            "contentType": "SSML"
+        }
+    ],
+    "sessionState": {
+        "dialogAction": {
+            "type": "Close"
+        },
+        "intent": {
+            "name": "BookAppointmentIntent",
+            "slots": {
+                "bookingConfirmation": {
+                    "value": {
+                        "originalValue": "Yes",
+                        "interpretedValue": "Confirm",
+                        "resolvedValues": [
+                            "Confirm"
+                        ]
+                    }
+                },
+                "customerName": null,
+                "customerPhone": null,
+                "requestedDate": null,
+                "requestedTime": null,
+                "serviceName": {
+                    "value": {
+                        "originalValue": "Pedicure",
+                        "interpretedValue": "Pedicure",
+                        "resolvedValues": [
+                            "Pedicure"
+                        ]
+                    }
+                },
+                "staffPreference": {
+                    "value": {
+                        "originalValue": "Any staff",
+                        "interpretedValue": "Any staff",
+                        "resolvedValues": [
+                            "Any staff"
+                        ]
+                    }
+                }
+            },
+            "state": "Fulfilled",
+            "confirmationState": "None"
+        },
+        "sessionAttributes": {
+            "AmazonConnectContactId": "codex-20260715-postreg-0707-session-c2",
+            "CalledNumber": "+18483487681",
+            "ContactId": "codex-20260715-postreg-0707-session-c2",
+            "CustomerEndpointAddress": "+15552067202",
+            "InitialContactId": "codex-20260715-postreg-0707-session-c2",
+            "SystemEndpointAddress": "+18483487681",
+            "aiAlternativeSlots": "[]",
+            "amazonConnectContactId": "codex-20260715-postreg-0707-session-c2",
+            "appointmentId": "11a20593-251b-4195-bf5f-a924237df622",
+            "askedSlotsCount": "1",
+            "awaitingAlternativeSelection": "false",
+            "awaitingFinalBookingConfirmation": "false",
+            "bookingAttemptId": "cc4395cc-6fe7-4fe6-a999-37d362d01b37",
+            "bookingConfirmationAsked": "false",
+            "bookingOutcome": "BOOKED",
+            "callSessionId": "ce333b0f-e75c-4b83-9785-81f4ed220680",
+            "calledNumber": "+18483487681",
+            "callerPhone": "+15552067202",
+            "confirmationFingerprint": "1bb3c88b7f1a5daa38bd0953444bc4fcb32632ec7a2136bae2c4ad99a67c2a4c",
+            "confirmedServiceName": "Pedicure",
+            "confirmedStaffId": "25406cde-99ef-4407-999d-cf42eaa67bc3",
+            "confirmedStaffName": "Kelly",
+            "contactId": "codex-20260715-postreg-0707-session-c2",
+            "conversationComplete": "true",
+            "conversationOutcome": "BOOKED",
+            "conversationState": "COMPLETE",
+            "customerId": "d339aaf1-8c7a-428e-9c49-9213beb3e1de",
+            "customerName": "Codex",
+            "customerNameSource": "phone_lookup",
+            "customerPhone": "+15552067202",
+            "customerProfileSource": "active_customer",
+            "errorCount": "1",
+            "fallbackCount": "1",
+            "ignoredUngroundedSlots": "[\"staffPreference\"]",
+            "initialBookingUtterance": "Pedicure today at 2 PM with any staff",
+            "isSynthetic": "true",
+            "knownCallerAcknowledged": "true",
+            "knownCallerLookupAttempted": "true",
+            "knownCallerLookupStatus": "FOUND",
+            "lastAskedSlot": "bookingConfirmation",
+            "lastHumanTurnId": "codex-20260715-postreg-0707-session-c2:402c739e-9ba4-426b-8534-69b2c6457635:yes",
+            "lastProviderTurnId": "codex-20260715-postreg-0707-session-c2:402c739e-9ba4-426b-8534-69b2c6457635:yes:DialogCodeHook",
+            "persistedCustomerFirstName": "Codex",
+            "persistedCustomerLastName": "PostregB",
+            "provider": "AMAZON_CONNECT",
+            "recognizedCustomerId": "d339aaf1-8c7a-428e-9c49-9213beb3e1de",
+            "recognizedCustomerName": "Codex",
+            "requestedDate": "2026-07-15",
+            "requestedTime": "2 PM",
+            "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147",
+            "selectedStaffId": "25406cde-99ef-4407-999d-cf42eaa67bc3",
+            "serviceName": "Pedicure",
+            "slotToElicit": "bookingConfirmation",
+            "staffId": "25406cde-99ef-4407-999d-cf42eaa67bc3",
+            "staffPreference": "Kelly",
+            "staffResolutionStatus": "explicit_any",
+            "staffSource": "current_turn_any_staff",
+            "syntheticSource": "codex-post-deploy-regression-2026-07-15",
+            "turnSequence": "2"
+        },
+        "originatingRequestId": "402c739e-9ba4-426b-8534-69b2c6457635"
+    },
+    "interpretations": [
+        {
+            "nluConfidence": {
+                "score": 1.0
+            },
+            "intent": {
+                "name": "BookAppointmentIntent",
+                "slots": {
+                    "bookingConfirmation": {
+                        "value": {
+                            "originalValue": "Yes",
+                            "interpretedValue": "Confirm",
+                            "resolvedValues": [
+                                "Confirm"
+                            ]
+                        }
+                    },
+                    "customerName": null,
+                    "customerPhone": null,
+                    "requestedDate": null,
+                    "requestedTime": null,
+                    "serviceName": {
+                        "value": {
+                            "originalValue": "Pedicure",
+                            "interpretedValue": "Pedicure",
+                            "resolvedValues": [
+                                "Pedicure"
+                            ]
+                        }
+                    },
+                    "staffPreference": {
+                        "value": {
+                            "originalValue": "Any staff",
+                            "interpretedValue": "Any staff",
+                            "resolvedValues": [
+                                "Any staff"
+                            ]
+                        }
+                    }
+                },
+                "state": "Fulfilled",
+                "confirmationState": "None"
+            }
+        },
+        {
+            "intent": {
+                "name": "FallbackIntent",
+                "slots": {}
+            },
+            "interpretationSource": "Lex"
+        },
+        {
+            "nluConfidence": {
+                "score": 0.34
+            },
+            "intent": {
+                "name": "HumanEscalationIntent",
+                "slots": {}
+            },
+            "interpretationSource": "Lex"
+        },
+        {
+            "nluConfidence": {
+                "score": 0.24
+            },
+            "intent": {
+                "name": "RescheduleAppointmentIntent",
+                "slots": {}
+            },
+            "interpretationSource": "Lex"
+        }
+    ],
+    "requestAttributes": {},
+    "sessionId": "codex-20260715-postreg-0707-session-c2"
+}

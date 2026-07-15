@@ -602,13 +602,22 @@ export const createOrUpdateCallEscalation = async (input: {
   }
 
   if (
-    operatorQueueOutcome === "AGENT_AVAILABLE" ||
-    operatorQueueOutcome === "CONNECT_METRICS_DEFERRED_TO_CONNECT_FLOW"
+    operatorQueueOutcome === "AMAZON_CONNECT_ENQUEUED" ||
+    operatorQueueOutcome === "PROVIDER_ENQUEUED"
   ) {
     status = CallEscalationStatus.QUEUED;
     routingOutcome = CallRoutingOutcome.QUEUED;
     finalResolution = "Waiting in the human operator queue.";
     queuedAt = new Date();
+  } else if (
+    operatorQueueOutcome === "AGENT_AVAILABLE" ||
+    operatorQueueOutcome === "AGENTS_BUSY" ||
+    operatorQueueOutcome === "CONNECT_METRICS_DEFERRED_TO_CONNECT_FLOW"
+  ) {
+    status = CallEscalationStatus.PENDING;
+    routingOutcome = CallRoutingOutcome.QUEUED;
+    finalResolution = "Human operator transfer requested; waiting for Amazon Connect queue evidence.";
+    queuedAt = null;
   } else {
     status = CallEscalationStatus.CLOSED;
     routingOutcome = CallRoutingOutcome.CALL_CENTER_ESCALATION;

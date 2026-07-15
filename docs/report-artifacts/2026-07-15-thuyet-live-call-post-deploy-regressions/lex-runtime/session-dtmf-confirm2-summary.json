@@ -1,0 +1,35 @@
+{
+  "turn1": {
+    "messages": [
+      "<speak>Codex, just to confirm: Manicure today at 5 PM with Kelly. <break time=\"300ms\"/> Is that correct?</speak>"
+    ],
+    "dialog": {
+      "type": "ElicitSlot",
+      "slotToElicit": "bookingConfirmation"
+    },
+    "attrs": {
+      "serviceName": "Manicure",
+      "requestedTime": "5 PM",
+      "staffPreference": "Kelly",
+      "lastAskedSlot": "bookingConfirmation"
+    }
+  },
+  "turn2": {
+    "messages": [
+      "<speak>You're all set. <break time=\"300ms\"/> Your manicure is booked for today at 5 PM with Kelly. Thank you for calling.</speak>"
+    ],
+    "dialog": {
+      "type": "Close"
+    },
+    "intent": "Fulfilled",
+    "attrs": {
+      "appointmentId": "44548dd6-5d69-4a57-97d3-b20b6b0e64dd",
+      "bookingOutcome": "BOOKED",
+      "conversationComplete": "true",
+      "serviceName": "Manicure",
+      "requestedTime": "5 PM",
+      "staffPreference": "Kelly",
+      "lastHumanTurnId": "codex-20260715-postreg-0713-dtmf-confirm2:64faa842-5d96-469f-9e7e-7e6566780f66:1"
+    }
+  }
+}

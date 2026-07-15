@@ -310,6 +310,10 @@
     {
       "priority": 6,
       "slotName": "customerPhone"
+    },
+    {
+      "priority": 7,
+      "slotName": "bookingConfirmation"
     }
   ]
 }

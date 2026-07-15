@@ -8,7 +8,7 @@ const configuredApiTimeoutMs = Number(process.env.BOOKING_HANDLER_API_TIMEOUT_MS
 const API_TIMEOUT_MS =
   Number.isFinite(configuredApiTimeoutMs) && configuredApiTimeoutMs > 0
     ? configuredApiTimeoutMs
-    : 2800;
+    : 5000;
 
 const NUMBER_WORDS = {
   one: 1,
@@ -232,6 +232,8 @@ const ANY_STAFF_ALIASES = [
   "someone available"
 ];
 const CONTEXTUAL_ANY_STAFF_ALIASES = [
+  "annie stop",
+  "anny stop",
   "any stop",
   "anystop",
   "any stop if i",
@@ -287,6 +289,7 @@ const SERVICE_ALIAS_GROUPS = {
     "many cure",
     "nanny cure",
     "mini cure",
+    "mini q",
     "manicure appointment",
     "hand service",
     "finger nail service"
@@ -417,7 +420,8 @@ const slotNames = {
   serviceName: ["serviceName", "ServiceName", "service", "Service"],
   requestedDate: ["requestedDate", "RequestedDate", "preferredDate", "PreferredDate"],
   requestedTime: ["requestedTime", "RequestedTime", "preferredTime", "PreferredTime"],
-  staffPreference: ["staffPreference", "StaffPreference"]
+  staffPreference: ["staffPreference", "StaffPreference"],
+  bookingConfirmation: ["bookingConfirmation", "BookingConfirmation"]
 };
 
 const attributeNames = {
@@ -3116,7 +3120,7 @@ function getIntentConfidence(event, intentName) {
 
 function isExplicitHumanRequestText(text) {
   const normalized = normalizeForMatch(text);
-  return /\b(real person|live person|human|operator|representative|talk to a person|talk to someone|speak to someone|speak with someone)\b/.test(
+  return /\b(real person|live person|human|operator|representative|talk to a person|talk with a person|talk to someone|speak to a person|speak with a person|speak to someone|speak with someone|speak to an operator|speak with an operator|speak with an agent|speak to an agent|talk to an agent|representative please)\b/.test(
     normalized
   );
 }
@@ -3351,13 +3355,15 @@ function isNoInputEvent(event) {
 }
 
 function isAffirmativeUtterance(value) {
-  return /^(?:yes|yeah|yep|correct|right|sure|ok|okay|confirm|confirmed|go ahead|book it|that is correct|please|connect me)$/i.test(
+  return /^(?:yes|yeah|yep|correct|right|sure|ok|okay|confirm|confirmed|go ahead|book it|that is correct|please|connect me|one|1)$/i.test(
     normalizeForMatch(value)
   );
 }
 
 function isNegativeUtterance(value) {
-  return /^(?:no|nope|not now|no thanks|do not|dont|don t)$/i.test(normalizeForMatch(value));
+  return /^(?:no|nope|not now|no thanks|not correct|change it|update it|do not|dont|don t|two|2)$/i.test(
+    normalizeForMatch(value)
+  );
 }
 
 const FINAL_CONFIRMATION_ONLY_PHRASES = new Set([
@@ -3377,6 +3383,8 @@ const FINAL_CONFIRMATION_ONLY_PHRASES = new Set([
   "confirm it",
   "confirm",
   "confirmed",
+  "one",
+  "1",
   "sure",
   "ok",
   "okay",
@@ -3417,10 +3425,12 @@ function classifyFinalBookingConfirmation(value) {
     hasCurrentTurnTimePhrase(value) ||
     extractStaffFromTranscript(value);
   const hasExplicitNegation =
-    /\b(?:no|nope|nah|wrong|not correct|not right|do not|don t|dont|cancel it|wait no)\b/.test(normalized);
+    /\b(?:no|nope|nah|wrong|not correct|not right|change it|update it|do not|don t|dont|cancel it|wait no)\b/.test(normalized) ||
+    /^(?:2|two)$/.test(normalized);
 
   const hasAffirmation =
     /\b(?:yes|yeah|yep|correct|right|sure|ok|okay)\b/.test(normalized) ||
+    /^(?:1|one)$/.test(normalized) ||
     /\b(?:that s right|that is right|sounds good|that s fine|that is fine|go ahead|please book it|book it|confirm it)\b/.test(
       normalized
     );
@@ -4146,7 +4156,8 @@ function buildElicitSlotResponse(event, slotName, extraAttributes = {}, messageO
 	    slotToElicit: slotName,
 	    trustedSlots: responseSessionAttributes,
 	    responseMessage,
-	    providerTurnId: getProviderTurnId(event)
+	    providerTurnId: getProviderTurnId(event),
+	    humanTurnId: getHumanTurnId(event)
 	  });
 	}
 
@@ -4531,6 +4542,12 @@ function intentSupportsLexSlotElicitation(intentName) {
   return intentName === "BookAppointmentIntent";
 }
 
+function inferIntentNameForSlot(slotToElicit) {
+  return slotToElicit && Object.prototype.hasOwnProperty.call(slotNames, slotToElicit)
+    ? "BookAppointmentIntent"
+    : "";
+}
+
 function responseStillNeedsCallerInput(message, dialogAction, sessionAttributes = {}) {
   if (dialogAction?.type && dialogAction.type !== "Close") {
     return true;
@@ -4614,7 +4631,8 @@ function buildLexResponse(event, message, state = "Fulfilled", sessionAttributes
       delete mergedSessionAttributes.serviceFallbackOffered;
     }
   }
-  const canElicitSlotInCurrentIntent = intentSupportsLexSlotElicitation(intent.name);
+  const inferredIntentName = intent.name || inferIntentNameForSlot(dialogAction.slotToElicit);
+  const canElicitSlotInCurrentIntent = intentSupportsLexSlotElicitation(inferredIntentName);
   if (dialogAction.type === "ElicitSlot" && !canElicitSlotInCurrentIntent) {
     dialogAction = {
       type: "ElicitIntent"
@@ -4665,6 +4683,8 @@ function buildLexResponse(event, message, state = "Fulfilled", sessionAttributes
       dialogAction,
       intent: {
         ...intent,
+        ...(inferredIntentName ? { name: inferredIntentName } : {}),
+        slots: intent.slots || mergeKnownSlots(event),
         state: nextState
       }
     },
@@ -4680,6 +4700,7 @@ function buildLexResponse(event, message, state = "Fulfilled", sessionAttributes
 	    trustedSlots: responseSessionAttributes,
 	    responseMessage,
 	    providerTurnId: getProviderTurnId(event),
+	    humanTurnId: getHumanTurnId(event),
 	    ...(dialogAction.type !== "ElicitSlot" && requestedSlotToElicit ? { activeDtmfMenu: "" } : {})
 	  });
 	}
@@ -5074,6 +5095,9 @@ function buildInternalPayload(event, intentName, extraAttributes = {}) {
     .filter((value, index, values) => value && values.indexOf(value) === index)
     .join(" ");
   const currentTurnTranscript = getCurrentTurnTranscript(event);
+  const bookingConfirmation =
+    getSlotValue(slots, slotNames.bookingConfirmation, { preferOriginal: true }) ||
+    getSessionAttribute(sessionAttributes, slotNames.bookingConfirmation);
 
   const payload = {
     intentName: backendIntentName,
@@ -5085,6 +5109,7 @@ function buildInternalPayload(event, intentName, extraAttributes = {}) {
     requestedTime: knownField("requestedTime", { preferOriginal: true }),
     staffPreference: knownField("staffPreference"),
     staffId: sessionAttributes.staffId || sessionAttributes.selectedStaffId,
+    bookingConfirmation,
     confirmationState: event.sessionState?.intent?.confirmationState,
     transcript,
     currentTurnTranscript,
@@ -5101,7 +5126,11 @@ function buildInternalPayload(event, intentName, extraAttributes = {}) {
 	      currentTurnTranscript,
 	      aggregatedBookingTranscript: transcript,
 	      providerTurnId: getProviderTurnId(event),
-	      lexRequestId: event.requestId || event.invocationId || "",
+	      humanTurnId: getHumanTurnId(event),
+	      providerRequestId: getProviderRequestId(event),
+	      lexRequestId: event.requestId || event.invocationId || getProviderRequestId(event) || "",
+	      lexPhase: event.invocationSource || "",
+	      stateVersionBefore: sessionAttributes.stateVersion || sessionAttributes.turnSequence || "0",
 	      turnSequence: sessionAttributes.turnSequence || "0",
 	      asrDiagnostics: JSON.stringify(getAsrDiagnostics(event)),
       asrNBestAlternatives: JSON.stringify(getAsrDiagnostics(event).nBestAlternatives),
@@ -5314,6 +5343,9 @@ function commitDialogState(response, options = {}) {
   if (options.providerTurnId) {
     sessionAttributes.lastProviderTurnId = options.providerTurnId;
   }
+  if (options.humanTurnId) {
+    sessionAttributes.lastHumanTurnId = options.humanTurnId;
+  }
 
   return {
     ...response,
@@ -5339,14 +5371,51 @@ function getInputMode(event) {
   return event.inputMode || (readDtmfDigit(event.inputTranscript) ? "DTMF" : "Speech");
 }
 
+function getProviderRequestId(event) {
+  const sessionAttributes = event.sessionState?.sessionAttributes || {};
+  const requestAttributes = event.requestAttributes || {};
+  return String(
+    event.sessionState?.originatingRequestId ||
+      requestAttributes["x-amz-lex:originating-request-id"] ||
+      requestAttributes["x-amz-lex:request-id"] ||
+      event.requestId ||
+      event.invocationId ||
+      event.invocationSourceRequestId ||
+      sessionAttributes["x-amz-lex:request-id"] ||
+      ""
+  );
+}
+
+function getHumanTurnId(event) {
+  const sessionAttributes = event.sessionState?.sessionAttributes || {};
+  if (sessionAttributes.humanTurnId) {
+    return String(sessionAttributes.humanTurnId);
+  }
+  const contactId =
+    getAttribute(event, attributeNames.contactId) ||
+    event.sessionId ||
+    sessionAttributes.AmazonConnectContactId ||
+    "session";
+  const providerRequestId = getProviderRequestId(event);
+  const transcript = normalizeForMatch(getCurrentTurnTranscript(event) || event.inputTranscript || "");
+  if (providerRequestId) {
+    return `${contactId}:${providerRequestId}:${transcript || getInputMode(event).toLowerCase() || "empty"}`;
+  }
+  return `${contactId}:${getInputMode(event)}:${transcript || "empty"}`;
+}
+
 function getProviderTurnId(event) {
   const sessionAttributes = event.sessionState?.sessionAttributes || {};
+  if (sessionAttributes.providerTurnId) {
+    return String(sessionAttributes.providerTurnId);
+  }
+  const humanTurnId = getHumanTurnId(event);
   return String(
     event.requestId ||
       event.invocationId ||
       event.invocationSourceRequestId ||
       sessionAttributes["x-amz-lex:request-id"] ||
-      `${event.sessionId || "session"}:${event.invocationSource || "unknown"}:${event.inputMode || "input"}:${event.inputTranscript || ""}`
+      `${humanTurnId}:${event.invocationSource || "unknown"}`
   );
 }
 
@@ -5475,6 +5544,10 @@ function logStructuredLexTurn(event, response, analysis = {}) {
 	      event.sessionId ||
 	      sessionAttributesAfter.AmazonConnectContactId,
 	    providerTurnId: getProviderTurnId(event),
+	    humanTurnId: getHumanTurnId(event),
+	    providerRequestId: getProviderRequestId(event),
+	    lexRequestId: event.requestId || event.invocationId || getProviderRequestId(event) || "",
+	    lexPhase: event.invocationSource || "",
 	    turnSequenceBefore: sessionAttributesBefore.turnSequence,
 	    turnSequenceAfter: sessionAttributesAfter.turnSequence,
 	    currentTurnTranscript: analysis.currentTurnTranscript ?? getCurrentTurnTranscript(event),
@@ -5956,7 +6029,8 @@ async function handleLexEvent(event, analysis = {}) {
 	        },
 	        {
 	          dialogAction: {
-	            type: "ElicitIntent"
+	            type: "ElicitSlot",
+	            slotToElicit: "bookingConfirmation"
 	          },
 	          messageContentType: "PlainText"
 	        }

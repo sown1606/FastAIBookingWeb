@@ -1,0 +1,202 @@
+{
+    "messages": [
+        {
+            "content": "<speak>You're all set. <break time=\"300ms\"/> Your full set is booked for today at 3 PM with Amy. Thank you for calling.</speak>",
+            "contentType": "SSML"
+        }
+    ],
+    "sessionState": {
+        "dialogAction": {
+            "type": "Close"
+        },
+        "intent": {
+            "name": "BookAppointmentIntent",
+            "slots": {
+                "bookingConfirmation": {
+                    "value": {
+                        "originalValue": "Yes",
+                        "interpretedValue": "Confirm",
+                        "resolvedValues": [
+                            "Confirm"
+                        ]
+                    }
+                },
+                "customerName": null,
+                "customerPhone": null,
+                "requestedDate": null,
+                "requestedTime": {
+                    "value": {
+                        "originalValue": "PM",
+                        "interpretedValue": "PM",
+                        "resolvedValues": [
+                            "PM"
+                        ]
+                    }
+                },
+                "serviceName": {
+                    "value": {
+                        "originalValue": "Full Set",
+                        "interpretedValue": "Full Set",
+                        "resolvedValues": [
+                            "Full Set"
+                        ]
+                    }
+                },
+                "staffPreference": {
+                    "value": {
+                        "originalValue": "Amy",
+                        "interpretedValue": "Amy",
+                        "resolvedValues": [
+                            "Amy"
+                        ]
+                    }
+                }
+            },
+            "state": "Fulfilled",
+            "confirmationState": "None"
+        },
+        "sessionAttributes": {
+            "AmazonConnectContactId": "codex-20260715-postreg-0704-session-a6",
+            "CalledNumber": "+18483487681",
+            "ContactId": "codex-20260715-postreg-0704-session-a6",
+            "CustomerEndpointAddress": "+15552067204",
+            "InitialContactId": "codex-20260715-postreg-0704-session-a6",
+            "SystemEndpointAddress": "+18483487681",
+            "aiAlternativeSlots": "[]",
+            "amazonConnectContactId": "codex-20260715-postreg-0704-session-a6",
+            "appointmentId": "fa9eb02e-b20d-44a8-841e-a9e462815368",
+            "askedSlotsCount": "1",
+            "awaitingAlternativeSelection": "false",
+            "awaitingFinalBookingConfirmation": "false",
+            "bookingAttemptId": "e1a00883-79a2-40ee-bb7f-a939d51da65b",
+            "bookingConfirmationAsked": "false",
+            "bookingOutcome": "BOOKED",
+            "callSessionId": "e627efe3-c39d-43ff-b5c5-c2eb43c98bba",
+            "calledNumber": "+18483487681",
+            "callerPhone": "+15552067204",
+            "confirmationFingerprint": "f581699c3f6b5c188a9f6ec07adfa609a89e9e823a5288dfee325e2b1ae88c0e",
+            "confirmedServiceName": "Full Set",
+            "confirmedStaffId": "e75b9b6d-ad6a-4060-b945-43f1358e3a79",
+            "confirmedStaffName": "Amy",
+            "contactId": "codex-20260715-postreg-0704-session-a6",
+            "conversationComplete": "true",
+            "conversationOutcome": "BOOKED",
+            "conversationState": "COMPLETE",
+            "customerId": "d16689ad-9cb1-4255-a955-6594fb5cebac",
+            "customerName": "Codex",
+            "customerNameSource": "phone_lookup",
+            "customerPhone": "+15552067204",
+            "customerProfileSource": "active_customer",
+            "errorCount": "1",
+            "fallbackCount": "1",
+            "ignoredUngroundedSlots": "[\"requestedTime\"]",
+            "initialBookingUtterance": "Full Set today at 3 PM with Amy",
+            "isSynthetic": "true",
+            "knownCallerAcknowledged": "true",
+            "knownCallerLookupAttempted": "true",
+            "knownCallerLookupStatus": "FOUND",
+            "lastAskedSlot": "bookingConfirmation",
+            "lastHumanTurnId": "codex-20260715-postreg-0704-session-a6:6b72309a-d7ed-4b8a-b11e-e136abf2e9d8:yes",
+            "lastProviderTurnId": "codex-20260715-postreg-0704-session-a6:6b72309a-d7ed-4b8a-b11e-e136abf2e9d8:yes:DialogCodeHook",
+            "persistedCustomerFirstName": "Codex",
+            "persistedCustomerLastName": "PostregC2",
+            "provider": "AMAZON_CONNECT",
+            "recognizedCustomerId": "d16689ad-9cb1-4255-a955-6594fb5cebac",
+            "recognizedCustomerName": "Codex",
+            "requestedDate": "2026-07-15",
+            "requestedTime": "3 PM",
+            "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147",
+            "selectedStaffId": "e75b9b6d-ad6a-4060-b945-43f1358e3a79",
+            "serviceName": "Full Set",
+            "slotToElicit": "bookingConfirmation",
+            "staffId": "e75b9b6d-ad6a-4060-b945-43f1358e3a79",
+            "staffPreference": "Amy",
+            "staffSource": "current_turn_alias",
+            "syntheticSource": "codex-post-deploy-regression-2026-07-15",
+            "turnSequence": "2"
+        },
+        "originatingRequestId": "6b72309a-d7ed-4b8a-b11e-e136abf2e9d8"
+    },
+    "interpretations": [
+        {
+            "nluConfidence": {
+                "score": 1.0
+            },
+            "intent": {
+                "name": "BookAppointmentIntent",
+                "slots": {
+                    "bookingConfirmation": {
+                        "value": {
+                            "originalValue": "Yes",
+                            "interpretedValue": "Confirm",
+                            "resolvedValues": [
+                                "Confirm"
+                            ]
+                        }
+                    },
+                    "customerName": null,
+                    "customerPhone": null,
+                    "requestedDate": null,
+                    "requestedTime": {
+                        "value": {
+                            "originalValue": "PM",
+                            "interpretedValue": "PM",
+                            "resolvedValues": [
+                                "PM"
+                            ]
+                        }
+                    },
+                    "serviceName": {
+                        "value": {
+                            "originalValue": "Full Set",
+                            "interpretedValue": "Full Set",
+                            "resolvedValues": [
+                                "Full Set"
+                            ]
+                        }
+                    },
+                    "staffPreference": {
+                        "value": {
+                            "originalValue": "Amy",
+                            "interpretedValue": "Amy",
+                            "resolvedValues": [
+                                "Amy"
+                            ]
+                        }
+                    }
+                },
+                "state": "Fulfilled",
+                "confirmationState": "None"
+            }
+        },
+        {
+            "intent": {
+                "name": "FallbackIntent",
+                "slots": {}
+            },
+            "interpretationSource": "Lex"
+        },
+        {
+            "nluConfidence": {
+                "score": 0.34
+            },
+            "intent": {
+                "name": "HumanEscalationIntent",
+                "slots": {}
+            },
+            "interpretationSource": "Lex"
+        },
+        {
+            "nluConfidence": {
+                "score": 0.24
+            },
+            "intent": {
+                "name": "RescheduleAppointmentIntent",
+                "slots": {}
+            },
+            "interpretationSource": "Lex"
+        }
+    ],
+    "requestAttributes": {},
+    "sessionId": "codex-20260715-postreg-0704-session-a6"
+}

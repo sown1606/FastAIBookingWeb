@@ -1,0 +1,24 @@
+{
+  "text": "fun facts today at two p m with amy",
+  "messages": [
+    "<speak>Amy already has an appointment at 2 PM. <break time=\"300ms\"/> press 1 for 2 PM with Kevin, or press 2 for 11 AM with Amy.</speak>"
+  ],
+  "dialog": {
+    "type": "ElicitIntent"
+  },
+  "intent": null,
+  "state": null,
+  "attrs": {
+    "serviceName": "Full Set",
+    "confirmedServiceName": "Full Set",
+    "requestedDate": "2026-07-15",
+    "requestedTime": "2 PM",
+    "staffPreference": "Amy",
+    "confirmedStaffName": "Amy",
+    "lastAskedSlot": null,
+    "awaitingFinalBookingConfirmation": null,
+    "transferToQueue": null,
+    "queueId": null,
+    "callSessionId": "fbd751da-ca3d-454c-bb01-a7db41ab6581"
+  }
+}

@@ -1,0 +1,142 @@
+{
+    "messages": [
+        {
+            "content": "<speak>Amy already has an appointment at 4 PM. <break time=\"300ms\"/> press 1 for 4 PM with Kevin, or press 2 for 11 AM with Amy.</speak>",
+            "contentType": "SSML"
+        }
+    ],
+    "sessionState": {
+        "dialogAction": {
+            "type": "ElicitSlot",
+            "slotToElicit": "requestedTime"
+        },
+        "intent": {
+            "name": "BookAppointmentIntent",
+            "slots": {
+                "bookingConfirmation": null,
+                "customerName": null,
+                "customerPhone": null,
+                "requestedDate": null,
+                "requestedTime": null,
+                "serviceName": null,
+                "staffPreference": null
+            },
+            "state": "InProgress",
+            "confirmationState": "None"
+        },
+        "sessionAttributes": {
+            "AmazonConnectContactId": "codex-20260715-postreg-0712-dtmf-confirm",
+            "CalledNumber": "+18483487681",
+            "ContactId": "codex-20260715-postreg-0712-dtmf-confirm",
+            "CustomerEndpointAddress": "+15552067203",
+            "InitialContactId": "codex-20260715-postreg-0712-dtmf-confirm",
+            "SystemEndpointAddress": "+18483487681",
+            "aiAlternativeSlots": "[{\"staffId\":\"0227f285-efb4-47ac-bc01-82b2c0cec3f5\",\"staffName\":\"Kevin\",\"startTime\":\"2026-07-15T20:00:00.000Z\",\"endTime\":\"2026-07-15T21:40:00.000Z\"},{\"staffId\":\"e75b9b6d-ad6a-4060-b945-43f1358e3a79\",\"staffName\":\"Amy\",\"startTime\":\"2026-07-16T15:00:00.000Z\",\"endTime\":\"2026-07-16T16:40:00.000Z\"}]",
+            "alternativeOfferId": "32a1e4e7c454b0b5",
+            "amazonConnectContactId": "codex-20260715-postreg-0712-dtmf-confirm",
+            "anchorRequestedDate": "2026-07-15",
+            "anchorRequestedStaff": "Amy",
+            "anchorRequestedTime": "4 PM",
+            "askedSlotsCount": "1",
+            "awaitingAlternativeSelection": "true",
+            "awaitingFinalBookingConfirmation": "false",
+            "bookingAttemptId": "12597881-6734-4877-a0b1-ef8eb20a7c19",
+            "bookingConfirmationAsked": "false",
+            "bookingOutcome": "NO_AVAILABILITY",
+            "callSessionId": "1dac48fa-afe3-49bd-a161-9caf42d6bc49",
+            "calledNumber": "+18483487681",
+            "callerPhone": "+15552067203",
+            "confirmedServiceName": "Full Set",
+            "confirmedStaffId": "e75b9b6d-ad6a-4060-b945-43f1358e3a79",
+            "confirmedStaffName": "Amy",
+            "contactId": "codex-20260715-postreg-0712-dtmf-confirm",
+            "conversationComplete": "false",
+            "conversationOutcome": "NO_AVAILABILITY",
+            "conversationState": "CONTINUE",
+            "customerId": "c71c8b1c-3c2c-4ee4-97e8-f032620739e3",
+            "customerName": "Codex",
+            "customerNameSource": "phone_lookup",
+            "customerPhone": "+15552067203",
+            "customerProfileSource": "active_customer",
+            "errorCount": "1",
+            "fallbackCount": "1",
+            "initialBookingUtterance": "Full Set today at 4 PM with Amy",
+            "isSynthetic": "true",
+            "knownCallerAcknowledged": "true",
+            "knownCallerLookupAttempted": "true",
+            "knownCallerLookupStatus": "FOUND",
+            "lastAskedSlot": "requestedTime",
+            "lastHumanTurnId": "codex-20260715-postreg-0712-dtmf-confirm:65059adc-351a-4594-8050-54056a448a69:1",
+            "lastProviderTurnId": "codex-20260715-postreg-0712-dtmf-confirm:65059adc-351a-4594-8050-54056a448a69:1:DialogCodeHook",
+            "offerAttemptCount": "1",
+            "persistedCustomerFirstName": "Codex",
+            "persistedCustomerLastName": "PostregC",
+            "provider": "AMAZON_CONNECT",
+            "recognizedCustomerId": "c71c8b1c-3c2c-4ee4-97e8-f032620739e3",
+            "recognizedCustomerName": "Codex",
+            "rejectedOptionKeys": "[]",
+            "requestedDate": "2026-07-15",
+            "requestedTime": "4 PM",
+            "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147",
+            "selectedStaffId": "e75b9b6d-ad6a-4060-b945-43f1358e3a79",
+            "serviceName": "Full Set",
+            "slotToElicit": "requestedTime",
+            "staffId": "e75b9b6d-ad6a-4060-b945-43f1358e3a79",
+            "staffPreference": "Amy",
+            "staffSource": "current_turn_alias",
+            "syntheticSource": "codex-post-deploy-regression-2026-07-15",
+            "turnSequence": "2"
+        },
+        "originatingRequestId": "65059adc-351a-4594-8050-54056a448a69"
+    },
+    "interpretations": [
+        {
+            "nluConfidence": {
+                "score": 1.0
+            },
+            "intent": {
+                "name": "BookAppointmentIntent",
+                "slots": {
+                    "bookingConfirmation": null,
+                    "customerName": null,
+                    "customerPhone": null,
+                    "requestedDate": null,
+                    "requestedTime": null,
+                    "serviceName": null,
+                    "staffPreference": null
+                },
+                "state": "InProgress",
+                "confirmationState": "None"
+            },
+            "interpretationSource": "Lex"
+        },
+        {
+            "nluConfidence": {
+                "score": 0.61
+            },
+            "intent": {
+                "name": "HumanEscalationIntent",
+                "slots": {}
+            },
+            "interpretationSource": "Lex"
+        },
+        {
+            "intent": {
+                "name": "FallbackIntent",
+                "slots": {}
+            },
+            "interpretationSource": "Lex"
+        },
+        {
+            "nluConfidence": {
+                "score": 0.42
+            },
+            "intent": {
+                "name": "RescheduleAppointmentIntent",
+                "slots": {}
+            },
+            "interpretationSource": "Lex"
+        }
+    ],
+    "sessionId": "codex-20260715-postreg-0712-dtmf-confirm"
+}

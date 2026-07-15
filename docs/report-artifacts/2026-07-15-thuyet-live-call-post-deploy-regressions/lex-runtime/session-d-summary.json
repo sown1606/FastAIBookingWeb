@@ -1,0 +1,20 @@
+{
+  "messages": [
+    "All of our operators are currently busy. Please call back later."
+  ],
+  "dialog": {
+    "type": "Close"
+  },
+  "intent": "HumanEscalationIntent",
+  "state": "Fulfilled",
+  "attrs": {
+    "transferToQueue": "false",
+    "forceHumanEscalation": "false",
+    "escalationReason": "caller_requested_human",
+    "conversationState": "COMPLETE",
+    "conversationOutcome": "CALL_CENTER_ESCALATION",
+    "conversationComplete": "true",
+    "callSessionId": "b9250f99-9bfb-4d56-987e-3685d1fd8165",
+    "escalationId": "4f9ee94f-9a0a-4a1b-afae-8310f427488b"
+  }
+}

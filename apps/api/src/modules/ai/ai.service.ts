@@ -77,6 +77,7 @@ interface CreateAmazonConnectAIAppointmentInput {
   staffPreference?: string;
   staffId?: string;
   selectedStaffId?: string;
+  bookingConfirmation?: string;
   confirmationState?: string;
   source?: string;
   contactId?: string;
@@ -247,6 +248,7 @@ const SERVICE_ALIASES: Record<string, string[]> = {
     "mani cure",
     "nanny cure",
     "mini cure",
+    "mini q",
     "manicure",
     "manicure appointment",
     "hand service",
@@ -436,6 +438,8 @@ const ANY_STAFF_PHRASES = new Set([
   "who is available"
 ]);
 const CONTEXTUAL_ANY_STAFF_PHRASES = new Set([
+  "annie stop",
+  "anny stop",
   "any stop",
   "anystop",
   "any stop if i",
@@ -698,13 +702,13 @@ const similarityScore = (left: string, right: string): number => {
 };
 
 const isAffirmative = (value?: string | null): boolean => {
-  return /^(yes|yeah|yep|correct|right|that is right|that's right|that is correct|sure|ok|okay|confirm|confirmed|go ahead|book it)$/i.test(
+  return /^(yes|yeah|yep|correct|right|that is right|that's right|that is correct|sure|ok|okay|confirm|confirmed|go ahead|book it|one|1)$/i.test(
     normalizeForMatch(value)
   );
 };
 
 const isNegative = (value?: string | null): boolean => {
-  return /^(no|nope|not that|wrong)$/i.test(normalizeForMatch(value));
+  return /^(no|nope|not that|not correct|change it|update it|wrong|two|2)$/i.test(normalizeForMatch(value));
 };
 
 type FinalBookingConfirmationOutcome = "AFFIRMED" | "DENIED" | "CHANGE_REQUEST" | "UNKNOWN";
@@ -729,6 +733,8 @@ const FINAL_CONFIRMATION_ONLY_PHRASES = new Set([
   "sure",
   "ok",
   "okay",
+  "one",
+  "1",
   "proceed",
   "do it"
 ]);
@@ -775,9 +781,11 @@ const classifyFinalBookingConfirmation = (
     Boolean(extractTimeCandidate(value ?? "")) ||
     Boolean(options.hasExplicitStaffChange);
   const hasExplicitNegation =
-    /\b(?:no|nope|nah|wrong|not correct|not right|do not|don t|dont|cancel it|wait no)\b/.test(normalized);
+    /\b(?:no|nope|nah|wrong|not correct|not right|do not|don t|dont|cancel it|wait no|change it|update it)\b/.test(normalized) ||
+    /^(?:2|two)$/.test(normalized);
   const hasAffirmation =
     /\b(?:yes|yeah|yep|correct|right|sure|ok|okay)\b/.test(normalized) ||
+    /^(?:1|one)$/.test(normalized) ||
     /\b(?:that s right|that is right|sounds good|that s fine|that is fine|go ahead|please book it|book it|confirm it)\b/.test(
       normalized
     );
@@ -2661,6 +2669,7 @@ const buildAmazonConnectTurnHistoryItem = (input: {
   const requestAttributes = recordFromUnknown(requestPayload.attributes);
   const responseDebug = recordFromUnknown(responsePayload.lexTurnDebug);
   const sanitization = recordFromUnknown(responseDebug.sanitization);
+  const turnDiagnostics = recordFromUnknown(responsePayload.turnStateDiagnostics);
   const sessionAttributesBefore = readSessionAttributeRecord(
     responseDebug.sessionAttributesBefore ?? responseDebug.attributesBefore
   );
@@ -2684,6 +2693,29 @@ const buildAmazonConnectTurnHistoryItem = (input: {
   const turn = {
     index: input.index,
     createdAt: input.createdAt,
+    humanTurnId:
+      readStringValue(requestAttributes.humanTurnId) ||
+      readStringValue(turnDiagnostics.humanTurnId) ||
+      readStringValue(responseDebug.humanTurnId) ||
+      null,
+    providerTurnId:
+      readStringValue(requestAttributes.providerTurnId) ||
+      readStringValue(turnDiagnostics.providerTurnId) ||
+      readStringValue(responseDebug.providerTurnId) ||
+      null,
+    providerRequestId:
+      readStringValue(requestAttributes.providerRequestId) ||
+      readStringValue(turnDiagnostics.providerRequestId) ||
+      null,
+    lexRequestId:
+      readStringValue(requestAttributes.lexRequestId) ||
+      readStringValue(turnDiagnostics.lexRequestId) ||
+      null,
+    lexPhase:
+      readStringValue(requestAttributes.lexPhase) ||
+      readStringValue(turnDiagnostics.lexPhase) ||
+      readStringValue(requestPayload.invocationSource) ||
+      null,
     currentTurnTranscript:
       responsePayload.currentTurnTranscript ??
       responseDebug.currentTurnTranscript ??
@@ -2735,23 +2767,24 @@ const buildAmazonConnectTurnHistoryItem = (input: {
       sessionAttributesAfter.forceHumanEscalation ?? responsePayload.forceHumanEscalation ?? null,
     turnStateDiagnostics: responsePayload.turnStateDiagnostics ?? null
   };
+  const stableTurnIdentity = turn.humanTurnId
+    ? `human:${turn.humanTurnId}`
+    : turn.providerTurnId
+      ? `provider:${turn.providerTurnId}`
+      : "";
   return {
-    idempotencyKey: stableHash({
-      interactionKey: input.interactionKey,
-      currentTurnTranscript: turn.currentTurnTranscript,
-      intentName: turn.intentName,
-      inputMode: turn.inputMode,
-      lastAskedSlotBefore: turn.lastAskedSlotBefore,
-      activeDtmfMenuBefore: turn.activeDtmfMenuBefore,
-      slotToElicit: turn.slotToElicit,
-      serviceNameAfter: recordFromUnknown(turn.sessionAttributesAfter).serviceName,
-      confirmedServiceNameAfter: recordFromUnknown(turn.sessionAttributesAfter).confirmedServiceName,
-      requestedDateAfter: recordFromUnknown(turn.sessionAttributesAfter).requestedDate,
-      requestedTimeAfter: recordFromUnknown(turn.sessionAttributesAfter).requestedTime,
-      staffPreferenceAfter: recordFromUnknown(turn.sessionAttributesAfter).staffPreference,
-      customerNameAfter: recordFromUnknown(turn.sessionAttributesAfter).customerName,
-      responseText: turn.responseText
-    }),
+    idempotencyKey: stableTurnIdentity
+      ? `${input.interactionKey}:${stableTurnIdentity}`
+      : stableHash({
+          interactionKey: input.interactionKey,
+          currentTurnTranscript: turn.currentTurnTranscript,
+          intentName: turn.intentName,
+          inputMode: turn.inputMode,
+          lastAskedSlotBefore: turn.lastAskedSlotBefore,
+          activeDtmfMenuBefore: turn.activeDtmfMenuBefore,
+          slotToElicit: turn.slotToElicit,
+          responseText: turn.responseText
+        }),
     ...turn
   };
 };
@@ -2805,6 +2838,157 @@ const withAmazonConnectTurnHistory = (
   turnCount: turnHistory.length,
   latestTurn: turnHistory[turnHistory.length - 1] ?? null
 });
+
+const getIncomingTurnIdentity = (input: CreateAmazonConnectAIAppointmentInput) => {
+  const attributes = recordFromUnknown(input.attributes);
+  return {
+    humanTurnId: readStringValue(attributes.humanTurnId),
+    providerTurnId: readStringValue(attributes.providerTurnId),
+    lexPhase: readStringValue(attributes.lexPhase),
+    lexRequestId: readStringValue(attributes.lexRequestId)
+  };
+};
+
+const turnMatchesIncomingIdentity = (
+  turn: unknown,
+  identity: ReturnType<typeof getIncomingTurnIdentity>
+): boolean => {
+  const record = recordFromUnknown(turn);
+  const diagnostics = recordFromUnknown(record.turnStateDiagnostics);
+  const turnHumanId = readStringValue(record.humanTurnId) || readStringValue(diagnostics.humanTurnId);
+  const turnProviderId =
+    readStringValue(record.providerTurnId) || readStringValue(diagnostics.providerTurnId);
+  if (identity.humanTurnId && turnHumanId === identity.humanTurnId) {
+    return true;
+  }
+  return Boolean(identity.providerTurnId && turnProviderId === identity.providerTurnId);
+};
+
+const KNOWN_BOOKING_SLOT_NAMES = new Set([
+  "serviceName",
+  "requestedDate",
+  "requestedTime",
+  "staffPreference",
+  "customerName",
+  "customerPhone",
+  "bookingConfirmation"
+]);
+
+const inferDuplicateSlotToElicit = (sessionAttributes: Record<string, unknown>): string => {
+  const explicitSlot = readStringValue(sessionAttributes.slotToElicit);
+  if (explicitSlot && KNOWN_BOOKING_SLOT_NAMES.has(explicitSlot)) {
+    return explicitSlot;
+  }
+  const lastAskedSlot = readStringValue(sessionAttributes.lastAskedSlot);
+  if (lastAskedSlot && KNOWN_BOOKING_SLOT_NAMES.has(lastAskedSlot)) {
+    return lastAskedSlot;
+  }
+  return "";
+};
+
+const buildDuplicateTurnResponse = (
+  existing: {
+    id: string;
+    responsePayload: unknown;
+    parsedOutput?: unknown;
+  },
+  turn: unknown
+) => {
+  const payload = recordFromUnknown(existing.responsePayload);
+  const parsedOutput = recordFromUnknown(existing.parsedOutput);
+  const turnRecord = recordFromUnknown(turn);
+  const sessionAttributesAfter = recordFromUnknown(turnRecord.sessionAttributesAfter);
+  const responseText =
+    readStringValue(turnRecord.responseText) ||
+    readStringValue(recordFromUnknown(payload.lexResponse).message) ||
+    "I have that. Please continue.";
+  const slotToElicit =
+    readStringValue(turnRecord.slotToElicit) || inferDuplicateSlotToElicit(sessionAttributesAfter);
+  const dialogAction = slotToElicit
+    ? {
+        type: "ElicitSlot",
+        slotToElicit
+      }
+    : recordFromUnknown(recordFromUnknown(payload.lexResponse).dialogAction);
+  return {
+    outcome: readStringValue(parsedOutput.outcome) || "MISSING_INFO",
+    message: responseText,
+    lexResponse: {
+      fulfillmentState: readStringValue(recordFromUnknown(payload.lexResponse).fulfillmentState) || "InProgress",
+      message: responseText,
+      messageContentType:
+        readStringValue(recordFromUnknown(payload.lexResponse).messageContentType) ||
+        (responseText.trim().startsWith("<speak>") ? "SSML" : "PlainText"),
+      dialogAction:
+        Object.keys(dialogAction).length > 0
+          ? dialogAction
+          : {
+              type: "ElicitIntent"
+            },
+      sessionAttributes:
+        Object.keys(sessionAttributesAfter).length > 0
+          ? sessionAttributesAfter
+          : recordFromUnknown(recordFromUnknown(payload.lexResponse).sessionAttributes)
+    },
+    appointment: null,
+    bookingAttempt: null,
+    callSession: null,
+    transcript: null,
+    aiInteraction: existing,
+    escalation: null,
+    alternatives: [],
+    missingFields: [],
+    salonResolutionSource: "DUPLICATE_TURN"
+  };
+};
+
+const findDuplicateAmazonConnectTurn = async (
+  interactionKey: string,
+  input: CreateAmazonConnectAIAppointmentInput
+) => {
+  const identity = getIncomingTurnIdentity(input);
+  if (!identity.humanTurnId && !identity.providerTurnId) {
+    return null;
+  }
+  const existing = await prisma.aiInteractionLog.findUnique({
+    where: {
+      interactionKey
+    }
+  });
+  if (!existing) {
+    return null;
+  }
+  const turnHistory = getAmazonConnectTurnHistory(existing.responsePayload);
+  const matchedTurn = turnHistory.find((turn) => turnMatchesIncomingIdentity(turn, identity));
+  if (!matchedTurn) {
+    return null;
+  }
+  const updatedHistory = turnHistory.map((turn) => {
+    if (!turnMatchesIncomingIdentity(turn, identity)) {
+      return turn;
+    }
+    const record = recordFromUnknown(turn);
+    return {
+      ...record,
+      turnStateDiagnostics: {
+        ...recordFromUnknown(record.turnStateDiagnostics),
+        staleOrDuplicateRejectionReason: "duplicate_human_turn",
+        duplicateDisposition: "merged_without_business_execution",
+        duplicateLexPhase: identity.lexPhase || null,
+        duplicateLexRequestId: identity.lexRequestId || null
+      }
+    };
+  });
+  await prisma.aiInteractionLog.update({
+    where: {
+      id: existing.id
+    },
+    data: {
+      responsePayload: toJson(withAmazonConnectTurnHistory(existing.responsePayload, updatedHistory))
+    }
+  });
+  return buildDuplicateTurnResponse(existing, matchedTurn);
+};
 
 const upsertAmazonConnectBookingAIInteractionLog = async (
   input: CreateAIInteractionLogInput
@@ -3398,21 +3582,7 @@ const shouldConfirmManicurePedicureAfterFailure = (input: {
   if (normalizeForMatch(input.serviceMatch?.service.name) !== "manicure") {
     return false;
   }
-  const previousFailures = parseAttemptCount(
-    readStringAttribute(input.attributes, [
-      "serviceRecognitionFailureCount",
-      "serviceClarificationAttempts"
-    ])
-  );
-  if (previousFailures < 1) {
-    return hasCloseManicurePedicureAsrAlternatives(input.attributes);
-  }
-  const currentText = normalizeForMatch(input.currentTurnTranscript ?? input.serviceName);
-  return (
-    currentText === "manicure" ||
-    currentText === "book manicure" ||
-    hasCloseManicurePedicureAsrAlternatives(input.attributes)
-  );
+  return hasCloseManicurePedicureAsrAlternatives(input.attributes);
 };
 
 const findStaffMentionInText = async (
@@ -3423,10 +3593,6 @@ const findStaffMentionInText = async (
   const normalizedText = normalizeForMatch(text);
   if (!normalizedText) {
     return undefined;
-  }
-
-  if (normalizeAnyStaffPhrase(text, context)) {
-    return "Any staff";
   }
 
   const staff = await getStaffCandidates({ salonId });
@@ -3492,11 +3658,20 @@ const findStaffMentionInText = async (
     return fuzzyMatches[0]!.fullName;
   }
 
-  return staff.find((member) => {
+  const exactStaff = staff.find((member) => {
     const fullName = normalizeForMatch(member.fullName);
     const firstName = normalizeForMatch(member.fullName.split(/\s+/)[0]);
     return textContainsStaffAlias(normalizedText, fullName) || textContainsStaffAlias(normalizedText, firstName);
-  })?.fullName;
+  });
+  if (exactStaff) {
+    return exactStaff.fullName;
+  }
+
+  if (normalizeAnyStaffPhrase(text, context)) {
+    return "Any staff";
+  }
+
+  return undefined;
 };
 
 const parseStringArrayAttribute = (value: unknown): string[] => {
@@ -4857,6 +5032,9 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
     staffDtmfDigit && staffDtmfSelection
       ? readStaffDtmfStaffIds(attributes)[staffDtmfDigit]
       : undefined;
+  const bookingConfirmation =
+    asTrimmedString(input.bookingConfirmation) ??
+    readStringAttribute(attributes, ["bookingConfirmation"]);
   const customerName =
     asTrimmedString(input.customerName) ??
     asTrimmedString(input.customer?.name) ??
@@ -4942,6 +5120,7 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
     invalidStaffDtmfSelection:
       Boolean(staffDtmfDigit) && !staffDtmfSelection && Boolean(Object.keys(readStaffDtmfOptions(attributes)).length),
     unrecognizedStaffUtterance: undefined as string | undefined,
+    bookingConfirmation,
     confirmationState: asTrimmedString(input.confirmationState),
     source,
     contactId,
@@ -5021,7 +5200,7 @@ const getHumanEscalationReason = (input: {
 
   const text = input.transcriptText?.toLowerCase() ?? "";
   if (
-    /\b(real person|live person|human|operator|representative|talk to a person|talk to someone|speak to someone|speak with someone)\b/.test(text)
+    /\b(real person|live person|human|operator|representative|talk to a person|talk with a person|talk to someone|speak to a person|speak with a person|speak to someone|speak with someone|speak to an operator|speak with an operator|speak with an agent|speak to an agent|talk to an agent|representative please)\b/.test(text)
   ) {
     return "caller_requested_human";
   }
@@ -6531,6 +6710,18 @@ export const createAmazonConnectAIAppointment = async (
     amazonConnectPhoneNumber: normalized.amazonConnectPhoneNumber,
     calledNumber: normalized.calledNumber
   });
+  if (callSession) {
+    const duplicateResponse = await findDuplicateAmazonConnectTurn(
+      `AMAZON_CONNECT:${AMAZON_CONNECT_BOOKING_TASK}:${callSession.id}`,
+      input
+    );
+    if (duplicateResponse) {
+      return {
+        ...duplicateResponse,
+        callSession
+      };
+    }
+  }
   let activeBookingAttempt = callSession
     ? await prisma.bookingAttempt.findFirst({
         where: {
@@ -6843,7 +7034,8 @@ export const createAmazonConnectAIAppointment = async (
   const customerNameTurnOwnsTranscript =
     readStringAttribute(normalized.attributes, ["lastAskedSlot"]) === "customerName" &&
     readStringAttribute(normalized.attributes, ["activeDtmfMenu"]) !== "staff";
-  const finalConfirmationText = normalized.currentTurnTranscript ?? normalized.transcriptText;
+  const finalConfirmationText =
+    normalized.bookingConfirmation ?? normalized.currentTurnTranscript ?? normalized.transcriptText;
   const finalConfirmationOnlyPhrase =
     awaitingFinalBookingConfirmation && isFinalConfirmationOnlyPhrase(finalConfirmationText);
   const preStaffBusinessHoursDayDecision = normalized.requestedDate
@@ -7475,10 +7667,19 @@ export const createAmazonConnectAIAppointment = async (
         ? (responseDebugRecord.sanitization as Record<string, unknown>)
         : undefined;
     const turnStateDiagnostics = {
+      humanTurnId: input.attributes?.humanTurnId,
       providerTurnId: input.attributes?.providerTurnId,
+      providerRequestId: input.attributes?.providerRequestId,
       lexRequestId: input.attributes?.lexRequestId,
+      lexPhase: input.attributes?.lexPhase,
       turnSequenceBefore: input.attributes?.turnSequence,
       turnSequenceAfter: inferredResponseSessionAttributes.turnSequence,
+      stateVersionBefore: input.attributes?.stateVersionBefore ?? input.attributes?.stateVersion,
+      stateVersionAfter:
+        inferredResponseSessionAttributes.stateVersion ?? inferredResponseSessionAttributes.turnSequence,
+      internalApiInvocationCount: 1,
+      staleOrDuplicateRejectionReason: null,
+      duplicateDisposition: "processed",
       turnDirective:
         responsePayloadBase.turnDirective ??
         responsePayloadBase.confirmationOutcome ??
@@ -10172,7 +10373,8 @@ export const createAmazonConnectAIAppointment = async (
         message,
         messageContentType: "SSML",
         dialogAction: {
-          type: "ElicitIntent"
+          type: "ElicitSlot",
+          slotToElicit: "bookingConfirmation"
         },
         sessionAttributes: confirmationSessionAttributes
       },

@@ -1,0 +1,94 @@
+{
+  "slotCaptureSetting": {
+    "elicitationCodeHook": {
+      "enableCodeHookInvocation": true,
+      "invocationLabel": "bookingConfirmation"
+    }
+  },
+  "slotConstraint": "Optional",
+  "promptSpecification": {
+    "maxRetries": 2,
+    "allowInterrupt": true,
+    "messageSelectionStrategy": "Random",
+    "promptAttemptsSpecification": {
+      "Initial": {
+        "textInputSpecification": {
+          "startTimeoutMs": 30000
+        },
+        "allowedInputTypes": {
+          "allowAudioInput": true,
+          "allowDTMFInput": true
+        },
+        "audioAndDTMFInputSpecification": {
+          "startTimeoutMs": 6000,
+          "audioSpecification": {
+            "endTimeoutMs": 1600,
+            "maxLengthMs": 15000
+          },
+          "dtmfSpecification": {
+            "maxLength": 1,
+            "endTimeoutMs": 800,
+            "deletionCharacter": "*",
+            "endCharacter": "#"
+          }
+        },
+        "allowInterrupt": true
+      },
+      "Retry1": {
+        "textInputSpecification": {
+          "startTimeoutMs": 30000
+        },
+        "allowedInputTypes": {
+          "allowAudioInput": true,
+          "allowDTMFInput": true
+        },
+        "audioAndDTMFInputSpecification": {
+          "startTimeoutMs": 6000,
+          "audioSpecification": {
+            "endTimeoutMs": 1600,
+            "maxLengthMs": 15000
+          },
+          "dtmfSpecification": {
+            "maxLength": 1,
+            "endTimeoutMs": 800,
+            "deletionCharacter": "*",
+            "endCharacter": "#"
+          }
+        },
+        "allowInterrupt": true
+      },
+      "Retry2": {
+        "textInputSpecification": {
+          "startTimeoutMs": 30000
+        },
+        "allowedInputTypes": {
+          "allowAudioInput": true,
+          "allowDTMFInput": true
+        },
+        "audioAndDTMFInputSpecification": {
+          "startTimeoutMs": 6000,
+          "audioSpecification": {
+            "endTimeoutMs": 1600,
+            "maxLengthMs": 15000
+          },
+          "dtmfSpecification": {
+            "maxLength": 1,
+            "endTimeoutMs": 800,
+            "deletionCharacter": "*",
+            "endCharacter": "#"
+          }
+        },
+        "allowInterrupt": true
+      }
+    },
+    "messageGroups": [
+      {
+        "message": {
+          "plainTextMessage": {
+            "value": "Please say yes to confirm, or tell me what you would like to change."
+          }
+        }
+      }
+    ]
+  }
+}
