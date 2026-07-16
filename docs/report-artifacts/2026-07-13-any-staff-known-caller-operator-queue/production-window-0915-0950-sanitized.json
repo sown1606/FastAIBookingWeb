@@ -1,0 +1,142 @@
+[
+  {
+    "id": "e4608a2c-c64d-43cb-8d17-f1b70935e779",
+    "providerCallId": "7019d2a5-08eb-4b62-9f88-d3469700bd3b",
+    "callerPhone": "+84798171999",
+    "createdAt": "2026-07-13T09:38:23.582Z",
+    "startedAt": "2026-07-13T09:38:23.581Z",
+    "finalResolution": "<speak>I didn't find that technician. <break time=\"300ms\"/> Please say a listed staff name or press one of the numbers.</speak>",
+    "transcripts": [
+      "i want to book a pedicure tomorrow afternoon any time is fine",
+      "two p m",
+      "any stop",
+      "any stop",
+      "any stop if i",
+      "any stop if i",
+      "any stop if i"
+    ],
+    "turns": [
+      {
+        "createdAt": "2026-07-13T09:38:23.634Z",
+        "requestText": "i want to book a pedicure tomorrow afternoon any time is fine any stop if i",
+        "responseText": "<speak>I didn't find that technician. <break time=\"300ms\"/> Please say a listed staff name or press one of the numbers.</speak>",
+        "currentTurnTranscript": "any stop if i",
+        "staffBefore": "anystop",
+        "staffAfter": "anystop",
+        "lastAskedBefore": "staffPreference",
+        "activeDtmfBefore": "staff",
+        "slotToElicit": "staffPreference"
+      }
+    ],
+    "attempts": [
+      {
+        "createdAt": "2026-07-13T09:38:23.620Z",
+        "customerName": "lee",
+        "customerPhone": "+84798171999",
+        "requestedService": "Pedicure",
+        "requestedStaff": "anystop",
+        "normalizedRequest": {
+          "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147",
+          "serviceName": "Pedicure",
+          "customerName": "lee",
+          "customerPhone": "+84798171999",
+          "requestedDate": "2026-07-14",
+          "requestedTime": "2 PM",
+          "staffPreference": "anystop",
+          "customerProfileSource": "current_request",
+          "requestedDateTimeText": "2026-07-14 2 PM",
+          "salonResolutionSource": "amazon_connect_integration_config",
+          "unsupportedServiceRequest": null
+        },
+        "failureReason": "Missing fields: staffPreference"
+      }
+    ]
+  },
+  {
+    "id": "bcfd7284-08e3-435a-8fd4-9817d55ef1ec",
+    "providerCallId": "f57e2649-452b-48de-9679-ad746eda5c1b",
+    "callerPhone": "+84798171999",
+    "createdAt": "2026-07-13T09:41:11.297Z",
+    "startedAt": "2026-07-13T09:41:11.296Z",
+    "finalResolution": "<speak>Please say yes to confirm, or tell me what you would like to change.</speak>",
+    "transcripts": [
+      "book full set tomorrow at g p s with chang",
+      "three p m"
+    ],
+    "turns": [
+      {
+        "createdAt": "2026-07-13T09:41:11.339Z",
+        "requestText": "book full set tomorrow at g p s with chang",
+        "responseText": "<speak>Please say yes to confirm, or tell me what you would like to change.</speak>",
+        "staffBefore": "Trang",
+        "staffAfter": "Trang",
+        "lastAskedBefore": "bookingConfirmation"
+      }
+    ],
+    "attempts": [
+      {
+        "createdAt": "2026-07-13T09:41:11.327Z",
+        "customerName": "lee",
+        "customerPhone": "+84798171999",
+        "requestedService": "Full Set",
+        "requestedStaff": "Trang",
+        "normalizedRequest": {
+          "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147",
+          "staffId": "903511ee-4849-43dd-85fb-73595e79a233",
+          "timezone": "America/New_York",
+          "serviceId": "41241879-49bf-42ba-a6d1-d7da9809d334",
+          "staffName": "Trang",
+          "serviceName": "Full Set",
+          "customerName": "lee",
+          "startTimeIso": "2026-07-14T19:00:00.000Z",
+          "customerPhone": "+84798171999",
+          "requestedDate": "2026-07-14",
+          "requestedTime": "3 PM",
+          "selectedStaffId": "903511ee-4849-43dd-85fb-73595e79a233",
+          "staffPreference": "Trang",
+          "serviceRecordName": "Full Set",
+          "customerProfileSource": "current_request",
+          "salonResolutionSource": "amazon_connect_integration_config"
+        },
+        "failureReason": "Booking confirmation required before creating appointment."
+      }
+    ]
+  },
+  {
+    "id": "c0397a14-cec4-4c2e-9c52-9116f0c1a149",
+    "providerCallId": "914d1aab-a7f3-402c-85de-5021129d006c",
+    "callerPhone": "+84798171999",
+    "createdAt": "2026-07-13T09:49:16.566Z",
+    "startedAt": "2026-07-13T09:49:16.565Z",
+    "finalResolution": "Please wait while I connect you.",
+    "transcripts": [
+      "0"
+    ],
+    "turns": [
+      {
+        "createdAt": "2026-07-13T09:49:16.672Z",
+        "requestText": "0",
+        "responseText": "Please wait while I connect you.",
+        "currentTurnTranscript": "0"
+      }
+    ],
+    "attempts": [
+      {
+        "createdAt": "2026-07-13T09:49:16.604Z",
+        "customerName": null,
+        "customerPhone": "+84798171999",
+        "requestedService": null,
+        "requestedStaff": null,
+        "normalizedRequest": {
+          "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147",
+          "intentName": "HumanEscalationIntent",
+          "customerPhone": "+84798171999",
+          "customerProfileSource": "current_request",
+          "requestedDateTimeText": "",
+          "salonResolutionSource": "amazon_connect_integration_config"
+        },
+        "failureReason": "Caller pressed zero for operator."
+      }
+    ]
+  }
+]

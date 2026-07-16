@@ -1,0 +1,244 @@
+{
+    "messages": [
+        {
+            "content": "<speak>lee, just to confirm: Full Set today at 3 PM with Amy. <break time=\"300ms\"/> Is that correct?</speak>",
+            "contentType": "SSML"
+        }
+    ],
+    "sessionState": {
+        "dialogAction": {
+            "type": "ElicitSlot",
+            "slotToElicit": "bookingConfirmation"
+        },
+        "intent": {
+            "name": "BookAppointmentIntent",
+            "slots": {
+                "bookingConfirmation": null,
+                "customerName": {
+                    "value": {
+                        "originalValue": "lee",
+                        "interpretedValue": "lee",
+                        "resolvedValues": [
+                            "lee"
+                        ]
+                    }
+                },
+                "customerPhone": {
+                    "value": {
+                        "originalValue": "+84798171999",
+                        "interpretedValue": "+84798171999",
+                        "resolvedValues": [
+                            "+84798171999"
+                        ]
+                    }
+                },
+                "requestedDate": null,
+                "requestedTime": null,
+                "serviceName": {
+                    "value": {
+                        "originalValue": "Full Set",
+                        "interpretedValue": "Full Set",
+                        "resolvedValues": [
+                            "Full Set"
+                        ]
+                    }
+                },
+                "staffPreference": {
+                    "value": {
+                        "originalValue": "Amy",
+                        "interpretedValue": "Amy",
+                        "resolvedValues": [
+                            "Amy"
+                        ]
+                    }
+                }
+            },
+            "state": "InProgress",
+            "confirmationState": "None"
+        },
+        "sessionAttributes": {
+            "AmazonConnectContactId": "codex-smoke-20260716-slow-segmented",
+            "CalledNumber": "+18483487681",
+            "CustomerEndpointAddress": "+84798171999",
+            "aiAlternativeSlots": "[]",
+            "amazonConnectContactId": "codex-smoke-20260716-slow-segmented",
+            "askedSlotsCount": "1",
+            "awaitingAlternativeSelection": "false",
+            "awaitingFinalBookingConfirmation": "true",
+            "bookingAttemptId": "cc69ca32-f06d-4c87-ad26-bf49f057faf5",
+            "bookingConfirmationAsked": "true",
+            "bookingOutcome": "MISSING_INFO",
+            "callSessionId": "444a4c5b-947d-475b-9664-4724415c6c65",
+            "confirmationFingerprint": "e87c5829bbf58aa4b6aaa6e1a703869e7ce05b9a252ffe040bc2059dc2ff2998",
+            "confirmedServiceName": "Full Set",
+            "confirmedStaffId": "e75b9b6d-ad6a-4060-b945-43f1358e3a79",
+            "confirmedStaffName": "Amy",
+            "connectContinuationPrompt": "<speak>lee, just to confirm: Full Set today at 3 PM with Amy. <break time=\"300ms\"/> Is that correct?</speak>",
+            "conversationComplete": "false",
+            "conversationOutcome": "NEEDS_INPUT",
+            "conversationState": "CONTINUE",
+            "customerId": "4b1f9774-f8bb-4bf3-bf27-2ccc2b6c373f",
+            "customerName": "lee",
+            "customerNameSource": "phone_lookup",
+            "customerPhone": "+84798171999",
+            "customerProfileSource": "active_customer",
+            "errorCount": "1",
+            "fallbackCount": "1",
+            "initialBookingUtterance": "Full Set",
+            "knownCallerAcknowledged": "true",
+            "knownCallerLookupAttempted": "true",
+            "knownCallerLookupStatus": "FOUND",
+            "lambdaProcessingMs": "1080",
+            "lambdaRespondedAt": "2026-07-16T10:19:34.542Z",
+            "lastAskedSlot": "bookingConfirmation",
+            "lastHumanTurnId": "codex-smoke-20260716-slow-segmented:0a6c5827-2233-459a-9531-f774d48da159:with amy",
+            "lastProviderTurnId": "codex-smoke-20260716-slow-segmented:0a6c5827-2233-459a-9531-f774d48da159:with amy:DialogCodeHook",
+            "menuFingerprint": "ef964b074439",
+            "persistedCustomerFirstName": "lee",
+            "providerTranscriptTimestamp": "2026-07-16T10:19:25Z",
+            "recognizedCustomerId": "4b1f9774-f8bb-4bf3-bf27-2ccc2b6c373f",
+            "recognizedCustomerName": "lee",
+            "requestedDate": "2026-07-16",
+            "requestedTime": "3 PM",
+            "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147",
+            "selectedStaffId": "e75b9b6d-ad6a-4060-b945-43f1358e3a79",
+            "serviceName": "Full Set",
+            "serviceRecognitionFailureCount": "0",
+            "slotToElicit": "bookingConfirmation",
+            "staffDtmfOptions": "{\"1\":\"Kevin\",\"2\":\"Kelly\",\"3\":\"Trang\",\"4\":\"Amy\",\"5\":\"Alex\",\"6\":\"Linh\",\"7\":\"Thien Le\",\"8\":\"Any staff\"}",
+            "staffDtmfPromptText": "Which staff would you like, Kevin, Kelly, Trang, Amy, or first available?",
+            "staffDtmfStaffIds": "{\"1\":\"0227f285-efb4-47ac-bc01-82b2c0cec3f5\",\"2\":\"25406cde-99ef-4407-999d-cf42eaa67bc3\",\"3\":\"903511ee-4849-43dd-85fb-73595e79a233\",\"4\":\"e75b9b6d-ad6a-4060-b945-43f1358e3a79\",\"5\":\"ad1786ae-a0ec-4521-9efc-47cb9ee30b4c\",\"6\":\"0ab5d14e-4088-40e9-bd70-62c7fc7dad55\",\"7\":\"8daf2314-a9e1-4f87-9383-db7b7d33a554\"}",
+            "staffId": "e75b9b6d-ad6a-4060-b945-43f1358e3a79",
+            "staffMenuFingerprint": "ef964b074439",
+            "staffPreference": "Amy",
+            "staffSource": "current_turn_alias",
+            "turnSequence": "3"
+        },
+        "originatingRequestId": "0a6c5827-2233-459a-9531-f774d48da159",
+        "runtimeHints": {
+            "slotHints": {
+                "BookAppointmentIntent": {
+                    "staffPreference": {
+                        "runtimeHintValues": [
+                            {
+                                "phrase": "Kevin"
+                            },
+                            {
+                                "phrase": "Kelly"
+                            },
+                            {
+                                "phrase": "Trang"
+                            },
+                            {
+                                "phrase": "Amy"
+                            },
+                            {
+                                "phrase": "Alex"
+                            },
+                            {
+                                "phrase": "Linh"
+                            },
+                            {
+                                "phrase": "Thien Le"
+                            },
+                            {
+                                "phrase": "Any staff"
+                            },
+                            {
+                                "phrase": "Any staff is fine"
+                            },
+                            {
+                                "phrase": "First available"
+                            },
+                            {
+                                "phrase": "Whoever is available"
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+    },
+    "interpretations": [
+        {
+            "nluConfidence": {
+                "score": 1.0
+            },
+            "intent": {
+                "name": "BookAppointmentIntent",
+                "slots": {
+                    "bookingConfirmation": null,
+                    "customerName": {
+                        "value": {
+                            "originalValue": "lee",
+                            "interpretedValue": "lee",
+                            "resolvedValues": [
+                                "lee"
+                            ]
+                        }
+                    },
+                    "customerPhone": {
+                        "value": {
+                            "originalValue": "+84798171999",
+                            "interpretedValue": "+84798171999",
+                            "resolvedValues": [
+                                "+84798171999"
+                            ]
+                        }
+                    },
+                    "requestedDate": null,
+                    "requestedTime": null,
+                    "serviceName": {
+                        "value": {
+                            "originalValue": "Full Set",
+                            "interpretedValue": "Full Set",
+                            "resolvedValues": [
+                                "Full Set"
+                            ]
+                        }
+                    },
+                    "staffPreference": {
+                        "value": {
+                            "originalValue": "Amy",
+                            "interpretedValue": "Amy",
+                            "resolvedValues": [
+                                "Amy"
+                            ]
+                        }
+                    }
+                },
+                "state": "InProgress",
+                "confirmationState": "None"
+            },
+            "interpretationSource": "Lex"
+        },
+        {
+            "intent": {
+                "name": "FallbackIntent",
+                "slots": {}
+            },
+            "interpretationSource": "Lex"
+        },
+        {
+            "nluConfidence": {
+                "score": 0.5
+            },
+            "intent": {
+                "name": "HumanEscalationIntent",
+                "slots": {}
+            },
+            "interpretationSource": "Lex"
+        },
+        {
+            "nluConfidence": {
+                "score": 0.2
+            },
+            "intent": {
+                "name": "RescheduleAppointmentIntent",
+                "slots": {}
+            },
+            "interpretationSource": "Lex"
+        }
+    ],
+    "sessionId": "codex-smoke-20260716-slow-segmented"
+}

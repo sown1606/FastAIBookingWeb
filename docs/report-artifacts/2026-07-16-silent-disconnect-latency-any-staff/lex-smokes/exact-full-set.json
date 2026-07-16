@@ -1,0 +1,163 @@
+{
+    "messages": [
+        {
+            "content": "<speak>lee, just to confirm: Full Set today at 3 PM with Amy. <break time=\"300ms\"/> Is that correct?</speak>",
+            "contentType": "SSML"
+        }
+    ],
+    "sessionState": {
+        "dialogAction": {
+            "type": "ElicitSlot",
+            "slotToElicit": "bookingConfirmation"
+        },
+        "intent": {
+            "name": "BookAppointmentIntent",
+            "slots": {
+                "bookingConfirmation": null,
+                "customerName": null,
+                "customerPhone": null,
+                "requestedDate": null,
+                "requestedTime": null,
+                "serviceName": {
+                    "value": {
+                        "originalValue": "Full Set",
+                        "interpretedValue": "Full Set",
+                        "resolvedValues": [
+                            "Full Set"
+                        ]
+                    }
+                },
+                "staffPreference": {
+                    "value": {
+                        "originalValue": "Amy",
+                        "interpretedValue": "Amy",
+                        "resolvedValues": [
+                            "Amy"
+                        ]
+                    }
+                }
+            },
+            "state": "InProgress",
+            "confirmationState": "None"
+        },
+        "sessionAttributes": {
+            "AmazonConnectContactId": "codex-smoke-20260716-exact",
+            "CalledNumber": "+18483487681",
+            "CustomerEndpointAddress": "+84798171999",
+            "aiAlternativeSlots": "[]",
+            "amazonConnectContactId": "codex-smoke-20260716-exact",
+            "askedSlotsCount": "1",
+            "awaitingAlternativeSelection": "false",
+            "awaitingFinalBookingConfirmation": "true",
+            "bookingConfirmationAsked": "true",
+            "bookingOutcome": "MISSING_INFO",
+            "callSessionId": "211f23ff-fb10-48fb-bce3-09a711762600",
+            "confirmationFingerprint": "e87c5829bbf58aa4b6aaa6e1a703869e7ce05b9a252ffe040bc2059dc2ff2998",
+            "confirmedServiceName": "Full Set",
+            "confirmedStaffId": "e75b9b6d-ad6a-4060-b945-43f1358e3a79",
+            "confirmedStaffName": "Amy",
+            "connectContinuationPrompt": "<speak>lee, just to confirm: Full Set today at 3 PM with Amy. <break time=\"300ms\"/> Is that correct?</speak>",
+            "conversationComplete": "false",
+            "conversationOutcome": "NEEDS_INPUT",
+            "conversationState": "CONTINUE",
+            "customerId": "4b1f9774-f8bb-4bf3-bf27-2ccc2b6c373f",
+            "customerName": "lee",
+            "customerNameSource": "phone_lookup",
+            "customerPhone": "+84798171999",
+            "customerProfileSource": "active_customer",
+            "errorCount": "1",
+            "fallbackCount": "1",
+            "initialBookingUtterance": "Full Set today at 3 PM with Amy.",
+            "knownCallerAcknowledged": "true",
+            "knownCallerLookupAttempted": "true",
+            "knownCallerLookupStatus": "FOUND",
+            "lambdaProcessingMs": "4762",
+            "lambdaRespondedAt": "2026-07-16T10:18:57.024Z",
+            "lastAskedSlot": "bookingConfirmation",
+            "lastHumanTurnId": "codex-smoke-20260716-exact:d6821a82-5ff1-42a9-945b-b58e66cae6de:full set today at 3 pm with amy",
+            "lastProviderTurnId": "codex-smoke-20260716-exact:d6821a82-5ff1-42a9-945b-b58e66cae6de:full set today at 3 pm with amy:DialogCodeHook",
+            "persistedCustomerFirstName": "lee",
+            "providerTranscriptTimestamp": "2026-07-16T10:18:49Z",
+            "recognizedCustomerId": "4b1f9774-f8bb-4bf3-bf27-2ccc2b6c373f",
+            "recognizedCustomerName": "lee",
+            "requestedDate": "2026-07-16",
+            "requestedTime": "3 PM",
+            "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147",
+            "selectedStaffId": "e75b9b6d-ad6a-4060-b945-43f1358e3a79",
+            "serviceName": "Full Set",
+            "serviceRecognitionFailureCount": "0",
+            "slotToElicit": "bookingConfirmation",
+            "staffId": "e75b9b6d-ad6a-4060-b945-43f1358e3a79",
+            "staffPreference": "Amy",
+            "staffSource": "current_turn_alias",
+            "turnSequence": "1"
+        },
+        "originatingRequestId": "d6821a82-5ff1-42a9-945b-b58e66cae6de"
+    },
+    "interpretations": [
+        {
+            "nluConfidence": {
+                "score": 0.95
+            },
+            "intent": {
+                "name": "BookAppointmentIntent",
+                "slots": {
+                    "bookingConfirmation": null,
+                    "customerName": null,
+                    "customerPhone": null,
+                    "requestedDate": null,
+                    "requestedTime": null,
+                    "serviceName": {
+                        "value": {
+                            "originalValue": "Full Set",
+                            "interpretedValue": "Full Set",
+                            "resolvedValues": [
+                                "Full Set"
+                            ]
+                        }
+                    },
+                    "staffPreference": {
+                        "value": {
+                            "originalValue": "Amy",
+                            "interpretedValue": "Amy",
+                            "resolvedValues": [
+                                "Amy"
+                            ]
+                        }
+                    }
+                },
+                "state": "InProgress",
+                "confirmationState": "None"
+            },
+            "interpretationSource": "Lex"
+        },
+        {
+            "intent": {
+                "name": "FallbackIntent",
+                "slots": {}
+            },
+            "interpretationSource": "Lex"
+        },
+        {
+            "nluConfidence": {
+                "score": 0.5
+            },
+            "intent": {
+                "name": "HumanEscalationIntent",
+                "slots": {}
+            },
+            "interpretationSource": "Lex"
+        },
+        {
+            "nluConfidence": {
+                "score": 0.4
+            },
+            "intent": {
+                "name": "RescheduleAppointmentIntent",
+                "slots": {}
+            },
+            "interpretationSource": "Lex"
+        }
+    ],
+    "sessionId": "codex-smoke-20260716-exact"
+}

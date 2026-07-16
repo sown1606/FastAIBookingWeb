@@ -6,10 +6,10 @@
     {
       "synonyms": [
         {
-          "value": "any staff"
+          "value": "Any staff"
         },
         {
-          "value": "any staff is fine"
+          "value": "Any staff is fine"
         },
         {
           "value": "any staff is ok"
@@ -27,7 +27,7 @@
           "value": "anyone available"
         },
         {
-          "value": "first available"
+          "value": "First available"
         },
         {
           "value": "any available"
@@ -54,7 +54,7 @@
           "value": "any tech"
         },
         {
-          "value": "whoever is available"
+          "value": "Whoever is available"
         }
       ],
       "sampleValue": {

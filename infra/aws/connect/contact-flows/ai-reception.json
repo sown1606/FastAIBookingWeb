@@ -253,15 +253,16 @@
           "InitialContactId": "$.InitialContactId",
           "operatorHelpMentioned": "true",
           "x-amz-lex:allow-interrupt:*:*": "true",
-          "x-amz-lex:audio:start-timeout-ms:*:*": "7000",
-          "x-amz-lex:audio:end-timeout-ms:*:*": "2400",
+          "x-amz-lex:audio:start-timeout-ms:*:*": "8000",
+          "x-amz-lex:audio:end-timeout-ms:*:*": "3200",
           "x-amz-lex:audio:max-length-ms:*:*": "20000",
-          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName": "2200",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName": "1800",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedTime": "1600",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference": "1600",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:customerName": "2000",
           "connectRecoveryStage": "initial",
-          "connectFlowSourceVersion": "2026-07-15-thuyet-voice-recognition-fullset-staff"
+          "connectFlowSourceVersion": "2026-07-16-silent-disconnect-latency-any-staff",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedDate": "1600"
         },
         "Text": "Hi, I can help book your appointment. Tell me the service, day, time, and staff. You can press 0 for a person."
       },
@@ -358,10 +359,10 @@
           "InitialContactId": "$.InitialContactId",
           "operatorHelpMentioned": "true",
           "x-amz-lex:allow-interrupt:*:*": "true",
-          "x-amz-lex:audio:start-timeout-ms:*:*": "7000",
-          "x-amz-lex:audio:end-timeout-ms:*:*": "2400",
+          "x-amz-lex:audio:start-timeout-ms:*:*": "8000",
+          "x-amz-lex:audio:end-timeout-ms:*:*": "3200",
           "x-amz-lex:audio:max-length-ms:*:*": "20000",
-          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName": "2200",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName": "1800",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedTime": "1600",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference": "1600",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:customerName": "2000",
@@ -401,7 +402,8 @@
           "connectContinuationPrompt": "$.Lex.SessionAttributes.connectContinuationPrompt",
           "outerRecoveryAttempt": "true",
           "connectRecoveryStage": "retry_after_initial_error",
-          "connectFlowSourceVersion": "2026-07-15-thuyet-voice-recognition-fullset-staff"
+          "connectFlowSourceVersion": "2026-07-16-silent-disconnect-latency-any-staff",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedDate": "1600"
         },
         "Text": "$.Lex.SessionAttributes.connectContinuationPrompt"
       },
@@ -496,10 +498,10 @@
           "InitialContactId": "$.InitialContactId",
           "operatorHelpMentioned": "true",
           "x-amz-lex:allow-interrupt:*:*": "true",
-          "x-amz-lex:audio:start-timeout-ms:*:*": "7000",
-          "x-amz-lex:audio:end-timeout-ms:*:*": "2400",
+          "x-amz-lex:audio:start-timeout-ms:*:*": "8000",
+          "x-amz-lex:audio:end-timeout-ms:*:*": "3200",
           "x-amz-lex:audio:max-length-ms:*:*": "20000",
-          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName": "2200",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName": "1800",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedTime": "1600",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference": "1600",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:customerName": "2000",
@@ -539,7 +541,8 @@
           "connectContinuationPrompt": "$.Lex.SessionAttributes.connectContinuationPrompt",
           "outerRecoveryAttempt": "final",
           "connectRecoveryStage": "final_dtmf_opportunity",
-          "connectFlowSourceVersion": "2026-07-15-thuyet-voice-recognition-fullset-staff"
+          "connectFlowSourceVersion": "2026-07-16-silent-disconnect-latency-any-staff",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedDate": "1600"
         },
         "Text": "Press 0 for a person, or tell me your appointment again."
       },
@@ -603,11 +606,11 @@
         ],
         "Errors": [
           {
-            "NextAction": "final-recovery-goodbye",
+            "NextAction": "set-recovery-stage-retry-error",
             "ErrorType": "NoMatchingCondition"
           },
           {
-            "NextAction": "final-recovery-goodbye",
+            "NextAction": "set-recovery-stage-retry-error",
             "ErrorType": "NoMatchingError"
           }
         ]
@@ -642,7 +645,7 @@
           "initialContactId": "$.InitialContactId",
           "connectRecoveryStage": "initial",
           "connectLastErrorBranch": "none",
-          "connectFlowSourceVersion": "2026-07-15-thuyet-voice-recognition-fullset-staff"
+          "connectFlowSourceVersion": "2026-07-16-silent-disconnect-latency-any-staff"
         },
         "TargetContact": "Current"
       },
@@ -693,11 +696,65 @@
         "NextAction": "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d",
         "Conditions": [
           {
-            "NextAction": "67ada978-600a-4d39-9965-6230c52810a9",
+            "NextAction": "check-terminal-conversation-outcome",
             "Condition": {
               "Operator": "Equals",
               "Operands": [
                 "true"
+              ]
+            }
+          }
+        ],
+        "Errors": [
+          {
+            "NextAction": "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d",
+            "ErrorType": "NoMatchingCondition"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "check-terminal-conversation-outcome",
+      "Type": "Compare",
+      "Parameters": {
+        "ComparisonValue": "$.Lex.SessionAttributes.conversationOutcome"
+      },
+      "Transitions": {
+        "NextAction": "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d",
+        "Conditions": [
+          {
+            "NextAction": "67ada978-600a-4d39-9965-6230c52810a9",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "BOOKED"
+              ]
+            }
+          },
+          {
+            "NextAction": "67ada978-600a-4d39-9965-6230c52810a9",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "RESCHEDULED"
+              ]
+            }
+          },
+          {
+            "NextAction": "67ada978-600a-4d39-9965-6230c52810a9",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "CANCELED"
+              ]
+            }
+          },
+          {
+            "NextAction": "67ada978-600a-4d39-9965-6230c52810a9",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "CALLER_GOODBYE"
               ]
             }
           }
@@ -750,7 +807,7 @@
         "Attributes": {
           "connectRecoveryStage": "initial_lex_error",
           "connectLastErrorBranch": "$.ErrorCode",
-          "connectFlowSourceVersion": "2026-07-15-thuyet-voice-recognition-fullset-staff",
+          "connectFlowSourceVersion": "2026-07-16-silent-disconnect-latency-any-staff",
           "conversationComplete": "false"
         },
         "TargetContact": "Current"
@@ -789,7 +846,7 @@
         "Attributes": {
           "connectRecoveryStage": "retry_lex_error",
           "connectLastErrorBranch": "$.ErrorCode",
-          "connectFlowSourceVersion": "2026-07-15-thuyet-voice-recognition-fullset-staff",
+          "connectFlowSourceVersion": "2026-07-16-silent-disconnect-latency-any-staff",
           "conversationComplete": "false"
         },
         "TargetContact": "Current"
@@ -809,7 +866,7 @@
       "Type": "MessageParticipant",
       "Parameters": {
         "SkipWhenDTMFBufferEnabled": "false",
-        "Text": "I am still having trouble hearing you. You can press 0 for a person, or try saying the appointment one more time."
+        "Text": "I'm still here. Please tell me the service, date, time, or staff again. You can press 0 for a person."
       },
       "Transitions": {
         "NextAction": "41e3f239-5b57-4363-92fc-9d594579fa98",

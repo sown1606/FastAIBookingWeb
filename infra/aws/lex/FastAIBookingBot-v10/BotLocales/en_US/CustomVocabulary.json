@@ -4,6 +4,26 @@
       "phrase": "Full Set",
       "weight": 3,
       "displayAs": "Full Set"
+    },
+    {
+      "phrase": "Any staff",
+      "weight": 3,
+      "displayAs": "Any staff"
+    },
+    {
+      "phrase": "Any staff is fine",
+      "weight": 3,
+      "displayAs": "Any staff is fine"
+    },
+    {
+      "phrase": "First available",
+      "weight": 3,
+      "displayAs": "First available"
+    },
+    {
+      "phrase": "Whoever is available",
+      "weight": 2,
+      "displayAs": "Whoever is available"
     }
   ]
 }

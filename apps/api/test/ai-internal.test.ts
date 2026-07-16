@@ -729,9 +729,24 @@ const setupPrismaMock = () => {
     return (
       state.bookingAttempts
         .filter(
-          (attempt) =>
-            attempt.callSessionId === args.where.callSessionId &&
-            attempt.status === args.where.status
+          (attempt) => {
+            if (args.where.callSessionId && attempt.callSessionId !== args.where.callSessionId) {
+              return false;
+            }
+            if (args.where.status?.in && !args.where.status.in.includes(attempt.status)) {
+              return false;
+            }
+            if (args.where.status && typeof args.where.status === "string" && attempt.status !== args.where.status) {
+              return false;
+            }
+            if (args.where.appointmentId?.not === null && !attempt.appointmentId) {
+              return false;
+            }
+            if (args.where.appointmentId === null && attempt.appointmentId) {
+              return false;
+            }
+            return true;
+          }
         )
         .at(-1) ?? null
     );
@@ -1450,6 +1465,145 @@ test("known caller Full Set today at 3 PM with Amy confirms directly", async () 
     /Lee, just to confirm: Full Set today at 3 PM with Amy\..*Is that correct\?/i
   );
   assert.doesNotMatch(result.body.data.lexResponse.message, /I can help you book or cancel|Which service/i);
+});
+
+test("known caller Full Set any-staff observed ASR variants select first eligible staff", async () => {
+  for (const [index, phrase] of [
+    "Full Set today at 3 PM, any staff is fine.",
+    "full set today at three pm and it's top five"
+  ].entries()) {
+    resetMockState();
+    state.customers.push({
+      id: `customer-lee-fullset-any-${index}`,
+      salonId: ids.salonA,
+      firstName: "Lee",
+      lastName: "Stored",
+      phone: "84798171999",
+      createdAt: new Date("2026-01-10T00:00:00.000Z")
+    } as any);
+
+    const today = DateTime.now().setZone("America/New_York").toFormat("yyyy-MM-dd");
+    const result = await postInternalAppointment(
+      bookingPayload({
+        customerName: undefined,
+        customerPhone: undefined,
+        callerPhone: "+84798171999",
+        serviceName: undefined,
+        requestedDate: undefined,
+        requestedTime: undefined,
+        staffPreference: undefined,
+        confirmationState: undefined,
+        amazonConnectContactId: `connect-known-lee-fullset-any-${index}`,
+        currentTurnTranscript: phrase,
+        transcript: phrase,
+        attributes: {
+          CustomerEndpointAddress: "+84798171999"
+        }
+      })
+    );
+
+    assert.equal(result.response.status, 200, phrase);
+    assertBookingConfirmationDialog(result.body.data.lexResponse.dialogAction, phrase);
+    const attrs = result.body.data.lexResponse.sessionAttributes;
+    assert.equal(attrs.serviceName, "Full Set", phrase);
+    assert.equal(attrs.requestedDate, today, phrase);
+    assert.equal(attrs.requestedTime, "15:00", phrase);
+    assert.equal(attrs.staffPreference, "Trang", phrase);
+    assert.equal(attrs.staffId, ids.trang, phrase);
+    assert.equal(attrs.customerName, "Lee", phrase);
+    assert.match(result.body.data.lexResponse.message, /Full Set today at 3 PM with Trang/i, phrase);
+    assert.doesNotMatch(result.body.data.lexResponse.message, /Which staff|didn't find that technician/i, phrase);
+    assert.equal(state.appointments.length, 0, phrase);
+  }
+});
+
+test("slow segmented Full Set sentence preserves trusted state across turns", async () => {
+  state.customers.push({
+    id: "customer-lee-fullset-segmented",
+    salonId: ids.salonA,
+    firstName: "Lee",
+    lastName: "Stored",
+    phone: "84798171999",
+    createdAt: new Date("2026-01-10T00:00:00.000Z")
+  } as any);
+
+  const contactId = "connect-known-lee-fullset-segmented";
+  const today = DateTime.now().setZone("America/New_York").toFormat("yyyy-MM-dd");
+  const first = await postInternalAppointment(
+    bookingPayload({
+      customerName: undefined,
+      customerPhone: undefined,
+      callerPhone: "+84798171999",
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      amazonConnectContactId: contactId,
+      currentTurnTranscript: "Full Set",
+      transcript: "Full Set",
+      attributes: {
+        CustomerEndpointAddress: "+84798171999"
+      }
+    })
+  );
+
+  const second = await postInternalAppointment(
+    bookingPayload({
+      customerName: undefined,
+      customerPhone: undefined,
+      callerPhone: "+84798171999",
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      amazonConnectContactId: contactId,
+      currentTurnTranscript: "today at 3 PM",
+      transcript: "today at 3 PM",
+      attributes: {
+        ...first.body.data.lexResponse.sessionAttributes,
+        CustomerEndpointAddress: "+84798171999"
+      }
+    })
+  );
+
+  const third = await postInternalAppointment(
+    bookingPayload({
+      customerName: undefined,
+      customerPhone: undefined,
+      callerPhone: "+84798171999",
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      amazonConnectContactId: contactId,
+      currentTurnTranscript: "with Amy",
+      transcript: "with Amy",
+      attributes: {
+        ...second.body.data.lexResponse.sessionAttributes,
+        CustomerEndpointAddress: "+84798171999"
+      }
+    })
+  );
+
+  assert.equal(first.response.status, 200);
+  assert.equal(second.response.status, 200);
+  assert.equal(third.response.status, 200);
+  assert.equal(first.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
+  assert.equal(second.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
+  assert.equal(second.body.data.lexResponse.sessionAttributes.requestedDate, today);
+  assert.equal(second.body.data.lexResponse.sessionAttributes.requestedTime, "15:00");
+  assertBookingConfirmationDialog(third.body.data.lexResponse.dialogAction);
+  const attrs = third.body.data.lexResponse.sessionAttributes;
+  assert.equal(attrs.customerName, "Lee");
+  assert.equal(attrs.serviceName, "Full Set");
+  assert.equal(attrs.requestedDate, today);
+  assert.equal(attrs.requestedTime, "15:00");
+  assert.equal(attrs.staffPreference, "Amy");
+  assert.equal(attrs.staffId, ids.amy);
+  assert.match(third.body.data.lexResponse.message, /Full Set today at 3 PM with Amy/i);
 });
 
 test("production g p s transcript resolves Full Set, 3 PM, Trang, and known caller", async () => {
@@ -6275,6 +6429,11 @@ test("first available ASR variants enter explicit-any flow without staff clarifi
     "any stuff is fine",
     "any stop is fine",
     "and the staff is fine",
+    "and it's thirty five",
+    "and its thirty five",
+    "and it's top five",
+    "it's top five",
+    "any top five",
     "first available",
     "what available",
     "who available",
@@ -6316,7 +6475,7 @@ test("first available ASR variants enter explicit-any flow without staff clarifi
 test("ungrounded thirty five ASR does not become 5 PM or Any staff", async () => {
   const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
 
-  for (const phrase of ["and it's thirty five", "thirty five", "and its thirty five"]) {
+  for (const phrase of ["and it's thirty five", "thirty five", "and its thirty five", "and it's top five"]) {
     resetMockState();
     const result = await postInternalAppointment(
       bookingPayload({
@@ -6347,6 +6506,36 @@ test("ungrounded thirty five ASR does not become 5 PM or Any staff", async () =>
     assert.notEqual(attrs.staffPreference, "Any staff", phrase);
     assert.equal(state.appointments.length, 0, phrase);
   }
+});
+
+test("time answer three thirty five remains requestedTime and not Any staff", async () => {
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Pedicure",
+      requestedDate,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      amazonConnectContactId: "connect-three-thirty-five-time",
+      currentTurnTranscript: "three thirty five",
+      transcript: "three thirty five",
+      attributes: {
+        lastAskedSlot: "requestedTime",
+        serviceName: "Pedicure",
+        requestedDate,
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266"
+      }
+    })
+  );
+
+  const attrs = result.body.data.lexResponse.sessionAttributes;
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.match(attrs.requestedTime, /^(?:15:35|3:35 PM)$/);
+  assert.notEqual(attrs.staffPreference, "Any staff");
+  assert.equal(state.appointments.length, 0);
 });
 
 test("what available does not become Any staff outside staff context", async () => {
@@ -7019,6 +7208,40 @@ test("time-only answer does not invent requestedDate today", async () => {
   assert.equal(state.appointments.length, 0);
 });
 
+test("time-shaped requestedDate is cleared and never rendered as a day", async () => {
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Full Set",
+      requestedDate: "3 PM",
+      requestedTime: "3 PM",
+      staffPreference: "Amy",
+      staffId: ids.amy,
+      confirmationState: undefined,
+      amazonConnectContactId: "connect-invalid-date-time-shaped",
+      currentTurnTranscript: "at g p m the emmy",
+      transcript: "at g p m the emmy",
+      attributes: {
+        serviceName: "Full Set",
+        requestedDate: "3 PM",
+        requestedTime: "3 PM",
+        staffPreference: "Amy",
+        staffId: ids.amy,
+        customerName: "Lee",
+        customerPhone: "+17325956266"
+      }
+    })
+  );
+
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitSlot");
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "requestedDate");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.requestedDate, undefined);
+  assert.match(result.body.data.lexResponse.sessionAttributes.requestedTime, /^(?:3 PM|15:00)$/);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Amy");
+  assert.doesNotMatch(result.body.data.lexResponse.message, /3 PM at 3 PM/i);
+  assert.equal(state.appointments.length, 0);
+});
+
 test("ptq service ASR resolves to Pedicure and is not stored as staff", async () => {
   const result = await postInternalAppointment(
     bookingPayload({
@@ -7668,9 +7891,79 @@ test("Amazon Connect session upsert never downgrades terminal call status", asyn
   assert.equal(state.callSessions[0].finalResolution, "Already completed.");
 });
 
+test("post-disconnect stale Amazon Connect turn is rejected without booking mutation", async () => {
+  const contactId = "connect-provider-disconnected-stale";
+  const providerDisconnectedAt = "2026-07-16T08:27:11.925Z";
+  state.callSessions.push({
+    id: "call-provider-disconnected-stale",
+    salonId: ids.salonA,
+    provider: ExternalProvider.AMAZON_CONNECT,
+    providerCallId: contactId,
+    callerPhone: "+84798171999",
+    trackingNumber: "+18483487681",
+    dialedPhone: "+18483487681",
+    status: CallSessionStatus.IN_PROGRESS,
+    routingOutcome: CallRoutingOutcome.AI_RECEPTION,
+    finalResolution: "Provider disconnected.",
+    startedAt: new Date("2026-07-16T08:26:50.000Z"),
+    endedAt: new Date(providerDisconnectedAt),
+    durationSeconds: 22,
+    rawPayload: {
+      providerTiming: {
+        providerDisconnectedAt
+      }
+    },
+    createdAt: new Date("2026-07-16T08:26:50.000Z"),
+    updatedAt: new Date("2026-07-16T08:27:11.925Z")
+  } as any);
+
+  const result = await postInternalAppointment(
+    bookingPayload({
+      customerName: undefined,
+      customerPhone: undefined,
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      amazonConnectContactId: contactId,
+      currentTurnTranscript: "",
+      transcript: "",
+      attributes: {
+        AmazonConnectContactId: contactId,
+        lambdaReceivedAt: "2026-07-16T08:27:19.606Z",
+        providerTranscriptTimestamp: "2026-07-16T08:27:19.606Z"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staleOrDuplicateRejectionReason, "provider_disconnected");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.conversationComplete, "false");
+  assert.equal(state.callSessions.length, 1);
+  assert.equal(state.callSessions[0].status, CallSessionStatus.COMPLETED);
+  assert.equal(state.callSessions[0].endedAt.toISOString(), providerDisconnectedAt);
+  assert.equal(state.callSessions[0].finalResolution, "Provider disconnected.");
+  assert.equal(state.transcripts.length, 0);
+  assert.equal(state.bookingAttempts.length, 0);
+  assert.equal(state.appointments.length, 0);
+  assert.equal(state.aiInteractionLogs.length, 1);
+  assert.equal(
+    state.aiInteractionLogs[0].responsePayload.turnStateDiagnostics.staleOrDuplicateRejectionReason,
+    "provider_disconnected"
+  );
+  assert.equal(
+    state.aiInteractionLogs[0].responsePayload.turnHistory.at(-1).turnStateDiagnostics.staleOrDuplicateRejectionReason,
+    "provider_disconnected"
+  );
+});
+
 test("confirmed booking retry for the same Amazon Connect contact does not create a duplicate appointment", async () => {
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
   const payload = bookingPayload({
     staffPreference: "Trang",
+    requestedDate,
     amazonConnectContactId: "connect-contact-idempotent",
     amazonConnectPhoneNumber: "+18483487681",
     calledNumber: "+18483487681",

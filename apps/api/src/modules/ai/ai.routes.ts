@@ -47,8 +47,8 @@ const createAIAppointmentSchema = z
   .object({
     salonId: z.string().trim().min(1).optional(),
     intentName: z.string().trim().min(1).max(160).optional(),
-    text: z.string().trim().min(1).max(15000).optional(),
-    transcript: z.string().trim().min(1).max(15000).optional(),
+    text: z.string().trim().max(15000).optional(),
+    transcript: z.string().trim().max(15000).optional(),
     customer: z
       .object({
         name: z.string().trim().min(1).max(160).optional(),
@@ -281,8 +281,18 @@ aiInternalRouter.post(
   requireInternalApiToken,
   validate(createAIAppointmentSchema),
   asyncHandler(async (req, res) => {
-    const payload = req.body as z.infer<typeof createAIAppointmentSchema>;
     const startedAt = Date.now();
+    const payload = req.body as z.infer<typeof createAIAppointmentSchema>;
+    const payloadWithTiming = {
+      ...payload,
+      attributes: {
+        ...(payload.attributes ?? {}),
+        apiStartedAt:
+          typeof payload.attributes?.apiStartedAt === "string" && payload.attributes.apiStartedAt.trim()
+            ? payload.attributes.apiStartedAt
+            : new Date(startedAt).toISOString()
+      }
+    };
     const waitOperationHeader = req.headers["x-fastaibooking-wait-operation"];
     const waitPromptHeader = req.headers["x-fastaibooking-wait-prompt"];
     const waitOperation = Array.isArray(waitOperationHeader)
@@ -334,11 +344,11 @@ aiInternalRouter.post(
     };
     let result: Awaited<ReturnType<typeof createAmazonConnectAIAppointment>>;
 	    try {
-	      result = await createAmazonConnectAIAppointment(payload);
+	      result = await createAmazonConnectAIAppointment(payloadWithTiming);
 	    } catch (error) {
 	      const reason = classifyInternalAIError(error);
 	      try {
-	        const recoveryResult = await createAmazonConnectAIRecoverableFailure(payload, {
+	        const recoveryResult = await createAmazonConnectAIRecoverableFailure(payloadWithTiming, {
 	          reason,
 	          error
 	        });
@@ -389,7 +399,7 @@ aiInternalRouter.post(
 	      );
 	      return sendSuccess(res, {
 	        statusCode: 200,
-	        ...safeRecoverableResponse(reason, payload)
+	        ...safeRecoverableResponse(reason, payloadWithTiming)
 	      });
 	    }
     logWaitCoverage({

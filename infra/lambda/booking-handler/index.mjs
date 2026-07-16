@@ -253,6 +253,16 @@ const CONTEXTUAL_ANY_STAFF_ALIASES = [
   "anystop",
   "any stop if i",
   "any stuff",
+  "and it's thirty five",
+  "and its thirty five",
+  "and it is thirty five",
+  "and it's top five",
+  "and its top five",
+  "and it is top five",
+  "it's top five",
+  "its top five",
+  "it is top five",
+  "any top five",
   "what available",
   "who available",
   "one available",
@@ -337,6 +347,7 @@ const SERVICE_ALIAS_GROUPS = {
     "four set",
     "phone set",
     "phone chat",
+    "cool set",
     "room set",
     "pull set",
     "pull step",
@@ -397,6 +408,7 @@ const DEDICATED_FULL_SET_ALIASES = [
   "phone chat",
   "pool set",
   "food set",
+  "cool set",
   "fo set",
   "full said",
   "full sit",
@@ -895,6 +907,63 @@ function stripAnyStaffTrailingFiller(normalizedText) {
   return stripped;
 }
 
+function isObservedAnyStaffTailAlias(normalizedText) {
+  const tail = stripAnyStaffTrailingFiller(normalizedText)
+    .replace(/\s+(?:music|background music|noise)$/, "")
+    .trim();
+  if (!tail) {
+    return false;
+  }
+  return [
+    "and it s thirty five",
+    "and its thirty five",
+    "and it is thirty five",
+    "it s thirty five",
+    "its thirty five",
+    "it is thirty five",
+    "and it s top five",
+    "and its top five",
+    "and it is top five",
+    "it s top five",
+    "its top five",
+    "it is top five",
+    "any top five"
+  ].some((alias) => tail === alias || tail.endsWith(` ${alias}`));
+}
+
+function hasInvalidAnyStaffTimeTail(normalizedText, context = {}) {
+  return Boolean(
+    context?.lastAskedSlot === "requestedTime" ||
+      /\b(?:3|three)\s*(?::|\s+)35\b/.test(normalizedText) ||
+      /\b(?:five|5)\s+(?:thirty\s+five|35)\b/.test(normalizedText)
+  );
+}
+
+function hasAnyStaffBookingTailContext(text, context = {}) {
+  const normalized = normalizeForMatch(text);
+  if (!isObservedAnyStaffTailAlias(normalized) || hasInvalidAnyStaffTimeTail(normalized, context)) {
+    return false;
+  }
+  if (context.staffPreference || context.confirmedStaffName || context.staffId || context.selectedStaffId) {
+    return false;
+  }
+  const timeZone = context.timeZone || context.timezone || DEFAULT_SALON_TIMEZONE;
+  const servicePresent = Boolean(
+    extractServiceFromTranscript(text, context) ||
+      context.serviceName ||
+      context.confirmedServiceName
+  );
+  const datePresent = Boolean(
+    getPreferredDateCandidate(text) ||
+      (context.requestedDate && /^\d{4}-\d{2}-\d{2}$/.test(resolveKnownDateValue(context.requestedDate, timeZone)))
+  );
+  const timePresent = Boolean(
+    hasCurrentTurnTimePhrase(text, context) ||
+      normalizeTimePhrase(context.requestedTime || "", "", { lastAskedSlot: "requestedTime" })
+  );
+  return Boolean(servicePresent && datePresent && timePresent);
+}
+
 function normalizeAnyStaffPhrase(text, context = {}) {
   const normalized = normalizeForMatch(text);
   if (!normalized) {
@@ -910,6 +979,10 @@ function normalizeAnyStaffPhrase(text, context = {}) {
   }
   if (/\bany\s+time\b/.test(normalized)) {
     return "";
+  }
+
+  if (hasAnyStaffBookingTailContext(text, context)) {
+    return "Any staff";
   }
 
   const staffContext = isStaffSelectionContext(normalized, context);
@@ -2813,7 +2886,12 @@ function resolveKnownDateValue(value, timeZone = DEFAULT_SALON_TIMEZONE) {
     return resolveDatePhrase(raw, timeZone);
   }
 
-  return raw;
+  return "";
+}
+
+function normalizeRequestedDateValue(value, timeZone = DEFAULT_SALON_TIMEZONE) {
+  const resolved = resolveKnownDateValue(value, timeZone);
+  return /^\d{4}-\d{2}-\d{2}$/.test(resolved) ? resolved : "";
 }
 
 function readSpokenMinuteValue(value) {
@@ -2892,6 +2970,7 @@ function normalizeBareRequestedTimeAnswer(value) {
     .trim()
     .toLowerCase();
   return normalizeForMatch(normalized)
+    .replace(/\b(\d{1,2})\s+([0-5]\d)\b/g, "$1:$2")
     .replace(/^(?:and\s+)?(?:it\s+is|its|it's)\s+/, "")
     .trim();
 }
@@ -3460,7 +3539,10 @@ function buildRuntimeHintsForSlot(slotToElicit, sessionAttributes = {}) {
         ])
       : uniqueRuntimeHintNames([
           ...Object.values(getStaffDtmfOptions(sessionAttributes)),
-          "Any staff"
+          "Any staff",
+          "Any staff is fine",
+          "First available",
+          "Whoever is available"
         ]);
   if (!hintValues.length) {
     return undefined;
@@ -3818,12 +3900,9 @@ function getElicitPrompt(event, slotName, attemptCount) {
 }
 
 function formatDateForPrompt(value, timeZone = DEFAULT_SALON_TIMEZONE) {
-  const resolved = resolveKnownDateValue(value, timeZone);
+  const resolved = normalizeRequestedDateValue(value, timeZone);
   if (!resolved) {
     return "";
-  }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(resolved)) {
-    return value;
   }
   const today = formatDateParts(getZonedDateParts(timeZone));
   const tomorrow = formatDateParts(addDaysToDateParts(getZonedDateParts(timeZone), 1));
@@ -3941,8 +4020,21 @@ function buildCustomerNamePrompt(event, options = {}) {
   return "I'd be happy to help. May I have your name, please?";
 }
 
-function getServiceAwareElicitPrompt(event, slotName, attemptCount) {
+function getServiceAwareElicitPrompt(event, slotName, attemptCount, knownOverride = undefined) {
   const prompt = getElicitPrompt(event, slotName, attemptCount);
+  const known = knownOverride || buildKnownBookingSessionAttributes(event);
+  if (slotName === "serviceName") {
+    const time = formatTimeForPrompt(known.requestedTime);
+    const staff = known.staffPreference || known.confirmedStaffName;
+    const date = formatDateForPrompt(
+      known.requestedDate,
+      getAttribute(event, attributeNames.timezone) || DEFAULT_SALON_TIMEZONE
+    );
+    if (!known.serviceName && !date && time && staff) {
+      return `I caught ${time} with ${staff}. What day and service would you like?`;
+    }
+    return prompt;
+  }
   if (slotName === "customerName") {
     return buildCustomerNamePrompt(event, {
       retry: attemptCount > 1,
@@ -3952,7 +4044,6 @@ function getServiceAwareElicitPrompt(event, slotName, attemptCount) {
   if (slotName !== "staffPreference") {
     return prompt;
   }
-  const known = buildKnownBookingSessionAttributes(event);
   const serviceName = normalizeServiceName(known.confirmedServiceName || known.serviceName);
   if (!serviceName || /^got it[, ]/i.test(prompt)) {
     return prompt;
@@ -4207,6 +4298,12 @@ function buildKnownBookingSessionAttributes(event) {
       Object.entries(known).filter(([, value]) => value !== undefined && value !== "")
     )
   };
+  const normalizedMergedDate = normalizeRequestedDateValue(merged.requestedDate, timeZone);
+  if (normalizedMergedDate) {
+    merged.requestedDate = normalizedMergedDate;
+  } else {
+    delete merged.requestedDate;
+  }
   if (
     staffDtmfSelection &&
     !staffDtmfSelection.invalid &&
@@ -4363,7 +4460,7 @@ function getBookingSlotToElicit(event) {
   if (!staffPreference && !staffId && sessionAttributes.invalidStaffPreferenceIgnored === "true") {
     return "staffPreference";
   }
-  if (!staffPreference && !staffId && sessionAttributes.lastAskedSlot !== "staffPreference") {
+  if (!staffPreference && !staffId) {
     return "staffPreference";
   }
 
@@ -4414,7 +4511,21 @@ function buildElicitSlotResponse(event, slotName, extraAttributes = {}, messageO
     slotName
   );
 
-  const responseMessage = messageOverride || getServiceAwareElicitPrompt(event, slotName, attemptCount);
+  let responseMessage =
+    messageOverride ||
+    getServiceAwareElicitPrompt(event, slotName, attemptCount, responseSessionAttributes);
+  if (slotName === "serviceName") {
+    const time = formatTimeForPrompt(responseSessionAttributes.requestedTime);
+    const staff =
+      responseSessionAttributes.staffPreference || responseSessionAttributes.confirmedStaffName;
+    const date = formatDateForPrompt(
+      responseSessionAttributes.requestedDate,
+      getAttribute(event, attributeNames.timezone) || DEFAULT_SALON_TIMEZONE
+    );
+    if (!responseSessionAttributes.serviceName && !date && time && staff) {
+      responseMessage = `I caught ${time} with ${staff}. What day and service would you like?`;
+    }
+  }
   const response = {
     sessionState: {
       sessionAttributes: responseSessionAttributes,
@@ -4446,6 +4557,14 @@ function buildElicitSlotResponse(event, slotName, extraAttributes = {}, messageO
 	}
 
 function getNoInputPrompt(slotName, noInputCount, event) {
+  if (slotName === "staffPreference") {
+    const summary = buildKnownBookingPromptSummary(event, { forPhrase: false });
+    const prefix = summary ? `I have ${summary}. ` : "";
+    if (noInputCount <= 1) {
+      return `I'm still here. ${prefix}Which staff would you like, or say first available?`;
+    }
+    return `${prefix}Which staff would you like, or say first available? You can press 0 for a person.`;
+  }
   if (slotName === "customerName" && noInputCount >= 2) {
     return "Sorry, could you spell your first name, one letter at a time?";
   }
@@ -4457,9 +4576,6 @@ function getNoInputPrompt(slotName, noInputCount, event) {
   }
   if (noInputCount <= 1) {
     return getElicitPrompt(event, slotName, 1);
-  }
-  if (slotName === "staffPreference") {
-    return STAFF_DTMF_SHORT_PROMPT;
   }
   if (slotName === "serviceName") {
     return SERVICE_DTMF_SHORT_PROMPT;
@@ -5382,6 +5498,20 @@ function buildInternalPayload(event, intentName, extraAttributes = {}) {
   const bookingConfirmation =
     getSlotValue(slots, slotNames.bookingConfirmation, { preferOriginal: true }) ||
     getSessionAttribute(sessionAttributes, slotNames.bookingConfirmation);
+  const providerTranscriptTimestamp =
+    getOptionalAttribute(event, [
+      "providerTranscriptTimestamp",
+      "ProviderTranscriptTimestamp",
+      "transcriptTimestamp",
+      "TranscriptTimestamp",
+      "providerInputEndedAt",
+      "ProviderInputEndedAt"
+    ]) || "";
+  const connectBranch =
+    sessionAttributes.connectRecoveryStage ||
+    sessionAttributes.connectLastErrorBranch ||
+    sessionAttributes.conversationState ||
+    "";
 
   const payload = {
     intentName: backendIntentName,
@@ -5414,6 +5544,9 @@ function buildInternalPayload(event, intentName, extraAttributes = {}) {
 	      providerRequestId: getProviderRequestId(event),
 	      lexRequestId: event.requestId || event.invocationId || getProviderRequestId(event) || "",
 	      lexPhase: event.invocationSource || "",
+	      providerTranscriptTimestamp,
+	      lambdaReceivedAt: event.lambdaReceivedAt || "",
+	      connectBranch,
 	      stateVersionBefore: sessionAttributes.stateVersion || sessionAttributes.turnSequence || "0",
 	      turnSequence: sessionAttributes.turnSequence || "0",
 	      asrDiagnostics: JSON.stringify(getAsrDiagnostics(event)),
@@ -5624,6 +5757,11 @@ function commitDialogState(response, options = {}) {
   }
   if (responseMessage) {
     sessionAttributes.connectContinuationPrompt = responseMessage;
+  }
+  if (response?.sessionState?.dialogAction?.type !== "Close") {
+    sessionAttributes.conversationState = "CONTINUE";
+    sessionAttributes.conversationOutcome = sessionAttributes.conversationOutcome || "NEEDS_INPUT";
+    sessionAttributes.conversationComplete = "false";
   }
   const previousTurnSequence = parseAttemptCount(sessionAttributes.turnSequence);
   sessionAttributes.turnSequence = String(previousTurnSequence + 1);
@@ -6558,12 +6696,29 @@ async function handleLexEvent(event, analysis = {}) {
 }
 
 export const handler = async (event) => {
-  if (isOperatorQueueOutcomeEvent(event)) {
-    return handleOperatorQueueOutcomeEvent(event);
+  const eventWithTiming = {
+    ...event,
+    lambdaReceivedAt: event?.lambdaReceivedAt || new Date().toISOString()
+  };
+  if (isOperatorQueueOutcomeEvent(eventWithTiming)) {
+    return handleOperatorQueueOutcomeEvent(eventWithTiming);
   }
-  const analysis = analyzeLexTurnSanitization(event);
-  const sanitizedEvent = sanitizeLexEvent(event, analysis);
+  const analysis = analyzeLexTurnSanitization(eventWithTiming);
+  const sanitizedEvent = sanitizeLexEvent(eventWithTiming, analysis);
   const response = await handleLexEvent(sanitizedEvent, analysis);
-  logStructuredLexTurn(event, response, analysis);
+  const responseAttributes = response?.sessionState?.sessionAttributes;
+  if (responseAttributes) {
+    if (response?.sessionState?.dialogAction?.type !== "Close" && responseAttributes.conversationComplete !== "true") {
+      responseAttributes.conversationState = "CONTINUE";
+      responseAttributes.conversationOutcome = responseAttributes.conversationOutcome || "NEEDS_INPUT";
+      responseAttributes.conversationComplete = "false";
+    }
+    responseAttributes.lambdaRespondedAt = new Date().toISOString();
+    const started = Date.parse(eventWithTiming.lambdaReceivedAt);
+    if (Number.isFinite(started)) {
+      responseAttributes.lambdaProcessingMs = String(Math.max(0, Date.now() - started));
+    }
+  }
+  logStructuredLexTurn(eventWithTiming, response, analysis);
   return response;
 };

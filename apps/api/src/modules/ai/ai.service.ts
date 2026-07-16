@@ -282,6 +282,7 @@ const SERVICE_ALIASES: Record<string, string[]> = {
     "four set",
     "phone set",
     "phone chat",
+    "cool set",
     "room set",
     "pull set",
     "pull step",
@@ -457,6 +458,16 @@ const CONTEXTUAL_ANY_STAFF_PHRASES = new Set([
   "anystop",
   "any stop if i",
   "any stuff",
+  "and it's thirty five",
+  "and its thirty five",
+  "and it is thirty five",
+  "and it's top five",
+  "and its top five",
+  "and it is top five",
+  "it's top five",
+  "its top five",
+  "it is top five",
+  "any top five",
   "what available",
   "who available",
   "one available",
@@ -563,6 +574,7 @@ const DEDICATED_FULL_SET_ALIASES = [
   "phone chat",
   "pool set",
   "food set",
+  "cool set",
   "fo set",
   "full said",
   "full sit",
@@ -1150,13 +1162,29 @@ const isNegatedStaffAlias = (normalizedText: string, matchIndex: number): boolea
 type StaffPhraseContext = {
   lastAskedSlot?: string;
   activeDtmfMenu?: string;
+  serviceName?: string;
+  confirmedServiceName?: string;
+  requestedDate?: string;
+  requestedTime?: string;
+  staffPreference?: string;
+  confirmedStaffName?: string;
+  staffId?: string;
+  selectedStaffId?: string;
 };
 
 const staffPhraseContextFromAttributes = (
   attributes?: Record<string, unknown>
 ): StaffPhraseContext => ({
   lastAskedSlot: readStringAttribute(attributes, ["lastAskedSlot"]),
-  activeDtmfMenu: readStringAttribute(attributes, ["activeDtmfMenu"])
+  activeDtmfMenu: readStringAttribute(attributes, ["activeDtmfMenu"]),
+  serviceName: readStringAttribute(attributes, ["serviceName"]),
+  confirmedServiceName: readStringAttribute(attributes, ["confirmedServiceName"]),
+  requestedDate: readStringAttribute(attributes, ["requestedDate"]),
+  requestedTime: readStringAttribute(attributes, ["requestedTime"]),
+  staffPreference: readStringAttribute(attributes, ["staffPreference"]),
+  confirmedStaffName: readStringAttribute(attributes, ["confirmedStaffName"]),
+  staffId: readStringAttribute(attributes, ["staffId", "confirmedStaffId"]),
+  selectedStaffId: readStringAttribute(attributes, ["selectedStaffId"])
 });
 
 const hasExplicitStaffContextCue = (
@@ -1196,6 +1224,66 @@ const stripAnyStaffTrailingFiller = (normalizedText: string): string => {
   return stripped;
 };
 
+const isObservedAnyStaffTailAlias = (normalizedText: string): boolean => {
+  const tail = stripAnyStaffTrailingFiller(normalizedText)
+    .replace(/\s+(?:music|background music|noise)$/, "")
+    .trim();
+  if (!tail) {
+    return false;
+  }
+  return [
+    "and it s thirty five",
+    "and its thirty five",
+    "and it is thirty five",
+    "it s thirty five",
+    "its thirty five",
+    "it is thirty five",
+    "and it s top five",
+    "and its top five",
+    "and it is top five",
+    "it s top five",
+    "its top five",
+    "it is top five",
+    "any top five"
+  ].some((alias) => tail === alias || tail.endsWith(` ${alias}`));
+};
+
+const hasInvalidAnyStaffTimeTail = (
+  normalizedText: string,
+  context: StaffPhraseContext = {}
+): boolean =>
+  Boolean(
+    context.lastAskedSlot === "requestedTime" ||
+      /\b(?:3|three)\s*(?::|\s+)35\b/.test(normalizedText) ||
+      /\b(?:five|5)\s+(?:thirty\s+five|35)\b/.test(normalizedText)
+  );
+
+const hasAnyStaffBookingTailContext = (
+  value?: string | null,
+  context: StaffPhraseContext = {}
+): boolean => {
+  const normalized = normalizeForMatch(value);
+  if (!isObservedAnyStaffTailAlias(normalized) || hasInvalidAnyStaffTimeTail(normalized, context)) {
+    return false;
+  }
+  if (context.staffPreference || context.confirmedStaffName || context.staffId || context.selectedStaffId) {
+    return false;
+  }
+  const servicePresent = Boolean(
+    recognizeFullSetFromText(value, context) ||
+      getCustomerFacingServiceName(context.serviceName ?? context.confirmedServiceName)
+  );
+  const datePresent = Boolean(
+    hasGroundedDatePhrase(value) ||
+      (context.requestedDate && /^\d{4}-\d{2}-\d{2}$/.test(context.requestedDate))
+  );
+  const timePresent = Boolean(
+    hasGroundedTimePhrase(value, context) ||
+      (context.requestedTime && parseLocalTimeText(context.requestedTime))
+  );
+  return Boolean(servicePresent && datePresent && timePresent);
+};
+
 const normalizeAnyStaffPhrase = (
   value?: string | null,
   context: StaffPhraseContext = {}
@@ -1215,6 +1303,10 @@ const normalizeAnyStaffPhrase = (
   }
   if (/\bany\s+time\b/.test(normalized)) {
     return undefined;
+  }
+
+  if (hasAnyStaffBookingTailContext(value, context)) {
+    return "Any staff";
   }
 
   if (!isStaffSelectionContext(normalized, context)) {
@@ -1858,6 +1950,7 @@ const normalizeBareRequestedTimeAnswer = (value?: string | null): string => {
     .trim()
     .toLowerCase();
   return normalizeForMatch(normalized)
+    .replace(/\b(\d{1,2})\s+([0-5]\d)\b/g, "$1:$2")
     .replace(/^(?:and\s+)?(?:it\s+is|its|it's)\s+/, "")
     .trim();
 };
@@ -1917,6 +2010,12 @@ const parseLocalTimeText = (
   if (twentyFourHourMatch) {
     const hour = Number(twentyFourHourMatch[1]);
     const minute = Number(twentyFourHourMatch[2]);
+    if (requestedTimeAnswer && hour >= 1 && hour <= 12) {
+      if (hasMorningContext) {
+        return { hour: hour === 12 ? 0 : hour, minute, ambiguous: false };
+      }
+      return { hour: hour >= 1 && hour <= 7 ? hour + 12 : hour, minute, ambiguous: false };
+    }
     return { hour, minute, ambiguous: false };
   }
 
@@ -2038,10 +2137,13 @@ const hasGroundedTimePhrase = (
   value?: string | null,
   context: TimePhraseContext = {}
 ): boolean => {
-  if (!value?.trim() || isDigitOnlyOrSequenceUtterance(value)) {
+  if (!value?.trim()) {
     return false;
   }
   const timeCandidate = extractTimeCandidate(value, context);
+  if (isDigitOnlyOrSequenceUtterance(value) && !timeCandidate) {
+    return false;
+  }
   const parsed = timeCandidate ? parseLocalTimeText(timeCandidate, context) : null;
   return Boolean(parsed && !parsed.ambiguous);
 };
@@ -2062,15 +2164,32 @@ const extractExplicitTime = (
   value: string | undefined,
   context: TimePhraseContext = {}
 ): string | undefined => {
-  if (!value?.trim() || isDigitOnlyOrSequenceUtterance(value)) {
+  if (!value?.trim()) {
     return undefined;
   }
   const timeCandidate = extractTimeCandidate(value, context);
+  if (isDigitOnlyOrSequenceUtterance(value) && !timeCandidate) {
+    return undefined;
+  }
   const parsed = timeCandidate ? parseLocalTimeText(timeCandidate, context) : null;
   if (!parsed || parsed.ambiguous) {
     return undefined;
   }
   return `${String(parsed.hour).padStart(2, "0")}:${String(parsed.minute).padStart(2, "0")}`;
+};
+
+const normalizeRequestedDateForState = (
+  value: string | undefined,
+  timezone = "America/New_York"
+): string | undefined => {
+  if (!value?.trim()) {
+    return undefined;
+  }
+  if (hasGroundedTimePhrase(value, { lastAskedSlot: "requestedTime" }) && !hasGroundedDatePhrase(value)) {
+    return undefined;
+  }
+  const parsed = parseLocalDateText(value, timezone);
+  return parsed?.isValid ? parsed.toFormat("yyyy-MM-dd") : undefined;
 };
 
 const timeCandidateToMinutes = (
@@ -2123,6 +2242,7 @@ const collectLocalTimeCandidates = (
   };
 
   const normalized = normalizeForMatch(raw);
+  const hasHourMinuteExpression = /\b\d{1,2}:\d{2}\b/.test(normalizeHourMinuteTimeExpression(raw));
   const hourPattern = `(?:${SPOKEN_HOUR_PATTERN}|\\d{1,2})`;
   const noisyHourMinute = new RegExp(
     `\\b(${hourPattern})\\s+(${hourPattern})\\s+(${SPOKEN_MINUTE_PATTERN}|\\d{1,2})\\s*(a\\s*m|p\\s*m|am|pm)\\b`,
@@ -2141,7 +2261,8 @@ const collectLocalTimeCandidates = (
   if (
     timeCollectionContext &&
     !/\b(?:a\s*m|p\s*m|am|pm)\b/.test(normalized) &&
-    !/\b\d{1,2}\s*:\s*\d{2}\b/.test(normalized)
+    !/\b\d{1,2}\s*:\s*\d{2}\b/.test(normalized) &&
+    !hasHourMinuteExpression
   ) {
     const bareHourMatch = normalized.match(
       new RegExp(`\\b(?:at\\s+)?(${hourPattern})(?:\\s+(?:o\\s*clock|o'clock|oclock))?\\b`, "i")
@@ -2885,6 +3006,17 @@ const buildAmazonConnectTurnHistoryItem = (input: {
     errorCode: responsePayload.errorCode ?? responseDebug.errorCode ?? null,
     callerSafeResponseText:
       responsePayload.callerSafeResponseText ?? responseDebug.responseMessage ?? null,
+    providerTranscriptTimestamp: turnDiagnostics.providerTranscriptTimestamp ?? null,
+    lambdaReceivedAt: turnDiagnostics.lambdaReceivedAt ?? null,
+    apiStartedAt: turnDiagnostics.apiStartedAt ?? null,
+    apiCompletedAt: turnDiagnostics.apiCompletedAt ?? null,
+    lambdaRespondedAt: turnDiagnostics.lambdaRespondedAt ?? null,
+    lambdaProcessingMs: turnDiagnostics.lambdaProcessingMs ?? null,
+    apiProcessingMs: turnDiagnostics.apiProcessingMs ?? null,
+    connectBranch: turnDiagnostics.connectBranch ?? null,
+    promptText: turnDiagnostics.promptText ?? input.interactionInput.responseText ?? null,
+    promptExpectedToPlay: turnDiagnostics.promptExpectedToPlay ?? true,
+    providerDisconnectedAt: turnDiagnostics.providerDisconnectedAt ?? null,
     isValid: input.interactionInput.isValid,
     transferToQueue:
       sessionAttributesAfter.transferToQueue ?? responsePayload.transferToQueue ?? null,
@@ -3113,6 +3245,135 @@ const findDuplicateAmazonConnectTurn = async (
     }
   });
   return buildDuplicateTurnResponse(existing, matchedTurn);
+};
+
+const buildProviderDisconnectedStaleTurnResponse = async (input: {
+  request: CreateAmazonConnectAIAppointmentInput;
+  normalized: ReturnType<typeof normalizeAmazonConnectAppointmentInput>;
+  salonId: string;
+  actorUserId: string;
+  callSession: {
+    id: string;
+    status: CallSessionStatus;
+    startedAt?: Date | null;
+    endedAt?: Date | null;
+    rawPayload?: unknown;
+  };
+  providerDisconnectedAt: Date;
+  turnTimestamp: Date;
+}) => {
+  const terminalStatuses = new Set<CallSessionStatus>([
+    CallSessionStatus.COMPLETED,
+    CallSessionStatus.MISSED,
+    CallSessionStatus.FAILED,
+    CallSessionStatus.CANCELED,
+    CallSessionStatus.VOICEMAIL
+  ]);
+  if (!terminalStatuses.has(input.callSession.status) || !input.callSession.endedAt) {
+    const durationSeconds = input.callSession.startedAt
+      ? Math.max(
+          0,
+          Math.round((input.providerDisconnectedAt.getTime() - input.callSession.startedAt.getTime()) / 1000)
+        )
+      : undefined;
+    await prisma.callSession.update({
+      where: {
+        id: input.callSession.id
+      },
+      data: {
+        status: CallSessionStatus.COMPLETED,
+        endedAt: input.providerDisconnectedAt,
+        durationSeconds,
+        finalResolution: undefined
+      }
+    });
+  }
+
+  const sessionAttributes = Object.fromEntries(
+    Object.entries({
+      ...recordFromUnknown(input.request.attributes),
+      staleOrDuplicateRejectionReason: "provider_disconnected",
+      providerDisconnectedAt: input.providerDisconnectedAt.toISOString(),
+      rejectedTurnTimestamp: input.turnTimestamp.toISOString(),
+      conversationState: "CONTINUE",
+      conversationOutcome: "NEEDS_INPUT",
+      conversationComplete: "false",
+      forceHumanEscalation: "false",
+      transferToQueue: "false"
+    }).filter(([, value]) => value !== undefined && value !== null && String(value).trim() !== "")
+  ) as Record<string, string>;
+  const message = "I'm still here. Please repeat that detail when you're ready.";
+  const lexResponse = {
+    fulfillmentState: "InProgress",
+    message,
+    messageContentType: "PlainText",
+    dialogAction: {
+      type: "ElicitIntent"
+    },
+    sessionAttributes
+  };
+  const timingDiagnostics = buildAmazonConnectTimingDiagnostics({
+    attributes: recordFromUnknown(input.request.attributes),
+    promptText: message,
+    promptExpectedToPlay: false,
+    providerDisconnectedAt: input.providerDisconnectedAt
+  });
+  const responsePayload = {
+    currentTurnTranscript: input.normalized.currentTurnTranscript ?? input.normalized.transcriptText,
+    aggregatedBookingTranscript: input.normalized.aggregatedBookingTranscript ?? input.normalized.transcriptText,
+    callerSafeResponseText: message,
+    lexResponse,
+    sessionAttributes,
+    turnStateDiagnostics: {
+      ...timingDiagnostics,
+      staleOrDuplicateRejectionReason: "provider_disconnected",
+      duplicateDisposition: "rejected_after_provider_disconnect",
+      providerDisconnectedAt: input.providerDisconnectedAt.toISOString(),
+      rejectedTurnTimestamp: input.turnTimestamp.toISOString(),
+      humanTurnId: input.request.attributes?.humanTurnId,
+      providerTurnId: input.request.attributes?.providerTurnId,
+      providerRequestId: input.request.attributes?.providerRequestId,
+      lexRequestId: input.request.attributes?.lexRequestId,
+      lexPhase: input.request.attributes?.lexPhase
+    }
+  };
+  const aiInteraction = await upsertAmazonConnectBookingAIInteractionLog({
+    salonId: input.salonId,
+    actorUserId: input.actorUserId,
+    callSessionId: input.callSession.id,
+    provider: ExternalProvider.AMAZON_CONNECT,
+    model: env.AMAZON_LEX_BOT_ID ?? "amazon-lex",
+    taskType: AMAZON_CONNECT_BOOKING_TASK,
+    requestText: input.normalized.aggregatedBookingTranscript ?? input.normalized.transcriptText ?? "",
+    requestPayload: input.request,
+    responseText: message,
+    responsePayload,
+    parsedOutput: {
+      outcome: "MISSING_INFO",
+      staleOrDuplicateRejectionReason: "provider_disconnected"
+    },
+    isValid: false,
+    validationErrors: {
+      staleOrDuplicateRejectionReason: "provider_disconnected"
+    },
+    confidence: 0,
+    isSynthetic: isSyntheticAmazonConnectIdentity(input.normalized.contactId)
+  });
+
+  return {
+    outcome: "MISSING_INFO" as const,
+    message,
+    lexResponse,
+    appointment: null,
+    bookingAttempt: null,
+    callSession: input.callSession,
+    transcript: null,
+    aiInteraction,
+    escalation: null,
+    alternatives: [],
+    missingFields: [],
+    salonResolutionSource: "PROVIDER_DISCONNECTED"
+  };
 };
 
 const upsertAmazonConnectBookingAIInteractionLog = async (
@@ -4813,6 +5074,15 @@ const upsertAmazonConnectCallSession = async (input: {
   ]);
   const routingOutcome = input.routingOutcome ?? CallRoutingOutcome.AI_RECEPTION;
   const finalResolution = input.finalResolution ?? "Amazon Connect AI reception in progress.";
+  const readProviderDisconnectedAt = (rawPayload: unknown): Date | null => {
+    const timing = recordFromUnknown(recordFromUnknown(rawPayload).providerTiming);
+    const rawTimestamp = readStringValue(timing.providerDisconnectedAt);
+    const parsed = rawTimestamp ? new Date(rawTimestamp) : null;
+    if (parsed && Number.isFinite(parsed.getTime())) {
+      return parsed;
+    }
+    return null;
+  };
   const existing = await prisma.callSession.findUnique({
     where: {
       provider_providerCallId: {
@@ -4822,8 +5092,17 @@ const upsertAmazonConnectCallSession = async (input: {
     }
   });
   const existingIsTerminal = existing ? terminalCallStatuses.has(existing.status) : false;
+  const existingProviderDisconnectedAt = existing
+    ? readProviderDisconnectedAt(existing.rawPayload)
+    : null;
+  const existingIsProviderDisconnected = Boolean(existingProviderDisconnectedAt);
 
   if (existing) {
+    const endedAt = existingProviderDisconnectedAt ?? existing.endedAt;
+    const durationSeconds =
+      endedAt && existing.startedAt
+        ? Math.max(0, Math.round((endedAt.getTime() - existing.startedAt.getTime()) / 1000))
+        : existing.durationSeconds;
     return prisma.callSession.update({
       where: {
         id: existing.id
@@ -4834,9 +5113,18 @@ const upsertAmazonConnectCallSession = async (input: {
         callerPhone: normalizePhoneForMatching(input.customerPhone) ?? existing.callerPhone,
         trackingNumber: normalizePhoneForMatching(input.amazonConnectPhoneNumber) ?? existing.trackingNumber,
         dialedPhone: normalizePhoneForMatching(input.calledNumber) ?? existing.dialedPhone,
-        status: existingIsTerminal ? existing.status : CallSessionStatus.IN_PROGRESS,
+        status: existingIsTerminal
+          ? existing.status
+          : existingIsProviderDisconnected
+            ? CallSessionStatus.COMPLETED
+            : CallSessionStatus.IN_PROGRESS,
+        endedAt: existingIsProviderDisconnected ? endedAt : undefined,
+        durationSeconds: existingIsProviderDisconnected ? durationSeconds : undefined,
         routingOutcome: existing.routingOutcome ?? routingOutcome,
-        finalResolution: existingIsTerminal ? existing.finalResolution ?? finalResolution : finalResolution
+        finalResolution:
+          existingIsTerminal || existingIsProviderDisconnected
+            ? existing.finalResolution ?? finalResolution
+            : finalResolution
       }
     });
   }
@@ -4858,6 +5146,101 @@ const upsertAmazonConnectCallSession = async (input: {
       finalResolution
     }
   });
+};
+
+const readProviderDisconnectedAtFromCallSession = (
+  callSession?: {
+    rawPayload?: unknown;
+    endedAt?: Date | null;
+  } | null
+): Date | null => {
+  if (!callSession) {
+    return null;
+  }
+  const timing = recordFromUnknown(recordFromUnknown(callSession.rawPayload).providerTiming);
+  const rawTimestamp = readStringValue(timing.providerDisconnectedAt);
+  const parsed = rawTimestamp ? new Date(rawTimestamp) : null;
+  if (parsed && Number.isFinite(parsed.getTime())) {
+    return parsed;
+  }
+  return null;
+};
+
+const readIncomingAmazonConnectTurnTimestamp = (
+  input: CreateAmazonConnectAIAppointmentInput
+): Date => {
+  const attributes = recordFromUnknown(input.attributes);
+  const raw =
+    readStringValue(attributes.turnTimestamp) ||
+    readStringValue(attributes.providerTranscriptTimestamp) ||
+    readStringValue(attributes.lambdaReceivedAt) ||
+    readStringValue(attributes.apiStartedAt) ||
+    readStringValue(attributes.createdAt);
+  const parsed = raw ? new Date(raw) : null;
+  return parsed && Number.isFinite(parsed.getTime()) ? parsed : new Date();
+};
+
+const isPostProviderDisconnectTurn = (
+  input: CreateAmazonConnectAIAppointmentInput,
+  callSession?: {
+    rawPayload?: unknown;
+    endedAt?: Date | null;
+  } | null
+): { stale: boolean; providerDisconnectedAt: Date | null; turnTimestamp: Date } => {
+  const providerDisconnectedAt = readProviderDisconnectedAtFromCallSession(callSession);
+  const turnTimestamp = readIncomingAmazonConnectTurnTimestamp(input);
+  return {
+    stale: Boolean(providerDisconnectedAt && turnTimestamp.getTime() > providerDisconnectedAt.getTime()),
+    providerDisconnectedAt,
+    turnTimestamp
+  };
+};
+
+const buildAmazonConnectTimingDiagnostics = (input: {
+  attributes?: Record<string, unknown>;
+  promptText?: string;
+  promptExpectedToPlay?: boolean;
+  providerDisconnectedAt?: Date | null;
+}) => {
+  const attributes = input.attributes ?? {};
+  const apiCompletedAt = new Date().toISOString();
+  const apiStartedAt = readStringValue(attributes.apiStartedAt);
+  const lambdaReceivedAt = readStringValue(attributes.lambdaReceivedAt);
+  const lambdaRespondedAt = readStringValue(attributes.lambdaRespondedAt);
+  const providerDisconnectedAt =
+    input.providerDisconnectedAt?.toISOString() ||
+    readStringValue(attributes.providerDisconnectedAt);
+  const apiStartedMs = apiStartedAt ? Date.parse(apiStartedAt) : NaN;
+  const apiCompletedMs = Date.parse(apiCompletedAt);
+  const lambdaReceivedMs = lambdaReceivedAt ? Date.parse(lambdaReceivedAt) : NaN;
+  const lambdaRespondedMs = lambdaRespondedAt ? Date.parse(lambdaRespondedAt) : NaN;
+  const providedApiProcessingMs = Number(attributes.apiProcessingMs);
+  const providedLambdaProcessingMs = Number(attributes.lambdaProcessingMs);
+  return {
+    providerTranscriptTimestamp: readStringValue(attributes.providerTranscriptTimestamp) || null,
+    lambdaReceivedAt: lambdaReceivedAt || null,
+    apiStartedAt: apiStartedAt || null,
+    apiCompletedAt,
+    lambdaRespondedAt: lambdaRespondedAt || null,
+    lambdaProcessingMs: Number.isFinite(providedLambdaProcessingMs)
+      ? providedLambdaProcessingMs
+      : Number.isFinite(lambdaReceivedMs) && Number.isFinite(lambdaRespondedMs)
+        ? Math.max(0, lambdaRespondedMs - lambdaReceivedMs)
+        : null,
+    apiProcessingMs: Number.isFinite(providedApiProcessingMs)
+      ? providedApiProcessingMs
+      : Number.isFinite(apiStartedMs) && Number.isFinite(apiCompletedMs)
+        ? Math.max(0, apiCompletedMs - apiStartedMs)
+        : null,
+    connectBranch:
+      readStringValue(attributes.connectBranch) ||
+      readStringValue(attributes.connectRecoveryStage) ||
+      readStringValue(attributes.connectLastErrorBranch) ||
+      null,
+    promptText: input.promptText || null,
+    promptExpectedToPlay: input.promptExpectedToPlay ?? true,
+    providerDisconnectedAt: providerDisconnectedAt || null
+  };
 };
 
 const getSuggestedSlotsForService = async (input: {
@@ -5232,13 +5615,25 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
     (serviceCandidate && !unsafeSunsetServiceSlot && !isClearlyInvalidServiceName(serviceCandidate)
       ? getCustomerFacingServiceName(serviceCandidate)
       : undefined);
-  const previousRequestedDate = readBookingFieldAttribute(attributes, "requestedDate");
+  const previousRequestedDate = normalizeRequestedDateForState(
+    readBookingFieldAttribute(attributes, "requestedDate")
+  );
   const previousRequestedTime = readBookingFieldAttribute(attributes, "requestedTime");
-  const inputRequestedDate =
-    asTrimmedString(input.requestedDate) ?? asTrimmedString(input.preferredDateTime);
+  const inputRequestedDate = normalizeRequestedDateForState(
+    asTrimmedString(input.requestedDate) ?? asTrimmedString(input.preferredDateTime)
+  );
   const inputRequestedTime = asTrimmedString(input.requestedTime);
   const currentTurnHasDate = hasGroundedDatePhrase(transcriptText);
   const currentTurnHasTime = hasGroundedTimePhrase(transcriptText, timePhraseContext);
+  const transcriptRequestedTime = currentTurnHasTime
+    ? extractExplicitTime(transcriptText, timePhraseContext)
+    : undefined;
+  const groundedInputRequestedTime =
+    inputRequestedTime &&
+    transcriptRequestedTime &&
+    localTimesEquivalent(inputRequestedTime, transcriptRequestedTime)
+      ? inputRequestedTime
+      : undefined;
   const shouldRejectUngroundedInputTime =
     Boolean(inputRequestedTime) &&
     currentTurnTranscriptWasProvided &&
@@ -5261,7 +5656,7 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
         ? previousRequestedTime
       : currentTurnIsDigitNoise
           ? previousRequestedTime
-          : inputRequestedTime ?? previousRequestedTime;
+          : groundedInputRequestedTime ?? transcriptRequestedTime ?? inputRequestedTime ?? previousRequestedTime;
   const contactId =
     asTrimmedString(input.amazonConnectContactId) ??
     asTrimmedString(input.contactId) ??
@@ -5796,9 +6191,10 @@ const formatKnownDateForPrompt = (value?: string, timezone = "America/New_York")
   if (!value?.trim()) {
     return undefined;
   }
-  const parsed = parseLocalDateText(value, timezone);
+  const normalizedDate = normalizeRequestedDateForState(value, timezone);
+  const parsed = normalizedDate ? parseLocalDateText(normalizedDate, timezone) : null;
   if (!parsed?.isValid) {
-    return value;
+    return undefined;
   }
   const today = DateTime.now().setZone(timezone).startOf("day");
   if (parsed.hasSame(today, "day")) {
@@ -6564,6 +6960,7 @@ export const createAmazonConnectAIRecoverableFailure = async (
     amazonConnectPhoneNumber: normalized.amazonConnectPhoneNumber,
     calledNumber: normalized.calledNumber
   });
+  normalized.requestedDate = normalizeRequestedDateForState(normalized.requestedDate, salon.timezone);
   const actorUserId = await resolveActionActorUserId(salon.id);
   const activeServiceMenuServices = await getActiveServiceMenuServices(salon.id);
   const servicePromptSessionAttributes = buildServicePromptSessionAttributes(activeServiceMenuServices);
@@ -6622,6 +7019,7 @@ export const createAmazonConnectAIRecoverableFailure = async (
       "requestedDateTimeText",
       "startTimeIso"
     ]) ?? asTrimmedString(activeBookingAttempt?.requestedDateTimeText ?? undefined);
+  normalized.requestedDate = normalizeRequestedDateForState(normalized.requestedDate, salon.timezone);
   normalized.requestedTime ??= readStringAttribute(activeNormalizedRequest, ["requestedTime"]);
   normalized.staffId ??= readStringAttribute(activeNormalizedRequest, ["staffId", "selectedStaffId"]);
   if (normalized.customerName && !isAcceptableCustomerName(normalized.customerName)) {
@@ -6886,6 +7284,18 @@ export const createAmazonConnectAIAppointment = async (
     calledNumber: normalized.calledNumber
   });
   if (callSession) {
+    const staleTurn = isPostProviderDisconnectTurn(input, callSession);
+    if (staleTurn.stale && staleTurn.providerDisconnectedAt) {
+      return buildProviderDisconnectedStaleTurnResponse({
+        request: input,
+        normalized,
+        salonId: salon.id,
+        actorUserId,
+        callSession,
+        providerDisconnectedAt: staleTurn.providerDisconnectedAt,
+        turnTimestamp: staleTurn.turnTimestamp
+      });
+    }
     const duplicateResponse = await findDuplicateAmazonConnectTurn(
       `AMAZON_CONNECT:${AMAZON_CONNECT_BOOKING_TASK}:${callSession.id}`,
       input
@@ -6945,6 +7355,7 @@ export const createAmazonConnectAIAppointment = async (
       "requestedDateTimeText",
       "startTimeIso"
     ]) ?? asTrimmedString(activeBookingAttempt?.requestedDateTimeText ?? undefined);
+  normalized.requestedDate = normalizeRequestedDateForState(normalized.requestedDate, salon.timezone);
   normalized.requestedTime ??= readStringAttribute(activeNormalizedRequest, ["requestedTime"]);
   normalized.staffId ??= readStringAttribute(activeNormalizedRequest, ["staffId", "selectedStaffId"]);
 
@@ -7843,7 +8254,14 @@ export const createAmazonConnectAIAppointment = async (
       !Array.isArray(responseDebugRecord.sanitization)
         ? (responseDebugRecord.sanitization as Record<string, unknown>)
         : undefined;
+    const timingDiagnostics = buildAmazonConnectTimingDiagnostics({
+      attributes: input.attributes,
+      promptText: inputForInteraction.message,
+      promptExpectedToPlay: true,
+      providerDisconnectedAt: readProviderDisconnectedAtFromCallSession(callSession)
+    });
     const turnStateDiagnostics = {
+      ...timingDiagnostics,
       humanTurnId: input.attributes?.humanTurnId,
       providerTurnId: input.attributes?.providerTurnId,
       providerRequestId: input.attributes?.providerRequestId,
@@ -12063,6 +12481,17 @@ export const buildAdminDebugTimelineItems = (
       slotToElicit: turn.slotToElicit,
       missingFields: turn.missingFields,
       promptMissingFields: turn.promptMissingFields,
+      providerTranscriptTimestamp: turn.providerTranscriptTimestamp,
+      lambdaReceivedAt: turn.lambdaReceivedAt,
+      apiStartedAt: turn.apiStartedAt,
+      apiCompletedAt: turn.apiCompletedAt,
+      lambdaRespondedAt: turn.lambdaRespondedAt,
+      lambdaProcessingMs: turn.lambdaProcessingMs,
+      apiProcessingMs: turn.apiProcessingMs,
+      connectBranch: turn.connectBranch,
+      promptText: turn.promptText,
+      promptExpectedToPlay: turn.promptExpectedToPlay,
+      providerDisconnectedAt: turn.providerDisconnectedAt,
       transferToQueue: turn.transferToQueue,
       forceHumanEscalation: turn.forceHumanEscalation,
       fallbackCount: turn.fallbackCount,

@@ -331,6 +331,17 @@ const buildHeavyAiInteraction = () => {
           transferToQueue: "false",
           outerRecoveryAttempt: "true",
           connectRecoveryStage: "initial_lex_error",
+          providerTranscriptTimestamp: "2026-07-13T10:30:00.100Z",
+          lambdaReceivedAt: "2026-07-13T10:30:00.180Z",
+          apiStartedAt: "2026-07-13T10:30:00.220Z",
+          apiCompletedAt: "2026-07-13T10:30:00.340Z",
+          lambdaRespondedAt: "2026-07-13T10:30:00.360Z",
+          lambdaProcessingMs: 180,
+          apiProcessingMs: 120,
+          connectBranch: "retry_after_initial_error",
+          promptText: "What time works?",
+          promptExpectedToPlay: true,
+          providerDisconnectedAt: "2026-07-13T10:31:00.000Z",
           asrDiagnostics: {
             topTranscript: "fifty kill",
             nBestAlternatives: [
@@ -1186,6 +1197,17 @@ test("gpt export omits heavy payloads, dedupes adjacent transcripts, and stays s
   assert.equal(record.turnHistories.length, 15);
   assert.equal(record.turnHistories[0].sessionAttributesBefore, undefined);
   assert.equal(record.turnHistories[0].sessionAttributesAfter, undefined);
+  assert.equal(record.turnHistories[0].latencyMetrics.providerTranscriptTimestamp, "2026-07-13T10:30:00.100Z");
+  assert.equal(record.turnHistories[0].latencyMetrics.lambdaReceivedAt, "2026-07-13T10:30:00.180Z");
+  assert.equal(record.turnHistories[0].latencyMetrics.apiStartedAt, "2026-07-13T10:30:00.220Z");
+  assert.equal(record.turnHistories[0].latencyMetrics.apiCompletedAt, "2026-07-13T10:30:00.340Z");
+  assert.equal(record.turnHistories[0].latencyMetrics.lambdaRespondedAt, "2026-07-13T10:30:00.360Z");
+  assert.equal(record.turnHistories[0].latencyMetrics.lambdaProcessingMs, 180);
+  assert.equal(record.turnHistories[0].latencyMetrics.apiProcessingMs, 120);
+  assert.equal(record.turnHistories[0].latencyMetrics.connectBranch, "retry_after_initial_error");
+  assert.equal(record.turnHistories[0].latencyMetrics.promptText, "What time works?");
+  assert.equal(record.turnHistories[0].latencyMetrics.promptExpectedToPlay, true);
+  assert.equal(record.turnHistories[0].latencyMetrics.providerDisconnectedAt, "2026-07-13T10:31:00.000Z");
   assert.equal(record.bookingAttempts[0].rawInput, undefined);
   assert.equal(record.bookingAttempts[0].appointment.appointmentServices, undefined);
   assert.doesNotMatch(serialized, /requestPayload|responsePayload|sessionAttributesBefore|sessionAttributesAfter|rawInput|lexTurnDebug|sourceMetadata/);

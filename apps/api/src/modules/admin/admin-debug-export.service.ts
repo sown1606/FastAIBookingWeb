@@ -1418,6 +1418,17 @@ const normalizeTurnForGpt = (turn: Record<string, unknown>) => {
       readRecord(turn.sessionAttributesAfter).asrDiagnostics
   );
   const latencyMetrics = {
+    providerTranscriptTimestamp: turn.providerTranscriptTimestamp ?? diagnostics.providerTranscriptTimestamp,
+    lambdaReceivedAt: turn.lambdaReceivedAt ?? diagnostics.lambdaReceivedAt,
+    apiStartedAt: turn.apiStartedAt ?? diagnostics.apiStartedAt,
+    apiCompletedAt: turn.apiCompletedAt ?? diagnostics.apiCompletedAt,
+    lambdaRespondedAt: turn.lambdaRespondedAt ?? diagnostics.lambdaRespondedAt,
+    lambdaProcessingMs: turn.lambdaProcessingMs ?? diagnostics.lambdaProcessingMs,
+    apiProcessingMs: turn.apiProcessingMs ?? diagnostics.apiProcessingMs,
+    connectBranch: turn.connectBranch ?? diagnostics.connectBranch,
+    promptText: turn.promptText ?? diagnostics.promptText,
+    promptExpectedToPlay: turn.promptExpectedToPlay ?? diagnostics.promptExpectedToPlay,
+    providerDisconnectedAt: turn.providerDisconnectedAt ?? diagnostics.providerDisconnectedAt,
     providerContactInitiatedAt: diagnostics.providerContactInitiatedAt,
     providerInputStartedAt: diagnostics.providerInputStartedAt,
     providerInputEndedAt: diagnostics.providerInputEndedAt,

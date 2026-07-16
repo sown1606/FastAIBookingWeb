@@ -1,0 +1,13 @@
+{
+    "ContactFlow": {
+        "Arn": "arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/contact-flow/6bdf546e-4e3a-4bf5-954f-fb78fa6a3d5b",
+        "Id": "6bdf546e-4e3a-4bf5-954f-fb78fa6a3d5b",
+        "Name": "Default customer queue",
+        "Type": "CUSTOMER_QUEUE",
+        "State": "ACTIVE",
+        "Status": "PUBLISHED",
+        "Description": "Default audio played when a customer is waiting in queue.",
+        "Content": "{\"Version\":\"2019-10-30\",\"StartAction\":\"098007b7-e257-4b7c-9c3c-741d4680517d\",\"Metadata\":{\"entryPointPosition\":{\"x\":243,\"y\":172},\"snapToGrid\":false,\"ActionMetadata\":{\"098007b7-e257-4b7c-9c3c-741d4680517d\":{\"position\":{\"x\":433,\"y\":236},\"audio\":[{\"type\":\"Text\",\"tts\":\"Thank you for calling. Your call is very important to us and will be answered in the order it was received.\",\"$$hashKey\":\"02A\"},{\"type\":\"Prompt\",\"prompt\":{\"id\":\"arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/prompt/d298b273-621e-4503-9038-e6ac432b299f\",\"text\":\"Music_Pop_ThisAndThatIsLife_Inst.wav\"},\"$$hashKey\":\"02B\"}],\"timeoutUnit\":{\"display\":\"Minutes\",\"value\":\"min\"}}}},\"Actions\":[{\"Identifier\":\"098007b7-e257-4b7c-9c3c-741d4680517d\",\"Parameters\":{\"Messages\":[{\"Text\":\"Thank you for calling. Your call is very important to us and will be answered in the order it was received.\"},{\"PromptId\":\"arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/prompt/d298b273-621e-4503-9038-e6ac432b299f\"}]},\"Transitions\":{\"Errors\":[],\"Conditions\":[]},\"Type\":\"MessageParticipantIteratively\"}]}",
+        "Tags": {}
+    }
+}

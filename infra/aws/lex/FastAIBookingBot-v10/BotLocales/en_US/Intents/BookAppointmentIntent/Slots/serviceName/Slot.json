@@ -97,9 +97,9 @@
             "allowDTMFInput": true
           },
           "audioAndDTMFInputSpecification": {
-            "startTimeoutMs": 7000,
+            "startTimeoutMs": 8000,
             "audioSpecification": {
-              "endTimeoutMs": 2200,
+              "endTimeoutMs": 1800,
               "maxLengthMs": 20000
             },
             "dtmfSpecification": {
@@ -120,9 +120,9 @@
             "allowDTMFInput": true
           },
           "audioAndDTMFInputSpecification": {
-            "startTimeoutMs": 7000,
+            "startTimeoutMs": 8000,
             "audioSpecification": {
-              "endTimeoutMs": 2200,
+              "endTimeoutMs": 1800,
               "maxLengthMs": 20000
             },
             "dtmfSpecification": {
@@ -143,9 +143,9 @@
             "allowDTMFInput": true
           },
           "audioAndDTMFInputSpecification": {
-            "startTimeoutMs": 7000,
+            "startTimeoutMs": 8000,
             "audioSpecification": {
-              "endTimeoutMs": 2200,
+              "endTimeoutMs": 1800,
               "maxLengthMs": 20000
             },
             "dtmfSpecification": {
