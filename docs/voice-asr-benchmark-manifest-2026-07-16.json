@@ -1,0 +1,48 @@
+{
+  "createdAt": "2026-07-16",
+  "purpose": "FastAIBooking Amazon Connect/Lex telephony ASR benchmark",
+  "status": "blocked",
+  "blockedReason": "The Connect instance advertises S3 call recording storage, but the configured bucket was not accessible with the current AWS profile; MEDIA_STREAMS is not configured; Contact Lens real-time analysis was not found for the incident contacts. No approved 30-sample 8 kHz audio corpus is available to this repository run.",
+  "privacy": {
+    "rawAudioCommitted": false,
+    "customerPhoneNumbersCommitted": false,
+    "notes": "Add only approved redacted audio URIs outside Git. Do not commit raw production recordings."
+  },
+  "awsEvidence": {
+    "connectInstanceId": "74f78377-766f-46b7-a745-4bc97b68a8dc",
+    "callRecordingStorageAdvertised": true,
+    "mediaStreamsConfigured": false,
+    "contactLensRealtimeSegmentsAvailableForIncidentContacts": false,
+    "defaultConnectVocabularyConfigured": false
+  },
+  "modelsRequested": [
+    "current-production",
+    "standard",
+    "neural",
+    "deepgram-if-existing-authorized-key-present"
+  ],
+  "requiredPositivePhrases": [
+    "Full Set today at 3 PM with Amy",
+    "Full Set... today at 3 PM... with Amy",
+    "Full Set today at 3 PM, any staff is fine",
+    "I need a Full Set",
+    "first available",
+    "any staff",
+    "Amy",
+    "three PM"
+  ],
+  "requiredNegativePhrases": [
+    "The sunset is beautiful",
+    "Fun facts are interesting",
+    "Food set",
+    "Phone chat",
+    "unrelated conversational speech"
+  ],
+  "incidentContactsForCorrelation": [
+    "36c1bc97-986d-4216-b686-8fd76e781515",
+    "f227bf10-0791-4126-940d-7700a7df5dd3",
+    "d8f9925b-15f8-4c3c-9f17-dff4c7c9653c",
+    "b8053aea-eb4f-4b68-a1b6-e8657b76f735"
+  ],
+  "samples": []
+}

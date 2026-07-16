@@ -280,14 +280,6 @@ const SERVICE_ALIASES: Record<string, string[]> = {
     "false set",
     "fall set",
     "four set",
-    "phone set",
-    "phone chat",
-    "cool set",
-    "room set",
-    "pull set",
-    "pull step",
-    "pool set",
-    "food set",
     "fool set",
     "foot set",
     "boom set",
@@ -303,9 +295,6 @@ const SERVICE_ALIASES: Record<string, string[]> = {
     "full sad",
     "full cet",
     "full send",
-    "fo set",
-    "so we'll set",
-    "we'll set",
     "fuel set",
     "fake nails",
     "extension nails",
@@ -452,34 +441,15 @@ const ANY_STAFF_PHRASES = new Set([
   "who is available"
 ]);
 const CONTEXTUAL_ANY_STAFF_PHRASES = new Set([
-  "annie stop",
-  "anny stop",
-  "any stop",
-  "anystop",
-  "any stop if i",
-  "any stuff",
-  "and it's thirty five",
-  "and its thirty five",
-  "and it is thirty five",
-  "and it's top five",
-  "and its top five",
-  "and it is top five",
-  "it's top five",
-  "its top five",
-  "it is top five",
-  "any top five",
   "what available",
   "who available",
   "one available",
   "which available",
-  "any stuff is fine",
   "and the staff is fine",
   "and the staff",
   "and staff is fine",
   "and staff",
   "staff is fine",
-  "any star",
-  "any star is fine",
   "available"
 ]);
 const OPERATOR_TRANSFER_PROMPT = "Let me check for an available operator.";
@@ -569,23 +539,7 @@ const compactForMatch = (value?: string | null): string => normalizeForMatch(val
 const DEDICATED_FULL_SET_ALIASES = [
   "full set",
   "fullset",
-  "full-set",
-  "phone set",
-  "phone chat",
-  "pool set",
-  "food set",
-  "cool set",
-  "fo set",
-  "full said",
-  "full sit",
-  "full sat",
-  "full sell",
-  "full sad",
-  "full cet",
-  "so we'll set",
-  "we'll set",
-  "pull set",
-  "fool set"
+  "full-set"
 ];
 const LOW_CONFIDENCE_FULL_SET_ALIAS_COMPACTS = new Set(
   DEDICATED_FULL_SET_ALIASES
@@ -1224,66 +1178,6 @@ const stripAnyStaffTrailingFiller = (normalizedText: string): string => {
   return stripped;
 };
 
-const isObservedAnyStaffTailAlias = (normalizedText: string): boolean => {
-  const tail = stripAnyStaffTrailingFiller(normalizedText)
-    .replace(/\s+(?:music|background music|noise)$/, "")
-    .trim();
-  if (!tail) {
-    return false;
-  }
-  return [
-    "and it s thirty five",
-    "and its thirty five",
-    "and it is thirty five",
-    "it s thirty five",
-    "its thirty five",
-    "it is thirty five",
-    "and it s top five",
-    "and its top five",
-    "and it is top five",
-    "it s top five",
-    "its top five",
-    "it is top five",
-    "any top five"
-  ].some((alias) => tail === alias || tail.endsWith(` ${alias}`));
-};
-
-const hasInvalidAnyStaffTimeTail = (
-  normalizedText: string,
-  context: StaffPhraseContext = {}
-): boolean =>
-  Boolean(
-    context.lastAskedSlot === "requestedTime" ||
-      /\b(?:3|three)\s*(?::|\s+)35\b/.test(normalizedText) ||
-      /\b(?:five|5)\s+(?:thirty\s+five|35)\b/.test(normalizedText)
-  );
-
-const hasAnyStaffBookingTailContext = (
-  value?: string | null,
-  context: StaffPhraseContext = {}
-): boolean => {
-  const normalized = normalizeForMatch(value);
-  if (!isObservedAnyStaffTailAlias(normalized) || hasInvalidAnyStaffTimeTail(normalized, context)) {
-    return false;
-  }
-  if (context.staffPreference || context.confirmedStaffName || context.staffId || context.selectedStaffId) {
-    return false;
-  }
-  const servicePresent = Boolean(
-    recognizeFullSetFromText(value, context) ||
-      getCustomerFacingServiceName(context.serviceName ?? context.confirmedServiceName)
-  );
-  const datePresent = Boolean(
-    hasGroundedDatePhrase(value) ||
-      (context.requestedDate && /^\d{4}-\d{2}-\d{2}$/.test(context.requestedDate))
-  );
-  const timePresent = Boolean(
-    hasGroundedTimePhrase(value, context) ||
-      (context.requestedTime && parseLocalTimeText(context.requestedTime))
-  );
-  return Boolean(servicePresent && datePresent && timePresent);
-};
-
 const normalizeAnyStaffPhrase = (
   value?: string | null,
   context: StaffPhraseContext = {}
@@ -1303,10 +1197,6 @@ const normalizeAnyStaffPhrase = (
   }
   if (/\bany\s+time\b/.test(normalized)) {
     return undefined;
-  }
-
-  if (hasAnyStaffBookingTailContext(value, context)) {
-    return "Any staff";
   }
 
   if (!isStaffSelectionContext(normalized, context)) {
@@ -3987,11 +3877,7 @@ const applyGuardedObservedServiceAsrCorrection = async (
       ? serviceName
       : undefined;
   }
-  const requestedCanonical = /\bfun\s+facts?\b/.test(normalizedHeard)
-    ? "full set"
-    : /\bpay\s+the\s+bill\b/.test(normalizedHeard)
-      ? "pedicure"
-      : "";
+  const requestedCanonical = /\bpay\s+the\s+bill\b/.test(normalizedHeard) ? "pedicure" : "";
   if (!requestedCanonical) {
     return serviceName;
   }
@@ -4111,7 +3997,7 @@ const findServiceMentionInText = async (
 
 const parseAsrAlternativeDiagnostics = (
   attributes: Record<string, unknown> | undefined
-): Array<{ transcript: string; confidence?: number }> => {
+): Array<{ transcript: string; confidence?: number; transcriptionConfidence?: number; nluConfidence?: number; source?: string }> => {
   const raw =
     attributes?.asrNBestAlternatives ??
     attributes?.nBestAlternatives ??
@@ -4123,8 +4009,10 @@ const parseAsrAlternativeDiagnostics = (
     const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
     const alternatives = Array.isArray(parsed)
       ? parsed
-      : parsed && typeof parsed === "object" && Array.isArray((parsed as { nBestAlternatives?: unknown }).nBestAlternatives)
-        ? (parsed as { nBestAlternatives: unknown[] }).nBestAlternatives
+      : parsed && typeof parsed === "object" && Array.isArray((parsed as { alternativeTranscripts?: unknown }).alternativeTranscripts)
+        ? (parsed as { alternativeTranscripts: unknown[] }).alternativeTranscripts
+        : parsed && typeof parsed === "object" && Array.isArray((parsed as { nBestAlternatives?: unknown }).nBestAlternatives)
+          ? (parsed as { nBestAlternatives: unknown[] }).nBestAlternatives
         : [];
     return alternatives
       .map((item) => {
@@ -4144,19 +4032,29 @@ const parseAsrAlternativeDiagnostics = (
         if (!transcript) {
           return null;
         }
-        const confidenceValue = record.confidence ?? record.score;
-        const confidence =
-          typeof confidenceValue === "number"
-            ? confidenceValue
-            : typeof confidenceValue === "string" && confidenceValue.trim()
-              ? Number(confidenceValue)
+        const transcriptionConfidenceValue = record.transcriptionConfidence;
+        const transcriptionConfidence =
+          typeof transcriptionConfidenceValue === "number"
+            ? transcriptionConfidenceValue
+            : typeof transcriptionConfidenceValue === "string" && transcriptionConfidenceValue.trim()
+              ? Number(transcriptionConfidenceValue)
+              : undefined;
+        const nluConfidenceValue = record.nluConfidence;
+        const nluConfidence =
+          typeof nluConfidenceValue === "number"
+            ? nluConfidenceValue
+            : typeof nluConfidenceValue === "string" && nluConfidenceValue.trim()
+              ? Number(nluConfidenceValue)
               : undefined;
         return {
           transcript,
-          confidence: Number.isFinite(confidence) ? confidence : undefined
+          confidence: Number.isFinite(transcriptionConfidence) ? transcriptionConfidence : undefined,
+          transcriptionConfidence: Number.isFinite(transcriptionConfidence) ? transcriptionConfidence : undefined,
+          nluConfidence: Number.isFinite(nluConfidence) ? nluConfidence : undefined,
+          source: typeof record.source === "string" ? record.source : undefined
         };
       })
-      .filter((item): item is { transcript: string; confidence?: number } => Boolean(item))
+      .filter((item): item is { transcript: string; confidence?: number; transcriptionConfidence?: number; nluConfidence?: number; source?: string } => Boolean(item))
       .slice(0, 5);
   } catch {
     return [];
@@ -4188,7 +4086,12 @@ const hasScopedFullSetPhoneticCandidate = (value?: string | null): boolean => {
   if (!normalized || hasUnsafeSunsetWithoutExplicitFullSetAlias(value)) {
     return false;
   }
-  return /\bwho\s+said\b/.test(normalized) || /\btime\s+to\s+fight\b/.test(normalized);
+  return Boolean(
+    /\bwho\s+said\b/.test(normalized) ||
+      /\btime\s+to\s+fight\b/.test(normalized) ||
+      /\bfun\s+facts?\b/.test(normalized) ||
+      /\b(?:phone\s+set|phone\s+chat|food\s+set|pool\s+set|cool\s+set)\b/.test(normalized)
+  );
 };
 
 const findProposedFullSetServiceClarification = (input: {
@@ -4253,7 +4156,35 @@ const isAmbiguousFirstAvailableStaffCandidate = (
   if (!normalized || getActiveVoiceSlot(attributes) !== "staffPreference") {
     return false;
   }
-  return /\b(?:and\s+)?(?:it\s+s|its|it\s+is|it)?\s*stopp?ed\s+at\s+(?:five|5)\b/.test(normalized);
+  const tail = stripAnyStaffTrailingFiller(normalized)
+    .replace(/\s+(?:music|background music|noise)$/, "")
+    .trim();
+  return Boolean(
+    /\b(?:and\s+)?(?:it\s+s|its|it\s+is|it)?\s*stopp?ed\s+at\s+(?:five|5)\b/.test(tail) ||
+      [
+        "annie stop",
+        "anny stop",
+        "any stop",
+        "anystop",
+        "any stop if i",
+        "any stuff",
+        "any star",
+        "any star is fine",
+        "and it s thirty five",
+        "and its thirty five",
+        "and it is thirty five",
+        "it s thirty five",
+        "its thirty five",
+        "it is thirty five",
+        "and it s top five",
+        "and its top five",
+        "and it is top five",
+        "it s top five",
+        "its top five",
+        "it is top five",
+        "any top five"
+      ].some((alias) => tail === alias || tail.endsWith(` ${alias}`))
+  );
 };
 
 const findProposedAnyStaffClarification = (input: {
@@ -4266,7 +4197,7 @@ const findProposedAnyStaffClarification = (input: {
   attributes?: Record<string, unknown>;
 }): {
   proposedStaffPreference: "Any staff";
-  reason: "asr_alternative_first_available";
+  reason: "asr_alternative_first_available" | "ambiguous_first_available_asr";
   asrAlternativesUsed: boolean;
   matchedTranscript: string;
 } | null => {
@@ -4289,6 +4220,14 @@ const findProposedAnyStaffClarification = (input: {
   };
   if (normalizeAnyStaffPhrase(topTranscript, staffContext)) {
     return null;
+  }
+  if (isAmbiguousFirstAvailableStaffCandidate(topTranscript, input.attributes)) {
+    return {
+      proposedStaffPreference: "Any staff",
+      reason: "ambiguous_first_available_asr",
+      asrAlternativesUsed: getAsrDecisionTranscripts(topTranscript, input.attributes).length > 1,
+      matchedTranscript: topTranscript
+    };
   }
   const alternativeMatch = getAsrDecisionTranscripts(topTranscript, input.attributes).find(
     (candidate) =>
@@ -6918,6 +6857,7 @@ const buildLexMessage = (input: {
   unmatchedStaffPreference?: boolean;
   repeatedKnownFieldWhileAskingName?: boolean;
   partialBookingFragment?: boolean;
+  hasCurrentTurnTranscript?: boolean;
 }): string => {
   if (input.outcome === "BOOKED") {
     const appointmentTime = input.appointmentStartTime
@@ -7046,7 +6986,8 @@ const buildLexMessage = (input: {
           `${knownCallerIntro}I have that down ${escapeSsml(retainedDetails)}. <break time="300ms"/> ${servicePrompt}`
         );
       }
-      const shouldUseKnownCallerGreeting = !isRetry && !input.collectingServiceName;
+      const shouldUseKnownCallerGreeting =
+        !isRetry && !input.collectingServiceName && !input.hasCurrentTurnTranscript;
       return speak(
         knownCallerIntro && shouldUseKnownCallerGreeting
           ? `${knownCallerIntro}How may I help you today?`
@@ -10103,6 +10044,7 @@ export const createAmazonConnectAIAppointment = async (
       partialBookingFragment: isPartialBookingFragment(
         normalized.currentTurnTranscript ?? normalized.transcriptText
       ),
+      hasCurrentTurnTranscript: Boolean(normalized.currentTurnTranscript?.trim()),
       repeatedKnownFieldWhileAskingName:
         elicitDecision.slotToElicit === "customerName" &&
         readStringAttribute(normalized.attributes, ["lastAskedSlot"]) === "customerName" &&

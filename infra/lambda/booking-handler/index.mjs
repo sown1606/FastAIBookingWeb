@@ -247,34 +247,15 @@ const ANY_STAFF_ALIASES = [
   "someone available"
 ];
 const CONTEXTUAL_ANY_STAFF_ALIASES = [
-  "annie stop",
-  "anny stop",
-  "any stop",
-  "anystop",
-  "any stop if i",
-  "any stuff",
-  "and it's thirty five",
-  "and its thirty five",
-  "and it is thirty five",
-  "and it's top five",
-  "and its top five",
-  "and it is top five",
-  "it's top five",
-  "its top five",
-  "it is top five",
-  "any top five",
   "what available",
   "who available",
   "one available",
   "which available",
-  "any stuff is fine",
   "and the staff is fine",
   "and the staff",
   "and staff is fine",
   "and staff",
   "staff is fine",
-  "any star",
-  "any star is fine",
   "available"
 ];
 const ANY_STAFF_TRAILING_FILLER_PATTERN =
@@ -345,14 +326,6 @@ const SERVICE_ALIAS_GROUPS = {
     "false set",
     "fall set",
     "four set",
-    "phone set",
-    "phone chat",
-    "cool set",
-    "room set",
-    "pull set",
-    "pull step",
-    "pool set",
-    "food set",
     "fool set",
     "foot set",
     "boom set",
@@ -368,9 +341,6 @@ const SERVICE_ALIAS_GROUPS = {
     "full sad",
     "full cet",
     "full send",
-    "fo set",
-    "so we'll set",
-    "we'll set",
     "fuel set",
     "fake nails",
     "extension nails",
@@ -403,23 +373,7 @@ const SERVICE_ALIASES = Object.values(SERVICE_ALIAS_GROUPS).flat();
 const DEDICATED_FULL_SET_ALIASES = [
   "full set",
   "fullset",
-  "full-set",
-  "phone set",
-  "phone chat",
-  "pool set",
-  "food set",
-  "cool set",
-  "fo set",
-  "full said",
-  "full sit",
-  "full sat",
-  "full sell",
-  "full sad",
-  "full cet",
-  "so we'll set",
-  "we'll set",
-  "pull set",
-  "fool set"
+  "full-set"
 ];
 const LOW_CONFIDENCE_FULL_SET_ALIASES = new Set(
   DEDICATED_FULL_SET_ALIASES
@@ -722,10 +676,6 @@ function isPrincessFullSetAsr(value) {
   return /\bprincess\b/.test(normalizeForMatch(value));
 }
 
-function isFunFactsFullSetAsr(value) {
-  return /\bfun\s+facts?\b/.test(normalizeForMatch(value));
-}
-
 function isObservedSunsetFullSetAsr(value) {
   return /\bsun\s*set\b/.test(normalizeForMatch(value));
 }
@@ -813,9 +763,6 @@ function currentTurnServiceMention(event) {
     return fullSet;
   }
   if (isServiceCollectionContext(event)) {
-    if (isFunFactsFullSetAsr(transcript)) {
-      return "Full Set";
-    }
     if (getScopedServiceAliasCorrectionRaw(event)) {
       return "Full Set";
     }
@@ -907,63 +854,6 @@ function stripAnyStaffTrailingFiller(normalizedText) {
   return stripped;
 }
 
-function isObservedAnyStaffTailAlias(normalizedText) {
-  const tail = stripAnyStaffTrailingFiller(normalizedText)
-    .replace(/\s+(?:music|background music|noise)$/, "")
-    .trim();
-  if (!tail) {
-    return false;
-  }
-  return [
-    "and it s thirty five",
-    "and its thirty five",
-    "and it is thirty five",
-    "it s thirty five",
-    "its thirty five",
-    "it is thirty five",
-    "and it s top five",
-    "and its top five",
-    "and it is top five",
-    "it s top five",
-    "its top five",
-    "it is top five",
-    "any top five"
-  ].some((alias) => tail === alias || tail.endsWith(` ${alias}`));
-}
-
-function hasInvalidAnyStaffTimeTail(normalizedText, context = {}) {
-  return Boolean(
-    context?.lastAskedSlot === "requestedTime" ||
-      /\b(?:3|three)\s*(?::|\s+)35\b/.test(normalizedText) ||
-      /\b(?:five|5)\s+(?:thirty\s+five|35)\b/.test(normalizedText)
-  );
-}
-
-function hasAnyStaffBookingTailContext(text, context = {}) {
-  const normalized = normalizeForMatch(text);
-  if (!isObservedAnyStaffTailAlias(normalized) || hasInvalidAnyStaffTimeTail(normalized, context)) {
-    return false;
-  }
-  if (context.staffPreference || context.confirmedStaffName || context.staffId || context.selectedStaffId) {
-    return false;
-  }
-  const timeZone = context.timeZone || context.timezone || DEFAULT_SALON_TIMEZONE;
-  const servicePresent = Boolean(
-    extractServiceFromTranscript(text, context) ||
-      context.serviceName ||
-      context.confirmedServiceName
-  );
-  const datePresent = Boolean(
-    getPreferredDateCandidate(text) ||
-      (context.requestedDate && /^\d{4}-\d{2}-\d{2}$/.test(resolveKnownDateValue(context.requestedDate, timeZone)))
-  );
-  const timePresent = Boolean(
-    hasCurrentTurnTimePhrase(text, context) ||
-      normalizeTimePhrase(context.requestedTime || "", "", { lastAskedSlot: "requestedTime" })
-  );
-  return Boolean(servicePresent && datePresent && timePresent);
-}
-
 function normalizeAnyStaffPhrase(text, context = {}) {
   const normalized = normalizeForMatch(text);
   if (!normalized) {
@@ -979,10 +869,6 @@ function normalizeAnyStaffPhrase(text, context = {}) {
   }
   if (/\bany\s+time\b/.test(normalized)) {
     return "";
-  }
-
-  if (hasAnyStaffBookingTailContext(text, context)) {
-    return "Any staff";
   }
 
   const staffContext = isStaffSelectionContext(normalized, context);
@@ -6030,6 +5916,53 @@ function getInputMode(event) {
   return event.inputMode || (readDtmfDigit(event.inputTranscript) ? "DTMF" : "Speech");
 }
 
+function numberFromLexMetric(value) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function getTopNluConfidence(event) {
+  for (const interpretation of event.interpretations || []) {
+    const confidence = numberFromLexMetric(
+      interpretation?.nluConfidence?.score ??
+        interpretation?.intent?.nluConfidence?.score ??
+        interpretation?.intentConfidence
+    );
+    if (confidence !== undefined) {
+      return confidence;
+    }
+  }
+  return undefined;
+}
+
+function buildAudioTimeoutProfile(sessionAttributes = {}) {
+  return Object.fromEntries(
+    Object.entries(sessionAttributes)
+      .filter(([key]) => key.startsWith("x-amz-lex:audio:"))
+      .sort(([left], [right]) => left.localeCompare(right))
+  );
+}
+
+function buildLexEventShapeDiagnostic(event) {
+  const sessionAttributes = event.sessionState?.sessionAttributes || {};
+  return {
+    hasInputTranscript: typeof event.inputTranscript === "string" && event.inputTranscript.length > 0,
+    transcriptionsCount: Array.isArray(event.transcriptions) ? event.transcriptions.length : 0,
+    interpretationsCount: Array.isArray(event.interpretations) ? event.interpretations.length : 0,
+    hasRequestAttributes: Boolean(event.requestAttributes && Object.keys(event.requestAttributes).length),
+    hasRuntimeHints: Boolean(event.sessionState?.runtimeHints),
+    hasSessionAttributes: Boolean(Object.keys(sessionAttributes).length),
+    hasIntent: Boolean(event.sessionState?.intent?.name),
+    invocationSource: event.invocationSource || ""
+  };
+}
+
 function getProviderRequestId(event) {
   const sessionAttributes = event.sessionState?.sessionAttributes || {};
   const requestAttributes = event.requestAttributes || {};
@@ -6079,8 +6012,10 @@ function getProviderTurnId(event) {
 }
 
 function getAsrDiagnostics(event) {
-  const alternatives = [];
-  const addAlternative = (candidate) => {
+  const sessionAttributes = event.sessionState?.sessionAttributes || {};
+  const transcriptionAlternatives = [];
+  const interpretationAlternatives = [];
+  const addAlternative = (target, candidate, source) => {
     if (!candidate || typeof candidate !== "object") {
       return;
     }
@@ -6094,38 +6029,44 @@ function getAsrDiagnostics(event) {
     if (!transcript) {
       return;
     }
-    const rawConfidence =
-      candidate.confidence ??
-      candidate.transcriptionConfidence ??
-      candidate.nluConfidence?.score ??
-      candidate.score;
-    const confidence =
-      typeof rawConfidence === "number"
-        ? rawConfidence
-        : typeof rawConfidence === "string" && rawConfidence.trim()
-          ? Number(rawConfidence)
-          : undefined;
-    alternatives.push({
+    const transcriptionConfidence =
+      source === "event.transcriptions"
+        ? numberFromLexMetric(candidate.transcriptionConfidence)
+        : undefined;
+    const nluConfidence =
+      source === "interpretations"
+        ? numberFromLexMetric(candidate.nluConfidence?.score ?? candidate.intent?.nluConfidence?.score ?? candidate.intentConfidence)
+        : undefined;
+    target.push({
       transcript,
-      ...(Number.isFinite(confidence) ? { confidence } : {})
+      source,
+      ...(transcriptionConfidence !== undefined ? { transcriptionConfidence } : {}),
+      ...(nluConfidence !== undefined ? { nluConfidence } : {})
     });
   };
 
   for (const transcription of event.transcriptions || []) {
-    addAlternative(transcription);
+    addAlternative(transcriptionAlternatives, transcription, "event.transcriptions");
   }
   for (const interpretation of event.interpretations || []) {
-    addAlternative({
+    addAlternative(interpretationAlternatives, {
       transcription: interpretation?.transcription || interpretation?.inputTranscript,
-      confidence:
-        interpretation?.nluConfidence?.score ??
-        interpretation?.intent?.nluConfidence?.score ??
-        interpretation?.intentConfidence
-    });
+      nluConfidence: interpretation?.nluConfidence,
+      intent: interpretation?.intent,
+      intentConfidence: interpretation?.intentConfidence
+    }, "interpretations");
   }
 
+  const alternatives =
+    transcriptionAlternatives.length > 0
+      ? transcriptionAlternatives
+      : interpretationAlternatives.length > 0
+        ? interpretationAlternatives
+        : event.inputTranscript
+          ? [{ transcript: String(event.inputTranscript), source: "inputTranscriptFallback" }]
+          : [];
   const seen = new Set();
-  const nBestAlternatives = alternatives
+  const alternativeTranscripts = alternatives
     .filter((alternative) => {
       const key = normalizeForMatch(alternative.transcript);
       if (!key || seen.has(key)) {
@@ -6135,16 +6076,48 @@ function getAsrDiagnostics(event) {
       return true;
     })
     .slice(0, 5);
-  const topTranscript = event.inputTranscript || nBestAlternatives[0]?.transcript || "";
-  const topAlternative = nBestAlternatives.find(
+  const topTranscript = event.inputTranscript || alternativeTranscripts[0]?.transcript || "";
+  const topAlternative = alternativeTranscripts.find(
     (alternative) => normalizeForMatch(alternative.transcript) === normalizeForMatch(topTranscript)
-  ) || nBestAlternatives[0];
+  ) || alternativeTranscripts[0];
+  const transcriptionConfidence =
+    topAlternative?.source === "event.transcriptions" ? topAlternative.transcriptionConfidence : undefined;
+  const confidenceSource =
+    transcriptionConfidence !== undefined ? "event.transcriptions.transcriptionConfidence" : "none";
+  const nluConfidence = getTopNluConfidence(event);
 
   return {
     topTranscript,
-    nBestAlternatives,
-    confidence: topAlternative?.confidence,
-    inputMode: getInputMode(event)
+    alternativeTranscripts,
+    nBestAlternatives: alternativeTranscripts.map((alternative) => ({
+      transcript: alternative.transcript,
+      source: alternative.source,
+      ...(alternative.transcriptionConfidence !== undefined
+        ? { confidence: alternative.transcriptionConfidence, transcriptionConfidence: alternative.transcriptionConfidence }
+        : {}),
+      ...(alternative.nluConfidence !== undefined ? { nluConfidence: alternative.nluConfidence } : {})
+    })),
+    transcriptionConfidence,
+    nluConfidence,
+    confidence: transcriptionConfidence,
+    confidenceSource,
+    alternativesSource:
+      transcriptionAlternatives.length > 0
+        ? "event.transcriptions"
+        : interpretationAlternatives.length > 0
+          ? "interpretations"
+          : topTranscript
+            ? "inputTranscriptFallback"
+            : "none",
+    inputMode: getInputMode(event),
+    activeSlot: getActiveVoiceSlot(sessionAttributes),
+    speechModelPreference: sessionAttributes.speechModelPreference || sessionAttributes.lexSpeechModelPreference || "",
+    speechDetectionSensitivity: sessionAttributes.speechDetectionSensitivity || "",
+    audioTimeoutProfile: buildAudioTimeoutProfile(sessionAttributes),
+    connectBranch: sessionAttributes.connectRecoveryStage || "",
+    connectErrorCode: sessionAttributes.connectErrorCode || sessionAttributes.connectLastErrorCode || "",
+    clarificationReason: sessionAttributes.clarificationReason || "",
+    eventShape: buildLexEventShapeDiagnostic(event)
   };
 }
 
@@ -6172,7 +6145,12 @@ function hasScopedFullSetPhoneticCandidate(text) {
   if (!normalized || hasUnsafeSunsetWithoutExplicitFullSetAlias(text)) {
     return false;
   }
-  return /\bwho\s+said\b/.test(normalized) || /\btime\s+to\s+fight\b/.test(normalized);
+  return Boolean(
+    /\bwho\s+said\b/.test(normalized) ||
+      /\btime\s+to\s+fight\b/.test(normalized) ||
+      /\bfun\s+facts?\b/.test(normalized) ||
+      /\b(?:phone\s+set|phone\s+chat|food\s+set|pool\s+set|cool\s+set)\b/.test(normalized)
+  );
 }
 
 function findProposedFullSetServiceClarification(event, knownAttributes = {}) {
@@ -6238,6 +6216,14 @@ function findProposedAnyStaffClarification(event, knownAttributes = {}) {
   if (normalizeAnyStaffPhrase(transcripts[0], staffContext)) {
     return null;
   }
+  if (isAmbiguousFirstAvailableStaffCandidate(transcripts[0], staffContext)) {
+    return {
+      proposedStaffPreference: "Any staff",
+      reason: "ambiguous_first_available_asr",
+      asrAlternativesUsed: transcripts.length > 1,
+      matchedTranscript: transcripts[0]
+    };
+  }
   const alternativeMatch = transcripts.slice(1).find((candidate) =>
     normalizeAnyStaffPhrase(candidate, staffContext)
   );
@@ -6270,7 +6256,35 @@ function isAmbiguousFirstAvailableStaffCandidate(text, sessionAttributes = {}) {
   if (getActiveVoiceSlot(sessionAttributes) !== "staffPreference") {
     return false;
   }
-  return /\b(?:and\s+)?(?:it\s+s|its|it\s+is|it)?\s*stopp?ed\s+at\s+(?:five|5)\b/.test(normalized);
+  const tail = stripAnyStaffTrailingFiller(normalized)
+    .replace(/\s+(?:music|background music|noise)$/, "")
+    .trim();
+  return Boolean(
+    /\b(?:and\s+)?(?:it\s+s|its|it\s+is|it)?\s*stopp?ed\s+at\s+(?:five|5)\b/.test(tail) ||
+      [
+        "annie stop",
+        "anny stop",
+        "any stop",
+        "anystop",
+        "any stop if i",
+        "any stuff",
+        "any star",
+        "any star is fine",
+        "and it s thirty five",
+        "and its thirty five",
+        "and it is thirty five",
+        "it s thirty five",
+        "its thirty five",
+        "it is thirty five",
+        "and it s top five",
+        "and its top five",
+        "and it is top five",
+        "it s top five",
+        "its top five",
+        "it is top five",
+        "any top five"
+      ].some((alias) => tail === alias || tail.endsWith(` ${alias}`))
+  );
 }
 
 function isStaffConfirmationRejection(text) {

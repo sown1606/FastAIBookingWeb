@@ -253,16 +253,22 @@
           "InitialContactId": "$.InitialContactId",
           "operatorHelpMentioned": "true",
           "x-amz-lex:allow-interrupt:*:*": "true",
-          "x-amz-lex:audio:start-timeout-ms:*:*": "8000",
-          "x-amz-lex:audio:end-timeout-ms:*:*": "3200",
+          "x-amz-lex:audio:start-timeout-ms:*:*": "9000",
+          "x-amz-lex:audio:end-timeout-ms:*:*": "4200",
           "x-amz-lex:audio:max-length-ms:*:*": "20000",
-          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName": "1800",
-          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedTime": "1600",
-          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference": "1600",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName": "3200",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedTime": "2200",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference": "2200",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:customerName": "2000",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:bookingConfirmation": "900",
+          "lastAskedSlot": "serviceName",
+          "initialVoiceBookingContext": "true",
+          "speechDetectionSensitivity": "Default",
+          "speechModelPreference": "lex_default_unified_settings_not_reported",
+          "audioTimeoutProfile": "initial_booking_freeform_v2",
           "connectRecoveryStage": "initial",
-          "connectFlowSourceVersion": "2026-07-16-silent-disconnect-latency-any-staff",
-          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedDate": "1600"
+          "connectFlowSourceVersion": "2026-07-16-voice-asr-latency-root-fix",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedDate": "2200"
         },
         "Text": "Hi, I can help book your appointment. Tell me the service, day, time, and staff. You can press 0 for a person."
       },
@@ -359,13 +365,17 @@
           "InitialContactId": "$.InitialContactId",
           "operatorHelpMentioned": "true",
           "x-amz-lex:allow-interrupt:*:*": "true",
-          "x-amz-lex:audio:start-timeout-ms:*:*": "8000",
-          "x-amz-lex:audio:end-timeout-ms:*:*": "3200",
+          "x-amz-lex:audio:start-timeout-ms:*:*": "9000",
+          "x-amz-lex:audio:end-timeout-ms:*:*": "4200",
           "x-amz-lex:audio:max-length-ms:*:*": "20000",
-          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName": "1800",
-          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedTime": "1600",
-          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference": "1600",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName": "3200",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedTime": "2200",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference": "2200",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:customerName": "2000",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:bookingConfirmation": "900",
+          "speechDetectionSensitivity": "Default",
+          "speechModelPreference": "lex_default_unified_settings_not_reported",
+          "audioTimeoutProfile": "retry_booking_context_v2",
           "conversationState": "$.Lex.SessionAttributes.conversationState",
           "conversationOutcome": "$.Lex.SessionAttributes.conversationOutcome",
           "conversationComplete": "$.Lex.SessionAttributes.conversationComplete",
@@ -401,9 +411,10 @@
           "staffDtmfStaffIds": "$.Lex.SessionAttributes.staffDtmfStaffIds",
           "connectContinuationPrompt": "$.Lex.SessionAttributes.connectContinuationPrompt",
           "outerRecoveryAttempt": "true",
-          "connectRecoveryStage": "retry_after_initial_error",
-          "connectFlowSourceVersion": "2026-07-16-silent-disconnect-latency-any-staff",
-          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedDate": "1600"
+          "connectRecoveryStage": "$.Attributes.connectRecoveryStage",
+          "connectErrorCode": "$.Attributes.connectErrorCode",
+          "connectFlowSourceVersion": "2026-07-16-voice-asr-latency-root-fix",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedDate": "2200"
         },
         "Text": "$.Lex.SessionAttributes.connectContinuationPrompt"
       },
@@ -498,13 +509,17 @@
           "InitialContactId": "$.InitialContactId",
           "operatorHelpMentioned": "true",
           "x-amz-lex:allow-interrupt:*:*": "true",
-          "x-amz-lex:audio:start-timeout-ms:*:*": "8000",
-          "x-amz-lex:audio:end-timeout-ms:*:*": "3200",
+          "x-amz-lex:audio:start-timeout-ms:*:*": "9000",
+          "x-amz-lex:audio:end-timeout-ms:*:*": "4200",
           "x-amz-lex:audio:max-length-ms:*:*": "20000",
-          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName": "1800",
-          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedTime": "1600",
-          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference": "1600",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName": "3200",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedTime": "2200",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference": "2200",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:customerName": "2000",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:bookingConfirmation": "900",
+          "speechDetectionSensitivity": "Default",
+          "speechModelPreference": "lex_default_unified_settings_not_reported",
+          "audioTimeoutProfile": "final_short_retry_v2",
           "conversationState": "$.Lex.SessionAttributes.conversationState",
           "conversationOutcome": "$.Lex.SessionAttributes.conversationOutcome",
           "conversationComplete": "$.Lex.SessionAttributes.conversationComplete",
@@ -541,8 +556,9 @@
           "connectContinuationPrompt": "$.Lex.SessionAttributes.connectContinuationPrompt",
           "outerRecoveryAttempt": "final",
           "connectRecoveryStage": "final_dtmf_opportunity",
-          "connectFlowSourceVersion": "2026-07-16-silent-disconnect-latency-any-staff",
-          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedDate": "1600"
+          "connectErrorCode": "$.Attributes.connectErrorCode",
+          "connectFlowSourceVersion": "2026-07-16-voice-asr-latency-root-fix",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedDate": "2200"
         },
         "Text": "Press 0 for a person, or tell me your appointment again."
       },
@@ -645,7 +661,7 @@
           "initialContactId": "$.InitialContactId",
           "connectRecoveryStage": "initial",
           "connectLastErrorBranch": "none",
-          "connectFlowSourceVersion": "2026-07-16-silent-disconnect-latency-any-staff"
+          "connectFlowSourceVersion": "2026-07-16-voice-asr-latency-root-fix"
         },
         "TargetContact": "Current"
       },
@@ -807,16 +823,17 @@
         "Attributes": {
           "connectRecoveryStage": "initial_lex_error",
           "connectLastErrorBranch": "$.ErrorCode",
-          "connectFlowSourceVersion": "2026-07-16-silent-disconnect-latency-any-staff",
+          "connectErrorCode": "$.ErrorCode",
+          "connectFlowSourceVersion": "2026-07-16-voice-asr-latency-root-fix",
           "conversationComplete": "false"
         },
         "TargetContact": "Current"
       },
       "Transitions": {
-        "NextAction": "initial-lex-error-message",
+        "NextAction": "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d",
         "Errors": [
           {
-            "NextAction": "initial-lex-error-message",
+            "NextAction": "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d",
             "ErrorType": "NoMatchingError"
           }
         ]
@@ -846,16 +863,17 @@
         "Attributes": {
           "connectRecoveryStage": "retry_lex_error",
           "connectLastErrorBranch": "$.ErrorCode",
-          "connectFlowSourceVersion": "2026-07-16-silent-disconnect-latency-any-staff",
+          "connectErrorCode": "$.ErrorCode",
+          "connectFlowSourceVersion": "2026-07-16-voice-asr-latency-root-fix",
           "conversationComplete": "false"
         },
         "TargetContact": "Current"
       },
       "Transitions": {
-        "NextAction": "retry-lex-error-message",
+        "NextAction": "41e3f239-5b57-4363-92fc-9d594579fa98",
         "Errors": [
           {
-            "NextAction": "retry-lex-error-message",
+            "NextAction": "41e3f239-5b57-4363-92fc-9d594579fa98",
             "ErrorType": "NoMatchingError"
           }
         ]
