@@ -1913,6 +1913,7 @@ type TimePhraseContext = {
   lastAskedSlot?: string;
   currentTurnSemanticType?: string;
   semanticType?: string;
+  currentTurnHasDatePhrase?: boolean;
 };
 
 const hasGpsTimeContext = (value?: string | null, context: TimePhraseContext = {}): boolean => {
@@ -1964,6 +1965,219 @@ const isBareRequestedTimeAnswer = (
   }
   const normalized = normalizeBareRequestedTimeAnswer(value);
   return /^([1-9]|1[0-2])(?::[0-5]\d)?$/.test(normalized);
+};
+
+const getActiveVoiceSlot = (attributes?: Record<string, unknown>): string => {
+  const lastAskedSlot = readStringAttribute(attributes, ["lastAskedSlot"]);
+  if (lastAskedSlot) {
+    return lastAskedSlot;
+  }
+  const activeDtmfMenu = readStringAttribute(attributes, ["activeDtmfMenu"]);
+  if (activeDtmfMenu === "service") {
+    return "serviceName";
+  }
+  if (activeDtmfMenu === "staff") {
+    return "staffPreference";
+  }
+  return "";
+};
+
+const hasExplicitSlotCorrectionPhrase = (value?: string | null): boolean => {
+  const normalized = normalizeForMatch(value);
+  return Boolean(
+    normalized &&
+      (/\b(?:actually|change|update|switch|move|make\s+it|instead|rather)\b/.test(normalized) ||
+        new RegExp(
+          `\\bnot\\s+(?:a\\s+|the\\s+)?(?:${SPOKEN_HOUR_PATTERN}|\\d{1,2})(?::\\d{2})?(?:\\s*(?:am|pm|a\\s*m|p\\s*m))?\\b`,
+          "i"
+        ).test(normalized))
+  );
+};
+
+const timeCandidateIsNegated = (
+  text?: string | null,
+  candidate?: string | null,
+  context: TimePhraseContext = {}
+): boolean => {
+  if (!candidate?.trim()) {
+    return false;
+  }
+  const proposedMinutes = timeCandidateToMinutes(candidate, {
+    ...context,
+    lastAskedSlot: "requestedTime"
+  });
+  if (proposedMinutes === null) {
+    return false;
+  }
+  const normalized = normalizeForMatch(text);
+  const negatedMatches = Array.from(
+    normalized.matchAll(
+      new RegExp(
+        `\\bnot\\s+(?:a\\s+|the\\s+)?((?:${SPOKEN_HOUR_PATTERN}|\\d{1,2})(?::\\d{2})?(?:\\s*(?:am|pm|a\\s*m|p\\s*m|o\\s+clock|oclock))?)\\b`,
+        "gi"
+      )
+    )
+  );
+  return negatedMatches.some((match) => {
+    const negatedMinutes = timeCandidateToMinutes(match[1], {
+      ...context,
+      lastAskedSlot: "requestedTime"
+    });
+    return negatedMinutes !== null && negatedMinutes === proposedMinutes;
+  });
+};
+
+const isBareOrAmbiguousTimeMutation = (
+  text?: string | null,
+  context: TimePhraseContext = {}
+): boolean => {
+  const normalized = normalizeForMatch(text);
+  if (!normalized) {
+    return false;
+  }
+  if (/\b(?:am|pm|a\s*m|p\s*m|o\s+clock|oclock)\b/.test(normalized)) {
+    return false;
+  }
+  if (context.currentTurnHasDatePhrase || hasGroundedDatePhrase(text)) {
+    return false;
+  }
+  return new RegExp(
+    `\\b(?:at\\s+)?(?:${SPOKEN_HOUR_PATTERN}|\\d{1,2})(?::\\d{2})?\\b`,
+    "i"
+  ).test(normalized);
+};
+
+const canUseMarkedBareTimeCandidate = (
+  value?: string | null,
+  context: TimePhraseContext = {}
+): boolean => {
+  if (hasRequestedTimeContext(context)) {
+    return true;
+  }
+  if (context.currentTurnHasDatePhrase || hasGroundedDatePhrase(value)) {
+    return true;
+  }
+  if (hasExplicitSlotCorrectionPhrase(value)) {
+    return true;
+  }
+  return !context.lastAskedSlot || context.lastAskedSlot === "requestedTime";
+};
+
+const localTimesEquivalent = (left?: string, right?: string): boolean => {
+  const leftParsed = left ? parseLocalTimeText(left) : null;
+  const rightParsed = right ? parseLocalTimeText(right) : null;
+  return Boolean(
+    leftParsed &&
+    rightParsed &&
+    !leftParsed.ambiguous &&
+    !rightParsed.ambiguous &&
+    leftParsed.hour === rightParsed.hour &&
+    leftParsed.minute === rightParsed.minute
+  );
+};
+
+const valuesEquivalentForSlot = (
+  slotName: string,
+  left?: string | null,
+  right?: string | null
+): boolean => {
+  if (!left?.trim() || !right?.trim()) {
+    return false;
+  }
+  if (slotName === "requestedTime") {
+    return localTimesEquivalent(left, right);
+  }
+  if (slotName === "serviceName") {
+    return normalizeForMatch(getCustomerFacingServiceName(left) ?? left) ===
+      normalizeForMatch(getCustomerFacingServiceName(right) ?? right);
+  }
+  return normalizeForMatch(left) === normalizeForMatch(right);
+};
+
+const isClearlyStructuredBookingRequest = (
+  value?: string | null,
+  attributes?: Record<string, unknown>
+): boolean => {
+  const normalized = normalizeForMatch(value);
+  if (!normalized) {
+    return false;
+  }
+  if (
+    !/\b(?:book|booking|schedule|appointment|service|nail|nails|today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|with|at|am|pm|full\s*set|any\s+staff|first\s+available)\b/.test(
+      normalized
+    )
+  ) {
+    return false;
+  }
+  const staffContext = staffPhraseContextFromAttributes(attributes);
+  const hasService = Boolean(recognizeFullSetFromText(value, staffContext) || hasStaticServiceAliasInText(value));
+  const hasDate = hasGroundedDatePhrase(value);
+  const hasTime = hasGroundedTimePhrase(value, {
+    lastAskedSlot: readStringAttribute(attributes, ["lastAskedSlot"]),
+    currentTurnHasDatePhrase: hasGroundedDatePhrase(value)
+  });
+  const hasStaff = Boolean(normalizeAnyStaffPhrase(value, staffContext)) || /\bwith\s+[a-z][a-z'-]*\b/.test(normalized);
+  return hasService && hasDate && hasTime && hasStaff;
+};
+
+const buildVoiceSlotMutationPolicy = (input: {
+  slotName: string;
+  proposedValue?: string;
+  trustedValue?: string;
+  transcript?: string;
+  attributes?: Record<string, unknown>;
+}): {
+  slotName: string;
+  activeSlot: string;
+  previousValue?: string;
+  proposedValue?: string;
+  accepted: boolean;
+  reason: string;
+} => {
+  const proposedValue = input.proposedValue?.trim();
+  const trustedValue = input.trustedValue?.trim();
+  const activeSlot = getActiveVoiceSlot(input.attributes);
+  const base = {
+    slotName: input.slotName,
+    activeSlot,
+    previousValue: trustedValue,
+    proposedValue
+  };
+  if (!proposedValue) {
+    return { ...base, accepted: false, reason: "empty_proposed_value" };
+  }
+  if (trustedValue && valuesEquivalentForSlot(input.slotName, trustedValue, proposedValue)) {
+    return { ...base, accepted: true, reason: "same_as_trusted_value" };
+  }
+  const transcript = input.transcript ?? "";
+  const timeContext: TimePhraseContext = {
+    lastAskedSlot: readStringAttribute(input.attributes, ["lastAskedSlot"]),
+    currentTurnSemanticType: readStringAttribute(input.attributes, ["currentTurnSemanticType"]),
+    currentTurnHasDatePhrase: hasGroundedDatePhrase(transcript)
+  };
+  const negatesProposed =
+    input.slotName === "requestedTime" && timeCandidateIsNegated(transcript, proposedValue, timeContext);
+  if (activeSlot === input.slotName) {
+    return { ...base, accepted: true, reason: "active_slot" };
+  }
+  if (hasExplicitSlotCorrectionPhrase(transcript) && !negatesProposed) {
+    return { ...base, accepted: true, reason: "explicit_correction" };
+  }
+  if (isClearlyStructuredBookingRequest(transcript, input.attributes)) {
+    return { ...base, accepted: true, reason: "structured_booking_request" };
+  }
+  if (!trustedValue && input.slotName === "requestedTime" && !isBareOrAmbiguousTimeMutation(transcript, timeContext)) {
+    return { ...base, accepted: true, reason: "new_grounded_time" };
+  }
+  return {
+    ...base,
+    accepted: false,
+    reason: negatesProposed
+      ? "caller_rejected_proposed_value"
+      : trustedValue
+        ? "protected_trusted_slot"
+        : "bare_or_ambiguous_wrong_slot"
+  };
 };
 
 const parseLocalTimeText = (
@@ -2091,6 +2305,9 @@ const extractTimeCandidate = (value: string, context: TimePhraseContext = {}): s
     )
   );
   if (markedBareMatch?.[1]) {
+    if (!canUseMarkedBareTimeCandidate(searchable, context)) {
+      return undefined;
+    }
     return `at ${markedBareMatch[1]}`;
   }
 
@@ -2367,19 +2584,6 @@ const rejectsMentionedDate = (value?: string | null): boolean => {
   );
 };
 
-const localTimesEquivalent = (left?: string, right?: string): boolean => {
-  const leftParsed = left ? parseLocalTimeText(left) : null;
-  const rightParsed = right ? parseLocalTimeText(right) : null;
-  return Boolean(
-    leftParsed &&
-    rightParsed &&
-    !leftParsed.ambiguous &&
-    !rightParsed.ambiguous &&
-    leftParsed.hour === rightParsed.hour &&
-    leftParsed.minute === rightParsed.minute
-  );
-};
-
 const parseDateTimeText = (
   text: string,
   timezone: string,
@@ -2405,11 +2609,15 @@ const parseDateTimeText = (
     const localDate = parseLocalDateText(dateCandidate.text, timezone);
     const afterDate = raw.slice(dateCandidate.index + dateCandidate.text.length);
     const beforeDate = raw.slice(0, dateCandidate.index);
+    const timeContext = {
+      ...context,
+      currentTurnHasDatePhrase: true
+    };
     const timeCandidate =
-      extractTimeCandidate(afterDate, context) ??
-      extractTimeCandidate(beforeDate.split(/[!?;]/).at(-1) ?? "", context) ??
-      extractTimeCandidate(raw, context);
-    const localTime = timeCandidate ? parseLocalTimeText(timeCandidate, context) : null;
+      extractTimeCandidate(afterDate, timeContext) ??
+      extractTimeCandidate(beforeDate.split(/[!?;]/).at(-1) ?? "", timeContext) ??
+      extractTimeCandidate(raw, timeContext);
+    const localTime = timeCandidate ? parseLocalTimeText(timeCandidate, timeContext) : null;
 
     if (localDate && localTime) {
       return {
@@ -3953,6 +4161,210 @@ const parseAsrAlternativeDiagnostics = (
   } catch {
     return [];
   }
+};
+
+const getAsrDecisionTranscripts = (
+  topTranscript?: string,
+  attributes?: Record<string, unknown>
+): Array<{ transcript: string; confidence?: number; source: "top" | "alternative" }> => {
+  const alternatives = parseAsrAlternativeDiagnostics(attributes);
+  const candidates = [
+    ...(topTranscript?.trim() ? [{ transcript: topTranscript.trim(), source: "top" as const }] : []),
+    ...alternatives.map((alternative) => ({ ...alternative, source: "alternative" as const }))
+  ];
+  const seen = new Set<string>();
+  return candidates.filter((candidate) => {
+    const key = normalizeForMatch(candidate.transcript);
+    if (!key || seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+};
+
+const hasScopedFullSetPhoneticCandidate = (value?: string | null): boolean => {
+  const normalized = normalizeForMatch(value);
+  if (!normalized || hasUnsafeSunsetWithoutExplicitFullSetAlias(value)) {
+    return false;
+  }
+  return /\bwho\s+said\b/.test(normalized) || /\btime\s+to\s+fight\b/.test(normalized);
+};
+
+const findProposedFullSetServiceClarification = (input: {
+  serviceName?: string;
+  requestedDate?: string;
+  requestedTime?: string;
+  currentTurnTranscript?: string;
+  transcriptText?: string;
+  attributes?: Record<string, unknown>;
+}): {
+  proposedServiceName: "Full Set";
+  reason: "asr_alternative_full_set" | "scoped_phonetic_full_set";
+  asrAlternativesUsed: boolean;
+  matchedTranscript: string;
+} | null => {
+  if (input.serviceName || !input.requestedDate || !input.requestedTime) {
+    return null;
+  }
+  const topTranscript = input.currentTurnTranscript ?? input.transcriptText ?? "";
+  if (!topTranscript || hasUnsafeSunsetWithoutExplicitFullSetAlias(topTranscript)) {
+    return null;
+  }
+  const staffContext = staffPhraseContextFromAttributes(input.attributes);
+  const candidates = getAsrDecisionTranscripts(topTranscript, input.attributes);
+  const alternativeMatch = candidates.find(
+    (candidate) =>
+      candidate.source === "alternative" &&
+      recognizeFullSetFromText(candidate.transcript, {
+        ...staffContext,
+        lastAskedSlot: "serviceName"
+      })
+  );
+  if (alternativeMatch) {
+    return {
+      proposedServiceName: "Full Set",
+      reason: "asr_alternative_full_set",
+      asrAlternativesUsed: true,
+      matchedTranscript: alternativeMatch.transcript
+    };
+  }
+  if (
+    hasScopedFullSetPhoneticCandidate(topTranscript) &&
+    /\b(?:today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|at|am|pm|appointment|book|booking|service)\b/.test(
+      normalizeForMatch(topTranscript)
+    )
+  ) {
+    return {
+      proposedServiceName: "Full Set",
+      reason: "scoped_phonetic_full_set",
+      asrAlternativesUsed: candidates.length > 1,
+      matchedTranscript: topTranscript
+    };
+  }
+  return null;
+};
+
+const isAmbiguousFirstAvailableStaffCandidate = (
+  value?: string | null,
+  attributes?: Record<string, unknown>
+): boolean => {
+  const normalized = normalizeForMatch(value);
+  if (!normalized || getActiveVoiceSlot(attributes) !== "staffPreference") {
+    return false;
+  }
+  return /\b(?:and\s+)?(?:it\s+s|its|it\s+is|it)?\s*stopp?ed\s+at\s+(?:five|5)\b/.test(normalized);
+};
+
+const findProposedAnyStaffClarification = (input: {
+  serviceName?: string;
+  requestedDate?: string;
+  requestedTime?: string;
+  staffPreference?: string;
+  currentTurnTranscript?: string;
+  transcriptText?: string;
+  attributes?: Record<string, unknown>;
+}): {
+  proposedStaffPreference: "Any staff";
+  reason: "asr_alternative_first_available";
+  asrAlternativesUsed: boolean;
+  matchedTranscript: string;
+} | null => {
+  if (
+    getActiveVoiceSlot(input.attributes) !== "staffPreference" ||
+    input.staffPreference ||
+    !input.serviceName ||
+    !input.requestedDate ||
+    !input.requestedTime
+  ) {
+    return null;
+  }
+  const topTranscript = input.currentTurnTranscript ?? input.transcriptText ?? "";
+  const staffContext = {
+    ...staffPhraseContextFromAttributes(input.attributes),
+    serviceName: input.serviceName,
+    requestedDate: input.requestedDate,
+    requestedTime: input.requestedTime,
+    lastAskedSlot: "staffPreference"
+  };
+  if (normalizeAnyStaffPhrase(topTranscript, staffContext)) {
+    return null;
+  }
+  const alternativeMatch = getAsrDecisionTranscripts(topTranscript, input.attributes).find(
+    (candidate) =>
+      candidate.source === "alternative" &&
+      normalizeAnyStaffPhrase(candidate.transcript, staffContext)
+  );
+  if (!alternativeMatch) {
+    return null;
+  }
+  return {
+    proposedStaffPreference: "Any staff",
+    reason: "asr_alternative_first_available",
+    asrAlternativesUsed: true,
+    matchedTranscript: alternativeMatch.transcript
+  };
+};
+
+const isStaffConfirmationRejection = (value?: string | null): boolean => {
+  const normalized = normalizeForMatch(value);
+  return Boolean(
+    isNegative(value) ||
+      /\bnot\s+(?:a\s+|the\s+)?(?:five|5)\b/.test(normalized) ||
+      /\bnot\s+(?:first\s+available|any\s+staff|that|it)\b/.test(normalized)
+  );
+};
+
+const buildProposedServicePrompt = (
+  normalized: {
+    requestedDate?: string;
+    requestedTime?: string;
+  },
+  timezone: string
+): string => {
+  const date = formatKnownDateForPrompt(normalized.requestedDate, timezone);
+  const time = formatKnownTimeForPrompt(normalized.requestedTime);
+  const heard = [date, time ? `at ${time}` : ""].filter(Boolean).join(" ");
+  return speak(
+    heard
+      ? `I heard ${escapeSsml(heard)}, but I'm not sure about the service. Did you say Full Set?`
+      : "I'm not sure about the service. Did you say Full Set?"
+  );
+};
+
+const buildFocusedStaffChoicePrompt = (staffOptions: StaffCandidate[]): string => {
+  const names = staffOptions.map((staff) => staff.fullName).filter(Boolean);
+  const preferred = names.find((name) => normalizeForMatch(name) === "amy") ?? names[0];
+  return preferred
+    ? `Which staff would you like, ${escapeSsml(preferred)} or first available?`
+    : "Which staff would you like, or first available?";
+};
+
+const buildAmbiguousStaffConfirmationPrompt = (
+  normalized: {
+    serviceName?: string;
+    requestedDate?: string;
+    requestedTime?: string;
+  },
+  timezone: string
+): string => {
+  const summary = buildKnownBookingPromptSummary(normalized, timezone);
+  return speak(
+    summary
+      ? `I still have ${escapeSsml(summary)}. Did you mean first available?`
+      : "Did you mean first available?"
+  );
+};
+
+const buildStaffConfirmationRejectedPrompt = (
+  normalized: {
+    requestedTime?: string;
+  },
+  staffOptions: StaffCandidate[]
+): string => {
+  const time = formatKnownTimeForPrompt(normalized.requestedTime);
+  const prefix = time ? `Understood. I still have ${escapeSsml(time)}. ` : "Understood. ";
+  return speak(`${prefix}${buildFocusedStaffChoicePrompt(staffOptions)}`);
 };
 
 const hasCloseManicurePedicureAsrAlternatives = (
@@ -5506,7 +5918,12 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
   const activeDtmfMenu = readStringAttribute(attributes, ["activeDtmfMenu"]);
   const timePhraseContext: TimePhraseContext = {
     lastAskedSlot,
-    currentTurnSemanticType: readStringAttribute(attributes, ["currentTurnSemanticType"])
+    currentTurnSemanticType: readStringAttribute(attributes, ["currentTurnSemanticType"]),
+    currentTurnHasDatePhrase: hasGroundedDatePhrase(
+      asTrimmedString(input.currentTurnTranscript) ??
+        readStringAttribute(attributes, ["currentTurnTranscript"]) ??
+        asTrimmedString(input.text)
+    )
   };
   const lexTurnDebug =
     input.attributes &&
@@ -5647,7 +6064,7 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
         : currentTurnIsDigitNoise
           ? previousRequestedDate
           : inputRequestedDate ?? previousRequestedDate;
-  const requestedTime =
+  const requestedTimeCandidate =
     currentTurnIsDigitNoise && previousRequestedTime
       ? previousRequestedTime
       : shouldRejectUngroundedInputTime
@@ -5657,6 +6074,24 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
       : currentTurnIsDigitNoise
           ? previousRequestedTime
           : groundedInputRequestedTime ?? transcriptRequestedTime ?? inputRequestedTime ?? previousRequestedTime;
+  const requestedTimeMutationPolicy = buildVoiceSlotMutationPolicy({
+    slotName: "requestedTime",
+    proposedValue: requestedTimeCandidate,
+    trustedValue: previousRequestedTime,
+    transcript: transcriptText,
+    attributes
+  });
+  if (requestedTimeCandidate && !requestedTimeMutationPolicy.accepted) {
+    attributes.preventedSlotMutations = JSON.stringify([requestedTimeMutationPolicy]);
+    attributes.proposedSlotMutation = JSON.stringify(requestedTimeMutationPolicy);
+  } else if (requestedTimeCandidate) {
+    attributes.acceptedSlotMutations = JSON.stringify([requestedTimeMutationPolicy]);
+    attributes.proposedSlotMutation = JSON.stringify(requestedTimeMutationPolicy);
+  }
+  const requestedTime =
+    requestedTimeCandidate && requestedTimeMutationPolicy.accepted
+      ? requestedTimeCandidate
+      : previousRequestedTime;
   const contactId =
     asTrimmedString(input.amazonConnectContactId) ??
     asTrimmedString(input.contactId) ??
@@ -6406,7 +6841,7 @@ const buildBookingConfirmationMessage = (input: {
     input.salonTimezone
   );
   const selectedStaffPrefix = input.requestedAnyStaff
-    ? `I found ${escapeSsml(input.staffName)} available. <break time="300ms"/> `
+    ? `You said first available. ${escapeSsml(input.staffName)} is available. <break time="300ms"/> `
     : "";
   const fallbackNotice = input.customerNameFallbackNotice
     ? `${escapeSsml(input.customerNameFallbackNotice)} <break time="300ms"/> `
@@ -7584,7 +8019,20 @@ export const createAmazonConnectAIAppointment = async (
     normalized.requestedDate = currentTurnExplicitDate;
   }
   if (currentTurnExplicitTime && !localTimesEquivalent(normalized.requestedTime, currentTurnExplicitTime)) {
-    normalized.requestedTime = currentTurnExplicitTime;
+    const explicitTimeMutationPolicy = buildVoiceSlotMutationPolicy({
+      slotName: "requestedTime",
+      proposedValue: currentTurnExplicitTime,
+      trustedValue: readStringAttribute(normalized.attributes, ["requestedTime"]) ?? normalized.requestedTime,
+      transcript: normalized.currentTurnTranscript,
+      attributes: normalized.attributes
+    });
+    normalized.attributes.proposedSlotMutation = JSON.stringify(explicitTimeMutationPolicy);
+    if (explicitTimeMutationPolicy.accepted) {
+      normalized.requestedTime = currentTurnExplicitTime;
+      normalized.attributes.acceptedSlotMutations = JSON.stringify([explicitTimeMutationPolicy]);
+    } else {
+      normalized.attributes.preventedSlotMutations = JSON.stringify([explicitTimeMutationPolicy]);
+    }
   }
   const timeRecognition = analyzeTimeRecognition({
     rawTranscript: normalized.currentTurnTranscript,
@@ -7599,6 +8047,42 @@ export const createAmazonConnectAIAppointment = async (
     normalized.attributes.awaitingTimeConfirmation = "true";
     normalized.attributes.proposedRequestedTime = timeRecognition.selectedCandidate.text;
     normalized.attributes.timeRecognitionDiagnostics = JSON.stringify(timeRecognition);
+  }
+
+  const awaitingServiceConfirmation =
+    readStringAttribute(normalized.attributes, ["awaitingServiceConfirmation"]) === "true";
+  const proposedServiceName = readStringAttribute(normalized.attributes, ["proposedServiceName"]);
+  if (awaitingServiceConfirmation && isAffirmative(normalized.currentTurnTranscript) && proposedServiceName) {
+    normalized.serviceName = proposedServiceName;
+    normalized.attributes.awaitingServiceConfirmation = "false";
+    normalized.attributes.proposedServiceName = "";
+    normalized.attributes.serviceRecognitionConfirmed = "true";
+    normalized.attributes.clarificationReason = "service_proposal_confirmed";
+  } else if (awaitingServiceConfirmation && isNegative(normalized.currentTurnTranscript)) {
+    normalized.serviceName = undefined;
+    normalized.attributes.awaitingServiceConfirmation = "false";
+    normalized.attributes.proposedServiceName = "";
+    normalized.attributes.serviceRecognitionConfirmed = "false";
+    normalized.attributes.clarificationReason = "service_proposal_rejected";
+  }
+
+  const awaitingStaffConfirmation =
+    readStringAttribute(normalized.attributes, ["awaitingStaffConfirmation"]) === "true";
+  const proposedStaffPreference = readStringAttribute(normalized.attributes, ["proposedStaffPreference"]);
+  if (awaitingStaffConfirmation && isAffirmative(normalized.currentTurnTranscript) && proposedStaffPreference) {
+    normalized.staffPreference = proposedStaffPreference;
+    normalized.staffId = undefined;
+    normalized.attributes.awaitingStaffConfirmation = "false";
+    normalized.attributes.proposedStaffPreference = "";
+    normalized.attributes.staffRecognitionConfirmed = "true";
+    normalized.attributes.staffClarificationReason = "staff_proposal_confirmed";
+  } else if (awaitingStaffConfirmation && isStaffConfirmationRejection(normalized.currentTurnTranscript)) {
+    normalized.staffPreference = undefined;
+    normalized.staffId = undefined;
+    normalized.attributes.awaitingStaffConfirmation = "false";
+    normalized.attributes.proposedStaffPreference = "";
+    normalized.attributes.staffRecognitionConfirmed = "false";
+    normalized.attributes.staffClarificationReason = "staff_proposal_rejected";
   }
 
   if (!unsupportedServiceRequest && !normalized.serviceName && normalized.transcriptText) {
@@ -9446,9 +9930,37 @@ export const createAmazonConnectAIAppointment = async (
       staffResolution.status === "unmatched_specific"
         ? staffResolution.rawStaffPreference
         : normalized.unrecognizedStaffUtterance;
-    normalized.staffPreference = undefined;
-    normalized.staffId = undefined;
+      normalized.staffPreference = undefined;
+      normalized.staffId = undefined;
   }
+  const ambiguousFirstAvailableStaffProposal =
+    !awaitingStaffConfirmation &&
+    isAmbiguousFirstAvailableStaffCandidate(
+      normalized.currentTurnTranscript ?? normalized.transcriptText,
+      normalized.attributes
+    );
+  const alternativeFirstAvailableStaffProposal =
+    !awaitingStaffConfirmation && !ambiguousFirstAvailableStaffProposal
+      ? findProposedAnyStaffClarification({
+          serviceName: normalized.serviceName,
+          requestedDate: normalized.requestedDate,
+          requestedTime: normalized.requestedTime,
+          staffPreference: normalized.staffPreference,
+          currentTurnTranscript: normalized.currentTurnTranscript,
+          transcriptText: normalized.transcriptText,
+          attributes: normalized.attributes
+        })
+      : null;
+  const proposedFirstAvailableStaff = ambiguousFirstAvailableStaffProposal
+    ? {
+        proposedStaffPreference: "Any staff" as const,
+        reason: "ambiguous_first_available_asr",
+        asrAlternativesUsed: false,
+        matchedTranscript: normalized.currentTurnTranscript ?? normalized.transcriptText ?? ""
+      }
+    : alternativeFirstAvailableStaffProposal;
+  const staffProposalRejectedThisTurn =
+    readStringAttribute(normalized.attributes, ["staffClarificationReason"]) === "staff_proposal_rejected";
 
   const missingFields = new Set<string>();
   if (!normalized.customerName) {
@@ -9474,7 +9986,12 @@ export const createAmazonConnectAIAppointment = async (
     (staffResolution.status === "missing" && staffResolution.allStaff.length > 0) ||
     staffResolution.status === "invalid_noise" ||
     staffResolution.status === "unmatched_specific";
-  if (normalized.invalidStaffDtmfSelection || staffResolution.status === "ambiguous" || shouldAskStaffOnce) {
+  if (
+    proposedFirstAvailableStaff ||
+    normalized.invalidStaffDtmfSelection ||
+    staffResolution.status === "ambiguous" ||
+    shouldAskStaffOnce
+  ) {
     missingFields.add("staffPreference");
     normalized.staffId = undefined;
   }
@@ -9534,13 +10051,32 @@ export const createAmazonConnectAIAppointment = async (
         parseAttemptCount(
           readStringAttribute(normalized.attributes, ["serviceRecognitionFailureCount", "serviceClarificationAttempts"])
         ) > 0);
+    const proposedServiceClarification =
+      elicitDecision.slotToElicit === "serviceName"
+        ? findProposedFullSetServiceClarification({
+            serviceName: normalized.serviceName,
+            requestedDate: normalized.requestedDate,
+            requestedTime: normalized.requestedTime,
+            currentTurnTranscript: normalized.currentTurnTranscript,
+            transcriptText: normalized.transcriptText,
+            attributes: normalized.attributes
+          })
+        : null;
 
     const timeConfirmationPrompt =
       readStringAttribute(normalized.attributes, ["awaitingTimeConfirmation"]) === "true" &&
       readStringAttribute(normalized.attributes, ["proposedRequestedTime"])
         ? speak(`Did you mean ${escapeSsml(readStringAttribute(normalized.attributes, ["proposedRequestedTime"])!)}?`)
         : undefined;
-    const message = timeConfirmationPrompt ?? buildLexMessage({
+    const serviceConfirmationPrompt = proposedServiceClarification
+      ? buildProposedServicePrompt(normalized, salon.timezone)
+      : undefined;
+    const staffConfirmationPrompt = proposedFirstAvailableStaff
+      ? buildAmbiguousStaffConfirmationPrompt(normalized, salon.timezone)
+      : staffProposalRejectedThisTurn
+        ? buildStaffConfirmationRejectedPrompt(normalized, staffPromptOptions)
+        : undefined;
+    const message = serviceConfirmationPrompt ?? staffConfirmationPrompt ?? timeConfirmationPrompt ?? buildLexMessage({
       outcome: "MISSING_INFO",
       missingFields: elicitDecision.promptMissingFields,
       staffOptions: staffPromptOptions,
@@ -9585,6 +10121,42 @@ export const createAmazonConnectAIAppointment = async (
           menuWasSpoken: shouldSpeakNumberedStaffMenu ? "true" : undefined
         }
       : {};
+    const proposedServiceAttributes = proposedServiceClarification
+      ? {
+          awaitingServiceConfirmation: "true",
+          proposedServiceName: proposedServiceClarification.proposedServiceName,
+          clarificationReason: proposedServiceClarification.reason,
+          asrAlternativesUsed: proposedServiceClarification.asrAlternativesUsed ? "true" : "false",
+          proposedSlotMutation: JSON.stringify({
+            slotName: "serviceName",
+            proposedValue: proposedServiceClarification.proposedServiceName,
+            reason: proposedServiceClarification.reason,
+            matchedTranscript: proposedServiceClarification.matchedTranscript
+          })
+        }
+      : {};
+    const proposedStaffAttributes = proposedFirstAvailableStaff
+      ? {
+          awaitingStaffConfirmation: "true",
+          proposedStaffPreference: proposedFirstAvailableStaff.proposedStaffPreference,
+          staffClarificationReason: proposedFirstAvailableStaff.reason,
+          clarificationReason: proposedFirstAvailableStaff.reason,
+          asrAlternativesUsed: proposedFirstAvailableStaff.asrAlternativesUsed ? "true" : "false",
+          proposedSlotMutation: JSON.stringify({
+            slotName: "staffPreference",
+            proposedValue: proposedFirstAvailableStaff.proposedStaffPreference,
+            reason: proposedFirstAvailableStaff.reason,
+            matchedTranscript: proposedFirstAvailableStaff.matchedTranscript
+          })
+        }
+      : staffProposalRejectedThisTurn
+        ? {
+            awaitingStaffConfirmation: "false",
+            proposedStaffPreference: "",
+            staffRecognitionConfirmed: "false",
+            staffClarificationReason: "staff_proposal_rejected"
+          }
+        : {};
     const unresolvedStaffAttributes = shouldPromptStaff
       ? {
           staffPreference: undefined,
@@ -9624,6 +10196,8 @@ export const createAmazonConnectAIAppointment = async (
     });
     const lexSessionAttributes = buildKnownSessionAttributes({
       ...unsupportedServiceAttributes,
+      ...proposedServiceAttributes,
+      ...proposedStaffAttributes,
       ...unresolvedStaffAttributes,
       ...elicitDecision.sessionAttributes,
       ...staffPromptAttributes,
