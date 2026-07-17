@@ -213,6 +213,15 @@ const WEEKDAY_INDEXES: Record<string, number> = {
   friday: 5,
   saturday: 6
 };
+const WEEKDAY_LABELS: Record<number, string> = {
+  1: "Monday",
+  2: "Tuesday",
+  3: "Wednesday",
+  4: "Thursday",
+  5: "Friday",
+  6: "Saturday",
+  7: "Sunday"
+};
 
 const SERVICE_ALIASES: Record<string, string[]> = {
   pedicure: [
@@ -420,6 +429,7 @@ const ANY_STAFF_PHRASES = new Set([
   "any staff is fine",
   "any staff is ok",
   "any staff is okay",
+  "any stuff is fine",
   "any technician",
   "any tech",
   "no preference",
@@ -1126,6 +1136,17 @@ type StaffPhraseContext = {
   selectedStaffId?: string;
 };
 
+type VoiceSlotDecision = {
+  slot: "serviceName" | "requestedDate" | "requestedTime" | "staffPreference" | "customerName" | "bookingConfirmation";
+  action: "accept" | "propose" | "reject" | "ignore";
+  canonicalValue?: string;
+  entityId?: string;
+  reason: string;
+  confidenceBand: "high" | "medium" | "low";
+  evidence: string[];
+  alternativesUsed: boolean;
+};
+
 const staffPhraseContextFromAttributes = (
   attributes?: Record<string, unknown>
 ): StaffPhraseContext => ({
@@ -1184,6 +1205,9 @@ const normalizeAnyStaffPhrase = (
 ): "Any staff" | undefined => {
   const normalized = normalizeForMatch(value);
   if (!normalized) {
+    return undefined;
+  }
+  if (/\bnot\s+(?:any\s+staff|first\s+available|the\s+first\s+available)\b/.test(normalized)) {
     return undefined;
   }
 
@@ -1697,6 +1721,70 @@ const parseMonthDayDateText = (value: string, timezone: string): DateTime | null
   return parsed.isValid ? parsed.startOf("day") : null;
 };
 
+const parseIsoDateOnlyText = (value: string, timezone: string): DateTime | null => {
+  const match = value.match(/\b\d{4}-\d{2}-\d{2}\b/);
+  if (!match?.[0]) {
+    return null;
+  }
+  const parsed = DateTime.fromISO(match[0], { zone: timezone });
+  return parsed.isValid ? parsed.startOf("day") : null;
+};
+
+const findSpokenWeekdayToken = (value?: string | null): string | undefined => {
+  const normalized = normalizeForMatch(value);
+  return normalized.match(/\b(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/)?.[1];
+};
+
+const formatConflictDate = (value: DateTime): string => value.toFormat("cccc, LLLL d");
+
+const getWeekdayDateConflict = (
+  value: string | undefined,
+  timezone: string
+): {
+  spokenWeekday: string;
+  explicitDate: string;
+  explicitMonthDay: string;
+  explicitDateLabel: string;
+  actualWeekday: string;
+  intendedDate: string;
+  intendedDateLabel: string;
+} | null => {
+  if (!value?.trim()) {
+    return null;
+  }
+  const weekdayToken = findSpokenWeekdayToken(value);
+  if (!weekdayToken) {
+    return null;
+  }
+  const explicitDate = parseMonthDayDateText(value, timezone) ?? parseIsoDateOnlyText(value, timezone);
+  if (!explicitDate?.isValid) {
+    return null;
+  }
+  const spokenWeekdayIndex = WEEKDAY_INDEXES[weekdayToken];
+  if (!spokenWeekdayIndex || explicitDate.weekday === spokenWeekdayIndex) {
+    return null;
+  }
+  const intendedDate = parseLocalDateText(weekdayToken, timezone);
+  return {
+    spokenWeekday: WEEKDAY_LABELS[spokenWeekdayIndex] ?? weekdayToken,
+    explicitDate: explicitDate.toFormat("yyyy-MM-dd"),
+    explicitMonthDay: explicitDate.toFormat("LLLL d"),
+    explicitDateLabel: formatConflictDate(explicitDate),
+    actualWeekday: WEEKDAY_LABELS[explicitDate.weekday] ?? explicitDate.toFormat("cccc"),
+    intendedDate: intendedDate?.toFormat("yyyy-MM-dd") ?? "",
+    intendedDateLabel: intendedDate?.isValid
+      ? formatConflictDate(intendedDate)
+      : (WEEKDAY_LABELS[spokenWeekdayIndex] ?? weekdayToken)
+  };
+};
+
+const buildWeekdayDateConflictMessage = (
+  conflict: NonNullable<ReturnType<typeof getWeekdayDateConflict>>
+): string =>
+  speak(
+    `${escapeSsml(conflict.explicitMonthDay)} is ${escapeSsml(conflict.actualWeekday)}. Did you mean ${escapeSsml(conflict.explicitDateLabel)}, or ${escapeSsml(conflict.intendedDateLabel)}?`
+  );
+
 const parseLocalDateText = (value: string, timezone: string): DateTime | null => {
   const cleaned = normalizeForMatch(value);
   const now = DateTime.now().setZone(timezone);
@@ -1809,7 +1897,7 @@ type TimePhraseContext = {
 const hasGpsTimeContext = (value?: string | null, context: TimePhraseContext = {}): boolean => {
   const normalized = normalizeForMatch(value);
   return Boolean(
-    /\bat\s+g\s+p(?:\s+s)?\b/.test(normalized) ||
+    /\bat\s+g\s+p\s+s\b/.test(normalized) ||
       context.lastAskedSlot === "requestedTime" ||
       context.currentTurnSemanticType === "TIME_REQUEST" ||
       context.semanticType === "TIME_REQUEST"
@@ -1824,10 +1912,10 @@ const normalizeGpsTimePhrase = (
   if (!normalized || !hasGpsTimeContext(value, context)) {
     return undefined;
   }
-  if (/\bat\s+g\s+p(?:\s+s)?\b/.test(normalized)) {
+  if (/\bat\s+g\s+p\s+s\b/.test(normalized)) {
     return "3 PM";
   }
-  return /^(?:g\s+p(?:\s+s)?)$/.test(normalized) ? "3 PM" : undefined;
+  return /^(?:g\s+p\s+s)$/.test(normalized) ? "3 PM" : undefined;
 };
 
 const hasRequestedTimeContext = (context: TimePhraseContext = {}): boolean =>
@@ -2069,6 +2157,91 @@ const buildVoiceSlotMutationPolicy = (input: {
         : "bare_or_ambiguous_wrong_slot"
   };
 };
+
+const buildVoiceSlotDecision = (input: {
+  slot: VoiceSlotDecision["slot"];
+  action: VoiceSlotDecision["action"];
+  canonicalValue?: string;
+  entityId?: string;
+  reason?: string;
+  confidenceBand?: VoiceSlotDecision["confidenceBand"];
+  evidence?: Array<string | null | undefined>;
+  alternativesUsed?: boolean;
+}): VoiceSlotDecision => ({
+  slot: input.slot,
+  action: input.action,
+  ...(input.canonicalValue ? { canonicalValue: input.canonicalValue } : {}),
+  ...(input.entityId ? { entityId: input.entityId } : {}),
+  reason: input.reason ?? "unspecified",
+  confidenceBand: input.confidenceBand ?? "medium",
+  evidence: (input.evidence ?? [])
+    .map((item) => item?.trim())
+    .filter((item): item is string => Boolean(item))
+    .slice(0, 5),
+  alternativesUsed: Boolean(input.alternativesUsed)
+});
+
+const confidenceBandForMutationDecision = (decision: {
+  accepted: boolean;
+  reason: string;
+}): VoiceSlotDecision["confidenceBand"] => {
+  if (decision.reason === "bare_or_ambiguous_wrong_slot") {
+    return "low";
+  }
+  if (decision.accepted || decision.reason === "caller_rejected_proposed_value") {
+    return "high";
+  }
+  return "medium";
+};
+
+const mutationPolicyToVoiceSlotDecision = (
+  decision: ReturnType<typeof buildVoiceSlotMutationPolicy>,
+  evidence: Array<string | null | undefined> = [],
+  alternativesUsed = false
+): VoiceSlotDecision =>
+  buildVoiceSlotDecision({
+    slot: decision.slotName as VoiceSlotDecision["slot"],
+    action: decision.accepted ? "accept" : "reject",
+    canonicalValue: decision.accepted ? decision.proposedValue : undefined,
+    reason: decision.reason,
+    confidenceBand: confidenceBandForMutationDecision(decision),
+    evidence: [
+      ...evidence,
+      decision.proposedValue ? `proposed=${decision.proposedValue}` : undefined,
+      decision.previousValue ? `previous=${decision.previousValue}` : undefined
+    ],
+    alternativesUsed
+  });
+
+const parseVoiceSlotDecisions = (value: unknown): VoiceSlotDecision[] => {
+  const raw = typeof value === "string" ? value.trim() : value;
+  if (!raw) {
+    return [];
+  }
+  try {
+    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+    return Array.isArray(parsed)
+      ? parsed.filter(
+          (item): item is VoiceSlotDecision =>
+            Boolean(item) &&
+            typeof item === "object" &&
+            typeof (item as VoiceSlotDecision).slot === "string" &&
+            typeof (item as VoiceSlotDecision).action === "string"
+        )
+      : [];
+  } catch {
+    return [];
+  }
+};
+
+const withVoiceSlotDecision = (
+  attributes: Record<string, unknown> | undefined,
+  decision: VoiceSlotDecision
+): string =>
+  JSON.stringify([
+    ...parseVoiceSlotDecisions(attributes?.voiceSlotDecisions),
+    decision
+  ].slice(-8));
 
 const parseLocalTimeText = (
   value: string,
@@ -4087,11 +4260,21 @@ const hasScopedFullSetPhoneticCandidate = (value?: string | null): boolean => {
     return false;
   }
   return Boolean(
-    /\bwho\s+said\b/.test(normalized) ||
+    /\bwho\s+(?:said|s\s+that|is\s+that|that)\b/.test(normalized) ||
+      /\bfull\s+jet\b/.test(normalized) ||
       /\btime\s+to\s+fight\b/.test(normalized) ||
       /\bfun\s+facts?\b/.test(normalized) ||
-      /\b(?:phone\s+set|phone\s+chat|food\s+set|pool\s+set|cool\s+set)\b/.test(normalized)
+      /\b(?:phone\s+set|phone\s+chat|food\s+set|pool\s+set|cool\s+set)\b/.test(normalized) ||
+      /\b(?:can\s+we|could\s+we|so\s+we\s+ll|we\s+ll)\s+set\b/.test(normalized)
   );
+};
+
+const hasStrongServiceSlotFullSetCandidate = (value?: string | null): boolean => {
+  const normalized = normalizeForMatch(value);
+  if (!normalized || hasUnsafeSunsetWithoutExplicitFullSetAlias(value)) {
+    return false;
+  }
+  return Boolean(/\bfull\s+(?:set|jet)\b/.test(normalized) || /\bfullset\b/.test(normalized));
 };
 
 const findProposedFullSetServiceClarification = (input: {
@@ -4107,7 +4290,7 @@ const findProposedFullSetServiceClarification = (input: {
   asrAlternativesUsed: boolean;
   matchedTranscript: string;
 } | null => {
-  if (input.serviceName || !input.requestedDate || !input.requestedTime) {
+  if (input.serviceName) {
     return null;
   }
   const topTranscript = input.currentTurnTranscript ?? input.transcriptText ?? "";
@@ -4132,11 +4315,17 @@ const findProposedFullSetServiceClarification = (input: {
       matchedTranscript: alternativeMatch.transcript
     };
   }
-  if (
-    hasScopedFullSetPhoneticCandidate(topTranscript) &&
+  const serviceSlotActive = getActiveVoiceSlot(input.attributes) === "serviceName";
+  const hasBookingContext =
+    Boolean(input.requestedDate && input.requestedTime) &&
     /\b(?:today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|at|am|pm|appointment|book|booking|service)\b/.test(
       normalizeForMatch(topTranscript)
-    )
+    );
+  const hasServiceSlotOnlyContext =
+    serviceSlotActive && hasStrongServiceSlotFullSetCandidate(topTranscript);
+  if (
+    hasScopedFullSetPhoneticCandidate(topTranscript) &&
+    (hasServiceSlotOnlyContext || hasBookingContext)
   ) {
     return {
       proposedServiceName: "Full Set",
@@ -4159,6 +4348,9 @@ const isAmbiguousFirstAvailableStaffCandidate = (
   const tail = stripAnyStaffTrailingFiller(normalized)
     .replace(/\s+(?:music|background music|noise)$/, "")
     .trim();
+  if (/\bnot\s+(?:the\s+)?first\s+available\b/.test(tail) || /\bnot\s+(?:a\s+)?(?:five|5)\b/.test(tail)) {
+    return false;
+  }
   return Boolean(
     /\b(?:and\s+)?(?:it\s+s|its|it\s+is|it)?\s*stopp?ed\s+at\s+(?:five|5)\b/.test(tail) ||
       [
@@ -4166,6 +4358,8 @@ const isAmbiguousFirstAvailableStaffCandidate = (
         "anny stop",
         "any stop",
         "anystop",
+        "edit stop",
+        "edit stop if i",
         "any stop if i",
         "any stuff",
         "any star",
@@ -4179,12 +4373,36 @@ const isAmbiguousFirstAvailableStaffCandidate = (
         "and it s top five",
         "and its top five",
         "and it is top five",
+        "and it s top a five",
+        "and its top a five",
+        "and it is top a five",
+        "and it s top e five",
+        "and its top e five",
+        "and it is top e five",
         "it s top five",
         "its top five",
         "it is top five",
-        "any top five"
+        "any top five",
+        "and is up for hire able",
+        "and he s up for hire able",
+        "and hes up for hire able",
+        "is up for hire able",
+        "he s up for hire able",
+        "hes up for hire able"
       ].some((alias) => tail === alias || tail.endsWith(` ${alias}`))
   );
+};
+
+const isRejectedFirstAvailableStaffCandidate = (
+  value?: string | null,
+  attributes?: Record<string, unknown>
+): boolean => {
+  const normalized = normalizeForMatch(value);
+  if (!normalized || getActiveVoiceSlot(attributes) !== "staffPreference") {
+    return false;
+  }
+  return /\bnot\s+(?:any\s+staff|the\s+first\s+available|first\s+available)\b/.test(normalized) ||
+    /\bnot\s+(?:a\s+)?(?:five|5)\b/.test(normalized);
 };
 
 const findProposedAnyStaffClarification = (input: {
@@ -5221,6 +5439,15 @@ const parseRequestedStartTime = (input: {
   return parseRequestedStartTimeDetailed(input).utcDate;
 };
 
+const isRequestedStartTimeInPast = (
+  startTime: Date,
+  timezone: string,
+  now = DateTime.now().setZone(timezone)
+): boolean => DateTime.fromJSDate(startTime, { zone: "utc" }).setZone(timezone) < now;
+
+const buildPastRequestedTimeMessage = (): string =>
+  speak("That time has already passed. What future date and time would you like?");
+
 const salonSelect = {
   id: true,
   timezone: true,
@@ -6020,12 +6247,19 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
     transcript: transcriptText,
     attributes
   });
+  const requestedTimeVoiceSlotDecision = mutationPolicyToVoiceSlotDecision(
+    requestedTimeMutationPolicy,
+    [transcriptText],
+    parseAsrAlternativeDiagnostics(attributes).length > 1
+  );
   if (requestedTimeCandidate && !requestedTimeMutationPolicy.accepted) {
     attributes.preventedSlotMutations = JSON.stringify([requestedTimeMutationPolicy]);
     attributes.proposedSlotMutation = JSON.stringify(requestedTimeMutationPolicy);
+    attributes.voiceSlotDecisions = withVoiceSlotDecision(attributes, requestedTimeVoiceSlotDecision);
   } else if (requestedTimeCandidate) {
     attributes.acceptedSlotMutations = JSON.stringify([requestedTimeMutationPolicy]);
     attributes.proposedSlotMutation = JSON.stringify(requestedTimeMutationPolicy);
+    attributes.voiceSlotDecisions = withVoiceSlotDecision(attributes, requestedTimeVoiceSlotDecision);
   }
   const requestedTime =
     requestedTimeCandidate && requestedTimeMutationPolicy.accepted
@@ -7001,7 +7235,7 @@ const buildLexMessage = (input: {
     if (input.missingFields?.includes("preferredDateTime")) {
       return input.knownFields?.requestedDate
         ? speak(
-            `${knownCallerIntro}${intro} <break time="300ms"/> What time works best?`
+            `${knownCallerIntro}${intro} <break time="300ms"/> What time? You can say 3 PM.`
           )
         : speak(
             `${knownCallerIntro}${intro} <break time="300ms"/> What day would you like?`
@@ -7077,8 +7311,21 @@ const getElicitSlotForMissingFields = (
   attemptCount: number;
   sessionAttributes: Record<string, string>;
 } => {
+  const lastAskedSlot = readStringAttribute(normalized.attributes, ["lastAskedSlot"]);
+  const currentTurnTranscript = normalized.currentTurnTranscript ?? normalized.transcriptText ?? "";
+  const shouldKeepActiveTimeSlot =
+    lastAskedSlot === "requestedTime" &&
+    missingFields.has("preferredDateTime") &&
+    Boolean(currentTurnTranscript.trim()) &&
+    !normalized.requestedTime &&
+    !hasGroundedTimePhrase(currentTurnTranscript, {
+      lastAskedSlot: "requestedTime",
+      currentTurnHasDatePhrase: hasGroundedDatePhrase(currentTurnTranscript)
+    });
   let slotToElicit = "serviceName";
-  if (missingFields.has("customerName")) {
+  if (shouldKeepActiveTimeSlot) {
+    slotToElicit = "requestedTime";
+  } else if (missingFields.has("customerName")) {
     slotToElicit = "customerName";
   } else if (missingFields.has("serviceName")) {
     slotToElicit = "serviceName";
@@ -7090,7 +7337,6 @@ const getElicitSlotForMissingFields = (
     slotToElicit = "customerPhone";
   }
 
-  const lastAskedSlot = readStringAttribute(normalized.attributes, ["lastAskedSlot"]);
   const previousCount = parseAttemptCount(
     readStringAttribute(normalized.attributes, ["askedSlotsCount", "fallbackCount", "errorCount"])
   );
@@ -8719,6 +8965,9 @@ export const createAmazonConnectAIAppointment = async (
       excludedStaffIds: Array.from(staffExclusionState.ids.values()),
       excludedStaffNames: Array.from(staffExclusionState.names.values()),
       staffIntentSelectionMode: staffIntent.selectionMode,
+      voiceSlotDecisions: parseVoiceSlotDecisions(
+        inferredResponseSessionAttributes.voiceSlotDecisions ?? responseDebugRecord?.voiceSlotDecisions
+      ),
       asrDiagnostics: parseDiagnosticJson(
         input.attributes?.asrDiagnostics ??
           responsePayloadBase.asrDiagnostics ??
@@ -8880,6 +9129,7 @@ export const createAmazonConnectAIAppointment = async (
         staffRecognitionFailureCount: isAnyStaffPreference(normalized.staffPreference) ? "0" : undefined,
         invalidStaffPreferenceIgnored: isAnyStaffPreference(normalized.staffPreference) ? "false" : undefined,
         unrecognizedStaffUtterance: normalized.unrecognizedStaffUtterance,
+        voiceSlotDecisions: readStringAttribute(normalized.attributes, ["voiceSlotDecisions"]),
         excludedStaffIds: readStringAttribute(normalized.attributes, ["excludedStaffIds"]),
         excludedStaffNames: readStringAttribute(normalized.attributes, ["excludedStaffNames"]),
         callSessionId: callSession?.id,
@@ -9744,6 +9994,141 @@ export const createAmazonConnectAIAppointment = async (
     }
   }
 
+  const returnRejectedDateTime = async (inputForRejection: {
+    message: string;
+    failureReason: string;
+    reasonCode: "WEEKDAY_DATE_CONFLICT" | "PAST_REQUESTED_TIME";
+    clearTime: boolean;
+    requestedStartTime?: Date | null;
+    responsePayload?: Record<string, unknown>;
+    normalizedRequest?: Record<string, unknown>;
+  }) => {
+    const rejectedDate = normalized.requestedDate;
+    const rejectedTime = normalized.requestedTime;
+    if (inputForRejection.clearTime) {
+      normalized.requestedTime = undefined;
+    }
+    normalized.requestedDate = undefined;
+    const parsed = buildInternalParsedIntent({
+      intentType: "BOOK_APPOINTMENT",
+      customerName: normalized.customerName,
+      customerPhone: normalized.customerPhone,
+      serviceName: normalized.serviceName,
+      staffPreference: normalized.staffPreference,
+      requestedDateTime:
+        inputForRejection.requestedStartTime?.toISOString() ??
+        [rejectedDate, rejectedTime].filter(Boolean).join(" "),
+      missingFields: ["preferredDateTime"],
+      isReadyToBook: false
+    });
+    const lexSessionAttributes = buildKnownSessionAttributes({
+      requestedDate: undefined,
+      requestedTime: inputForRejection.clearTime ? undefined : normalized.requestedTime,
+      dateClarificationReason: inputForRejection.reasonCode,
+      availabilityReasonCode: inputForRejection.reasonCode,
+      aiAlternativeSlots: "[]",
+      awaitingAlternativeSelection: "false",
+      awaitingFinalBookingConfirmation: "false",
+      bookingConfirmationAsked: "false",
+      lastAskedSlot: "requestedDate",
+      slotToElicit: "requestedDate",
+      askedSlotsCount: "1",
+      fallbackCount: "1",
+      errorCount: "1"
+    });
+    const bookingAttempt = await createAttempt({
+      status: BookingAttemptStatus.NEEDS_INPUT,
+      requestedStartTime: inputForRejection.requestedStartTime ?? undefined,
+      failureReason: inputForRejection.failureReason,
+      normalizedRequest: {
+        requestedDate: rejectedDate,
+        requestedTime: rejectedTime,
+        reasonCode: inputForRejection.reasonCode,
+        timezone: salon.timezone,
+        ...(inputForRejection.requestedStartTime
+          ? { startTimeIso: inputForRejection.requestedStartTime.toISOString() }
+          : {}),
+        ...inputForRejection.normalizedRequest
+      }
+    });
+    const aiInteraction = await createInteraction({
+      outcome: "MISSING_INFO",
+      message: inputForRejection.message,
+      parsed,
+      bookingAttemptId: bookingAttempt.id,
+      responsePayload: {
+        reasonCode: inputForRejection.reasonCode,
+        rejectedDate,
+        rejectedTime,
+        sessionAttributes: lexSessionAttributes,
+        ...inputForRejection.responsePayload
+      },
+      isValid: true
+    });
+    await finalizeCall({
+      outcome: "MISSING_INFO",
+      bookingAttemptId: bookingAttempt.id,
+      bookingStatus: bookingAttempt.status,
+      parsed,
+      message: inputForRejection.message,
+      failureReason: bookingAttempt.failureReason ?? undefined
+    });
+
+    return {
+      outcome: "MISSING_INFO" as const,
+      message: inputForRejection.message,
+      lexResponse: {
+        fulfillmentState: "InProgress",
+        message: inputForRejection.message,
+        messageContentType: "SSML",
+        dialogAction: {
+          type: "ElicitSlot",
+          slotToElicit: "requestedDate"
+        },
+        sessionAttributes: lexSessionAttributes
+      },
+      appointment: null,
+      bookingAttempt,
+      callSession,
+      transcript,
+      aiInteraction,
+      escalation: null,
+      alternatives: [],
+      missingFields: ["preferredDateTime"],
+      salonResolutionSource: resolutionSource
+    };
+  };
+
+  const weekdayDateConflict = getWeekdayDateConflict(
+    normalized.currentTurnTranscript ?? normalized.transcriptText,
+    salon.timezone
+  );
+  if (weekdayDateConflict) {
+    return await returnRejectedDateTime({
+      message: buildWeekdayDateConflictMessage(weekdayDateConflict),
+      failureReason: "Requested weekday conflicts with explicit calendar date.",
+      reasonCode: "WEEKDAY_DATE_CONFLICT",
+      clearTime: false,
+      requestedStartTime,
+      responsePayload: {
+        weekdayDateConflict
+      },
+      normalizedRequest: {
+        weekdayDateConflict
+      }
+    });
+  }
+
+  if (requestedStartTime && isRequestedStartTimeInPast(requestedStartTime, salon.timezone)) {
+    return await returnRejectedDateTime({
+      message: buildPastRequestedTimeMessage(),
+      failureReason: "Requested appointment time has already passed.",
+      reasonCode: "PAST_REQUESTED_TIME",
+      clearTime: true,
+      requestedStartTime
+    });
+  }
+
   const businessHoursDayDecision = normalized.requestedDate
     ? await getBusinessHoursDayDecision({
         salonId: salon.id,
@@ -9871,8 +10256,8 @@ export const createAmazonConnectAIAppointment = async (
       staffResolution.status === "unmatched_specific"
         ? staffResolution.rawStaffPreference
         : normalized.unrecognizedStaffUtterance;
-      normalized.staffPreference = undefined;
-      normalized.staffId = undefined;
+    normalized.staffPreference = undefined;
+    normalized.staffId = undefined;
   }
   const ambiguousFirstAvailableStaffProposal =
     !awaitingStaffConfirmation &&
@@ -9880,6 +10265,10 @@ export const createAmazonConnectAIAppointment = async (
       normalized.currentTurnTranscript ?? normalized.transcriptText,
       normalized.attributes
     );
+  const rejectedFirstAvailableStaffCandidate = isRejectedFirstAvailableStaffCandidate(
+    normalized.currentTurnTranscript ?? normalized.transcriptText,
+    normalized.attributes
+  );
   const alternativeFirstAvailableStaffProposal =
     !awaitingStaffConfirmation && !ambiguousFirstAvailableStaffProposal
       ? findProposedAnyStaffClarification({
@@ -9924,6 +10313,7 @@ export const createAmazonConnectAIAppointment = async (
   }
   const shouldAskStaffOnce =
     finalConfirmationRequiresStaffSelection ||
+    rejectedFirstAvailableStaffCandidate ||
     (staffResolution.status === "missing" && staffResolution.allStaff.length > 0) ||
     staffResolution.status === "invalid_noise" ||
     staffResolution.status === "unmatched_specific";
@@ -9977,6 +10367,7 @@ export const createAmazonConnectAIAppointment = async (
       (staffResolution.status === "unmatched_specific" ||
         staffResolution.status === "invalid_noise" ||
         Boolean(normalized.invalidStaffDtmfSelection) ||
+        rejectedFirstAvailableStaffCandidate ||
         (wasStaffSelectionTurn && staffResolution.status === "missing"));
     const staffRecognitionFailureCount = hasFailedStaffRecognitionThisTurn
       ? parseAttemptCount(readStringAttribute(normalized.attributes, ["staffRecognitionFailureCount"])) + 1
@@ -10069,6 +10460,18 @@ export const createAmazonConnectAIAppointment = async (
           proposedServiceName: proposedServiceClarification.proposedServiceName,
           clarificationReason: proposedServiceClarification.reason,
           asrAlternativesUsed: proposedServiceClarification.asrAlternativesUsed ? "true" : "false",
+          voiceSlotDecisions: withVoiceSlotDecision(
+            normalized.attributes,
+            buildVoiceSlotDecision({
+              slot: "serviceName",
+              action: "propose",
+              canonicalValue: proposedServiceClarification.proposedServiceName,
+              reason: proposedServiceClarification.reason,
+              confidenceBand: "medium",
+              evidence: [proposedServiceClarification.matchedTranscript],
+              alternativesUsed: proposedServiceClarification.asrAlternativesUsed
+            })
+          ),
           proposedSlotMutation: JSON.stringify({
             slotName: "serviceName",
             proposedValue: proposedServiceClarification.proposedServiceName,
@@ -10084,6 +10487,18 @@ export const createAmazonConnectAIAppointment = async (
           staffClarificationReason: proposedFirstAvailableStaff.reason,
           clarificationReason: proposedFirstAvailableStaff.reason,
           asrAlternativesUsed: proposedFirstAvailableStaff.asrAlternativesUsed ? "true" : "false",
+          voiceSlotDecisions: withVoiceSlotDecision(
+            normalized.attributes,
+            buildVoiceSlotDecision({
+              slot: "staffPreference",
+              action: "propose",
+              canonicalValue: proposedFirstAvailableStaff.proposedStaffPreference,
+              reason: proposedFirstAvailableStaff.reason,
+              confidenceBand: "medium",
+              evidence: [proposedFirstAvailableStaff.matchedTranscript],
+              alternativesUsed: proposedFirstAvailableStaff.asrAlternativesUsed
+            })
+          ),
           proposedSlotMutation: JSON.stringify({
             slotName: "staffPreference",
             proposedValue: proposedFirstAvailableStaff.proposedStaffPreference,

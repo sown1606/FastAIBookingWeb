@@ -613,19 +613,19 @@ test("Connect AI reception has one reachable greeting and no outer service promp
   assert.doesNotMatch(primary.Parameters.Text, /press 1 for Pedicure/i);
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:allow-interrupt:*:*"], "true");
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:start-timeout-ms:*:*"], "9000");
-  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:*:*"], "4200");
+  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:*:*"], "3200");
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:max-length-ms:*:*"], "20000");
-  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName"], "3200");
+  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName"], "2800");
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedDate"], "2200");
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedTime"], "2200");
-  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference"], "2200");
+  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference"], "2600");
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:customerName"], "2000");
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:bookingConfirmation"], "900");
   assert.equal(primary.Parameters.LexSessionAttributes.lastAskedSlot, "serviceName");
   assert.equal(primary.Parameters.LexSessionAttributes.initialVoiceBookingContext, "true");
-  assert.equal(primary.Parameters.LexSessionAttributes.audioTimeoutProfile, "initial_booking_freeform_v2");
+  assert.equal(primary.Parameters.LexSessionAttributes.audioTimeoutProfile, "thuyet_voice_hotfix_v1");
   assert.equal(primary.Parameters.LexSessionAttributes.connectRecoveryStage, "initial");
-  assert.equal(primary.Parameters.LexSessionAttributes.connectFlowSourceVersion, "2026-07-16-voice-asr-latency-root-fix");
+  assert.equal(primary.Parameters.LexSessionAttributes.connectFlowSourceVersion, "2026-07-17-thuyet-voice-hotfix");
   assert.equal(recovery.Parameters.Text, "$.Lex.SessionAttributes.connectContinuationPrompt");
   assert.equal(recovery.Transitions.NextAction, "check-transfer-to-queue");
   assert.equal(recovery.Parameters.LexSessionAttributes.connectRecoveryStage, "$.Attributes.connectRecoveryStage");
@@ -859,10 +859,10 @@ test("Lex booking slot prompt attempts allow interrupt and use phone-friendly au
     "infra/aws/lex/FastAIBookingBot-v10/BotLocales/en_US/Intents/BookAppointmentIntent/Slots"
   );
   const expected = {
-    serviceName: { startMin: 8000, endMin: 1700, endMax: 1900, maxMin: 20000 },
-    requestedDate: { startMin: 8000, endMin: 1500, endMax: 1700, maxMin: 20000 },
-    requestedTime: { startMin: 8000, endMin: 1500, endMax: 1700, maxMin: 20000 },
-    staffPreference: { startMin: 8000, endMin: 1500, endMax: 1700, maxMin: 20000 },
+    serviceName: { startMin: 8000, endMin: 2700, endMax: 2900, maxMin: 20000 },
+    requestedDate: { startMin: 8000, endMin: 2100, endMax: 2300, maxMin: 20000 },
+    requestedTime: { startMin: 8000, endMin: 2100, endMax: 2300, maxMin: 20000 },
+    staffPreference: { startMin: 8000, endMin: 2500, endMax: 2700, maxMin: 20000 },
     customerName: { startMin: 8000, endMin: 1900, endMax: 2100, maxMin: 20000 },
     customerPhone: { startMin: 8000, endMin: 1900, endMax: 2100, maxMin: 20000 }
   };
@@ -1143,7 +1143,7 @@ test("Fulfillment current staff alias overrides stale marvell while preserving J
           sessionAttributes: {
             customerId: "89e51525-297d-4b2a-b438-f64c4848683a",
             customerName: "Jane",
-            customerPhone: "+84978634886",
+            customerPhone: "+15555550123",
             serviceName: "Full Set",
             confirmedServiceName: "Full Set",
             requestedDate: usEasternDate(1),
@@ -1174,15 +1174,15 @@ test("Fulfillment current staff alias overrides stale marvell while preserving J
         ...baseEvent().sessionState,
         sessionAttributes: {
           salonId: "salon-explicit",
-          CallerId: "+84978634886",
+          CallerId: "+15555550123",
           CalledNumber: "+18483487681",
-          CustomerEndpointAddress: "+84978634886",
+          CustomerEndpointAddress: "+15555550123",
           AmazonConnectContactId: "bb0b6ac3-a5be-4c9d-abac-7297a301d7bc",
           customerId: "89e51525-297d-4b2a-b438-f64c4848683a",
           customerName: "Jane",
           recognizedCustomerName: "Jane",
           customerNameSource: "customer",
-          customerPhone: "+84978634886",
+          customerPhone: "+15555550123",
           serviceName: "Full Set",
           confirmedServiceName: "Full Set",
           requestedDate: usEasternDate(1),
@@ -1196,7 +1196,7 @@ test("Fulfillment current staff alias overrides stale marvell while preserving J
           confirmationState: "None",
           slots: {
             customerName: null,
-            customerPhone: slot("+84978634886"),
+            customerPhone: slot("+15555550123"),
             serviceName: slotWith({
               originalValue: "full set",
               interpretedValue: "Full Set",
@@ -1220,7 +1220,7 @@ test("Fulfillment current staff alias overrides stale marvell while preserving J
   assert.equal(fetchCalls[0].body.requestedTime, "3 PM");
   assert.equal(fetchCalls[0].body.staffPreference, "Trang");
   assert.equal(fetchCalls[0].body.customerName, "Jane");
-  assert.equal(fetchCalls[0].body.customerPhone, "+84978634886");
+  assert.equal(fetchCalls[0].body.customerPhone, "+15555550123");
   assert.equal(fetchCalls[0].body.attributes.confirmedStaffName, "Trang");
   assert.equal(fetchCalls[0].body.attributes.discardedStaleStaff, "marvell");
   assert.equal(fetchCalls[0].body.attributes.staffSource, "current_turn_alias");
@@ -1256,7 +1256,7 @@ test("DialogCodeHook one-shot Full Set phrase captures spoken p m before asking 
             awaitingFinalBookingConfirmation: "true",
             bookingConfirmationAsked: "true",
             customerName: "Jane",
-            customerPhone: "+84978634886",
+            customerPhone: "+15555550123",
             serviceName: "Full Set",
             confirmedServiceName: "Full Set",
             requestedDate: usEasternDate(1),
@@ -1279,13 +1279,13 @@ test("DialogCodeHook one-shot Full Set phrase captures spoken p m before asking 
         sessionAttributes: {
           salonId: "salon-explicit",
           CalledNumber: "+18483487681",
-          CustomerEndpointAddress: "+84978634886",
+          CustomerEndpointAddress: "+15555550123",
           AmazonConnectContactId: "connect-live-oneshot-spoken-pm",
           customerId: "89e51525-297d-4b2a-b438-f64c4848683a",
           customerName: "Jane",
           recognizedCustomerName: "Jane",
           customerNameSource: "customer",
-          customerPhone: "+84978634886"
+          customerPhone: "+15555550123"
         },
         intent: {
           ...baseEvent().sessionState.intent,
@@ -1361,13 +1361,13 @@ test("DialogCodeHook recognizes production Full Set speech aliases without DTMF"
           sessionAttributes: {
             salonId: "salon-explicit",
             CalledNumber: "+18483487681",
-            CustomerEndpointAddress: "+84978634886",
+            CustomerEndpointAddress: "+15555550123",
             AmazonConnectContactId: `connect-full-set-${inputTranscript.replace(/\W+/g, "-")}`,
             customerId: "89e51525-297d-4b2a-b438-f64c4848683a",
             customerName: "Jane",
             recognizedCustomerName: "Jane",
             customerNameSource: "customer",
-            customerPhone: "+84978634886",
+            customerPhone: "+15555550123",
             lastAskedSlot: "serviceName"
           },
           intent: {
@@ -1529,13 +1529,94 @@ test("DialogCodeHook clarifies scoped who-said Full Set ASR without committing s
   assert.equal(response.sessionState.sessionAttributes.serviceName, undefined);
   assert.equal(response.sessionState.sessionAttributes.proposedServiceName, "Full Set");
   assert.equal(response.sessionState.sessionAttributes.awaitingServiceConfirmation, "true");
+  assert.deepEqual(JSON.parse(response.sessionState.sessionAttributes.voiceSlotDecisions), [
+    {
+      slot: "serviceName",
+      action: "propose",
+      canonicalValue: "Full Set",
+      reason: "scoped_phonetic_full_set",
+      confidenceBand: "medium",
+      evidence: ["who said today at three p m and it's time to fight"],
+      alternativesUsed: false
+    }
+  ]);
   assert.match(response.messages[0].content, /I heard today at 3 PM.*Did you say Full Set\?/i);
 });
 
 test("DialogCodeHook handles live distorted Full Set transcripts without silent service commit", async () => {
   for (const [phrase, expected] of [
     [
+      "the pool set today at three p m",
+      {
+        proposed: "Full Set",
+        date: usEasternDate(0),
+        time: "3 PM",
+        staff: undefined,
+        prompt: /Did you say Full Set/i
+      }
+    ],
+    [
+      "food set today at two pm and it's top a five",
+      {
+        proposed: "Full Set",
+        date: usEasternDate(0),
+        time: "2 PM",
+        staff: undefined,
+        prompt: /Did you say Full Set/i
+      }
+    ],
+    [
+      "who's that today at two p m",
+      {
+        proposed: "Full Set",
+        date: usEasternDate(0),
+        time: "2 PM",
+        staff: undefined,
+        prompt: /Did you say Full Set/i
+      }
+    ],
+    [
+      "who's that today at three p m",
+      {
+        proposed: "Full Set",
+        date: usEasternDate(0),
+        time: "3 PM",
+        staff: undefined,
+        prompt: /Did you say Full Set/i
+      }
+    ],
+    [
       "sunset is it food",
+      {
+        proposed: undefined,
+        date: undefined,
+        time: undefined,
+        staff: undefined,
+        prompt: /Which service would you like/i
+      }
+    ],
+    [
+      "The sunset is beautiful",
+      {
+        proposed: undefined,
+        date: undefined,
+        time: undefined,
+        staff: undefined,
+        prompt: /Which service would you like/i
+      }
+    ],
+    [
+      "Fun facts are interesting",
+      {
+        proposed: undefined,
+        date: undefined,
+        time: undefined,
+        staff: undefined,
+        prompt: /Which service would you like/i
+      }
+    ],
+    [
+      "food set",
       {
         proposed: undefined,
         date: undefined,
@@ -1566,6 +1647,36 @@ test("DialogCodeHook handles live distorted Full Set transcripts without silent 
     ],
     [
       "fun fact today at three p m with amy",
+      {
+        proposed: "Full Set",
+        date: usEasternDate(0),
+        time: "3 PM",
+        staff: "Amy",
+        prompt: /Did you say Full Set/i
+      }
+    ],
+    [
+      "phone set today at three pm with amy",
+      {
+        proposed: "Full Set",
+        date: usEasternDate(0),
+        time: "3 PM",
+        staff: "Amy",
+        prompt: /Did you say Full Set/i
+      }
+    ],
+    [
+      "cool set today at three pm",
+      {
+        proposed: "Full Set",
+        date: usEasternDate(0),
+        time: "3 PM",
+        staff: undefined,
+        prompt: /Did you say Full Set/i
+      }
+    ],
+    [
+      "can we set today at three pm with emmy",
       {
         proposed: "Full Set",
         date: usEasternDate(0),
@@ -1623,6 +1734,15 @@ test("DialogCodeHook handles live distorted Full Set transcripts without silent 
     assert.equal(response.sessionState.sessionAttributes.staffPreference, expected.staff, phrase);
     assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName", phrase);
     assert.match(response.messages?.[0]?.content || "", expected.prompt, phrase);
+    if (expected.proposed) {
+      const decisions = JSON.parse(response.sessionState.sessionAttributes.voiceSlotDecisions);
+      assert.equal(decisions[0].slot, "serviceName", phrase);
+      assert.equal(decisions[0].action, "propose", phrase);
+      assert.equal(decisions[0].canonicalValue, "Full Set", phrase);
+      assert.equal(decisions[0].confidenceBand, "medium", phrase);
+    } else {
+      assert.equal(response.sessionState.sessionAttributes.voiceSlotDecisions, undefined, phrase);
+    }
   }
 });
 
@@ -1764,6 +1884,51 @@ test("DialogCodeHook uses N-best first-available staff alternative as a proposal
   assert.equal(attrs.awaitingStaffConfirmation, "true");
   assert.equal(attrs.asrAlternativesUsed, "true");
   assert.match(response.messages[0].content, /I still have Full Set today at 3 PM\. Did you mean first available\?/i);
+});
+
+test("DialogCodeHook proposes first available for edit stop if i without mutating time", async () => {
+  const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
+  globalThis.fetch = async () => {
+    throw new Error("fetch should not be called before staff clarification");
+  };
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "edit stop if i",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+84798171999",
+          AmazonConnectContactId: "connect-edit-stop-if-i",
+          customerName: "Lee",
+          customerPhone: "+84798171999",
+          serviceName: "Full Set",
+          confirmedServiceName: "Full Set",
+          requestedDate: usEasternDate(1),
+          requestedTime: "3 PM",
+          lastAskedSlot: "staffPreference",
+          ...dynamicStaffAttributes()
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          state: "InProgress",
+          confirmationState: "None",
+          slots: {}
+        }
+      }
+    })
+  );
+
+  const attrs = response.sessionState.sessionAttributes;
+  assert.equal(attrs.requestedTime, "3 PM");
+  assert.equal(attrs.serviceName, "Full Set");
+  assert.equal(attrs.proposedStaffPreference, "Any staff");
+  assert.equal(attrs.awaitingStaffConfirmation, "true");
+  assert.equal(attrs.staffPreference, undefined);
+  assert.match(response.messages[0].content, /Did you mean first available\?/i);
 });
 
 test("DialogCodeHook not-a-five rejects ambiguous staff proposal without setting time or staff", async () => {
@@ -2199,6 +2364,8 @@ test("DialogCodeHook adds compact staff runtime hints only for staff elicitation
     "Kelly",
     "Any staff",
     "Any staff is fine",
+    "Any stuff is fine",
+    "Anyone is fine",
     "First available",
     "Whoever is available"
   ]);
@@ -2328,7 +2495,7 @@ test("DialogCodeHook does not treat non-booking fun fact as Full Set", async () 
         sessionAttributes: {
           salonId: "salon-explicit",
           CalledNumber: "+18483487681",
-          CustomerEndpointAddress: "+84978634886",
+          CustomerEndpointAddress: "+15555550123",
           AmazonConnectContactId: "connect-nonbooking-fun-fact"
         },
         intent: {
@@ -2361,7 +2528,7 @@ test("DialogCodeHook does not treat unrelated sunset sentence as Full Set", asyn
         sessionAttributes: {
           salonId: "salon-explicit",
           CalledNumber: "+18483487681",
-          CustomerEndpointAddress: "+84978634886",
+          CustomerEndpointAddress: "+15555550123",
           AmazonConnectContactId: "connect-nonbooking-sunset"
         },
         intent: {
@@ -2486,10 +2653,10 @@ test("DialogCodeHook resolves pay the bill today at two p m with any staff in on
         sessionAttributes: {
           salonId: "salon-explicit",
           CalledNumber: "+18483487681",
-          CustomerEndpointAddress: "+84978634886",
+          CustomerEndpointAddress: "+15555550123",
           AmazonConnectContactId: "connect-pay-bill-any-staff",
           customerName: "Jane",
-          customerPhone: "+84978634886"
+          customerPhone: "+15555550123"
         },
         intent: {
           ...baseEvent().sessionState.intent,
@@ -2553,10 +2720,10 @@ test("DialogCodeHook stale service digit cannot replace spoken Manicure after me
         sessionAttributes: {
           salonId: "salon-explicit",
           CalledNumber: "+18483487681",
-          CustomerEndpointAddress: "+84978634886",
+          CustomerEndpointAddress: "+15555550123",
           AmazonConnectContactId: "connect-stale-service-digit",
           customerName: "Jane",
-          customerPhone: "+84978634886",
+          customerPhone: "+15555550123",
           serviceName: "Manicure",
           confirmedServiceName: "Manicure",
           requestedDate: usEasternDate(0),
@@ -2762,10 +2929,10 @@ test("DialogCodeHook current food set does not overwrite stale placeholder servi
         sessionAttributes: {
           salonId: "salon-explicit",
           CalledNumber: "+18483487681",
-          CustomerEndpointAddress: "+84978634886",
+          CustomerEndpointAddress: "+15555550123",
           AmazonConnectContactId: "connect-food-set-placeholder",
           customerName: "Jane",
-          customerPhone: "+84978634886",
+          customerPhone: "+15555550123",
           serviceName: "test service",
           confirmedServiceName: "test service",
           lastAskedSlot: "serviceName"
@@ -2838,10 +3005,10 @@ test("Fallback and empty intent service recovery recognize Full Set aliases", as
           sessionAttributes: {
             salonId: "salon-explicit",
             CalledNumber: "+18483487681",
-            CustomerEndpointAddress: "+84978634886",
+            CustomerEndpointAddress: "+15555550123",
             AmazonConnectContactId: `connect-full-set-fallback-${intentName || "empty"}`,
             customerName: "Jane",
-            customerPhone: "+84978634886",
+            customerPhone: "+15555550123",
             lastAskedSlot: "serviceName"
           },
           intent: {
@@ -2907,10 +3074,10 @@ test("serviceName turn maps scoped princess ASR to Full Set with correction mark
         sessionAttributes: {
           salonId: "salon-explicit",
           CalledNumber: "+18483487681",
-          CustomerEndpointAddress: "+84978634886",
+          CustomerEndpointAddress: "+15555550123",
           AmazonConnectContactId: "connect-princess-asr",
           customerName: "Jane",
-          customerPhone: "+84978634886",
+          customerPhone: "+15555550123",
           requestedDate: usEasternDate(1),
           requestedTime: "3 PM",
           staffPreference: "Trang",
@@ -4742,6 +4909,44 @@ test("DialogCodeHook phone set alone does not resolve to Full Set", async () => 
   assert.notEqual(response.sessionState.sessionAttributes.transferToQueue, "true");
 });
 
+test("DialogCodeHook proposes Full Set for full jet only while service slot is active", async () => {
+  const handler = await loadHandler();
+  globalThis.fetch = async () => {
+    throw new Error("fetch should not be called before full jet service clarification");
+  };
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "full jet",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: "connect-full-jet-service-slot",
+          customerName: "Jane",
+          customerPhone: "+17325956266",
+          lastAskedSlot: "serviceName"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          state: "InProgress",
+          confirmationState: "None",
+          slots: {}
+        }
+      }
+    })
+  );
+
+  assert.equal(response.sessionState.sessionAttributes.serviceName, undefined);
+  assert.equal(response.sessionState.sessionAttributes.proposedServiceName, "Full Set");
+  assert.equal(response.sessionState.sessionAttributes.awaitingServiceConfirmation, "true");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName");
+  assert.match(response.messages?.[0]?.content || "", /Did you say Full Set/i);
+});
+
 test("DialogCodeHook proposes Full Set for contextual phone set without committing service", async () => {
   const handler = await loadHandler();
   globalThis.fetch = async () => {
@@ -5084,7 +5289,7 @@ test("Fulfillment accepts international caller Jane at customerName stage", asyn
         sessionAttributes: {
           salonId: "salon-explicit",
           CalledNumber: "+18483487681",
-          CustomerEndpointAddress: "+84978634886",
+          CustomerEndpointAddress: "+15555550123",
           AmazonConnectContactId: "7a82c651-5091-4f32-84f0-bf37d004317c",
           lastAskedSlot: "customerName",
           serviceName: "Full Set",
@@ -5093,7 +5298,7 @@ test("Fulfillment accepts international caller Jane at customerName stage", asyn
           requestedTime: "3 PM",
           staffPreference: "Any staff",
           confirmedStaffName: "Any staff",
-          customerPhone: "+84978634886"
+          customerPhone: "+15555550123"
         },
         intent: {
           ...baseEvent().sessionState.intent,
@@ -5119,7 +5324,7 @@ test("Fulfillment accepts international caller Jane at customerName stage", asyn
 
   assert.equal(fetchCalls.length, 1);
   assert.equal(fetchCalls[0].body.customerName, "Jane");
-  assert.equal(fetchCalls[0].body.customerPhone, "+84978634886");
+  assert.equal(fetchCalls[0].body.customerPhone, "+15555550123");
   assert.equal(fetchCalls[0].body.calledNumber, "+18483487681");
   assert.equal(
     fetchCalls[0].body.amazonConnectContactId,
@@ -5133,7 +5338,7 @@ test("Fulfillment accepts international caller Jane at customerName stage", asyn
   assert.equal(response.sessionState.dialogAction.type, "ElicitIntent");
   assert.notEqual(response.sessionState.dialogAction.slotToElicit, "serviceName");
   assert.equal(response.sessionState.sessionAttributes.customerName, "Jane");
-  assert.equal(response.sessionState.sessionAttributes.customerPhone, "+84978634886");
+  assert.equal(response.sessionState.sessionAttributes.customerPhone, "+15555550123");
   assert.equal(response.sessionState.sessionAttributes.serviceName, "Full Set");
   assert.equal(response.sessionState.sessionAttributes.requestedDate, tomorrow);
   assert.equal(response.sessionState.sessionAttributes.requestedTime, "3 PM");
@@ -5159,7 +5364,7 @@ test("DialogCodeHook customer names colliding with staff names remain customerNa
           sessionAttributes: {
             salonId: "salon-explicit",
             CalledNumber: "+18483487681",
-            CustomerEndpointAddress: "+84978634886",
+            CustomerEndpointAddress: "+15555550123",
             AmazonConnectContactId: `connect-customer-name-${name.toLowerCase()}`,
             lastAskedSlot: "customerName",
             serviceName: "Full Set",
@@ -5168,7 +5373,7 @@ test("DialogCodeHook customer names colliding with staff names remain customerNa
             requestedTime: "3 PM",
             staffPreference: "Trang",
             confirmedStaffName: "Trang",
-            customerPhone: "+84978634886",
+            customerPhone: "+15555550123",
             ...dynamicStaffAttributes()
           },
           intent: {
@@ -5231,10 +5436,10 @@ test("DialogCodeHook time correction does not trigger Trang ASR confusion", asyn
         sessionAttributes: {
           salonId: "salon-explicit",
           CalledNumber: "+18483487681",
-          CustomerEndpointAddress: "+84978634886",
+          CustomerEndpointAddress: "+15555550123",
           AmazonConnectContactId: "connect-time-change-not-staff",
           customerName: "Jane",
-          customerPhone: "+84978634886",
+          customerPhone: "+15555550123",
           serviceName: "Full Set",
           confirmedServiceName: "Full Set",
           requestedDate: usEasternDate(1),
@@ -5306,7 +5511,7 @@ test("Fulfillment collapses spoken spelling for customerName", async () => {
           sessionAttributes: {
             salonId: "salon-explicit",
             CalledNumber: "+18483487681",
-            CustomerEndpointAddress: "+84978634886",
+            CustomerEndpointAddress: "+15555550123",
             AmazonConnectContactId: `connect-spelled-${expectedName.toLowerCase()}`,
             lastAskedSlot: "customerName",
             serviceName: "Full Set",
@@ -5314,7 +5519,7 @@ test("Fulfillment collapses spoken spelling for customerName", async () => {
             requestedDate: usEasternDate(1),
             requestedTime: "3 PM",
             staffPreference: "Any staff",
-            customerPhone: "+84978634886"
+            customerPhone: "+15555550123"
           },
           intent: {
             ...baseEvent().sessionState.intent,
@@ -5350,7 +5555,7 @@ test("Repeated no-input customerName uses temporary phone fallback and continues
         lexResponse: {
           fulfillmentState: "InProgress",
           message:
-            "I couldn't clearly hear the name, so I'll use Guest ending in 4886 for now. Just to confirm, Full Set tomorrow at 3 PM with the first available technician. Is that correct?",
+            "I couldn't clearly hear the name, so I'll use Guest ending in 0123 for now. Just to confirm, Full Set tomorrow at 3 PM with the first available technician. Is that correct?",
           messageContentType: "PlainText",
           dialogAction: {
             type: "ElicitIntent"
@@ -5381,7 +5586,7 @@ test("Repeated no-input customerName uses temporary phone fallback and continues
         sessionAttributes: {
           salonId: "salon-explicit",
           CalledNumber: "+18483487681",
-          CustomerEndpointAddress: "+84978634886",
+          CustomerEndpointAddress: "+15555550123",
           AmazonConnectContactId: "connect-customer-name-no-input-fallback",
           lastAskedSlot: "customerName",
           noInputCount: "1",
@@ -5390,7 +5595,7 @@ test("Repeated no-input customerName uses temporary phone fallback and continues
           requestedDate: usEasternDate(1),
           requestedTime: "3 PM",
           staffPreference: "Any staff",
-          customerPhone: "+84978634886"
+          customerPhone: "+15555550123"
         },
         intent: {
           ...baseEvent().sessionState.intent,
@@ -5406,16 +5611,16 @@ test("Repeated no-input customerName uses temporary phone fallback and continues
   );
 
   assert.equal(fetchCalls.length, 1);
-  assert.equal(fetchCalls[0].body.customerName, "Guest 4886");
-  assert.equal(fetchCalls[0].body.customerPhone, "+84978634886");
+  assert.equal(fetchCalls[0].body.customerName, "Guest 0123");
+  assert.equal(fetchCalls[0].body.customerPhone, "+15555550123");
   assert.equal(fetchCalls[0].body.attributes.customerNameSource, "phone_fallback");
   assert.equal(fetchCalls[0].body.attributes.customerNameNeedsReview, "true");
   assert.equal(fetchCalls[0].body.currentTurnTranscript, "no input");
   assert.equal(response.sessionState.dialogAction.type, "ElicitIntent");
-  assert.equal(response.sessionState.sessionAttributes.customerName, "Guest 4886");
+  assert.equal(response.sessionState.sessionAttributes.customerName, "Guest 0123");
   assert.equal(response.sessionState.sessionAttributes.customerNameSource, "phone_fallback");
   assert.equal(response.sessionState.sessionAttributes.customerNameNeedsReview, "true");
-  assert.match(response.messages[0].content, /Guest ending in 4886/i);
+  assert.match(response.messages[0].content, /Guest ending in 0123/i);
   assert.notEqual(response.sessionState.sessionAttributes.transferToQueue, "true");
   assert.notEqual(response.sessionState.sessionAttributes.forceHumanEscalation, "true");
 });
@@ -5462,10 +5667,10 @@ test("DialogCodeHook final confirmation yes posts confirmed booking", async () =
         sessionAttributes: {
           salonId: "salon-explicit",
           CalledNumber: "+18483487681",
-          CustomerEndpointAddress: "+84978634886",
+          CustomerEndpointAddress: "+15555550123",
           AmazonConnectContactId: "connect-final-confirmation-84",
           customerName: "Jane",
-          customerPhone: "+84978634886",
+          customerPhone: "+15555550123",
           serviceName: "Full Set",
           confirmedServiceName: "Full Set",
           requestedDate: usEasternDate(1),
@@ -5488,7 +5693,7 @@ test("DialogCodeHook final confirmation yes posts confirmed booking", async () =
             requestedTime: slot("3 PM"),
             staffPreference: slot("Kelly"),
             customerName: slot("Jane"),
-            customerPhone: slot("+84978634886")
+            customerPhone: slot("+15555550123")
           }
         }
       }
@@ -5498,7 +5703,7 @@ test("DialogCodeHook final confirmation yes posts confirmed booking", async () =
   assert.equal(fetchCalls.length, 1);
   assert.equal(fetchCalls[0].body.confirmationState, "Confirmed");
   assert.equal(fetchCalls[0].body.customerName, "Jane");
-  assert.equal(fetchCalls[0].body.customerPhone, "+84978634886");
+  assert.equal(fetchCalls[0].body.customerPhone, "+15555550123");
   assert.equal(fetchCalls[0].body.serviceName, "Full Set");
   assert.equal(fetchCalls[0].body.requestedTime, "3 PM");
   assert.equal(fetchCalls[0].body.staffPreference, "Kelly");
@@ -5574,10 +5779,10 @@ test("DialogCodeHook natural final confirmations post confirmed booking once", a
           sessionAttributes: {
             salonId: "salon-explicit",
             CalledNumber: "+18483487681",
-            CustomerEndpointAddress: "+84978634886",
+            CustomerEndpointAddress: "+15555550123",
             AmazonConnectContactId: `fef46abd-f101-475a-97d0-${phrase.replace(/\W+/g, "").slice(0, 12)}`,
             customerName: "Jane",
-            customerPhone: "+84978634886",
+            customerPhone: "+15555550123",
             serviceName: "Full Set",
             confirmedServiceName: "Full Set",
             requestedDate: usEasternDate(1),
@@ -5600,7 +5805,7 @@ test("DialogCodeHook natural final confirmations post confirmed booking once", a
               requestedTime: slot("3 PM"),
               staffPreference: slot("Trang"),
               customerName: slot("Jane"),
-              customerPhone: slot("+84978634886")
+              customerPhone: slot("+15555550123")
             }
           }
         }
@@ -5680,10 +5885,10 @@ test("DialogCodeHook final confirmation-only phrases preserve trusted staff", as
           sessionAttributes: {
             salonId: "salon-explicit",
             CalledNumber: "+18483487681",
-            CustomerEndpointAddress: "+84978634886",
+            CustomerEndpointAddress: "+15555550123",
             AmazonConnectContactId: `connect-affirm-alex-${phrase.replace(/\W+/g, "-")}`,
             customerName: "Lee",
-            customerPhone: "+84978634886",
+            customerPhone: "+15555550123",
             serviceName: "Full Set",
             confirmedServiceName: "Full Set",
             requestedDate: usEasternDate(1),
@@ -5707,7 +5912,7 @@ test("DialogCodeHook final confirmation-only phrases preserve trusted staff", as
               requestedTime: slot("2 PM"),
               staffPreference: slot("Alex"),
               customerName: slot("Lee"),
-              customerPhone: slot("+84978634886")
+              customerPhone: slot("+15555550123")
             }
           }
         }
@@ -5774,10 +5979,10 @@ test("DialogCodeHook final confirmation value-only changes route as draft update
           sessionAttributes: {
             salonId: "salon-explicit",
             CalledNumber: "+18483487681",
-            CustomerEndpointAddress: "+84978634886",
+            CustomerEndpointAddress: "+15555550123",
             AmazonConnectContactId: `connect-final-change-${phrase.replace(/\W+/g, "-")}`,
             customerName: "Jane",
-            customerPhone: "+84978634886",
+            customerPhone: "+15555550123",
             serviceName: "Full Set",
             confirmedServiceName: "Full Set",
             requestedDate: usEasternDate(1),
@@ -5800,7 +6005,7 @@ test("DialogCodeHook final confirmation value-only changes route as draft update
               requestedTime: slot("3 PM"),
               staffPreference: slot("Trang"),
               customerName: slot("Jane"),
-              customerPhone: slot("+84978634886")
+              customerPhone: slot("+15555550123")
             }
           }
         }
@@ -5857,10 +6062,10 @@ test("DialogCodeHook canonicalizes with emmy to Amy while staffPreference is bei
         sessionAttributes: {
           salonId: "salon-explicit",
           CalledNumber: "+18483487681",
-          CustomerEndpointAddress: "+84978634886",
+          CustomerEndpointAddress: "+15555550123",
           AmazonConnectContactId: "connect-with-emmy",
           customerName: "Jane",
-          customerPhone: "+84978634886",
+          customerPhone: "+15555550123",
           serviceName: "Pedicure",
           confirmedServiceName: "Pedicure",
           requestedDate: usEasternDate(1),
@@ -5891,7 +6096,7 @@ test("DialogCodeHook canonicalizes with emmy to Amy while staffPreference is bei
               resolvedValues: ["withemmy"]
             }),
             customerName: slot("Jane"),
-            customerPhone: slot("+84978634886")
+            customerPhone: slot("+15555550123")
           }
         }
       }
@@ -5921,10 +6126,10 @@ test("DialogCodeHook maps scoped dang to Trang only in staff context", async () 
         sessionAttributes: {
           salonId: "salon-explicit",
           CalledNumber: "+18483487681",
-          CustomerEndpointAddress: "+84978634886",
+          CustomerEndpointAddress: "+15555550123",
           AmazonConnectContactId: "connect-dang-trang",
           customerName: "Jane",
-          customerPhone: "+84978634886",
+          customerPhone: "+15555550123",
           serviceName: "Full Set",
           confirmedServiceName: "Full Set",
           requestedDate: usEasternDate(1),
@@ -5942,7 +6147,7 @@ test("DialogCodeHook maps scoped dang to Trang only in staff context", async () 
             requestedTime: slot("1 PM"),
             staffPreference: slot("dang"),
             customerName: slot("Jane"),
-            customerPhone: slot("+84978634886")
+            customerPhone: slot("+15555550123")
           }
         }
       }
@@ -5965,7 +6170,7 @@ test("DialogCodeHook maps scoped dang to Trang only in staff context", async () 
         sessionAttributes: {
           salonId: "salon-explicit",
           CalledNumber: "+18483487681",
-          CustomerEndpointAddress: "+84978634886",
+          CustomerEndpointAddress: "+15555550123",
           AmazonConnectContactId: "connect-dang-not-scoped"
         },
         intent: {
@@ -6023,10 +6228,10 @@ test("DialogCodeHook final confirmation correction no i want emmy not chang repl
         sessionAttributes: {
           salonId: "salon-explicit",
           CalledNumber: "+18483487681",
-          CustomerEndpointAddress: "+84978634886",
+          CustomerEndpointAddress: "+15555550123",
           AmazonConnectContactId: "connect-emmy-not-chang",
           customerName: "Jane",
-          customerPhone: "+84978634886",
+          customerPhone: "+15555550123",
           serviceName: "Pedicure",
           confirmedServiceName: "Pedicure",
           requestedDate: usEasternDate(1),
@@ -6050,7 +6255,7 @@ test("DialogCodeHook final confirmation correction no i want emmy not chang repl
             requestedTime: slot("11 AM"),
             staffPreference: slot("Trang"),
             customerName: slot("Jane"),
-            customerPhone: slot("+84978634886")
+            customerPhone: slot("+15555550123")
           }
         }
       }
@@ -6118,10 +6323,10 @@ test("DialogCodeHook unknown explicit staff clears stale Trang instead of sendin
         sessionAttributes: {
           salonId: "salon-explicit",
           CalledNumber: "+18483487681",
-          CustomerEndpointAddress: "+84978634886",
+          CustomerEndpointAddress: "+15555550123",
           AmazonConnectContactId: "connect-with-emily",
           customerName: "Jane",
-          customerPhone: "+84978634886",
+          customerPhone: "+15555550123",
           serviceName: "Pedicure",
           confirmedServiceName: "Pedicure",
           requestedDate: usEasternDate(1),
@@ -6142,7 +6347,7 @@ test("DialogCodeHook unknown explicit staff clears stale Trang instead of sendin
             requestedTime: slot("11 AM"),
             staffPreference: slot("Trang"),
             customerName: slot("Jane"),
-            customerPhone: slot("+84978634886")
+            customerPhone: slot("+15555550123")
           }
         }
       }
@@ -6328,10 +6533,10 @@ test("DialogCodeHook time-only final correction preserves Alex staff identity", 
         sessionAttributes: {
           salonId: "salon-explicit",
           CalledNumber: "+18483487681",
-          CustomerEndpointAddress: "+84978634886",
+          CustomerEndpointAddress: "+15555550123",
           AmazonConnectContactId: "connect-alex-time-only",
           customerName: "Lee",
-          customerPhone: "+84978634886",
+          customerPhone: "+15555550123",
           serviceName: "Full Set",
           confirmedServiceName: "Full Set",
           requestedDate: usEasternDate(1),
@@ -6355,7 +6560,7 @@ test("DialogCodeHook time-only final correction preserves Alex staff identity", 
             requestedTime: slot("2 PM"),
             staffPreference: slot("Alex"),
             customerName: slot("Lee"),
-            customerPhone: slot("+84978634886")
+            customerPhone: slot("+15555550123")
           }
         }
       }
@@ -6447,10 +6652,10 @@ test("DialogCodeHook Alex time correction then go ahead books with trusted Alex"
         sessionAttributes: {
           salonId: "salon-explicit",
           CalledNumber: "+18483487681",
-          CustomerEndpointAddress: "+84978634886",
+          CustomerEndpointAddress: "+15555550123",
           AmazonConnectContactId: "connect-production-alex-go-ahead",
           customerName: "Lee",
-          customerPhone: "+84978634886",
+          customerPhone: "+15555550123",
           serviceName: "Full Set",
           confirmedServiceName: "Full Set",
           requestedDate: usEasternDate(1),
@@ -6474,7 +6679,7 @@ test("DialogCodeHook Alex time correction then go ahead books with trusted Alex"
             requestedTime: slot("11 AM"),
             staffPreference: slot("Alex"),
             customerName: slot("Lee"),
-            customerPhone: slot("+84978634886")
+            customerPhone: slot("+15555550123")
           }
         }
       }
@@ -6498,10 +6703,10 @@ test("DialogCodeHook Alex time correction then go ahead books with trusted Alex"
           ...correctedAttrs,
           salonId: "salon-explicit",
           CalledNumber: "+18483487681",
-          CustomerEndpointAddress: "+84978634886",
+          CustomerEndpointAddress: "+15555550123",
           AmazonConnectContactId: "connect-production-alex-go-ahead",
           customerName: "Lee",
-          customerPhone: "+84978634886",
+          customerPhone: "+15555550123",
           lastAskedSlot: "bookingConfirmation"
         },
         intent: {
@@ -6513,7 +6718,7 @@ test("DialogCodeHook Alex time correction then go ahead books with trusted Alex"
             requestedTime: slot("2 PM"),
             staffPreference: slot("Alex"),
             customerName: slot("Lee"),
-            customerPhone: slot("+84978634886")
+            customerPhone: slot("+15555550123")
           }
         }
       }
@@ -6575,10 +6780,10 @@ test("DialogCodeHook spoken minute correction preserves Alex staff identity", as
         sessionAttributes: {
           salonId: "salon-explicit",
           CalledNumber: "+18483487681",
-          CustomerEndpointAddress: "+84978634886",
+          CustomerEndpointAddress: "+15555550123",
           AmazonConnectContactId: "connect-alex-minutes",
           customerName: "Lee",
-          customerPhone: "+84978634886",
+          customerPhone: "+15555550123",
           serviceName: "Full Set",
           confirmedServiceName: "Full Set",
           requestedDate: usEasternDate(1),
@@ -6601,7 +6806,7 @@ test("DialogCodeHook spoken minute correction preserves Alex staff identity", as
             requestedTime: slot("2 PM"),
             staffPreference: slot("Alex"),
             customerName: slot("Lee"),
-            customerPhone: slot("+84978634886")
+            customerPhone: slot("+15555550123")
           }
         }
       }
@@ -6630,10 +6835,10 @@ test("DialogCodeHook for available maps to Any staff while asking staff", async 
         sessionAttributes: {
           salonId: "salon-explicit",
           CalledNumber: "+18483487681",
-          CustomerEndpointAddress: "+84978634886",
+          CustomerEndpointAddress: "+15555550123",
           AmazonConnectContactId: "connect-for-available",
           customerName: "Lee",
-          customerPhone: "+84978634886",
+          customerPhone: "+15555550123",
           serviceName: "Manicure",
           confirmedServiceName: "Manicure",
           requestedDate: usEasternDate(0),
@@ -6649,7 +6854,7 @@ test("DialogCodeHook for available maps to Any staff while asking staff", async 
             requestedTime: slot("5 PM"),
             staffPreference: slot("for available"),
             customerName: slot("Lee"),
-            customerPhone: slot("+84978634886")
+            customerPhone: slot("+15555550123")
           }
         }
       }
@@ -6678,10 +6883,10 @@ test("DialogCodeHook today and Tuesday resolve while requestedDate is active", a
           sessionAttributes: {
             salonId: "salon-explicit",
             CalledNumber: "+18483487681",
-            CustomerEndpointAddress: "+84978634886",
+            CustomerEndpointAddress: "+15555550123",
             AmazonConnectContactId: `connect-date-${phrase}`,
             customerName: "Lee",
-            customerPhone: "+84978634886",
+            customerPhone: "+15555550123",
             serviceName: "Full Set",
             confirmedServiceName: "Full Set",
             lastAskedSlot: "requestedDate"
@@ -6693,7 +6898,7 @@ test("DialogCodeHook today and Tuesday resolve while requestedDate is active", a
               serviceName: slot("Full Set"),
               requestedDate: slot(phrase),
               customerName: slot("Lee"),
-              customerPhone: slot("+84978634886")
+              customerPhone: slot("+15555550123")
             }
           }
         }
@@ -6720,10 +6925,10 @@ test("DialogCodeHook bare p m does not clear trusted draft fields", async () => 
         sessionAttributes: {
           salonId: "salon-explicit",
           CalledNumber: "+18483487681",
-          CustomerEndpointAddress: "+84978634886",
+          CustomerEndpointAddress: "+15555550123",
           AmazonConnectContactId: "connect-bare-pm",
           customerName: "Lee",
-          customerPhone: "+84978634886",
+          customerPhone: "+15555550123",
           serviceName: "Manicure",
           confirmedServiceName: "Manicure",
           requestedDate: usEasternDate(0),
@@ -6743,7 +6948,7 @@ test("DialogCodeHook bare p m does not clear trusted draft fields", async () => 
             requestedTime: slot("p m"),
             staffPreference: slot("Kevin"),
             customerName: slot("Lee"),
-            customerPhone: slot("+84978634886")
+            customerPhone: slot("+15555550123")
           }
         }
       }
@@ -6800,10 +7005,10 @@ test("DialogCodeHook repairs reschedule NLU to booking draft change during final
         sessionAttributes: {
           salonId: "salon-explicit",
           CalledNumber: "+18483487681",
-          CustomerEndpointAddress: "+84978634886",
+          CustomerEndpointAddress: "+15555550123",
           AmazonConnectContactId: "connect-final-change-reschedule-nlu",
           customerName: "Jane",
-          customerPhone: "+84978634886",
+          customerPhone: "+15555550123",
           serviceName: "Full Set",
           confirmedServiceName: "Full Set",
           requestedDate: usEasternDate(1),
@@ -6827,7 +7032,7 @@ test("DialogCodeHook repairs reschedule NLU to booking draft change during final
             requestedTime: slot("3 PM"),
             staffPreference: slot("Trang"),
             customerName: slot("Jane"),
-            customerPhone: slot("+84978634886")
+            customerPhone: slot("+15555550123")
           }
         }
       }
@@ -6886,10 +7091,10 @@ test("DialogCodeHook denied final confirmations preserve slots and ask what to c
           sessionAttributes: {
             salonId: "salon-explicit",
             CalledNumber: "+18483487681",
-            CustomerEndpointAddress: "+84978634886",
+            CustomerEndpointAddress: "+15555550123",
             AmazonConnectContactId: `connect-final-denied-${phrase.replace(/\W+/g, "-")}`,
             customerName: "Jane",
-            customerPhone: "+84978634886",
+            customerPhone: "+15555550123",
             serviceName: "Full Set",
             confirmedServiceName: "Full Set",
             requestedDate: usEasternDate(1),
@@ -6912,7 +7117,7 @@ test("DialogCodeHook denied final confirmations preserve slots and ask what to c
               requestedTime: slot("3 PM"),
               staffPreference: slot("Trang"),
               customerName: slot("Jane"),
-              customerPhone: slot("+84978634886")
+              customerPhone: slot("+15555550123")
             }
           }
         }
@@ -6972,10 +7177,10 @@ test("DialogCodeHook final-confirmation another staff preserves selected staff f
         sessionAttributes: {
           salonId: "salon-explicit",
           CalledNumber: "+18483487681",
-          CustomerEndpointAddress: "+84978634886",
+          CustomerEndpointAddress: "+15555550123",
           AmazonConnectContactId: "connect-final-another-staff",
           customerName: "Jane",
-          customerPhone: "+84978634886",
+          customerPhone: "+15555550123",
           serviceName: "Manicure",
           confirmedServiceName: "Manicure",
           requestedDate: usEasternDate(0),
@@ -6999,7 +7204,7 @@ test("DialogCodeHook final-confirmation another staff preserves selected staff f
             requestedDate: slot(usEasternDate(0)),
             requestedTime: slot("11 AM"),
             customerName: slot("Jane"),
-            customerPhone: slot("+84978634886")
+            customerPhone: slot("+15555550123")
           }
         }
       }
@@ -8130,10 +8335,15 @@ test("DialogCodeHook asks confirmation for malformed first-available ASR tails",
     "any stop if i",
     "any stuff",
     "any star",
+    "and is up for hire able",
+    "and he's up for hire able",
     "and it's thirty five",
     "and its thirty five",
+    "and it's top a five",
+    "and it's top e five",
     "and it's top five",
     "it's top five",
+    "and it stopped at five",
     "any top five"
   ]) {
     const handler = await loadHandler();
@@ -8176,6 +8386,55 @@ test("DialogCodeHook asks confirmation for malformed first-available ASR tails",
     assert.equal(response.sessionState.sessionAttributes.staffClarificationReason, "ambiguous_first_available_asr", phrase);
     assert.match(response.messages?.[0]?.content || "", /Did you mean first available/i, phrase);
     assert.equal(response.sessionState.dialogAction.slotToElicit, "staffPreference", phrase);
+    const decisions = JSON.parse(response.sessionState.sessionAttributes.voiceSlotDecisions);
+    assert.equal(decisions[0].slot, "staffPreference", phrase);
+    assert.equal(decisions[0].action, "propose", phrase);
+    assert.equal(decisions[0].canonicalValue, "Any staff", phrase);
+    assert.equal(decisions[0].confidenceBand, "medium", phrase);
+  }
+});
+
+test("DialogCodeHook explicit first-available rejections do not propose Any staff", async () => {
+  for (const phrase of ["not first available", "and it's not a five"]) {
+    const handler = await loadHandler();
+    globalThis.fetch = async () => {
+      throw new Error(`fetch should not be called for rejected Any staff phrase ${phrase}`);
+    };
+
+    const response = await handler(
+      baseEvent({
+        invocationSource: "DialogCodeHook",
+        inputTranscript: phrase,
+        sessionId: `connect-any-staff-rejected-${phrase.replace(/\W+/g, "-")}`,
+        sessionState: {
+          ...baseEvent().sessionState,
+          sessionAttributes: {
+            salonId: "salon-explicit",
+            CalledNumber: "+18483487681",
+            CustomerEndpointAddress: "+17325956266",
+            AmazonConnectContactId: `connect-any-staff-rejected-${phrase.replace(/\W+/g, "-")}`,
+            lastAskedSlot: "staffPreference",
+            activeDtmfMenu: "staff",
+            customerName: "Kiet Nguyen",
+            customerPhone: "7325956266",
+            serviceName: "Pedicure",
+            requestedDate: usEasternDate(1),
+            requestedTime: "2 PM",
+            ...dynamicStaffAttributes()
+          },
+          intent: {
+            ...baseEvent().sessionState.intent,
+            slots: {}
+          }
+        }
+      })
+    );
+
+    assert.equal(response.sessionState.sessionAttributes.staffPreference, undefined, phrase);
+    assert.equal(response.sessionState.sessionAttributes.proposedStaffPreference, undefined, phrase);
+    assert.equal(response.sessionState.sessionAttributes.voiceSlotDecisions, undefined, phrase);
+    assert.equal(response.sessionState.dialogAction.slotToElicit, "staffPreference", phrase);
+    assert.match(response.messages?.[0]?.content || "", /Which staff would you like/i, phrase);
   }
 });
 
@@ -8408,6 +8667,11 @@ test("DialogCodeHook clipped time and staff fragments never corrupt requestedDat
     })
   );
 
+  const firstAttrs = first.sessionState.sessionAttributes;
+  assert.equal(firstAttrs.requestedTime, undefined);
+  assert.equal(first.sessionState.dialogAction.slotToElicit, "requestedTime");
+  assert.match(first.messages?.[0]?.content || "", /What time.*3 PM/i);
+
   const second = await handler(
     baseEvent({
       invocationSource: "DialogCodeHook",
@@ -8434,14 +8698,108 @@ test("DialogCodeHook clipped time and staff fragments never corrupt requestedDat
   );
 
   const attrs = second.sessionState.sessionAttributes;
-  assert.equal(attrs.requestedTime, "3 PM");
+  assert.equal(attrs.requestedTime, undefined);
   assert.equal(attrs.requestedDate, undefined);
   assert.equal(attrs.serviceName, undefined);
   assert.equal(attrs.staffPreference, "Amy");
   assert.equal(attrs.conversationComplete, "false");
-  assert.match(second.messages?.[0]?.content || "", /I caught 3 PM with Amy\. What day and service would you like\?/i);
-  assert.doesNotMatch(second.messages?.[0]?.content || "", /3 PM at 3 PM/i);
+  assert.doesNotMatch(second.messages?.[0]?.content || "", /3 PM/i);
   assert.notEqual(second.sessionState.dialogAction.type, "Close");
+});
+
+test("DialogCodeHook rejects contradictory weekday and explicit date without losing other slots", async () => {
+  const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
+  globalThis.fetch = async () => {
+    throw new Error("fetch should not be called for weekday/date conflict");
+  };
+  const explicitDate = usEasternDate(1);
+  const [year, month, day] = explicitDate.split("-").map(Number);
+  const explicitDateObject = new Date(Date.UTC(year, month - 1, day));
+  const monthName = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "long" }).format(explicitDateObject);
+  const actualWeekday = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "long" }).format(explicitDateObject);
+  const wrongWeekday = actualWeekday === "Monday" ? "Tuesday" : "Monday";
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: `put that on ${wrongWeekday} ${monthName} ${day}`,
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+84798171999",
+          AmazonConnectContactId: "connect-weekday-date-conflict",
+          customerName: "Lee",
+          customerPhone: "+84798171999",
+          serviceName: "Full Set",
+          confirmedServiceName: "Full Set",
+          requestedTime: "3 PM",
+          staffPreference: "Amy",
+          confirmedStaffName: "Amy"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          state: "InProgress",
+          confirmationState: "None",
+          slots: {}
+        }
+      }
+    })
+  );
+
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "requestedDate");
+  assert.equal(response.sessionState.sessionAttributes.requestedDate, undefined);
+  assert.equal(response.sessionState.sessionAttributes.requestedTime, "3 PM");
+  assert.equal(response.sessionState.sessionAttributes.serviceName, "Full Set");
+  assert.equal(response.sessionState.sessionAttributes.staffPreference, "Amy");
+  assert.match(response.messages[0].content, new RegExp(`${monthName} ${day} is ${actualWeekday}`));
+});
+
+test("DialogCodeHook rejects past requested date before customer name prompt", async () => {
+  const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
+  globalThis.fetch = async () => {
+    throw new Error("fetch should not be called for past date before customer name");
+  };
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "yes",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+84798171999",
+          AmazonConnectContactId: "connect-past-before-name",
+          customerPhone: "+84798171999",
+          serviceName: "Full Set",
+          confirmedServiceName: "Full Set",
+          requestedDate: usEasternDate(-1),
+          requestedTime: "3 PM",
+          staffPreference: "Amy",
+          confirmedStaffName: "Amy"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          state: "InProgress",
+          confirmationState: "None",
+          slots: {}
+        }
+      }
+    })
+  );
+
+  const attrs = response.sessionState.sessionAttributes;
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "requestedDate");
+  assert.match(response.messages[0].content, /That time has already passed/i);
+  assert.equal(attrs.serviceName, "Full Set");
+  assert.equal(attrs.staffPreference, "Amy");
+  assert.equal(attrs.requestedDate, undefined);
+  assert.equal(attrs.requestedTime, undefined);
+  assert.equal(response.sessionState.intent.slots.requestedDate, null);
+  assert.equal(response.sessionState.intent.slots.requestedTime, null);
 });
 
 test("Lex exports route first-turn service digits through BookAppointmentIntent", () => {

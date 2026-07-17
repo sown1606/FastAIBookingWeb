@@ -228,6 +228,7 @@ const ANY_STAFF_ALIASES = [
   "any staff is fine",
   "any staff is ok",
   "any staff is okay",
+  "any stuff is fine",
   "any technician",
   "any tech",
   "no preference",
@@ -390,6 +391,7 @@ const WEEKDAY_INDEXES = {
   friday: 5,
   saturday: 6
 };
+const WEEKDAY_LABELS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 const SLOT_ELICIT_PROMPTS = {
   serviceName: [
@@ -408,9 +410,9 @@ const SLOT_ELICIT_PROMPTS = {
     "What day would you like? You can say today or tomorrow."
   ],
   requestedTime: [
-    "What time works best?",
+    "What time? You can say 3 PM.",
     "Could you repeat the appointment time?",
-    "What time works best?"
+    "What time? You can say 3 PM."
   ],
   customerName: [
     "What name should I put on the appointment?",
@@ -857,6 +859,9 @@ function stripAnyStaffTrailingFiller(normalizedText) {
 function normalizeAnyStaffPhrase(text, context = {}) {
   const normalized = normalizeForMatch(text);
   if (!normalized) {
+    return "";
+  }
+  if (/\bnot\s+(?:any\s+staff|first\s+available|the\s+first\s+available)\b/.test(normalized)) {
     return "";
   }
 
@@ -2859,6 +2864,23 @@ function getZonedDateParts(timeZone, date = new Date()) {
   };
 }
 
+function getZonedClockMinutes(timeZone, date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23"
+  }).formatToParts(date);
+  const values = Object.fromEntries(
+    parts
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value])
+  );
+  const hour = Number(values.hour);
+  const minute = Number(values.minute);
+  return Number.isFinite(hour) && Number.isFinite(minute) ? hour * 60 + minute : null;
+}
+
 function formatDateParts(parts) {
   return [
     String(parts.year).padStart(4, "0"),
@@ -2902,6 +2924,79 @@ function parseMonthDayDateParts(value, timeZone = DEFAULT_SALON_TIMEZONE) {
     return null;
   }
   return { year, month, day };
+}
+
+function parseIsoDateParts(value) {
+  const match = String(value || "").match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
+  if (!match) {
+    return null;
+  }
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() + 1 !== month || date.getUTCDate() !== day) {
+    return null;
+  }
+  return { year, month, day };
+}
+
+function getWeekdayForDateParts(parts) {
+  return new Date(Date.UTC(parts.year, parts.month - 1, parts.day)).getUTCDay();
+}
+
+function findSpokenWeekdayToken(value) {
+  const normalized = normalizeForMatch(value);
+  const match = normalized.match(/\b(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/);
+  return match?.[1] || "";
+}
+
+function formatClarificationDate(parts) {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "UTC",
+    weekday: "long",
+    month: "long",
+    day: "numeric"
+  }).format(new Date(Date.UTC(parts.year, parts.month - 1, parts.day)));
+}
+
+function formatClarificationMonthDay(parts) {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "UTC",
+    month: "long",
+    day: "numeric"
+  }).format(new Date(Date.UTC(parts.year, parts.month - 1, parts.day)));
+}
+
+function findWeekdayDateConflict(value, timeZone = DEFAULT_SALON_TIMEZONE) {
+  const weekdayToken = findSpokenWeekdayToken(value);
+  if (!weekdayToken) {
+    return null;
+  }
+  const explicitParts = parseMonthDayDateParts(value, timeZone) || parseIsoDateParts(value);
+  if (!explicitParts) {
+    return null;
+  }
+  const spokenWeekdayIndex = WEEKDAY_INDEXES[weekdayToken];
+  const actualWeekdayIndex = getWeekdayForDateParts(explicitParts);
+  if (spokenWeekdayIndex === undefined || spokenWeekdayIndex === actualWeekdayIndex) {
+    return null;
+  }
+  const intendedDate = resolveDatePhrase(weekdayToken, timeZone);
+  const intendedParts = parseIsoDateParts(intendedDate);
+  return {
+    spokenWeekday: WEEKDAY_LABELS[spokenWeekdayIndex],
+    explicitDate: formatDateParts(explicitParts),
+    explicitMonthDay: formatClarificationMonthDay(explicitParts),
+    explicitDateLabel: formatClarificationDate(explicitParts),
+    actualWeekday: WEEKDAY_LABELS[actualWeekdayIndex],
+    intendedDate,
+    intendedDateLabel: intendedParts ? formatClarificationDate(intendedParts) : WEEKDAY_LABELS[spokenWeekdayIndex]
+  };
+}
+
+function buildWeekdayDateConflictPrompt(conflict) {
+  return `${conflict.explicitMonthDay} is ${conflict.actualWeekday}. Did you mean ${conflict.explicitDateLabel}, or ${conflict.intendedDateLabel}?`;
 }
 
 function getZonedWeekdayIndex(timeZone, date = new Date()) {
@@ -3032,7 +3127,7 @@ function normalizeHourMinuteTimeExpression(value) {
 function hasGpsTimeContext(value, context = {}) {
   const normalized = normalizeForMatch(value);
   return Boolean(
-    /\bat\s+g\s+p(?:\s+s)?\b/.test(normalized) ||
+    /\bat\s+g\s+p\s+s\b/.test(normalized) ||
       context?.lastAskedSlot === "requestedTime" ||
       context?.currentTurnSemanticType === "TIME_REQUEST" ||
       context?.semanticType === "TIME_REQUEST"
@@ -3044,10 +3139,10 @@ function normalizeGpsTimePhrase(value, context = {}) {
   if (!normalized || !hasGpsTimeContext(value, context)) {
     return "";
   }
-  if (/\bat\s+g\s+p(?:\s+s)?\b/.test(normalized)) {
+  if (/\bat\s+g\s+p\s+s\b/.test(normalized)) {
     return "3 PM";
   }
-  return /^(?:g\s+p(?:\s+s)?)$/.test(normalized) ? "3 PM" : "";
+  return /^(?:g\s+p\s+s)$/.test(normalized) ? "3 PM" : "";
 }
 
 function hasRequestedTimeContext(context = {}) {
@@ -3642,6 +3737,8 @@ function buildRuntimeHintsForSlot(slotToElicit, sessionAttributes = {}) {
           ...Object.values(getStaffDtmfOptions(sessionAttributes)),
           "Any staff",
           "Any staff is fine",
+          "Any stuff is fine",
+          "Anyone is fine",
           "First available",
           "Whoever is available"
         ]);
@@ -4041,6 +4138,82 @@ function formatTimeForPrompt(value) {
     hour -= 12;
   }
   return minute === 0 ? `${hour} ${period}` : `${hour}:${String(minute).padStart(2, "0")} ${period}`;
+}
+
+function getPastRequestedDateTimeDecision(event, knownAttributes = undefined) {
+  const known = knownAttributes || buildKnownBookingSessionAttributes(event);
+  const timeZone = getAttribute(event, attributeNames.timezone) || DEFAULT_SALON_TIMEZONE;
+  const requestedDate = normalizeRequestedDateValue(known.requestedDate, timeZone);
+  const requestedTime = known.requestedTime;
+  const requestedMinutes = timePhraseToMinutes(requestedTime, known);
+  if (!requestedDate || requestedMinutes === null) {
+    return null;
+  }
+
+  const today = formatDateParts(getZonedDateParts(timeZone));
+  if (requestedDate > today) {
+    return null;
+  }
+  const nowMinutes = getZonedClockMinutes(timeZone);
+  if (requestedDate < today || (nowMinutes !== null && requestedMinutes <= nowMinutes)) {
+    return {
+      requestedDate,
+      requestedTime: formatMinutesForPrompt(requestedMinutes),
+      timeZone
+    };
+  }
+  return null;
+}
+
+function buildPastRequestedDateTimeResponse(event, decision = null) {
+  const response = buildElicitSlotResponse(
+    event,
+    "requestedDate",
+    {
+      dateTimeValidationReason: "past_requested_time",
+      awaitingFinalBookingConfirmation: "false",
+      bookingConfirmationAsked: "false",
+      forceHumanEscalation: "false",
+      transferToQueue: "false"
+    },
+    "That time has already passed. What future date and time would you like?"
+  );
+  const attrs = response.sessionState?.sessionAttributes || {};
+  for (const key of [
+    "requestedDate",
+    "RequestedDate",
+    "preferredDate",
+    "PreferredDate",
+    "trustedRequestedDate",
+    "requestedTime",
+    "RequestedTime",
+    "preferredTime",
+    "PreferredTime",
+    "trustedRequestedTime",
+    "awaitingTimeConfirmation",
+    "proposedRequestedTime"
+  ]) {
+    delete attrs[key];
+  }
+  attrs.dateTimeValidationReason = "past_requested_time";
+  if (decision?.requestedDate) {
+    attrs.rejectedRequestedDate = decision.requestedDate;
+  }
+  if (decision?.requestedTime) {
+    attrs.rejectedRequestedTime = decision.requestedTime;
+  }
+  const slots = response.sessionState?.intent?.slots || {};
+  for (const key of ["requestedDate", "RequestedDate", "preferredDate", "PreferredDate"]) {
+    if (Object.prototype.hasOwnProperty.call(slots, key)) {
+      slots[key] = null;
+    }
+  }
+  for (const key of ["requestedTime", "RequestedTime", "preferredTime", "PreferredTime"]) {
+    if (Object.prototype.hasOwnProperty.call(slots, key)) {
+      slots[key] = null;
+    }
+  }
+  return response;
 }
 
 function buildKnownBookingPromptSummary(event, options = {}) {
@@ -4521,6 +4694,15 @@ function mergeKnownSlots(event) {
 function getBookingSlotToElicit(event) {
   const sessionAttributes = buildKnownBookingSessionAttributes(event);
   const currentTurnTranscript = getCurrentTurnTranscript(event);
+  const activeSlot = getActiveVoiceSlot(sessionAttributes);
+  if (
+    activeSlot === "requestedTime" &&
+    Boolean(String(currentTurnTranscript || "").trim()) &&
+    !getSessionAttribute(sessionAttributes, slotNames.requestedTime) &&
+    !hasCurrentTurnTimePhrase(currentTurnTranscript, sessionAttributes)
+  ) {
+    return "requestedTime";
+  }
   const currentServiceSlot = getSlotValue(event.sessionState?.intent?.slots || {}, slotNames.serviceName, {
     preferOriginal: true
   });
@@ -6146,11 +6328,21 @@ function hasScopedFullSetPhoneticCandidate(text) {
     return false;
   }
   return Boolean(
-    /\bwho\s+said\b/.test(normalized) ||
+      /\bwho\s+(?:said|s\s+that|is\s+that|that)\b/.test(normalized) ||
+      /\bfull\s+jet\b/.test(normalized) ||
       /\btime\s+to\s+fight\b/.test(normalized) ||
       /\bfun\s+facts?\b/.test(normalized) ||
-      /\b(?:phone\s+set|phone\s+chat|food\s+set|pool\s+set|cool\s+set)\b/.test(normalized)
+      /\b(?:phone\s+set|phone\s+chat|food\s+set|pool\s+set|cool\s+set)\b/.test(normalized) ||
+      /\b(?:can\s+we|could\s+we|so\s+we\s+ll|we\s+ll)\s+set\b/.test(normalized)
   );
+}
+
+function hasStrongServiceSlotFullSetCandidate(text) {
+  const normalized = normalizeForMatch(text);
+  if (!normalized || hasUnsafeSunsetWithoutExplicitFullSetAlias(text)) {
+    return false;
+  }
+  return Boolean(findDedicatedFullSetAlias(text) || /\bfull\s+jet\b/.test(normalized));
 }
 
 function findProposedFullSetServiceClarification(event, knownAttributes = {}) {
@@ -6166,7 +6358,14 @@ function findProposedFullSetServiceClarification(event, knownAttributes = {}) {
   const currentDetails = extractBookingDetailsFromText(topTranscript, timeZone, previous);
   const date = knownAttributes.requestedDate || currentDetails.requestedDate;
   const time = knownAttributes.requestedTime || currentDetails.requestedTime;
-  if (!date || !time || !isBookingLikeUtterance(topTranscript)) {
+  const serviceSlotActive =
+    getActiveVoiceSlot(previous) === "serviceName" ||
+    previous.lastAskedSlot === "serviceName" ||
+    previous.activeDtmfMenu === "service";
+  const hasBookingContext = Boolean(date && time && isBookingLikeUtterance(topTranscript));
+  const hasServiceSlotOnlyContext =
+    serviceSlotActive && hasStrongServiceSlotFullSetCandidate(topTranscript);
+  if (!hasServiceSlotOnlyContext && !hasBookingContext) {
     return null;
   }
 
@@ -6259,6 +6458,9 @@ function isAmbiguousFirstAvailableStaffCandidate(text, sessionAttributes = {}) {
   const tail = stripAnyStaffTrailingFiller(normalized)
     .replace(/\s+(?:music|background music|noise)$/, "")
     .trim();
+  if (/\bnot\s+(?:the\s+)?first\s+available\b/.test(tail) || /\bnot\s+(?:a\s+)?(?:five|5)\b/.test(tail)) {
+    return false;
+  }
   return Boolean(
     /\b(?:and\s+)?(?:it\s+s|its|it\s+is|it)?\s*stopp?ed\s+at\s+(?:five|5)\b/.test(tail) ||
       [
@@ -6266,6 +6468,8 @@ function isAmbiguousFirstAvailableStaffCandidate(text, sessionAttributes = {}) {
         "anny stop",
         "any stop",
         "anystop",
+        "edit stop",
+        "edit stop if i",
         "any stop if i",
         "any stuff",
         "any star",
@@ -6279,12 +6483,84 @@ function isAmbiguousFirstAvailableStaffCandidate(text, sessionAttributes = {}) {
         "and it s top five",
         "and its top five",
         "and it is top five",
+        "and it s top a five",
+        "and its top a five",
+        "and it is top a five",
+        "and it s top e five",
+        "and its top e five",
+        "and it is top e five",
         "it s top five",
         "its top five",
         "it is top five",
-        "any top five"
+        "any top five",
+        "and is up for hire able",
+        "and he s up for hire able",
+        "and hes up for hire able",
+        "is up for hire able",
+        "he s up for hire able",
+        "hes up for hire able"
       ].some((alias) => tail === alias || tail.endsWith(` ${alias}`))
   );
+}
+
+function buildVoiceSlotDecision({
+  slot,
+  action,
+  canonicalValue,
+  entityId,
+  reason,
+  confidenceBand = "medium",
+  evidence = [],
+  alternativesUsed = false
+}) {
+  return {
+    slot,
+    action,
+    ...(canonicalValue ? { canonicalValue } : {}),
+    ...(entityId ? { entityId } : {}),
+    reason: reason || "unspecified",
+    confidenceBand,
+    evidence: evidence.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 5),
+    alternativesUsed: Boolean(alternativesUsed)
+  };
+}
+
+function confidenceBandForMutationDecision(decision) {
+  if (decision.reason === "bare_or_ambiguous_wrong_slot") {
+    return "low";
+  }
+  if (decision.accepted || decision.reason === "caller_rejected_proposed_value") {
+    return "high";
+  }
+  return "medium";
+}
+
+function mutationPolicyToVoiceSlotDecision(decision, evidence = [], alternativesUsed = false) {
+  return buildVoiceSlotDecision({
+    slot: decision.slotName,
+    action: decision.accepted ? "accept" : "reject",
+    canonicalValue: decision.accepted ? decision.proposedValue : undefined,
+    reason: decision.reason,
+    confidenceBand: confidenceBandForMutationDecision(decision),
+    evidence: [
+      ...evidence,
+      decision.proposedValue ? `proposed=${decision.proposedValue}` : "",
+      decision.previousValue ? `previous=${decision.previousValue}` : ""
+    ],
+    alternativesUsed
+  });
+}
+
+function buildProposedVoiceSlotDecision(slot, canonicalValue, reason, matchedTranscript, alternativesUsed = false) {
+  return buildVoiceSlotDecision({
+    slot,
+    action: "propose",
+    canonicalValue,
+    reason,
+    confidenceBand: "medium",
+    evidence: [matchedTranscript],
+    alternativesUsed
+  });
 }
 
 function isStaffConfirmationRejection(text) {
@@ -6346,6 +6622,8 @@ function buildSlotMutationDiagnostics(event, finalAttributes = {}) {
       preventedSlotMutations.push(decision);
     }
   };
+  const diagnostics = getAsrDiagnostics(event);
+  const alternativesUsed = diagnostics.nBestAlternatives.length > 1;
   addDecision(
     "requestedTime",
     getSlotValue(slots, slotNames.requestedTime, { preferOriginal: true }),
@@ -6366,19 +6644,44 @@ function buildSlotMutationDiagnostics(event, finalAttributes = {}) {
     getSlotValue(slots, slotNames.staffPreference, { preferOriginal: true }),
     previous.confirmedStaffName || getSessionAttribute(previous, slotNames.staffPreference)
   );
-  const diagnostics = getAsrDiagnostics(event);
+  const voiceSlotDecisions = proposedSlotMutations.map((decision) =>
+    mutationPolicyToVoiceSlotDecision(decision, [currentTurnTranscript], alternativesUsed)
+  );
+  if (finalAttributes.proposedServiceName) {
+    voiceSlotDecisions.push(
+      buildProposedVoiceSlotDecision(
+        "serviceName",
+        finalAttributes.proposedServiceName,
+        finalAttributes.clarificationReason || finalAttributes.serviceClarificationReason || "service_proposal",
+        currentTurnTranscript,
+        alternativesUsed
+      )
+    );
+  }
+  if (finalAttributes.proposedStaffPreference) {
+    voiceSlotDecisions.push(
+      buildProposedVoiceSlotDecision(
+        "staffPreference",
+        finalAttributes.proposedStaffPreference,
+        finalAttributes.staffClarificationReason || finalAttributes.clarificationReason || "staff_proposal",
+        currentTurnTranscript,
+        alternativesUsed
+      )
+    );
+  }
   return {
     activeSlot: getActiveVoiceSlot(previous),
     proposedSlotMutation: proposedSlotMutations[0] || null,
     proposedSlotMutations,
     acceptedSlotMutations,
     preventedSlotMutations,
+    voiceSlotDecisions,
     clarificationReason:
       finalAttributes.clarificationReason ||
       finalAttributes.serviceClarificationReason ||
       finalAttributes.staffClarificationReason ||
       "",
-    asrAlternativesUsed: diagnostics.nBestAlternatives.length > 1,
+    asrAlternativesUsed: alternativesUsed,
     trustedSlotsBefore: collectTrustedBookingSlots(previous),
     trustedSlotsAfter: collectTrustedBookingSlots(finalAttributes)
   };
@@ -6413,6 +6716,7 @@ function buildLexTurnDebug(event, analysis = {}) {
     proposedSlotMutation: slotMutationDiagnostics.proposedSlotMutation,
     acceptedSlotMutations: slotMutationDiagnostics.acceptedSlotMutations,
     preventedSlotMutations: slotMutationDiagnostics.preventedSlotMutations,
+    voiceSlotDecisions: slotMutationDiagnostics.voiceSlotDecisions,
     clarificationReason: slotMutationDiagnostics.clarificationReason,
     asrAlternativesUsed: slotMutationDiagnostics.asrAlternativesUsed,
     dtmfDiagnostics: analysis.dtmfDiagnostics ?? getCurrentTurnDtmfDiagnostics(event),
@@ -6470,6 +6774,7 @@ function logStructuredLexTurn(event, response, analysis = {}) {
     proposedSlotMutation: slotMutationDiagnostics.proposedSlotMutation,
     acceptedSlotMutations: slotMutationDiagnostics.acceptedSlotMutations,
     preventedSlotMutations: slotMutationDiagnostics.preventedSlotMutations,
+    voiceSlotDecisions: slotMutationDiagnostics.voiceSlotDecisions,
     clarificationReason: slotMutationDiagnostics.clarificationReason,
     asrAlternativesUsed: slotMutationDiagnostics.asrAlternativesUsed,
     dtmfDiagnostics: analysis.dtmfDiagnostics ?? getCurrentTurnDtmfDiagnostics(event),
@@ -6533,6 +6838,7 @@ async function handleLexEvent(event, analysis = {}) {
     const transferDecision = shouldTransferToHuman(event, intentName);
     const shouldEscalate = transferDecision.transfer;
     const sessionAttributes = event.sessionState?.sessionAttributes || {};
+    const timeZone = getAttribute(event, attributeNames.timezone) || DEFAULT_SALON_TIMEZONE;
     const finalConfirmationOutcome = isFinalBookingConfirmationActive(event)
       ? classifyFinalBookingConfirmation(event.inputTranscript)
       : FINAL_CONFIRMATION_OUTCOME.UNKNOWN;
@@ -6735,6 +7041,33 @@ async function handleLexEvent(event, analysis = {}) {
       !shouldEscalate && intentName === "BookAppointmentIntent"
         ? buildKnownBookingSessionAttributes(event)
         : {};
+    const weekdayDateConflict =
+      !shouldEscalate && intentName === "BookAppointmentIntent"
+        ? findWeekdayDateConflict(getCurrentTurnTranscript(event), timeZone)
+        : null;
+    if (weekdayDateConflict) {
+      return buildElicitSlotResponse(
+        event,
+        "requestedDate",
+        {
+          requestedDate: undefined,
+          dateClarificationReason: "weekday_date_conflict",
+          weekdayDateConflict: JSON.stringify(weekdayDateConflict),
+          awaitingFinalBookingConfirmation: "false",
+          bookingConfirmationAsked: "false",
+          forceHumanEscalation: "false",
+          transferToQueue: "false"
+        },
+        buildWeekdayDateConflictPrompt(weekdayDateConflict)
+      );
+    }
+    const pastRequestedDateTime =
+      !shouldEscalate && intentName === "BookAppointmentIntent"
+        ? getPastRequestedDateTimeDecision(event, knownAfterTimeSanitization)
+        : null;
+    if (pastRequestedDateTime) {
+      return buildPastRequestedDateTimeResponse(event, pastRequestedDateTime);
+    }
     if (
       !shouldEscalate &&
       intentName === "BookAppointmentIntent" &&
@@ -6771,6 +7104,15 @@ async function handleLexEvent(event, analysis = {}) {
             proposedServiceName: proposedService.proposedServiceName,
             clarificationReason: proposedService.reason,
             asrAlternativesUsed: proposedService.asrAlternativesUsed ? "true" : "false",
+            voiceSlotDecisions: JSON.stringify([
+              buildProposedVoiceSlotDecision(
+                "serviceName",
+                proposedService.proposedServiceName,
+                proposedService.reason,
+                proposedService.matchedTranscript,
+                proposedService.asrAlternativesUsed
+              )
+            ]),
             proposedSlotMutation: JSON.stringify({
               slotName: "serviceName",
               proposedValue: proposedService.proposedServiceName,
@@ -6794,6 +7136,15 @@ async function handleLexEvent(event, analysis = {}) {
             staffClarificationReason: proposedStaff.reason,
             clarificationReason: proposedStaff.reason,
             asrAlternativesUsed: proposedStaff.asrAlternativesUsed ? "true" : "false",
+            voiceSlotDecisions: JSON.stringify([
+              buildProposedVoiceSlotDecision(
+                "staffPreference",
+                proposedStaff.proposedStaffPreference,
+                proposedStaff.reason,
+                proposedStaff.matchedTranscript,
+                proposedStaff.asrAlternativesUsed
+              )
+            ]),
             proposedSlotMutation: JSON.stringify({
               slotName: "staffPreference",
               proposedValue: proposedStaff.proposedStaffPreference,
@@ -6817,6 +7168,15 @@ async function handleLexEvent(event, analysis = {}) {
             proposedStaffPreference: "Any staff",
             staffClarificationReason: "ambiguous_first_available_asr",
             clarificationReason: "ambiguous_first_available_asr",
+            voiceSlotDecisions: JSON.stringify([
+              buildProposedVoiceSlotDecision(
+                "staffPreference",
+                "Any staff",
+                "ambiguous_first_available_asr",
+                event.inputTranscript,
+                false
+              )
+            ]),
             proposedSlotMutation: JSON.stringify({
               slotName: "staffPreference",
               proposedValue: "Any staff",

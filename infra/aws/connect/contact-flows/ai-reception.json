@@ -254,20 +254,20 @@
           "operatorHelpMentioned": "true",
           "x-amz-lex:allow-interrupt:*:*": "true",
           "x-amz-lex:audio:start-timeout-ms:*:*": "9000",
-          "x-amz-lex:audio:end-timeout-ms:*:*": "4200",
+          "x-amz-lex:audio:end-timeout-ms:*:*": "3200",
           "x-amz-lex:audio:max-length-ms:*:*": "20000",
-          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName": "3200",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName": "2800",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedTime": "2200",
-          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference": "2200",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference": "2600",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:customerName": "2000",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:bookingConfirmation": "900",
           "lastAskedSlot": "serviceName",
           "initialVoiceBookingContext": "true",
           "speechDetectionSensitivity": "Default",
           "speechModelPreference": "lex_default_unified_settings_not_reported",
-          "audioTimeoutProfile": "initial_booking_freeform_v2",
+          "audioTimeoutProfile": "thuyet_voice_hotfix_v1",
           "connectRecoveryStage": "initial",
-          "connectFlowSourceVersion": "2026-07-16-voice-asr-latency-root-fix",
+          "connectFlowSourceVersion": "2026-07-17-thuyet-voice-hotfix",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedDate": "2200"
         },
         "Text": "Hi, I can help book your appointment. Tell me the service, day, time, and staff. You can press 0 for a person."
@@ -366,16 +366,16 @@
           "operatorHelpMentioned": "true",
           "x-amz-lex:allow-interrupt:*:*": "true",
           "x-amz-lex:audio:start-timeout-ms:*:*": "9000",
-          "x-amz-lex:audio:end-timeout-ms:*:*": "4200",
+          "x-amz-lex:audio:end-timeout-ms:*:*": "3200",
           "x-amz-lex:audio:max-length-ms:*:*": "20000",
-          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName": "3200",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName": "2800",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedTime": "2200",
-          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference": "2200",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference": "2600",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:customerName": "2000",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:bookingConfirmation": "900",
           "speechDetectionSensitivity": "Default",
           "speechModelPreference": "lex_default_unified_settings_not_reported",
-          "audioTimeoutProfile": "retry_booking_context_v2",
+          "audioTimeoutProfile": "thuyet_voice_retry_v1",
           "conversationState": "$.Lex.SessionAttributes.conversationState",
           "conversationOutcome": "$.Lex.SessionAttributes.conversationOutcome",
           "conversationComplete": "$.Lex.SessionAttributes.conversationComplete",
@@ -413,7 +413,7 @@
           "outerRecoveryAttempt": "true",
           "connectRecoveryStage": "$.Attributes.connectRecoveryStage",
           "connectErrorCode": "$.Attributes.connectErrorCode",
-          "connectFlowSourceVersion": "2026-07-16-voice-asr-latency-root-fix",
+          "connectFlowSourceVersion": "2026-07-17-thuyet-voice-hotfix",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedDate": "2200"
         },
         "Text": "$.Lex.SessionAttributes.connectContinuationPrompt"
@@ -510,11 +510,11 @@
           "operatorHelpMentioned": "true",
           "x-amz-lex:allow-interrupt:*:*": "true",
           "x-amz-lex:audio:start-timeout-ms:*:*": "9000",
-          "x-amz-lex:audio:end-timeout-ms:*:*": "4200",
+          "x-amz-lex:audio:end-timeout-ms:*:*": "3200",
           "x-amz-lex:audio:max-length-ms:*:*": "20000",
-          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName": "3200",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName": "2800",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedTime": "2200",
-          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference": "2200",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference": "2600",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:customerName": "2000",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:bookingConfirmation": "900",
           "speechDetectionSensitivity": "Default",
@@ -557,7 +557,7 @@
           "outerRecoveryAttempt": "final",
           "connectRecoveryStage": "final_dtmf_opportunity",
           "connectErrorCode": "$.Attributes.connectErrorCode",
-          "connectFlowSourceVersion": "2026-07-16-voice-asr-latency-root-fix",
+          "connectFlowSourceVersion": "2026-07-17-thuyet-voice-hotfix",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedDate": "2200"
         },
         "Text": "Press 0 for a person, or tell me your appointment again."
@@ -661,7 +661,7 @@
           "initialContactId": "$.InitialContactId",
           "connectRecoveryStage": "initial",
           "connectLastErrorBranch": "none",
-          "connectFlowSourceVersion": "2026-07-16-voice-asr-latency-root-fix"
+          "connectFlowSourceVersion": "2026-07-17-thuyet-voice-hotfix"
         },
         "TargetContact": "Current"
       },
@@ -824,7 +824,7 @@
           "connectRecoveryStage": "initial_lex_error",
           "connectLastErrorBranch": "$.ErrorCode",
           "connectErrorCode": "$.ErrorCode",
-          "connectFlowSourceVersion": "2026-07-16-voice-asr-latency-root-fix",
+          "connectFlowSourceVersion": "2026-07-17-thuyet-voice-hotfix",
           "conversationComplete": "false"
         },
         "TargetContact": "Current"
@@ -864,7 +864,7 @@
           "connectRecoveryStage": "retry_lex_error",
           "connectLastErrorBranch": "$.ErrorCode",
           "connectErrorCode": "$.ErrorCode",
-          "connectFlowSourceVersion": "2026-07-16-voice-asr-latency-root-fix",
+          "connectFlowSourceVersion": "2026-07-17-thuyet-voice-hotfix",
           "conversationComplete": "false"
         },
         "TargetContact": "Current"

@@ -1,9 +1,9 @@
 {
   "customVocabularyItems": [
     {
-      "phrase": "Full Set",
+      "phrase": "Amy",
       "weight": 3,
-      "displayAs": "Full Set"
+      "displayAs": "Amy"
     },
     {
       "phrase": "Any staff",
@@ -19,6 +19,26 @@
       "phrase": "First available",
       "weight": 3,
       "displayAs": "First available"
+    },
+    {
+      "phrase": "Full Set",
+      "weight": 3,
+      "displayAs": "Full Set"
+    },
+    {
+      "phrase": "Kelly",
+      "weight": 3,
+      "displayAs": "Kelly"
+    },
+    {
+      "phrase": "Kevin",
+      "weight": 2,
+      "displayAs": "Kevin"
+    },
+    {
+      "phrase": "Trang",
+      "weight": 3,
+      "displayAs": "Trang"
     },
     {
       "phrase": "Whoever is available",

@@ -118,6 +118,32 @@ const TECHNICAL_NOTE_LINE_PATTERNS = [
 const invalidAppointmentStartTime = () =>
   new AppError("Invalid appointment start time.", 400, "INVALID_START_TIME");
 
+const pastAppointmentStartTime = () =>
+  new AppError("Appointment start time has already passed.", 400, "PAST_APPOINTMENT_START_TIME");
+
+type AppointmentWriteClient = typeof prisma | Prisma.TransactionClient;
+
+const assertAppointmentStartTimeIsFuture = async (
+  salonId: string,
+  startTime: Date,
+  client: AppointmentWriteClient = prisma
+): Promise<void> => {
+  const salon = await client.salon.findUnique({
+    where: { id: salonId },
+    select: { timezone: true }
+  });
+
+  if (!salon) {
+    throw new AppError("Salon not found.", 404, "SALON_NOT_FOUND");
+  }
+
+  const localStart = DateTime.fromJSDate(startTime, { zone: "utc" }).setZone(salon.timezone);
+  const localNow = DateTime.now().setZone(salon.timezone);
+  if (!localStart.isValid || localStart < localNow) {
+    throw pastAppointmentStartTime();
+  }
+};
+
 export const parseAppointmentStartTime = async (
   salonId: string,
   input: AppointmentStartTimeInput
@@ -642,6 +668,7 @@ export const createAppointment = async (
   input: CreateAppointmentInput
 ) => {
   await ensureCustomerBelongsToSalon(salonId, input.customerId);
+  await assertAppointmentStartTimeIsFuture(salonId, input.startTime);
 
   const serviceIds = normalizeAppointmentServiceIds(input.serviceId, input.serviceIds);
   const services = await getAppointmentServicesForWrite(salonId, serviceIds);
@@ -661,6 +688,8 @@ export const createAppointment = async (
   assertCreateStatusAllowed(appointmentStatus);
 
   const created = await prisma.$transaction(async (tx) => {
+    await assertAppointmentStartTimeIsFuture(salonId, input.startTime, tx);
+
     const appointment = await tx.appointment.create({
       data: {
         salonId,
