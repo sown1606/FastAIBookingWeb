@@ -338,10 +338,16 @@ const buildHeavyAiInteraction = () => {
           lambdaRespondedAt: "2026-07-13T10:30:00.360Z",
           lambdaProcessingMs: 180,
           apiProcessingMs: 120,
-          connectBranch: "retry_after_initial_error",
-          promptText: "What time works?",
-          promptExpectedToPlay: true,
-          providerDisconnectedAt: "2026-07-13T10:31:00.000Z",
+	          connectBranch: "retry_after_initial_error",
+	          promptText: "What time works?",
+	          promptExpectedToPlay: true,
+	          promptPlaybackConfirmed: false,
+	          playbackEvidenceStage: "LAMBDA_RESPONSE_ONLY",
+	          lambdaResponseFingerprint: "fixture-response-fingerprint",
+	          dialogActionType: "ElicitSlot",
+	          messageContentType: "PlainText",
+	          ssmlValidation: { valid: true, reason: "not_ssml" },
+	          providerDisconnectedAt: "2026-07-13T10:31:00.000Z",
           asrDiagnostics: {
             topTranscript: "fifty kill",
             nBestAlternatives: [
@@ -1207,6 +1213,12 @@ test("gpt export omits heavy payloads, dedupes adjacent transcripts, and stays s
   assert.equal(record.turnHistories[0].latencyMetrics.connectBranch, "retry_after_initial_error");
   assert.equal(record.turnHistories[0].latencyMetrics.promptText, "What time works?");
   assert.equal(record.turnHistories[0].latencyMetrics.promptExpectedToPlay, true);
+  assert.equal(record.turnHistories[0].latencyMetrics.promptPlaybackConfirmed, false);
+  assert.equal(record.turnHistories[0].latencyMetrics.playbackEvidenceStage, "LAMBDA_RESPONSE_ONLY");
+  assert.equal(record.turnHistories[0].latencyMetrics.lambdaResponseFingerprint, "fixture-response-fingerprint");
+  assert.equal(record.turnHistories[0].latencyMetrics.dialogActionType, "ElicitSlot");
+  assert.equal(record.turnHistories[0].latencyMetrics.messageContentType, "PlainText");
+  assert.deepEqual(record.turnHistories[0].latencyMetrics.ssmlValidation, { valid: true, reason: "not_ssml" });
   assert.equal(record.turnHistories[0].latencyMetrics.providerDisconnectedAt, "2026-07-13T10:31:00.000Z");
   assert.equal(record.bookingAttempts[0].rawInput, undefined);
   assert.equal(record.bookingAttempts[0].appointment.appointmentServices, undefined);

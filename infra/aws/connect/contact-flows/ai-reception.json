@@ -1,6 +1,6 @@
 {
   "Version": "2019-10-30",
-  "StartAction": "f06e4017-1de8-4fbd-a42a-ae434ddca6bf",
+  "StartAction": "enable-flow-logging",
   "Metadata": {
     "entryPointPosition": {
       "x": 40,
@@ -11,6 +11,12 @@
         "position": {
           "x": 560,
           "y": 520
+        }
+      },
+      "enable-flow-logging": {
+        "position": {
+          "x": 180,
+          "y": 0
         }
       },
       "f06e4017-1de8-4fbd-a42a-ae434ddca6bf": {
@@ -190,6 +196,52 @@
           "x": 1040,
           "y": 760
         }
+      },
+      "check-continuation-prompt": {
+        "position": {
+          "x": 640,
+          "y": 520
+        }
+      },
+      "continuation-fallback-lex": {
+        "position": {
+          "x": 640,
+          "y": 900
+        },
+        "parameters": {
+          "LexV2Bot": {
+            "AliasArn": {
+              "displayName": "prod",
+              "useLexBotDropdown": true,
+              "lexV2BotName": "FastAIBookingBot"
+            }
+          },
+          "Text": "Please continue with the appointment detail."
+        },
+        "promptName": "Text prompt",
+        "useLexBotDropdown": true,
+        "lexV2BotName": "FastAIBookingBot",
+        "lexV2BotAliasName": "prod",
+        "conditionMetadata": [
+          {
+            "id": "3a871ecc-9219-45d0-b343-3892e5cf9e55",
+            "operator": {
+              "name": "Equals",
+              "value": "Equals",
+              "shortDisplay": "="
+            },
+            "value": "BookAppointmentIntent"
+          },
+          {
+            "id": "3a14af55-003a-4668-a8a2-d2e3a4d99634",
+            "operator": {
+              "name": "Equals",
+              "value": "Equals",
+              "shortDisplay": "="
+            },
+            "value": "HumanEscalationIntent"
+          }
+        ]
       }
     },
     "Annotations": []
@@ -200,6 +252,16 @@
       "Identifier": "ef8d8054-77ea-40c7-aa4e-800ed784c49c",
       "Type": "DisconnectParticipant",
       "Transitions": {}
+    },
+    {
+      "Parameters": {
+        "FlowLoggingBehavior": "Enabled"
+      },
+      "Identifier": "enable-flow-logging",
+      "Type": "UpdateFlowLoggingBehavior",
+      "Transitions": {
+        "NextAction": "f06e4017-1de8-4fbd-a42a-ae434ddca6bf"
+      }
     },
     {
       "Parameters": {
@@ -254,9 +316,9 @@
           "operatorHelpMentioned": "true",
           "x-amz-lex:allow-interrupt:*:*": "true",
           "x-amz-lex:audio:start-timeout-ms:*:*": "9000",
-          "x-amz-lex:audio:end-timeout-ms:*:*": "3200",
+          "x-amz-lex:audio:end-timeout-ms:*:*": "4200",
           "x-amz-lex:audio:max-length-ms:*:*": "20000",
-          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName": "2800",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName": "3200",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedTime": "2200",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference": "2600",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:customerName": "2000",
@@ -265,9 +327,9 @@
           "initialVoiceBookingContext": "true",
           "speechDetectionSensitivity": "Default",
           "speechModelPreference": "lex_default_unified_settings_not_reported",
-          "audioTimeoutProfile": "thuyet_voice_hotfix_v1",
+          "audioTimeoutProfile": "p0_slow_speech_recovery_initial_v1",
           "connectRecoveryStage": "initial",
-          "connectFlowSourceVersion": "2026-07-17-thuyet-voice-hotfix",
+          "connectFlowSourceVersion": "2026-07-17-p0-voice-regression-fix",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedDate": "2200"
         },
         "Text": "Hi, I can help book your appointment. Tell me the service, day, time, and staff. You can press 0 for a person."
@@ -366,16 +428,16 @@
           "operatorHelpMentioned": "true",
           "x-amz-lex:allow-interrupt:*:*": "true",
           "x-amz-lex:audio:start-timeout-ms:*:*": "9000",
-          "x-amz-lex:audio:end-timeout-ms:*:*": "3200",
+          "x-amz-lex:audio:end-timeout-ms:*:*": "4200",
           "x-amz-lex:audio:max-length-ms:*:*": "20000",
-          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName": "2800",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName": "3200",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedTime": "2200",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference": "2600",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:customerName": "2000",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:bookingConfirmation": "900",
           "speechDetectionSensitivity": "Default",
           "speechModelPreference": "lex_default_unified_settings_not_reported",
-          "audioTimeoutProfile": "thuyet_voice_retry_v1",
+          "audioTimeoutProfile": "p0_slow_speech_recovery_continue_v1",
           "conversationState": "$.Lex.SessionAttributes.conversationState",
           "conversationOutcome": "$.Lex.SessionAttributes.conversationOutcome",
           "conversationComplete": "$.Lex.SessionAttributes.conversationComplete",
@@ -410,10 +472,11 @@
           "staffDtmfOptions": "$.Lex.SessionAttributes.staffDtmfOptions",
           "staffDtmfStaffIds": "$.Lex.SessionAttributes.staffDtmfStaffIds",
           "connectContinuationPrompt": "$.Lex.SessionAttributes.connectContinuationPrompt",
+          "connectContinuationPromptAvailable": "$.Lex.SessionAttributes.connectContinuationPromptAvailable",
           "outerRecoveryAttempt": "true",
           "connectRecoveryStage": "$.Attributes.connectRecoveryStage",
           "connectErrorCode": "$.Attributes.connectErrorCode",
-          "connectFlowSourceVersion": "2026-07-17-thuyet-voice-hotfix",
+          "connectFlowSourceVersion": "2026-07-17-p0-voice-regression-fix",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedDate": "2200"
         },
         "Text": "$.Lex.SessionAttributes.connectContinuationPrompt"
@@ -510,16 +573,16 @@
           "operatorHelpMentioned": "true",
           "x-amz-lex:allow-interrupt:*:*": "true",
           "x-amz-lex:audio:start-timeout-ms:*:*": "9000",
-          "x-amz-lex:audio:end-timeout-ms:*:*": "3200",
+          "x-amz-lex:audio:end-timeout-ms:*:*": "4200",
           "x-amz-lex:audio:max-length-ms:*:*": "20000",
-          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName": "2800",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName": "3200",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedTime": "2200",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference": "2600",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:customerName": "2000",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:bookingConfirmation": "900",
           "speechDetectionSensitivity": "Default",
           "speechModelPreference": "lex_default_unified_settings_not_reported",
-          "audioTimeoutProfile": "final_short_retry_v2",
+          "audioTimeoutProfile": "p0_slow_speech_recovery_final_v1",
           "conversationState": "$.Lex.SessionAttributes.conversationState",
           "conversationOutcome": "$.Lex.SessionAttributes.conversationOutcome",
           "conversationComplete": "$.Lex.SessionAttributes.conversationComplete",
@@ -554,13 +617,467 @@
           "staffDtmfOptions": "$.Lex.SessionAttributes.staffDtmfOptions",
           "staffDtmfStaffIds": "$.Lex.SessionAttributes.staffDtmfStaffIds",
           "connectContinuationPrompt": "$.Lex.SessionAttributes.connectContinuationPrompt",
+          "connectContinuationPromptAvailable": "$.Lex.SessionAttributes.connectContinuationPromptAvailable",
           "outerRecoveryAttempt": "final",
           "connectRecoveryStage": "final_dtmf_opportunity",
           "connectErrorCode": "$.Attributes.connectErrorCode",
-          "connectFlowSourceVersion": "2026-07-17-thuyet-voice-hotfix",
+          "connectFlowSourceVersion": "2026-07-17-p0-voice-regression-fix",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedDate": "2200"
         },
         "Text": "Press 0 for a person, or tell me your appointment again."
+      },
+      "Transitions": {
+        "NextAction": "check-transfer-to-queue",
+        "Conditions": [
+          {
+            "NextAction": "check-transfer-to-queue",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "BookAppointmentIntent"
+              ]
+            }
+          },
+          {
+            "NextAction": "check-transfer-to-queue",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "CancelAppointmentIntent"
+              ]
+            }
+          },
+          {
+            "NextAction": "check-transfer-to-queue",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "RescheduleAppointmentIntent"
+              ]
+            }
+          },
+          {
+            "NextAction": "check-transfer-to-queue",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "HumanEscalationIntent"
+              ]
+            }
+          },
+          {
+            "NextAction": "check-transfer-to-queue",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "FallbackIntent"
+              ]
+            }
+          },
+          {
+            "NextAction": "check-transfer-to-queue",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "AMAZON.FallbackIntent"
+              ]
+            }
+          }
+        ],
+        "Errors": [
+          {
+            "NextAction": "final-recovery-goodbye",
+            "ErrorType": "NoMatchingCondition"
+          },
+          {
+            "NextAction": "final-recovery-goodbye",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "37dbed23-a7c0-4259-a4f5-9be9db2f9c80",
+      "Type": "MessageParticipant",
+      "Parameters": {
+        "SkipWhenDTMFBufferEnabled": "false",
+        "Text": "All of our operators are currently busy. Please call back later. Goodbye."
+      },
+      "Transitions": {
+        "NextAction": "transfer-return-goodbye",
+        "Errors": [
+          {
+            "NextAction": "ef8d8054-77ea-40c7-aa4e-800ed784c49c",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "set-fastaibooking-runtime-attrs",
+      "Type": "UpdateContactAttributes",
+      "Parameters": {
+        "Attributes": {
+          "provider": "AMAZON_CONNECT",
+          "callerPhone": "$.CustomerEndpoint.Address",
+          "calledNumber": "$.SystemEndpoint.Address",
+          "contactId": "$.ContactId",
+          "initialContactId": "$.InitialContactId",
+          "connectRecoveryStage": "initial",
+          "connectLastErrorBranch": "none",
+          "connectFlowSourceVersion": "2026-07-17-p0-voice-regression-fix"
+        },
+        "TargetContact": "Current"
+      },
+      "Transitions": {
+        "NextAction": "3b2877ca-bc16-4019-a8e6-04200c0ded06",
+        "Errors": [
+          {
+            "NextAction": "3b2877ca-bc16-4019-a8e6-04200c0ded06",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "check-transfer-to-queue",
+      "Type": "Compare",
+      "Parameters": {
+        "ComparisonValue": "$.Lex.SessionAttributes.transferToQueue"
+      },
+      "Transitions": {
+        "NextAction": "check-conversation-complete",
+        "Conditions": [
+          {
+            "NextAction": "transfer-human-escalation-flow",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "true"
+              ]
+            }
+          }
+        ],
+        "Errors": [
+          {
+            "NextAction": "check-conversation-complete",
+            "ErrorType": "NoMatchingCondition"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "check-conversation-complete",
+      "Type": "Compare",
+      "Parameters": {
+        "ComparisonValue": "$.Lex.SessionAttributes.conversationComplete"
+      },
+      "Transitions": {
+        "NextAction": "check-continuation-prompt",
+        "Conditions": [
+          {
+            "NextAction": "check-terminal-conversation-outcome",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "true"
+              ]
+            }
+          }
+        ],
+        "Errors": [
+          {
+            "NextAction": "check-continuation-prompt",
+            "ErrorType": "NoMatchingCondition"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "check-terminal-conversation-outcome",
+      "Type": "Compare",
+      "Parameters": {
+        "ComparisonValue": "$.Lex.SessionAttributes.conversationOutcome"
+      },
+      "Transitions": {
+        "NextAction": "check-continuation-prompt",
+        "Conditions": [
+          {
+            "NextAction": "67ada978-600a-4d39-9965-6230c52810a9",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "BOOKED"
+              ]
+            }
+          },
+          {
+            "NextAction": "67ada978-600a-4d39-9965-6230c52810a9",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "RESCHEDULED"
+              ]
+            }
+          },
+          {
+            "NextAction": "67ada978-600a-4d39-9965-6230c52810a9",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "CANCELED"
+              ]
+            }
+          },
+          {
+            "NextAction": "67ada978-600a-4d39-9965-6230c52810a9",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "CALLER_GOODBYE"
+              ]
+            }
+          }
+        ],
+        "Errors": [
+          {
+            "NextAction": "check-continuation-prompt",
+            "ErrorType": "NoMatchingCondition"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "transfer-human-escalation-flow",
+      "Type": "TransferToFlow",
+      "Parameters": {
+        "ContactFlowId": "arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/contact-flow/c7386b94-56bb-4382-b517-ee890bbacb51"
+      },
+      "Transitions": {
+        "NextAction": "transfer-return-goodbye",
+        "Errors": [
+          {
+            "NextAction": "37dbed23-a7c0-4259-a4f5-9be9db2f9c80",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "transfer-return-goodbye",
+      "Type": "MessageParticipant",
+      "Parameters": {
+        "SkipWhenDTMFBufferEnabled": "false",
+        "Text": "Thank you for calling Kiet Nails & Beauty. Goodbye."
+      },
+      "Transitions": {
+        "NextAction": "ef8d8054-77ea-40c7-aa4e-800ed784c49c",
+        "Errors": [
+          {
+            "NextAction": "ef8d8054-77ea-40c7-aa4e-800ed784c49c",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "set-recovery-stage-initial-error",
+      "Type": "UpdateContactAttributes",
+      "Parameters": {
+        "Attributes": {
+          "connectRecoveryStage": "initial_lex_error",
+          "connectLastErrorBranch": "$.ErrorCode",
+          "connectErrorCode": "$.ErrorCode",
+          "connectFlowSourceVersion": "2026-07-17-p0-voice-regression-fix",
+          "conversationComplete": "false"
+        },
+        "TargetContact": "Current"
+      },
+      "Transitions": {
+        "NextAction": "initial-lex-error-message",
+        "Errors": [
+          {
+            "NextAction": "initial-lex-error-message",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "initial-lex-error-message",
+      "Type": "MessageParticipant",
+      "Parameters": {
+        "SkipWhenDTMFBufferEnabled": "false",
+        "Text": "Sorry, I had trouble hearing you. Please tell me what you need again, or press 0 for a person."
+      },
+      "Transitions": {
+        "NextAction": "check-continuation-prompt",
+        "Errors": [
+          {
+            "NextAction": "check-continuation-prompt",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "set-recovery-stage-retry-error",
+      "Type": "UpdateContactAttributes",
+      "Parameters": {
+        "Attributes": {
+          "connectRecoveryStage": "retry_lex_error",
+          "connectLastErrorBranch": "$.ErrorCode",
+          "connectErrorCode": "$.ErrorCode",
+          "connectFlowSourceVersion": "2026-07-17-p0-voice-regression-fix",
+          "conversationComplete": "false"
+        },
+        "TargetContact": "Current"
+      },
+      "Transitions": {
+        "NextAction": "retry-lex-error-message",
+        "Errors": [
+          {
+            "NextAction": "retry-lex-error-message",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "retry-lex-error-message",
+      "Type": "MessageParticipant",
+      "Parameters": {
+        "SkipWhenDTMFBufferEnabled": "false",
+        "Text": "I'm still here. Please tell me the service, date, time, or staff again. You can press 0 for a person."
+      },
+      "Transitions": {
+        "NextAction": "41e3f239-5b57-4363-92fc-9d594579fa98",
+        "Errors": [
+          {
+            "NextAction": "41e3f239-5b57-4363-92fc-9d594579fa98",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "final-recovery-goodbye",
+      "Type": "MessageParticipant",
+      "Parameters": {
+        "SkipWhenDTMFBufferEnabled": "false",
+        "Text": "I am sorry, I still cannot continue this call. Please call again. Goodbye."
+      },
+      "Transitions": {
+        "NextAction": "ef8d8054-77ea-40c7-aa4e-800ed784c49c",
+        "Errors": [
+          {
+            "NextAction": "ef8d8054-77ea-40c7-aa4e-800ed784c49c",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "check-continuation-prompt",
+      "Type": "Compare",
+      "Parameters": {
+        "ComparisonValue": "$.Lex.SessionAttributes.connectContinuationPromptAvailable"
+      },
+      "Transitions": {
+        "NextAction": "continuation-fallback-lex",
+        "Conditions": [
+          {
+            "NextAction": "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "true"
+              ]
+            }
+          }
+        ],
+        "Errors": [
+          {
+            "NextAction": "continuation-fallback-lex",
+            "ErrorType": "NoMatchingCondition"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "continuation-fallback-lex",
+      "Type": "ConnectParticipantWithLexBot",
+      "Parameters": {
+        "LexV2Bot": {
+          "AliasArn": "arn:aws:lex:us-east-1:197452633989:bot-alias/KHMIXGA2US/JVIPIZDYE3"
+        },
+        "LexSessionAttributes": {
+          "provider": "AMAZON_CONNECT",
+          "callerPhone": "$.CustomerEndpoint.Address",
+          "CustomerEndpointAddress": "$.CustomerEndpoint.Address",
+          "CallerId": "$.CustomerEndpoint.Address",
+          "calledNumber": "$.SystemEndpoint.Address",
+          "CalledNumber": "$.SystemEndpoint.Address",
+          "SystemEndpointAddress": "$.SystemEndpoint.Address",
+          "contactId": "$.ContactId",
+          "ContactId": "$.ContactId",
+          "AmazonConnectContactId": "$.ContactId",
+          "InitialContactId": "$.InitialContactId",
+          "operatorHelpMentioned": "true",
+          "x-amz-lex:allow-interrupt:*:*": "true",
+          "x-amz-lex:audio:start-timeout-ms:*:*": "9000",
+          "x-amz-lex:audio:end-timeout-ms:*:*": "4200",
+          "x-amz-lex:audio:max-length-ms:*:*": "20000",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName": "3200",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedTime": "2200",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference": "2600",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:customerName": "2000",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:bookingConfirmation": "900",
+          "speechDetectionSensitivity": "Default",
+          "speechModelPreference": "lex_default_unified_settings_not_reported",
+          "audioTimeoutProfile": "p0_slow_speech_recovery_continue_fallback_v1",
+          "conversationState": "$.Lex.SessionAttributes.conversationState",
+          "conversationOutcome": "$.Lex.SessionAttributes.conversationOutcome",
+          "conversationComplete": "$.Lex.SessionAttributes.conversationComplete",
+          "customerName": "$.Lex.SessionAttributes.customerName",
+          "customerPhone": "$.Lex.SessionAttributes.customerPhone",
+          "serviceName": "$.Lex.SessionAttributes.serviceName",
+          "confirmedServiceName": "$.Lex.SessionAttributes.confirmedServiceName",
+          "requestedDate": "$.Lex.SessionAttributes.requestedDate",
+          "requestedTime": "$.Lex.SessionAttributes.requestedTime",
+          "staffPreference": "$.Lex.SessionAttributes.staffPreference",
+          "staffId": "$.Lex.SessionAttributes.staffId",
+          "selectedStaffId": "$.Lex.SessionAttributes.selectedStaffId",
+          "confirmedStaffId": "$.Lex.SessionAttributes.confirmedStaffId",
+          "confirmedStaffName": "$.Lex.SessionAttributes.confirmedStaffName",
+          "excludedStaffIds": "$.Lex.SessionAttributes.excludedStaffIds",
+          "excludedStaffNames": "$.Lex.SessionAttributes.excludedStaffNames",
+          "awaitingFinalBookingConfirmation": "$.Lex.SessionAttributes.awaitingFinalBookingConfirmation",
+          "bookingConfirmationAsked": "$.Lex.SessionAttributes.bookingConfirmationAsked",
+          "confirmationFingerprint": "$.Lex.SessionAttributes.confirmationFingerprint",
+          "awaitingAlternativeSelection": "$.Lex.SessionAttributes.awaitingAlternativeSelection",
+          "aiAlternativeSlots": "$.Lex.SessionAttributes.aiAlternativeSlots",
+          "alternativeOfferId": "$.Lex.SessionAttributes.alternativeOfferId",
+          "anchorRequestedDate": "$.Lex.SessionAttributes.anchorRequestedDate",
+          "anchorRequestedTime": "$.Lex.SessionAttributes.anchorRequestedTime",
+          "anchorRequestedStaff": "$.Lex.SessionAttributes.anchorRequestedStaff",
+          "rejectedOptionKeys": "$.Lex.SessionAttributes.rejectedOptionKeys",
+          "lastAskedSlot": "$.Lex.SessionAttributes.lastAskedSlot",
+          "activeDtmfMenu": "$.Lex.SessionAttributes.activeDtmfMenu",
+          "activeDtmfOptionsJson": "$.Lex.SessionAttributes.activeDtmfOptionsJson",
+          "serviceDtmfOptions": "$.Lex.SessionAttributes.serviceDtmfOptions",
+          "serviceDtmfServiceIds": "$.Lex.SessionAttributes.serviceDtmfServiceIds",
+          "staffDtmfOptions": "$.Lex.SessionAttributes.staffDtmfOptions",
+          "staffDtmfStaffIds": "$.Lex.SessionAttributes.staffDtmfStaffIds",
+          "connectContinuationPrompt": "$.Lex.SessionAttributes.connectContinuationPrompt",
+          "connectContinuationPromptAvailable": "$.Lex.SessionAttributes.connectContinuationPromptAvailable",
+          "outerRecoveryAttempt": "true",
+          "connectRecoveryStage": "$.Attributes.connectRecoveryStage",
+          "connectErrorCode": "$.Attributes.connectErrorCode",
+          "connectFlowSourceVersion": "2026-07-17-p0-voice-regression-fix",
+          "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedDate": "2200"
+        },
+        "Text": "Please continue with the appointment detail."
       },
       "Transitions": {
         "NextAction": "check-transfer-to-queue",
@@ -627,287 +1144,6 @@
           },
           {
             "NextAction": "set-recovery-stage-retry-error",
-            "ErrorType": "NoMatchingError"
-          }
-        ]
-      }
-    },
-    {
-      "Identifier": "37dbed23-a7c0-4259-a4f5-9be9db2f9c80",
-      "Type": "MessageParticipant",
-      "Parameters": {
-        "SkipWhenDTMFBufferEnabled": "false",
-        "Text": "All of our operators are currently busy. Please call back later. Goodbye."
-      },
-      "Transitions": {
-        "NextAction": "transfer-return-goodbye",
-        "Errors": [
-          {
-            "NextAction": "ef8d8054-77ea-40c7-aa4e-800ed784c49c",
-            "ErrorType": "NoMatchingError"
-          }
-        ]
-      }
-    },
-    {
-      "Identifier": "set-fastaibooking-runtime-attrs",
-      "Type": "UpdateContactAttributes",
-      "Parameters": {
-        "Attributes": {
-          "provider": "AMAZON_CONNECT",
-          "callerPhone": "$.CustomerEndpoint.Address",
-          "calledNumber": "$.SystemEndpoint.Address",
-          "contactId": "$.ContactId",
-          "initialContactId": "$.InitialContactId",
-          "connectRecoveryStage": "initial",
-          "connectLastErrorBranch": "none",
-          "connectFlowSourceVersion": "2026-07-17-thuyet-voice-hotfix"
-        },
-        "TargetContact": "Current"
-      },
-      "Transitions": {
-        "NextAction": "3b2877ca-bc16-4019-a8e6-04200c0ded06",
-        "Errors": [
-          {
-            "NextAction": "3b2877ca-bc16-4019-a8e6-04200c0ded06",
-            "ErrorType": "NoMatchingError"
-          }
-        ]
-      }
-    },
-    {
-      "Identifier": "check-transfer-to-queue",
-      "Type": "Compare",
-      "Parameters": {
-        "ComparisonValue": "$.Lex.SessionAttributes.transferToQueue"
-      },
-      "Transitions": {
-        "NextAction": "check-conversation-complete",
-        "Conditions": [
-          {
-            "NextAction": "transfer-human-escalation-flow",
-            "Condition": {
-              "Operator": "Equals",
-              "Operands": [
-                "true"
-              ]
-            }
-          }
-        ],
-        "Errors": [
-          {
-            "NextAction": "check-conversation-complete",
-            "ErrorType": "NoMatchingCondition"
-          }
-        ]
-      }
-    },
-    {
-      "Identifier": "check-conversation-complete",
-      "Type": "Compare",
-      "Parameters": {
-        "ComparisonValue": "$.Lex.SessionAttributes.conversationComplete"
-      },
-      "Transitions": {
-        "NextAction": "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d",
-        "Conditions": [
-          {
-            "NextAction": "check-terminal-conversation-outcome",
-            "Condition": {
-              "Operator": "Equals",
-              "Operands": [
-                "true"
-              ]
-            }
-          }
-        ],
-        "Errors": [
-          {
-            "NextAction": "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d",
-            "ErrorType": "NoMatchingCondition"
-          }
-        ]
-      }
-    },
-    {
-      "Identifier": "check-terminal-conversation-outcome",
-      "Type": "Compare",
-      "Parameters": {
-        "ComparisonValue": "$.Lex.SessionAttributes.conversationOutcome"
-      },
-      "Transitions": {
-        "NextAction": "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d",
-        "Conditions": [
-          {
-            "NextAction": "67ada978-600a-4d39-9965-6230c52810a9",
-            "Condition": {
-              "Operator": "Equals",
-              "Operands": [
-                "BOOKED"
-              ]
-            }
-          },
-          {
-            "NextAction": "67ada978-600a-4d39-9965-6230c52810a9",
-            "Condition": {
-              "Operator": "Equals",
-              "Operands": [
-                "RESCHEDULED"
-              ]
-            }
-          },
-          {
-            "NextAction": "67ada978-600a-4d39-9965-6230c52810a9",
-            "Condition": {
-              "Operator": "Equals",
-              "Operands": [
-                "CANCELED"
-              ]
-            }
-          },
-          {
-            "NextAction": "67ada978-600a-4d39-9965-6230c52810a9",
-            "Condition": {
-              "Operator": "Equals",
-              "Operands": [
-                "CALLER_GOODBYE"
-              ]
-            }
-          }
-        ],
-        "Errors": [
-          {
-            "NextAction": "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d",
-            "ErrorType": "NoMatchingCondition"
-          }
-        ]
-      }
-    },
-    {
-      "Identifier": "transfer-human-escalation-flow",
-      "Type": "TransferToFlow",
-      "Parameters": {
-        "ContactFlowId": "arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/contact-flow/c7386b94-56bb-4382-b517-ee890bbacb51"
-      },
-      "Transitions": {
-        "NextAction": "transfer-return-goodbye",
-        "Errors": [
-          {
-            "NextAction": "37dbed23-a7c0-4259-a4f5-9be9db2f9c80",
-            "ErrorType": "NoMatchingError"
-          }
-        ]
-      }
-    },
-    {
-      "Identifier": "transfer-return-goodbye",
-      "Type": "MessageParticipant",
-      "Parameters": {
-        "SkipWhenDTMFBufferEnabled": "false",
-        "Text": "Thank you for calling Kiet Nails & Beauty. Goodbye."
-      },
-      "Transitions": {
-        "NextAction": "ef8d8054-77ea-40c7-aa4e-800ed784c49c",
-        "Errors": [
-          {
-            "NextAction": "ef8d8054-77ea-40c7-aa4e-800ed784c49c",
-            "ErrorType": "NoMatchingError"
-          }
-        ]
-      }
-    },
-    {
-      "Identifier": "set-recovery-stage-initial-error",
-      "Type": "UpdateContactAttributes",
-      "Parameters": {
-        "Attributes": {
-          "connectRecoveryStage": "initial_lex_error",
-          "connectLastErrorBranch": "$.ErrorCode",
-          "connectErrorCode": "$.ErrorCode",
-          "connectFlowSourceVersion": "2026-07-17-thuyet-voice-hotfix",
-          "conversationComplete": "false"
-        },
-        "TargetContact": "Current"
-      },
-      "Transitions": {
-        "NextAction": "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d",
-        "Errors": [
-          {
-            "NextAction": "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d",
-            "ErrorType": "NoMatchingError"
-          }
-        ]
-      }
-    },
-    {
-      "Identifier": "initial-lex-error-message",
-      "Type": "MessageParticipant",
-      "Parameters": {
-        "SkipWhenDTMFBufferEnabled": "false",
-        "Text": "Sorry, I had trouble hearing you. Please tell me what you need again, or press 0 for a person."
-      },
-      "Transitions": {
-        "NextAction": "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d",
-        "Errors": [
-          {
-            "NextAction": "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d",
-            "ErrorType": "NoMatchingError"
-          }
-        ]
-      }
-    },
-    {
-      "Identifier": "set-recovery-stage-retry-error",
-      "Type": "UpdateContactAttributes",
-      "Parameters": {
-        "Attributes": {
-          "connectRecoveryStage": "retry_lex_error",
-          "connectLastErrorBranch": "$.ErrorCode",
-          "connectErrorCode": "$.ErrorCode",
-          "connectFlowSourceVersion": "2026-07-17-thuyet-voice-hotfix",
-          "conversationComplete": "false"
-        },
-        "TargetContact": "Current"
-      },
-      "Transitions": {
-        "NextAction": "41e3f239-5b57-4363-92fc-9d594579fa98",
-        "Errors": [
-          {
-            "NextAction": "41e3f239-5b57-4363-92fc-9d594579fa98",
-            "ErrorType": "NoMatchingError"
-          }
-        ]
-      }
-    },
-    {
-      "Identifier": "retry-lex-error-message",
-      "Type": "MessageParticipant",
-      "Parameters": {
-        "SkipWhenDTMFBufferEnabled": "false",
-        "Text": "I'm still here. Please tell me the service, date, time, or staff again. You can press 0 for a person."
-      },
-      "Transitions": {
-        "NextAction": "41e3f239-5b57-4363-92fc-9d594579fa98",
-        "Errors": [
-          {
-            "NextAction": "41e3f239-5b57-4363-92fc-9d594579fa98",
-            "ErrorType": "NoMatchingError"
-          }
-        ]
-      }
-    },
-    {
-      "Identifier": "final-recovery-goodbye",
-      "Type": "MessageParticipant",
-      "Parameters": {
-        "SkipWhenDTMFBufferEnabled": "false",
-        "Text": "I am sorry, I still cannot continue this call. Please call again. Goodbye."
-      },
-      "Transitions": {
-        "NextAction": "ef8d8054-77ea-40c7-aa4e-800ed784c49c",
-        "Errors": [
-          {
-            "NextAction": "ef8d8054-77ea-40c7-aa4e-800ed784c49c",
             "ErrorType": "NoMatchingError"
           }
         ]

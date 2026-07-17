@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 const API_BASE_URL = process.env.FASTAIBOOKING_API_BASE_URL;
 const INTERNAL_TOKEN = process.env.FASTAIBOOKING_API_INTERNAL_TOKEN;
 const DEFAULT_SALON_ID = process.env.DEFAULT_SALON_ID;
@@ -6051,6 +6053,9 @@ function commitDialogState(response, options = {}) {
   }
   if (responseMessage) {
     sessionAttributes.connectContinuationPrompt = responseMessage;
+    sessionAttributes.connectContinuationPromptAvailable = "true";
+  } else {
+    delete sessionAttributes.connectContinuationPromptAvailable;
   }
   if (response?.sessionState?.dialogAction?.type !== "Close") {
     sessionAttributes.conversationState = "CONTINUE";
@@ -6092,6 +6097,93 @@ function redactLogObject(value) {
       .filter(([key]) => !/(?:token|secret|authorization|password)/i.test(key))
       .map(([key, entry]) => [key, typeof entry === "object" ? redactLogObject(entry) : entry])
   );
+}
+
+function getResponseMessage(response) {
+  return response?.messages?.[0] && typeof response.messages[0] === "object"
+    ? response.messages[0]
+    : {};
+}
+
+function validateSsmlForDiagnostics(contentType, content) {
+  if (contentType !== "SSML") {
+    return { valid: true, reason: "not_ssml" };
+  }
+  const trimmed = String(content || "").trim();
+  if (!trimmed) {
+    return { valid: false, reason: "empty_ssml" };
+  }
+  if (!/^<speak(?:\s|>)/i.test(trimmed) || !/<\/speak>\s*$/i.test(trimmed)) {
+    return { valid: false, reason: "missing_speak_root" };
+  }
+  const stack = [];
+  const tagPattern = /<\/?([a-zA-Z][\w:-]*)(?:\s[^>]*)?>/g;
+  for (const match of trimmed.matchAll(tagPattern)) {
+    const fullTag = match[0];
+    const tagName = match[1].toLowerCase();
+    if (/\/>$/.test(fullTag)) {
+      continue;
+    }
+    if (fullTag.startsWith("</")) {
+      if (stack.pop() !== tagName) {
+        return { valid: false, reason: "mismatched_tag" };
+      }
+      continue;
+    }
+    stack.push(tagName);
+  }
+  return { valid: stack.length === 0, reason: stack.length === 0 ? "ok" : "unclosed_tag" };
+}
+
+function validateLexResponseForDiagnostics(response) {
+  const errors = [];
+  const sessionState = response?.sessionState;
+  const dialogAction = sessionState?.dialogAction;
+  const intent = sessionState?.intent;
+  const message = getResponseMessage(response);
+  const content = typeof message.content === "string" ? message.content : "";
+  const contentType = message.contentType || (content.trim().startsWith("<speak>") ? "SSML" : "PlainText");
+  if (!sessionState || typeof sessionState !== "object") {
+    errors.push("missing_sessionState");
+  }
+  if (!dialogAction?.type) {
+    errors.push("missing_dialogAction_type");
+  }
+  if (dialogAction?.type === "ElicitSlot" && !dialogAction.slotToElicit) {
+    errors.push("missing_slotToElicit");
+  }
+  if (dialogAction?.type === "ElicitSlot" && intent?.name === "BookAppointmentIntent" && intent?.state !== "InProgress") {
+    errors.push("book_elicit_slot_not_in_progress");
+  }
+  if (!content.trim()) {
+    errors.push("missing_message");
+  }
+  if (!["PlainText", "SSML"].includes(contentType)) {
+    errors.push("unsupported_message_type");
+  }
+  const ssmlValidation = validateSsmlForDiagnostics(contentType, content);
+  if (!ssmlValidation.valid) {
+    errors.push(`invalid_ssml:${ssmlValidation.reason}`);
+  }
+  return {
+    valid: errors.length === 0,
+    errors,
+    messageContentType: contentType,
+    ssmlValidation
+  };
+}
+
+function fingerprintLexResponse(response) {
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        dialogAction: response?.sessionState?.dialogAction,
+        intentName: response?.sessionState?.intent?.name,
+        intentState: response?.sessionState?.intent?.state,
+        messages: response?.messages
+      })
+    )
+    .digest("hex");
 }
 
 function getInputMode(event) {
@@ -6745,6 +6837,8 @@ function logStructuredLexTurn(event, response, analysis = {}) {
   const sessionAttributesAfter = response?.sessionState?.sessionAttributes || {};
   const slots = event.sessionState?.intent?.slots || {};
   const slotMutationDiagnostics = buildSlotMutationDiagnostics(event, sessionAttributesAfter);
+  const responseMessage = getResponseMessage(response);
+  const lexResponseDiagnostics = validateLexResponseForDiagnostics(response);
   const logPayload = {
 	    contactId:
 	      getAttribute(event, attributeNames.contactId) ||
@@ -6794,8 +6888,16 @@ function logStructuredLexTurn(event, response, analysis = {}) {
     trustedSlotsAfter: collectTrustedBookingSlots(sessionAttributesAfter),
     sessionAttributesBefore: redactLogObject(sessionAttributesBefore),
     sessionAttributesAfter: redactLogObject(sessionAttributesAfter),
+    lambdaResponseFingerprint: fingerprintLexResponse(response),
+    playbackEvidenceStage: "LAMBDA_RESPONSE_ONLY",
+    promptPlaybackConfirmed: false,
+    lexResponseSchemaValid: lexResponseDiagnostics.valid,
+    lexResponseSchemaErrors: lexResponseDiagnostics.errors,
+    dialogActionType: response?.sessionState?.dialogAction?.type,
     slotToElicit: response?.sessionState?.dialogAction?.slotToElicit,
-    message: response?.messages?.[0]?.content
+    messageContentType: lexResponseDiagnostics.messageContentType,
+    ssmlValidation: lexResponseDiagnostics.ssmlValidation,
+    message: responseMessage.content
   };
   console.info(JSON.stringify(logPayload));
 }
@@ -7674,6 +7776,13 @@ export const handler = async (event) => {
   const response = await handleLexEvent(sanitizedEvent, analysis);
   const responseAttributes = response?.sessionState?.sessionAttributes;
   if (responseAttributes) {
+    const lexResponseDiagnostics = validateLexResponseForDiagnostics(response);
+    responseAttributes.lambdaResponseFingerprint = fingerprintLexResponse(response);
+    responseAttributes.playbackEvidenceStage = "LAMBDA_RESPONSE_ONLY";
+    responseAttributes.promptPlaybackConfirmed = "false";
+    responseAttributes.lexResponseSchemaValid = String(lexResponseDiagnostics.valid);
+    responseAttributes.lexResponseMessageContentType = lexResponseDiagnostics.messageContentType;
+    responseAttributes.lexResponseSsmlValid = String(lexResponseDiagnostics.ssmlValidation.valid);
     if (response?.sessionState?.dialogAction?.type !== "Close" && responseAttributes.conversationComplete !== "true") {
       responseAttributes.conversationState = "CONTINUE";
       responseAttributes.conversationOutcome = responseAttributes.conversationOutcome || "NEEDS_INPUT";

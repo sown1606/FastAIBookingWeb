@@ -585,6 +585,62 @@ const collectReachableActions = (flow) => {
   return { actionsById, reachable };
 };
 
+const getTransitionTargets = (action) => [
+  action?.Transitions?.NextAction,
+  ...(action?.Transitions?.Conditions || []).map((condition) => condition.NextAction),
+  ...(action?.Transitions?.Errors || []).map((error) => error.NextAction)
+].filter(Boolean);
+
+const findReachablePath = (flow, fromId, predicate, maxDepth = 16) => {
+  const actionsById = new Map(flow.Actions.map((action) => [action.Identifier, action]));
+  const queue = [[fromId]];
+  const seen = new Set();
+  while (queue.length) {
+    const path = queue.shift();
+    const id = path[path.length - 1];
+    if (!id || path.length > maxDepth) {
+      continue;
+    }
+    const action = actionsById.get(id);
+    if (predicate(action, id, path)) {
+      return path;
+    }
+    const seenKey = `${id}:${path.length}`;
+    if (seen.has(seenKey)) {
+      continue;
+    }
+    seen.add(seenKey);
+    for (const targetId of getTransitionTargets(action)) {
+      if (!path.includes(targetId) || path.length < 3) {
+        queue.push([...path, targetId]);
+      }
+    }
+  }
+  return null;
+};
+
+const assertPathReaches = (flow, fromId, targetId, message) => {
+  const path = findReachablePath(flow, fromId, (_action, id) => id === targetId);
+  assert.ok(path, message || `${fromId} reaches ${targetId}`);
+  return path;
+};
+
+const assertPathHasAudibleActionBeforeLex = (flow, fromId, message) => {
+  const actionsById = new Map(flow.Actions.map((action) => [action.Identifier, action]));
+  const path = findReachablePath(
+    flow,
+    fromId,
+    (action, _id, currentPath) =>
+      action?.Type === "ConnectParticipantWithLexBot" &&
+      currentPath.slice(0, -1).some((pathId) => {
+        const previous = actionsById.get(pathId);
+        return previous?.Type === "MessageParticipant" && String(previous.Parameters?.Text || "").trim();
+      })
+  );
+  assert.ok(path, message || `${fromId} reaches Lex through an audible message`);
+  return path;
+};
+
 test("Connect AI reception has one reachable greeting and no outer service prompt loop", () => {
   const aiReceptionFlow = JSON.parse(
     readFileSync(path.join(connectRoot, "ai-reception.json"), "utf8")
@@ -593,7 +649,12 @@ test("Connect AI reception has one reachable greeting and no outer service promp
   const reachableGreetingActions = [...reachable]
     .map((id) => actionsById.get(id))
     .filter((action) => action?.Parameters?.Text === CANONICAL_SERVICE_PROMPT);
+  const flowLogging = actionsById.get("enable-flow-logging");
 
+  assert.equal(aiReceptionFlow.StartAction, "enable-flow-logging");
+  assert.equal(flowLogging?.Type, "UpdateFlowLoggingBehavior");
+  assert.equal(flowLogging?.Parameters?.FlowLoggingBehavior, "Enabled");
+  assert.equal(flowLogging?.Transitions?.NextAction, "f06e4017-1de8-4fbd-a42a-ae434ddca6bf");
   assert.equal(reachableGreetingActions.length, 1);
   for (const id of reachable) {
     const action = actionsById.get(id);
@@ -613,9 +674,15 @@ test("Connect AI reception has one reachable greeting and no outer service promp
   assert.doesNotMatch(primary.Parameters.Text, /press 1 for Pedicure/i);
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:allow-interrupt:*:*"], "true");
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:start-timeout-ms:*:*"], "9000");
-  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:*:*"], "3200");
+  assert.ok(
+    Number(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:*:*"]) >= 4200,
+    "global audio end timeout must preserve the prior slow-speech floor"
+  );
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:max-length-ms:*:*"], "20000");
-  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName"], "2800");
+  assert.ok(
+    Number(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName"]) >= 3200,
+    "serviceName end timeout must not regress below the previous safe value"
+  );
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedDate"], "2200");
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedTime"], "2200");
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference"], "2600");
@@ -623,14 +690,18 @@ test("Connect AI reception has one reachable greeting and no outer service promp
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:bookingConfirmation"], "900");
   assert.equal(primary.Parameters.LexSessionAttributes.lastAskedSlot, "serviceName");
   assert.equal(primary.Parameters.LexSessionAttributes.initialVoiceBookingContext, "true");
-  assert.equal(primary.Parameters.LexSessionAttributes.audioTimeoutProfile, "thuyet_voice_hotfix_v1");
+  assert.equal(primary.Parameters.LexSessionAttributes.audioTimeoutProfile, "p0_slow_speech_recovery_initial_v1");
   assert.equal(primary.Parameters.LexSessionAttributes.connectRecoveryStage, "initial");
-  assert.equal(primary.Parameters.LexSessionAttributes.connectFlowSourceVersion, "2026-07-17-thuyet-voice-hotfix");
+  assert.equal(primary.Parameters.LexSessionAttributes.connectFlowSourceVersion, "2026-07-17-p0-voice-regression-fix");
   assert.equal(recovery.Parameters.Text, "$.Lex.SessionAttributes.connectContinuationPrompt");
   assert.equal(recovery.Transitions.NextAction, "check-transfer-to-queue");
   assert.equal(recovery.Parameters.LexSessionAttributes.connectRecoveryStage, "$.Attributes.connectRecoveryStage");
   assert.equal(recovery.Parameters.LexSessionAttributes.connectErrorCode, "$.Attributes.connectErrorCode");
   assert.equal(recovery.Parameters.LexSessionAttributes.connectContinuationPrompt, "$.Lex.SessionAttributes.connectContinuationPrompt");
+  assert.equal(
+    recovery.Parameters.LexSessionAttributes.connectContinuationPromptAvailable,
+    "$.Lex.SessionAttributes.connectContinuationPromptAvailable"
+  );
   assert.equal(recovery.Parameters.LexSessionAttributes.confirmationFingerprint, "$.Lex.SessionAttributes.confirmationFingerprint");
   assert.equal(recovery.Parameters.LexSessionAttributes.aiAlternativeSlots, "$.Lex.SessionAttributes.aiAlternativeSlots");
   assert.equal(recovery.Parameters.LexSessionAttributes.excludedStaffIds, "$.Lex.SessionAttributes.excludedStaffIds");
@@ -640,6 +711,10 @@ test("Connect AI reception has one reachable greeting and no outer service promp
   assert.match(finalRecovery.Parameters.Text, /Press 0 for a person, or tell me your appointment again/i);
   assert.equal(finalRecovery.Parameters.LexSessionAttributes.outerRecoveryAttempt, "final");
   assert.equal(finalRecovery.Parameters.LexSessionAttributes.connectContinuationPrompt, "$.Lex.SessionAttributes.connectContinuationPrompt");
+  assert.equal(
+    finalRecovery.Parameters.LexSessionAttributes.connectContinuationPromptAvailable,
+    "$.Lex.SessionAttributes.connectContinuationPromptAvailable"
+  );
   assert.equal(finalRecovery.Parameters.LexSessionAttributes.excludedStaffIds, "$.Lex.SessionAttributes.excludedStaffIds");
   assert.equal(finalRecovery.Parameters.LexSessionAttributes.excludedStaffNames, "$.Lex.SessionAttributes.excludedStaffNames");
   assert.doesNotMatch(finalRecovery.Parameters.Text, /next prompt/i);
@@ -656,6 +731,7 @@ test("Connect AI reception routes only explicit complete conversations to goodby
   const transferCheck = actionsById.get("check-transfer-to-queue");
   const completeCheck = actionsById.get("check-conversation-complete");
   const outcomeCheck = actionsById.get("check-terminal-conversation-outcome");
+  const continuationPromptCheck = actionsById.get("check-continuation-prompt");
 
   assert.equal(primary.Transitions.NextAction, "check-transfer-to-queue");
   assert.equal(recovery.Transitions.NextAction, "check-transfer-to-queue");
@@ -663,10 +739,25 @@ test("Connect AI reception routes only explicit complete conversations to goodby
   assert.equal(transferCheck.Transitions.NextAction, "check-conversation-complete");
   assert.equal(transferCheck.Transitions.Conditions[0].NextAction, "transfer-human-escalation-flow");
   assert.equal(completeCheck.Parameters.ComparisonValue, "$.Lex.SessionAttributes.conversationComplete");
-  assert.equal(completeCheck.Transitions.NextAction, "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d");
+  assert.equal(completeCheck.Transitions.NextAction, "check-continuation-prompt");
   assert.equal(completeCheck.Transitions.Conditions[0].NextAction, "check-terminal-conversation-outcome");
   assert.equal(outcomeCheck.Parameters.ComparisonValue, "$.Lex.SessionAttributes.conversationOutcome");
-  assert.equal(outcomeCheck.Transitions.NextAction, "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d");
+  assert.equal(outcomeCheck.Transitions.NextAction, "check-continuation-prompt");
+  assert.equal(continuationPromptCheck.Parameters.ComparisonValue, "$.Lex.SessionAttributes.connectContinuationPromptAvailable");
+  assert.equal(continuationPromptCheck.Transitions.NextAction, "continuation-fallback-lex");
+  assert.deepEqual(
+    continuationPromptCheck.Transitions.Conditions,
+    [
+      {
+        NextAction: "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d",
+        Condition: {
+          Operator: "Equals",
+          Operands: ["true"]
+        }
+      }
+    ]
+  );
+  assert.equal(continuationPromptCheck.Transitions.Errors[0].NextAction, "continuation-fallback-lex");
   assert.deepEqual(
     outcomeCheck.Transitions.Conditions.map((condition) => condition.Condition.Operands[0]),
     ["BOOKED", "RESCHEDULED", "CANCELED", "CALLER_GOODBYE"]
@@ -678,18 +769,18 @@ test("Connect AI reception routes only explicit complete conversations to goodby
   );
   assert.equal(primary.Transitions.Errors[0].NextAction, "set-recovery-stage-initial-error");
   assert.equal(primary.Transitions.Errors[1].NextAction, "set-recovery-stage-initial-error");
-  assert.equal(actionsById.get(primary.Transitions.Errors[0].NextAction).Transitions.NextAction, "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d");
+  assert.equal(actionsById.get(primary.Transitions.Errors[0].NextAction).Transitions.NextAction, "initial-lex-error-message");
   assert.equal(actionsById.get(primary.Transitions.Errors[0].NextAction).Parameters.Attributes.connectErrorCode, "$.ErrorCode");
   assert.equal(recovery.Transitions.Errors[0].NextAction, "set-recovery-stage-retry-error");
   assert.equal(recovery.Transitions.Errors[1].NextAction, "set-recovery-stage-retry-error");
-  assert.equal(actionsById.get(recovery.Transitions.Errors[0].NextAction).Transitions.NextAction, "41e3f239-5b57-4363-92fc-9d594579fa98");
+  assert.equal(actionsById.get(recovery.Transitions.Errors[0].NextAction).Transitions.NextAction, "retry-lex-error-message");
   assert.equal(actionsById.get(recovery.Transitions.Errors[0].NextAction).Parameters.Attributes.connectErrorCode, "$.ErrorCode");
   assert.notEqual(recovery.Transitions.Errors[0].NextAction, "67ada978-600a-4d39-9965-6230c52810a9");
   assert.notEqual(recovery.Transitions.Errors[1].NextAction, "67ada978-600a-4d39-9965-6230c52810a9");
   assert.equal(finalRecovery.Type, "ConnectParticipantWithLexBot");
   assert.equal(finalRecovery.Transitions.NextAction, "check-transfer-to-queue");
-  assert.equal(finalRecovery.Transitions.Errors[0].NextAction, "set-recovery-stage-retry-error");
-  assert.equal(finalRecovery.Transitions.Errors[1].NextAction, "set-recovery-stage-retry-error");
+  assert.equal(finalRecovery.Transitions.Errors[0].NextAction, "final-recovery-goodbye");
+  assert.equal(finalRecovery.Transitions.Errors[1].NextAction, "final-recovery-goodbye");
   assert.ok(
     recovery.Transitions.Conditions.some((condition) =>
       condition.Condition.Operands.includes("FallbackIntent")
@@ -711,24 +802,34 @@ test("Connect AI reception recovery paths do not immediately disconnect after gr
   const recovery = actionsById.get("6fbf4310-c8c6-44a8-a8f5-1d7830974c4d");
   const finalRecovery = actionsById.get("41e3f239-5b57-4363-92fc-9d594579fa98");
 
+  for (const id of ["initial-lex-error-message", "retry-lex-error-message", "final-recovery-goodbye"]) {
+    assert.ok(reachable.has(id), `${id} must be reachable from StartAction`);
+    assert.equal(actionsById.get(id)?.Type, "MessageParticipant", `${id} must be audible`);
+    assert.ok(String(actionsById.get(id)?.Parameters?.Text || "").trim(), `${id} must have literal text`);
+  }
+
   for (const error of primary.Transitions.Errors) {
     const setRecovery = actionsById.get(error.NextAction);
     assert.equal(setRecovery?.Type, "UpdateContactAttributes");
     assert.equal(setRecovery?.Parameters?.Attributes?.connectErrorCode, "$.ErrorCode");
-    assert.equal(setRecovery?.Transitions?.NextAction, "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d");
+    assert.equal(setRecovery?.Transitions?.NextAction, "initial-lex-error-message");
+    assertPathReaches(aiReceptionFlow, error.NextAction, "initial-lex-error-message");
+    assertPathHasAudibleActionBeforeLex(aiReceptionFlow, error.NextAction, `${error.ErrorType} should be audible before retry Lex`);
     assert.notEqual(actionsById.get(error.NextAction)?.Type, "DisconnectParticipant");
   }
   for (const error of recovery.Transitions.Errors) {
     const setRecovery = actionsById.get(error.NextAction);
     assert.equal(setRecovery?.Type, "UpdateContactAttributes");
     assert.equal(setRecovery?.Parameters?.Attributes?.connectErrorCode, "$.ErrorCode");
-    assert.equal(setRecovery?.Transitions?.NextAction, "41e3f239-5b57-4363-92fc-9d594579fa98");
+    assert.equal(setRecovery?.Transitions?.NextAction, "retry-lex-error-message");
+    assertPathReaches(aiReceptionFlow, error.NextAction, "retry-lex-error-message");
+    assertPathHasAudibleActionBeforeLex(aiReceptionFlow, error.NextAction, `${error.ErrorType} should be audible before final Lex`);
   }
   for (const error of finalRecovery.Transitions.Errors) {
-    const setRecovery = actionsById.get(error.NextAction);
-    assert.equal(setRecovery?.Type, "UpdateContactAttributes");
-    assert.equal(setRecovery?.Parameters?.Attributes?.connectErrorCode, "$.ErrorCode");
-    assert.notEqual(actionsById.get(setRecovery?.Transitions?.NextAction)?.Type, "DisconnectParticipant");
+    assert.equal(error.NextAction, "final-recovery-goodbye");
+    const path = assertPathReaches(aiReceptionFlow, error.NextAction, "ef8d8054-77ea-40c7-aa4e-800ed784c49c");
+    assert.ok(path.includes("final-recovery-goodbye"), `${error.ErrorType} must play goodbye`);
+    assert.equal(path.filter((id) => id === "41e3f239-5b57-4363-92fc-9d594579fa98").length, 0);
   }
   for (const id of reachable) {
     const action = actionsById.get(id);
@@ -804,12 +905,56 @@ test("Connect AI reception missing fields and no-match paths stay nonterminal", 
   const initialMessage = actionsById.get("initial-lex-error-message");
   const retryMessage = actionsById.get("retry-lex-error-message");
 
-  assert.equal(completeCheck.Transitions.NextAction, "6fbf4310-c8c6-44a8-a8f5-1d7830974c4d");
+  assert.equal(completeCheck.Transitions.NextAction, "check-continuation-prompt");
   assert.notEqual(actionsById.get(completeCheck.Transitions.NextAction)?.Type, "DisconnectParticipant");
   assert.equal(initialMessage.Type, "MessageParticipant");
   assert.notEqual(actionsById.get(initialMessage.Transitions.NextAction)?.Type, "DisconnectParticipant");
   assert.equal(retryMessage.Type, "MessageParticipant");
   assert.notEqual(actionsById.get(retryMessage.Transitions.NextAction)?.Type, "DisconnectParticipant");
+});
+
+test("Connect AI reception dynamic Lex prompts have a reachable literal fallback", () => {
+  const aiReceptionFlow = JSON.parse(
+    readFileSync(path.join(connectRoot, "ai-reception.json"), "utf8")
+  );
+  const { actionsById, reachable } = collectReachableActions(aiReceptionFlow);
+  const incomingByTarget = new Map();
+  for (const action of aiReceptionFlow.Actions) {
+    for (const targetId of getTransitionTargets(action)) {
+      incomingByTarget.set(targetId, [...(incomingByTarget.get(targetId) || []), action]);
+    }
+  }
+
+  for (const id of reachable) {
+    const action = actionsById.get(id);
+    const text = action?.Parameters?.Text;
+    if (action?.Type !== "ConnectParticipantWithLexBot" || typeof text !== "string" || !text.startsWith("$.")) {
+      continue;
+    }
+    const fallbackComparisons = (incomingByTarget.get(id) || []).filter((incoming) => {
+      if (incoming.Type !== "Compare") {
+        return false;
+      }
+      const explicitlyRoutesToDynamic = (incoming.Transitions?.Conditions || []).some(
+        (condition) => condition.NextAction === id
+      );
+      const hasLiteralLexFallback = getTransitionTargets(incoming).some((targetId) => {
+        const target = actionsById.get(targetId);
+        return (
+          target?.Type === "ConnectParticipantWithLexBot" &&
+          target.Identifier !== id &&
+          typeof target.Parameters?.Text === "string" &&
+          !target.Parameters.Text.startsWith("$.") &&
+          target.Parameters.Text.trim().length > 0
+        );
+      });
+      return explicitlyRoutesToDynamic && hasLiteralLexFallback;
+    });
+    assert.ok(
+      fallbackComparisons.length > 0,
+      `${id} uses dynamic ${text} without a reachable literal fallback Lex prompt`
+    );
+  }
 });
 
 test("Connect source contract keeps production phone number on AI reception flow", () => {
@@ -858,8 +1003,9 @@ test("Lex booking slot prompt attempts allow interrupt and use phone-friendly au
     repoRoot,
     "infra/aws/lex/FastAIBookingBot-v10/BotLocales/en_US/Intents/BookAppointmentIntent/Slots"
   );
+  const slowSpeechServiceEndTimeoutMinMs = 3200;
   const expected = {
-    serviceName: { startMin: 8000, endMin: 2700, endMax: 2900, maxMin: 20000 },
+    serviceName: { startMin: 8000, endMin: slowSpeechServiceEndTimeoutMinMs, endMax: 4200, maxMin: 20000 },
     requestedDate: { startMin: 8000, endMin: 2100, endMax: 2300, maxMin: 20000 },
     requestedTime: { startMin: 8000, endMin: 2100, endMax: 2300, maxMin: 20000 },
     staffPreference: { startMin: 8000, endMin: 2500, endMax: 2700, maxMin: 20000 },
@@ -878,7 +1024,10 @@ test("Lex booking slot prompt attempts allow interrupt and use phone-friendly au
         attempt.audioAndDTMFInputSpecification.startTimeoutMs >= range.startMin,
         `${slotName}.${attemptName} start timeout`
       );
-      assert.ok(audio.endTimeoutMs >= range.endMin && audio.endTimeoutMs <= range.endMax, `${slotName}.${attemptName} end timeout`);
+      assert.ok(
+        audio.endTimeoutMs >= range.endMin && audio.endTimeoutMs <= range.endMax,
+        `${slotName}.${attemptName} end timeout preserves measured slow-speech floor`
+      );
       assert.ok(audio.maxLengthMs >= range.maxMin, `${slotName}.${attemptName} max length`);
     }
     const failureAction = slot.valueElicitationSetting.slotCaptureSetting?.failureNextStep?.dialogAction?.type;
@@ -1408,7 +1557,7 @@ test("DialogCodeHook recognizes production Full Set speech aliases without DTMF"
 
 test("DialogCodeHook confirms known caller Full Set live phrases in one turn", async () => {
   const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
-  const today = usEasternDate(0);
+  const tomorrow = usEasternDate(1);
   const fetchCalls = installFetchMock((_url, _options, body) =>
     jsonResponse(
       successfulBackendPayload({
@@ -1416,7 +1565,7 @@ test("DialogCodeHook confirms known caller Full Set live phrases in one turn", a
         appointment: null,
         lexResponse: {
           fulfillmentState: "InProgress",
-          message: "Lee, just to confirm: Full Set today at 3 PM with Amy. Is that correct?",
+          message: "Lee, just to confirm: Full Set tomorrow at 3 PM with Amy. Is that correct?",
           messageContentType: "PlainText",
           dialogAction: {
             type: "ElicitIntent"
@@ -1440,9 +1589,9 @@ test("DialogCodeHook confirms known caller Full Set live phrases in one turn", a
   );
 
   for (const inputTranscript of [
-    "Full Set today at 3 PM with Amy.",
-    "Full Set... today at 3 PM... with Amy.",
-    "full sets today at 3 PM with Amy."
+    "Full Set tomorrow at 3 PM with Amy.",
+    "Full Set... tomorrow at 3 PM... with Amy.",
+    "full sets tomorrow at 3 PM with Amy."
   ]) {
     const fetchCountBefore = fetchCalls.length;
     const response = await handler(
@@ -1476,14 +1625,14 @@ test("DialogCodeHook confirms known caller Full Set live phrases in one turn", a
     const latestFetch = fetchCalls.at(-1);
     assert.equal(fetchCalls.length, fetchCountBefore + 1, inputTranscript);
     assert.equal(latestFetch.body.serviceName, "Full Set", inputTranscript);
-    assert.equal(latestFetch.body.requestedDate, today, inputTranscript);
+    assert.equal(latestFetch.body.requestedDate, tomorrow, inputTranscript);
     assert.equal(latestFetch.body.requestedTime, "3 PM", inputTranscript);
     assert.equal(latestFetch.body.staffPreference, "Amy", inputTranscript);
     assert.equal(latestFetch.body.customerName, "Lee", inputTranscript);
     assert.equal(response.sessionState.dialogAction.type, "ElicitIntent", inputTranscript);
     assert.equal(
       response.messages[0].content,
-      "Lee, just to confirm: Full Set today at 3 PM with Amy. Is that correct?",
+      "Lee, just to confirm: Full Set tomorrow at 3 PM with Amy. Is that correct?",
       inputTranscript
     );
     assert.doesNotMatch(response.messages[0].content, /I can help you book or cancel|Which service/i);
@@ -1499,7 +1648,7 @@ test("DialogCodeHook clarifies scoped who-said Full Set ASR without committing s
   const response = await handler(
     baseEvent({
       invocationSource: "DialogCodeHook",
-      inputTranscript: "who said today at three p m and it's time to fight",
+      inputTranscript: "who said tomorrow at three p m and it's time to fight",
       sessionState: {
         ...baseEvent().sessionState,
         sessionAttributes: {
@@ -1524,7 +1673,7 @@ test("DialogCodeHook clarifies scoped who-said Full Set ASR without committing s
   assert.equal(fetchCalls.length, 0);
   assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
   assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName");
-  assert.equal(response.sessionState.sessionAttributes.requestedDate, usEasternDate(0));
+  assert.equal(response.sessionState.sessionAttributes.requestedDate, usEasternDate(1));
   assert.equal(response.sessionState.sessionAttributes.requestedTime, "3 PM");
   assert.equal(response.sessionState.sessionAttributes.serviceName, undefined);
   assert.equal(response.sessionState.sessionAttributes.proposedServiceName, "Full Set");
@@ -1536,50 +1685,50 @@ test("DialogCodeHook clarifies scoped who-said Full Set ASR without committing s
       canonicalValue: "Full Set",
       reason: "scoped_phonetic_full_set",
       confidenceBand: "medium",
-      evidence: ["who said today at three p m and it's time to fight"],
+      evidence: ["who said tomorrow at three p m and it's time to fight"],
       alternativesUsed: false
     }
   ]);
-  assert.match(response.messages[0].content, /I heard today at 3 PM.*Did you say Full Set\?/i);
+  assert.match(response.messages[0].content, /I heard tomorrow at 3 PM.*Did you say Full Set\?/i);
 });
 
 test("DialogCodeHook handles live distorted Full Set transcripts without silent service commit", async () => {
   for (const [phrase, expected] of [
     [
-      "the pool set today at three p m",
+      "the pool set tomorrow at three p m",
       {
         proposed: "Full Set",
-        date: usEasternDate(0),
+        date: usEasternDate(1),
         time: "3 PM",
         staff: undefined,
         prompt: /Did you say Full Set/i
       }
     ],
     [
-      "food set today at two pm and it's top a five",
+      "food set tomorrow at two pm and it's top a five",
       {
         proposed: "Full Set",
-        date: usEasternDate(0),
+        date: usEasternDate(1),
         time: "2 PM",
         staff: undefined,
         prompt: /Did you say Full Set/i
       }
     ],
     [
-      "who's that today at two p m",
+      "who's that tomorrow at two p m",
       {
         proposed: "Full Set",
-        date: usEasternDate(0),
+        date: usEasternDate(1),
         time: "2 PM",
         staff: undefined,
         prompt: /Did you say Full Set/i
       }
     ],
     [
-      "who's that today at three p m",
+      "who's that tomorrow at three p m",
       {
         proposed: "Full Set",
-        date: usEasternDate(0),
+        date: usEasternDate(1),
         time: "3 PM",
         staff: undefined,
         prompt: /Did you say Full Set/i
@@ -1646,40 +1795,40 @@ test("DialogCodeHook handles live distorted Full Set transcripts without silent 
       }
     ],
     [
-      "fun fact today at three p m with amy",
+      "fun fact tomorrow at three p m with amy",
       {
         proposed: "Full Set",
-        date: usEasternDate(0),
+        date: usEasternDate(1),
         time: "3 PM",
         staff: "Amy",
         prompt: /Did you say Full Set/i
       }
     ],
     [
-      "phone set today at three pm with amy",
+      "phone set tomorrow at three pm with amy",
       {
         proposed: "Full Set",
-        date: usEasternDate(0),
+        date: usEasternDate(1),
         time: "3 PM",
         staff: "Amy",
         prompt: /Did you say Full Set/i
       }
     ],
     [
-      "cool set today at three pm",
+      "cool set tomorrow at three pm",
       {
         proposed: "Full Set",
-        date: usEasternDate(0),
+        date: usEasternDate(1),
         time: "3 PM",
         staff: undefined,
         prompt: /Did you say Full Set/i
       }
     ],
     [
-      "can we set today at three pm with emmy",
+      "can we set tomorrow at three pm with emmy",
       {
         proposed: "Full Set",
-        date: usEasternDate(0),
+        date: usEasternDate(1),
         time: "3 PM",
         staff: "Amy",
         prompt: /Did you say Full Set/i
@@ -2578,7 +2727,7 @@ test("DialogCodeHook blocks sunset even when Lex resolves a service slot", async
   await handler(
     baseEvent({
       invocationSource: "DialogCodeHook",
-      inputTranscript: "sunset today at three pm",
+      inputTranscript: "sunset tomorrow at three pm",
       sessionState: {
         ...baseEvent().sessionState,
         sessionAttributes: {
@@ -2608,11 +2757,11 @@ test("DialogCodeHook blocks sunset even when Lex resolves a service slot", async
   const bookingCall = fetchCalls.at(-1);
   assert.equal(bookingCall.body.serviceName, undefined);
   assert.notEqual(bookingCall.body.serviceName, "Full Set");
-  assert.equal(bookingCall.body.requestedDate, usEasternDate(0));
+  assert.equal(bookingCall.body.requestedDate, usEasternDate(1));
   assert.equal(bookingCall.body.requestedTime, "3 PM");
 });
 
-test("DialogCodeHook resolves pay the bill today at two p m with any staff in one turn", async () => {
+test("DialogCodeHook resolves pay the bill tomorrow at two p m with any staff in one turn", async () => {
   const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
   const fetchCalls = installFetchMock((_url, _options, body) =>
     jsonResponse(
@@ -2621,7 +2770,7 @@ test("DialogCodeHook resolves pay the bill today at two p m with any staff in on
         appointment: null,
         lexResponse: {
           fulfillmentState: "InProgress",
-          message: "Please confirm Pedicure today at 2 PM with first available.",
+          message: "Please confirm Pedicure tomorrow at 2 PM with first available.",
           messageContentType: "PlainText",
           dialogAction: {
             type: "ElicitIntent"
@@ -2647,7 +2796,7 @@ test("DialogCodeHook resolves pay the bill today at two p m with any staff in on
   const response = await handler(
     baseEvent({
       invocationSource: "DialogCodeHook",
-      inputTranscript: "pay the bill today at two p m with any staff",
+      inputTranscript: "pay the bill tomorrow at two p m with any staff",
       sessionState: {
         ...baseEvent().sessionState,
         sessionAttributes: {
@@ -2671,7 +2820,7 @@ test("DialogCodeHook resolves pay the bill today at two p m with any staff in on
 
   assert.equal(fetchCalls.length, 1);
   assert.equal(fetchCalls[0].body.serviceName, "Pedicure");
-  assert.equal(fetchCalls[0].body.requestedDate, usEasternDate(0));
+  assert.equal(fetchCalls[0].body.requestedDate, usEasternDate(1));
   assert.equal(fetchCalls[0].body.requestedTime, "2 PM");
   assert.equal(fetchCalls[0].body.staffPreference, "Any staff");
   assert.equal(response.sessionState.sessionAttributes.serviceName, "Pedicure");
@@ -2687,7 +2836,7 @@ test("DialogCodeHook stale service digit cannot replace spoken Manicure after me
         appointment: null,
         lexResponse: {
           fulfillmentState: "InProgress",
-          message: "Please confirm Manicure today at 2 PM with Amy.",
+          message: "Please confirm Manicure tomorrow at 2 PM with Amy.",
           messageContentType: "PlainText",
           dialogAction: {
             type: "ElicitIntent"
@@ -2726,7 +2875,7 @@ test("DialogCodeHook stale service digit cannot replace spoken Manicure after me
           customerPhone: "+15555550123",
           serviceName: "Manicure",
           confirmedServiceName: "Manicure",
-          requestedDate: usEasternDate(0),
+          requestedDate: usEasternDate(1),
           requestedTime: "2 PM",
           staffPreference: "Amy",
           confirmedStaffName: "Amy",
@@ -3983,7 +4132,7 @@ test("DialogCodeHook forwards compact ASR alternatives for verified Pedicure ASR
           lastAskedSlot: "serviceName",
           customerName: "Kiet Nguyen",
           customerPhone: "7325956266",
-          requestedDate: usEasternDate(0),
+          requestedDate: usEasternDate(1),
           requestedTime: "11 AM"
         },
         intent: {
@@ -3995,7 +4144,7 @@ test("DialogCodeHook forwards compact ASR alternatives for verified Pedicure ASR
               interpretedValue: "fifty kill",
               resolvedValues: ["fifty kill"]
             }),
-            requestedDate: slot("today"),
+            requestedDate: slot("tomorrow"),
             requestedTime: slot("11 AM")
           }
         }
@@ -4420,7 +4569,7 @@ test("DialogCodeHook production service DTMF 1 selects Pedicure and preserves kn
           }),
           customerName: "Kiet Nguyen",
           customerPhone: "7325956266",
-          requestedDate: usEasternDate(0),
+          requestedDate: usEasternDate(1),
           requestedTime: "11 AM",
           staffPreference: "Amy",
           staffId: "staff-amy",
@@ -4437,7 +4586,7 @@ test("DialogCodeHook production service DTMF 1 selects Pedicure and preserves kn
   assert.equal(response.sessionState.sessionAttributes.serviceName, "Pedicure");
   assert.equal(response.sessionState.sessionAttributes.confirmedServiceName, "Pedicure");
   assert.equal(response.sessionState.sessionAttributes.serviceId, "service-pedicure");
-  assert.equal(response.sessionState.sessionAttributes.requestedDate, usEasternDate(0));
+  assert.equal(response.sessionState.sessionAttributes.requestedDate, usEasternDate(1));
   assert.equal(response.sessionState.sessionAttributes.requestedTime, "11 AM");
   assert.equal(response.sessionState.sessionAttributes.staffPreference, "Amy");
   assert.notEqual(response.sessionState.sessionAttributes.transferToQueue, "true");

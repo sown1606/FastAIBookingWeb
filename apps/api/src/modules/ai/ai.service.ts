@@ -3140,6 +3140,42 @@ const stableHash = (value: unknown): string =>
 
 const readStringValue = (value: unknown): string => (typeof value === "string" ? value.trim() : "");
 
+const validateSsmlForDiagnostics = (
+  contentType: string,
+  content: unknown
+): { valid: boolean; reason: string } => {
+  if (contentType !== "SSML") {
+    return { valid: true, reason: "not_ssml" };
+  }
+  const trimmed = readStringValue(content);
+  if (!trimmed) {
+    return { valid: false, reason: "empty_ssml" };
+  }
+  if (!/^<speak(?:\s|>)/i.test(trimmed) || !/<\/speak>\s*$/i.test(trimmed)) {
+    return { valid: false, reason: "missing_speak_root" };
+  }
+  const stack: string[] = [];
+  const tagPattern = /<\/?([a-zA-Z][\w:-]*)(?:\s[^>]*)?>/g;
+  for (const match of trimmed.matchAll(tagPattern)) {
+    const fullTag = match[0];
+    const tagName = match[1]!.toLowerCase();
+    if (/\/>$/.test(fullTag)) {
+      continue;
+    }
+    if (fullTag.startsWith("</")) {
+      if (stack.pop() !== tagName) {
+        return { valid: false, reason: "mismatched_tag" };
+      }
+      continue;
+    }
+    stack.push(tagName);
+  }
+  return { valid: stack.length === 0, reason: stack.length === 0 ? "ok" : "unclosed_tag" };
+};
+
+const inferLexMessageContentType = (message: string, lexResponse: Record<string, unknown>): string =>
+  readStringValue(lexResponse.messageContentType) || (message.trim().startsWith("<speak>") ? "SSML" : "PlainText");
+
 const readAmazonConnectContactIdFromRequestPayload = (requestPayload: unknown): string => {
   const payload = recordFromUnknown(requestPayload);
   const attributes = recordFromUnknown(payload.attributes);
@@ -3284,10 +3320,17 @@ const buildAmazonConnectTurnHistoryItem = (input: {
     lambdaRespondedAt: turnDiagnostics.lambdaRespondedAt ?? null,
     lambdaProcessingMs: turnDiagnostics.lambdaProcessingMs ?? null,
     apiProcessingMs: turnDiagnostics.apiProcessingMs ?? null,
-    connectBranch: turnDiagnostics.connectBranch ?? null,
-    promptText: turnDiagnostics.promptText ?? input.interactionInput.responseText ?? null,
-    promptExpectedToPlay: turnDiagnostics.promptExpectedToPlay ?? true,
-    providerDisconnectedAt: turnDiagnostics.providerDisconnectedAt ?? null,
+	    connectBranch: turnDiagnostics.connectBranch ?? null,
+	    promptText: turnDiagnostics.promptText ?? input.interactionInput.responseText ?? null,
+	    promptExpectedToPlay: turnDiagnostics.promptExpectedToPlay ?? true,
+	    promptPlaybackConfirmed: turnDiagnostics.promptPlaybackConfirmed ?? false,
+	    playbackEvidenceStage: turnDiagnostics.playbackEvidenceStage ?? "LAMBDA_RESPONSE_ONLY",
+	    lambdaResponseFingerprint:
+	      turnDiagnostics.lambdaResponseFingerprint ?? turnDiagnostics.responseFingerprint ?? null,
+	    dialogActionType: turnDiagnostics.dialogActionType ?? null,
+	    messageContentType: turnDiagnostics.messageContentType ?? null,
+	    ssmlValidation: turnDiagnostics.ssmlValidation ?? null,
+	    providerDisconnectedAt: turnDiagnostics.providerDisconnectedAt ?? null,
     isValid: input.interactionInput.isValid,
     transferToQueue:
       sessionAttributesAfter.transferToQueue ?? responsePayload.transferToQueue ?? null,
@@ -5815,11 +5858,13 @@ const buildAmazonConnectTimingDiagnostics = (input: {
       readStringValue(attributes.connectRecoveryStage) ||
       readStringValue(attributes.connectLastErrorBranch) ||
       null,
-    promptText: input.promptText || null,
-    promptExpectedToPlay: input.promptExpectedToPlay ?? true,
-    providerDisconnectedAt: providerDisconnectedAt || null
-  };
-};
+	    promptText: input.promptText || null,
+	    promptExpectedToPlay: input.promptExpectedToPlay ?? true,
+	    promptPlaybackConfirmed: false,
+	    playbackEvidenceStage: readStringValue(attributes.playbackEvidenceStage) || "LAMBDA_RESPONSE_ONLY",
+	    providerDisconnectedAt: providerDisconnectedAt || null
+	  };
+	};
 
 const getSuggestedSlotsForService = async (input: {
   salonId: string;
@@ -8925,14 +8970,43 @@ export const createAmazonConnectAIAppointment = async (
       !Array.isArray(responseDebugRecord.sanitization)
         ? (responseDebugRecord.sanitization as Record<string, unknown>)
         : undefined;
-    const timingDiagnostics = buildAmazonConnectTimingDiagnostics({
-      attributes: input.attributes,
-      promptText: inputForInteraction.message,
-      promptExpectedToPlay: true,
-      providerDisconnectedAt: readProviderDisconnectedAtFromCallSession(callSession)
-    });
-    const turnStateDiagnostics = {
-      ...timingDiagnostics,
+	    const timingDiagnostics = buildAmazonConnectTimingDiagnostics({
+	      attributes: input.attributes,
+	      promptText: inputForInteraction.message,
+	      promptExpectedToPlay: true,
+	      providerDisconnectedAt: readProviderDisconnectedAtFromCallSession(callSession)
+	    });
+	    const lexResponseForDiagnostics = recordFromUnknown(responsePayloadBase.lexResponse);
+	    const dialogActionForDiagnostics = recordFromUnknown(lexResponseForDiagnostics.dialogAction);
+	    const responseMessageContentType = inferLexMessageContentType(
+	      inputForInteraction.message,
+	      lexResponseForDiagnostics
+	    );
+	    const responseSsmlValidation = validateSsmlForDiagnostics(
+	      responseMessageContentType,
+	      inputForInteraction.message
+	    );
+	    const lambdaResponseFingerprint = createHash("sha256")
+	      .update(
+	        JSON.stringify({
+	          dialogAction: dialogActionForDiagnostics,
+	          intentName:
+	            recordFromUnknown(responsePayloadBase.lexResponse).intentName ??
+	            normalized.intentName ??
+	            "BookAppointmentIntent",
+	          message: inputForInteraction.message,
+	          messageContentType: responseMessageContentType,
+	          conversationState: inferredResponseSessionAttributes.conversationState,
+	          conversationOutcome: inferredResponseSessionAttributes.conversationOutcome,
+	          conversationComplete: inferredResponseSessionAttributes.conversationComplete,
+	          lastAskedSlot: inferredResponseSessionAttributes.lastAskedSlot,
+	          confirmationFingerprint: inferredResponseSessionAttributes.confirmationFingerprint,
+	          alternativeOfferId: inferredResponseSessionAttributes.alternativeOfferId
+	        })
+	      )
+	      .digest("hex");
+	    const turnStateDiagnostics = {
+	      ...timingDiagnostics,
       humanTurnId: input.attributes?.humanTurnId,
       providerTurnId: input.attributes?.providerTurnId,
       providerRequestId: input.attributes?.providerRequestId,
@@ -9007,10 +9081,15 @@ export const createAmazonConnectAIAppointment = async (
       businessHoursDecision: parseDiagnosticJson(
         responsePayloadBase.businessHoursDecision ?? inferredResponseSessionAttributes.businessHoursDecision
       ),
-      responseFingerprint: createHash("sha256")
-        .update(
-          JSON.stringify({
-            message: inputForInteraction.message,
+	      lambdaResponseFingerprint,
+	      dialogActionType: readStringValue(dialogActionForDiagnostics.type),
+	      messageContentType: responseMessageContentType,
+	      ssmlValidation: responseSsmlValidation,
+	      lexResponseSchemaValid: Boolean(inputForInteraction.message && responseSsmlValidation.valid),
+	      responseFingerprint: createHash("sha256")
+	        .update(
+	          JSON.stringify({
+	            message: inputForInteraction.message,
             outcome: inputForInteraction.outcome,
             conversationState: inferredResponseSessionAttributes.conversationState,
             conversationOutcome: inferredResponseSessionAttributes.conversationOutcome,
@@ -13419,10 +13498,16 @@ export const buildAdminDebugTimelineItems = (
       lambdaRespondedAt: turn.lambdaRespondedAt,
       lambdaProcessingMs: turn.lambdaProcessingMs,
       apiProcessingMs: turn.apiProcessingMs,
-      connectBranch: turn.connectBranch,
-      promptText: turn.promptText,
-      promptExpectedToPlay: turn.promptExpectedToPlay,
-      providerDisconnectedAt: turn.providerDisconnectedAt,
+	      connectBranch: turn.connectBranch,
+	      promptText: turn.promptText,
+	      promptExpectedToPlay: turn.promptExpectedToPlay,
+	      promptPlaybackConfirmed: turn.promptPlaybackConfirmed,
+	      playbackEvidenceStage: turn.playbackEvidenceStage,
+	      lambdaResponseFingerprint: turn.lambdaResponseFingerprint,
+	      dialogActionType: turn.dialogActionType,
+	      messageContentType: turn.messageContentType,
+	      ssmlValidation: turn.ssmlValidation,
+	      providerDisconnectedAt: turn.providerDisconnectedAt,
       transferToQueue: turn.transferToQueue,
       forceHumanEscalation: turn.forceHumanEscalation,
       fallbackCount: turn.fallbackCount,
