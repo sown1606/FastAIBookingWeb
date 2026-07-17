@@ -20,6 +20,13 @@
 - Lex production alias `JVIPIZDYE3` now points to bot version `41`; rollback alias version is `40`.
 - EC2 production deploy succeeded; API image is `fastaibooking-api:latest@ed3d61707f98`. Admin/app images were unchanged.
 
+## Commit And Push
+
+- Branch: `main`.
+- Hotfix commit: `4711ee611453a9c0a887f76d4e22e8b4b6fb9679`.
+- Push result: `git push origin main` succeeded to `github.com-sown1606:sown1606/FastAIBookingWeb.git`, advancing `main` from `6c58ee2` to `4711ee6`.
+- This report metadata section is committed in a follow-up documentation commit on the same branch; see the terminal summary for the final branch tip.
+
 ## Changes
 
 - Lambda/API slot policy now keeps ownership scoped to active slot and strong explicit fields.
