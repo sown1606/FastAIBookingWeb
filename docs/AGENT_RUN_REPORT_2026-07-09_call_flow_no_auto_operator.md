@@ -6,9 +6,9 @@
 - Fixed unintended operator transfer paths so `transferToQueue=true` is emitted only for DTMF `0`, explicit human/operator language, or a high-confidence `HumanEscalationIntent`.
 
 ## Root Cause
-The live backend data for `+84798171999` did not show an explicit backend escalation:
+The live backend data for `+********1999` did not show an explicit backend escalation:
 - callSession `0f4f92e4-65f5-4f0b-a18a-a2461d5d20f4`
-- caller `+84798171999`, dialed `+18483487681`
+- caller `+********1999`, dialed `+********7681`
 - status `IN_PROGRESS`
 - routingOutcome `AI_RECEPTION`
 - escalationReason `null`
@@ -25,7 +25,7 @@ Additional code risks fixed:
 - API trusted `forceHumanEscalation=true` / `transferToQueue=true` as input without re-checking explicit operator intent.
 
 ## Live Phone / Contact Path
-- Dialed AI number: `+18483487681`
+- Dialed AI number: `+********7681`
 - Connect instance: `74f78377-766f-46b7-a745-4bc97b68a8dc`
 - AI Reception contact flow: `dcccf542-587c-426c-a644-a4c6f24da6e4` / `FastAIBooking AI Reception`
 - Lex bot alias used by flow: `arn:aws:lex:us-east-1:197452633989:bot-alias/KHMIXGA2US/JVIPIZDYE3`
@@ -68,7 +68,7 @@ Raw captures:
 - Hold music is only on actual operator queue transfer. Human escalation flow speaks the wait prompt, updates queue, then transfers to the queue. Customer queue flow has iterative music configured.
 
 ## Production Data Notes
-- `+84798171999` production call record did not prove the caller pressed `0` or asked for an operator.
+- `+********1999` production call record did not prove the caller pressed `0` or asked for an operator.
 - There was no linked operator/contact-center escalation record for that call in DB export.
 - DB export includes older historical rows with `Acrylic Full Set`. I did not rename, delete, or seed data. Active call-flow code/prompts/tests no longer contain `Acrylic Full Set`.
 
@@ -98,11 +98,11 @@ Raw captures:
 
 ## Remaining Risk
 - I could not make a manual PSTN phone call from this environment. Thuyet should run the phone script below.
-- The DB record for the reported `+84798171999` call had no contactId and no AI interaction logs attached, so exact Connect-side contact outcome is inferred from the live flow/log path rather than a single joined DB contact record.
+- The DB record for the reported `+********1999` call had no contactId and no AI interaction logs attached, so exact Connect-side contact outcome is inferred from the live flow/log path rather than a single joined DB contact record.
 - Direct Lambda post-deploy smoke with explicit operator paths created production validation records using contact id `codex-smoke-dtmf4-contact`; I did not delete them.
 
 ## Manual Phone Test For Thuyet
-1. Call `+18483487681` from `+84 798 171 999`.
+1. Call `+********7681` from `+********1999`.
 2. Say: “I want to book a full set.”
 3. If asked for service again, press `4`.
 4. Say: “my name is Thuyet.”

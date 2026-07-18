@@ -116,7 +116,7 @@ Content-Type: application/json
   "firstName": "Amy",
   "lastName": "Nguyen",
   "email": "amy.staff.demo@example.com",
-  "phone": "+15555550101",
+  "phone": "+********0101",
   "password": "StaffDemo123!",
   "isActive": true
 }
@@ -133,7 +133,7 @@ Content-Type: application/json
   "firstName": "Kelly",
   "lastName": "Tran",
   "email": "kelly.staff.demo@example.com",
-  "phone": "+15555550102",
+  "phone": "+********0102",
   "isActive": true
 }
 ```

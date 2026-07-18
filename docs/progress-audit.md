@@ -6,10 +6,10 @@ One clean demo salon only:
 
 - Salon: `Kiet Nails & Beauty`
 - Original business number: `848-702-9493`
-- Carrier setup: T-Mobile no-answer forwarding code `**61*18483487681**10#`
+- Carrier setup: T-Mobile no-answer forwarding code `**61*********7681**10#`
 - Primary telephony layer: Amazon Connect
 - Primary AI layer: Amazon Lex / Amazon AI
-- Demo flow: `848-702-9493 -> +1 848-348-7681 -> Amazon Connect Contact Flow -> Lex prod alias -> Booking Lambda -> POST /api/v1/internal/ai/appointments -> backend booking/escalation flow -> Owner/Staff dashboard`
+- Demo flow: `848-702-9493 -> +********7681 -> Amazon Connect Contact Flow -> Lex prod alias -> Booking Lambda -> POST /api/v1/internal/ai/appointments -> backend booking/escalation flow -> Owner/Staff dashboard`
 - Human escalation flow: `AI Booking Reception -> Operator Queue -> Amazon Connect CCP/browser softphone -> FastAIBooking operator dashboard`
 
 ## What Is Now Coherent
@@ -88,7 +88,7 @@ One clean demo salon only:
 - Root `.env.example` and `apps/api/.env.example` now use:
   - `CALL_PROVIDER=amazon_connect`
   - `AI_PROVIDER=amazon`
-  - `DEMO_ORIGINAL_PHONE_NUMBER=8487029493`
+  - `DEMO_ORIGINAL_PHONE_NUMBER=********9493`
   - `AMAZON_CONNECT_INSTANCE_URL=https://fastaibooking.my.connect.aws`
   - `AMAZON_CONNECT_CCP_URL=https://fastaibooking.my.connect.aws/ccp-v2/`
   - `AMAZON_LEX_LOCALE_ID=en_US`
@@ -105,7 +105,7 @@ One clean demo salon only:
 
 - Amazon Connect live CCP still requires valid instance access, claimed phone number, contact flows, queue, routing profile, operator user, and browser login.
 - Amazon Lex Booking Bot still requires a configured bot, alias, locale, booking intent, and human escalation intent.
-- Booking Lambda still requires an internal backend endpoint and `FASTAIBOOKING_API_INTERNAL_TOKEN`.
+- Booking Lambda still requires an internal backend endpoint and `[INTERNAL_TOKEN_ENV]`.
 - SMTP and Twilio still require real provider credentials for live delivery.
 
 ## Release Hygiene Notes

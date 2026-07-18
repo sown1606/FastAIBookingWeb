@@ -117,6 +117,15 @@ const tokensMatch = (actual: string, expected: string): boolean => {
   );
 };
 
+const internalTokenMatches = (requestToken: string, configuredToken: string): boolean => {
+  const activeToken = configuredToken.trim();
+  const previousToken = env.FASTAIBOOKING_API_INTERNAL_TOKEN_PREVIOUS?.trim();
+  return (
+    tokensMatch(requestToken, activeToken) ||
+    Boolean(previousToken && tokensMatch(requestToken, previousToken))
+  );
+};
+
 const readPayloadAttribute = (
   payload: z.infer<typeof createAIAppointmentSchema>,
   name: string
@@ -266,7 +275,7 @@ const requireInternalApiToken = asyncHandler(async (req, _res, next) => {
     req.headers.authorization,
     req.headers["x-fastaibooking-internal-token"]
   );
-  if (!requestToken || !tokensMatch(requestToken, configuredToken)) {
+  if (!requestToken || !internalTokenMatches(requestToken, configuredToken)) {
     throw new AppError("Invalid internal token.", 401, "UNAUTHORIZED");
   }
 

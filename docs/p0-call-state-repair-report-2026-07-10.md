@@ -98,7 +98,7 @@ Smoke production khong tao lich:
 
 ## 11. Rui ro con lai / viec bi chan
 
-- BLOCKED ON LIVE CALL VERIFICATION: can nguoi co kha nang goi so Connect `+18483487681` thuc hien 7 gate trong prompt va cung cap ContactId moi.
+- BLOCKED ON LIVE CALL VERIFICATION: can nguoi co kha nang goi so Connect `+********7681` thuc hien 7 gate trong prompt va cung cap ContactId moi.
 - Owner/admin follow-up bi hoan theo yeu cau vi voice live gates chua PASS: chua expose Business Hours trong basic mode, chua verify JSON export bang browser sau deploy, chua responsive smoke UI.
 - CloudWatch quick filter tren Lambda log group khong tra snippet cho cac ContactId cu trong thoi gian chay lenh; regression duoc bao ve bang tests/source va DB baseline thay vi log excerpt moi.
 

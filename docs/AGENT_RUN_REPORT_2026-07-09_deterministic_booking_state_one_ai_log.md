@@ -100,7 +100,7 @@ Phone number:
 ```json
 {
   "PhoneNumberId": "f2e36faa-5264-4955-8a18-e2f53755c102",
-  "PhoneNumber": "+18483487681",
+  "PhoneNumber": "+********7681",
   "Status": "CLAIMED",
   "InstanceId": "74f78377-766f-46b7-a745-4bc97b68a8dc",
   "TargetArn": "arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc"
@@ -120,7 +120,7 @@ API/Admin:
 
 Two-turn booking smoke:
 
-- Contact id: `codex-deterministic-one-log-1783608506312`
+- Contact id: `codex-deterministic-one-log-********6312`
 - Turn 1: `i want to book a full set tomorrow at two p m with trang`
 - Lambda response: `Got it: Full Set tomorrow at 2 PM with Trang. What name should I put on the appointment?`
 - Turn 2: `full set`
@@ -133,7 +133,7 @@ Two-turn booking smoke:
 
 DTMF 4 smoke:
 
-- Contact id: `codex-deterministic-dtmf4-1783608554315`
+- Contact id: `codex-deterministic-dtmf4-********4315`
 - Raw input: `4`
 - Lambda response: `What day would you like? You can say today or tomorrow.`
 - `serviceName=Full Set`
@@ -168,7 +168,7 @@ Exact saved `dtmfRouting`:
 
 Press 0 smoke:
 
-- Contact id: `codex-deterministic-press0-1783608610232`
+- Contact id: `codex-deterministic-press0-********0232`
 - Response: `Please wait while I connect you.`
 - `dialogAction.type=Close`
 - `transferToQueue=true`
@@ -179,7 +179,7 @@ DTMF 4 reaches Lambda in the deployed Lambda smoke, and Connect/Lex are configur
 
 Known caller note:
 
-- For `+84798171999`, the deployed smoke did not receive a known customer name from the API lookup, so the bot asked for name once.
+- For `+********1999`, the deployed smoke did not receive a known customer name from the API lookup, so the bot asked for name once.
 - The API path preserves customer memory after a successful name capture for future calls.
 
 ## Test results

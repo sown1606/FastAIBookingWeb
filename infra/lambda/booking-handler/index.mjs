@@ -2847,7 +2847,16 @@ function extractCustomerPhoneFromText(text) {
   return (explicitPhoneMatch?.[1] || fallbackPhoneMatch?.[1] || "").replace(/\D/g, "");
 }
 
-function getZonedDateParts(timeZone, date = new Date()) {
+function getReferenceDate() {
+  const configured = process.env.FASTAIBOOKING_TEST_NOW_ISO;
+  if (!configured || process.env.NODE_ENV !== "test") {
+    return new Date();
+  }
+  const parsed = new Date(configured);
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+}
+
+function getZonedDateParts(timeZone, date = getReferenceDate()) {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone,
     year: "numeric",
@@ -2866,7 +2875,7 @@ function getZonedDateParts(timeZone, date = new Date()) {
   };
 }
 
-function getZonedClockMinutes(timeZone, date = new Date()) {
+function getZonedClockMinutes(timeZone, date = getReferenceDate()) {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone,
     hour: "2-digit",
@@ -3001,7 +3010,7 @@ function buildWeekdayDateConflictPrompt(conflict) {
   return `${conflict.explicitMonthDay} is ${conflict.actualWeekday}. Did you mean ${conflict.explicitDateLabel}, or ${conflict.intendedDateLabel}?`;
 }
 
-function getZonedWeekdayIndex(timeZone, date = new Date()) {
+function getZonedWeekdayIndex(timeZone, date = getReferenceDate()) {
   const weekday = new Intl.DateTimeFormat("en-US", {
     timeZone,
     weekday: "long"
@@ -6135,33 +6144,56 @@ function validateSsmlForDiagnostics(contentType, content) {
   return { valid: stack.length === 0, reason: stack.length === 0 ? "ok" : "unclosed_tag" };
 }
 
-function validateLexResponseForDiagnostics(response) {
+export function validateLexResponseForDiagnostics(response) {
   const errors = [];
   const sessionState = response?.sessionState;
   const dialogAction = sessionState?.dialogAction;
   const intent = sessionState?.intent;
   const message = getResponseMessage(response);
   const content = typeof message.content === "string" ? message.content : "";
-  const contentType = message.contentType || (content.trim().startsWith("<speak>") ? "SSML" : "PlainText");
+  const hasMessage = Boolean(response?.messages?.length);
+  const hasContent = content.trim().length > 0;
+  const contentType = hasMessage
+    ? message.contentType || (content.trim().startsWith("<speak>") ? "SSML" : "PlainText")
+    : "None";
+  const actionType = dialogAction?.type;
   if (!sessionState || typeof sessionState !== "object") {
     errors.push("missing_sessionState");
   }
-  if (!dialogAction?.type) {
+  if (!actionType) {
     errors.push("missing_dialogAction_type");
   }
-  if (dialogAction?.type === "ElicitSlot" && !dialogAction.slotToElicit) {
-    errors.push("missing_slotToElicit");
-  }
-  if (dialogAction?.type === "ElicitSlot" && intent?.name === "BookAppointmentIntent" && intent?.state !== "InProgress") {
-    errors.push("book_elicit_slot_not_in_progress");
-  }
-  if (!content.trim()) {
+  const messageRequired = ["ElicitSlot", "ConfirmIntent", "ElicitIntent"].includes(actionType);
+  if (messageRequired && !hasContent) {
     errors.push("missing_message");
   }
-  if (!["PlainText", "SSML"].includes(contentType)) {
+  if (hasMessage && !["PlainText", "SSML"].includes(contentType)) {
     errors.push("unsupported_message_type");
   }
-  const ssmlValidation = validateSsmlForDiagnostics(contentType, content);
+  if (actionType === "ElicitSlot") {
+    if (!intent?.name) {
+      errors.push("missing_intent_name");
+    }
+    if (!intent?.state) {
+      errors.push("missing_intent_state");
+    }
+    if (!dialogAction.slotToElicit) {
+      errors.push("missing_slotToElicit");
+    }
+    if (intent?.name === "BookAppointmentIntent" && intent?.state !== "InProgress") {
+      errors.push("book_elicit_slot_not_in_progress");
+    }
+  }
+  if (actionType === "Close") {
+    if (!intent?.state) {
+      errors.push("missing_intent_state");
+    } else if (!["Fulfilled", "Failed"].includes(intent.state)) {
+      errors.push("close_intent_state_invalid");
+    }
+  }
+  const ssmlValidation = hasMessage
+    ? validateSsmlForDiagnostics(contentType, content)
+    : { valid: true, reason: "no_message" };
   if (!ssmlValidation.valid) {
     errors.push(`invalid_ssml:${ssmlValidation.reason}`);
   }

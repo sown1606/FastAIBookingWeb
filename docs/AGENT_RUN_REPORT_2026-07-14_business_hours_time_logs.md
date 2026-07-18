@@ -1,10 +1,10 @@
 # Agent Run Report: Business Hours, Time Parsing, Logs
 
-Date: 2026-07-14  
-Repository: FastAIBooking production repo  
-Salon: Kiet Nails & Beauty (`9bd14a12-85ed-418a-af7d-3f5cb329c147`)  
-Called number: `+18483487681`  
-Caller in evidence: `+84798171999`
+Date: 2026-07-14
+Repository: FastAIBooking production repo
+Salon: Kiet Nails & Beauty (`9bd14a12-85ed-418a-af7d-3f5cb329c147`)
+Called number: `+********7681`
+Caller in evidence: `+********1999`
 
 ## Root Causes
 
@@ -212,7 +212,7 @@ Connect/Lex:
 
 - No Connect or Lex source changes were deployed for this task.
 - Lex alias `JVIPIZDYE3` remained `Available`, bot version `31`.
-- Inbound number association: `+18483487681`/phone ID `f2e36faa-5264-4955-8a18-e2f53755c102` routes to flow `dcccf542-587c-426c-a644-a4c6f24da6e4`.
+- Inbound number association: `+********7681`/phone ID `f2e36faa-5264-4955-8a18-e2f53755c102` routes to flow `dcccf542-587c-426c-a644-a4c6f24da6e4`.
 - Active Connect flow hash equals source hash: `321d4cd84f370fad0a5745688dfbf336791ed960f8ce3121bcb41b48f19bbb65`.
 
 ## Production QA

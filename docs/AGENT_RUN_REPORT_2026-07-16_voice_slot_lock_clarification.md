@@ -3,7 +3,7 @@
 Date: 2026-07-16
 Repository: FastAIBooking production repo
 Salon: Kiet Nails & Beauty (`9bd14a12-85ed-418a-af7d-3f5cb329c147`)
-Called number: `+18483487681`
+Called number: `+********7681`
 
 ## Scope
 
@@ -109,7 +109,7 @@ Lex:
 Connect:
 
 - No Connect flow edit was required.
-- Verified production number `+18483487681` points to phone ID `f2e36faa-5264-4955-8a18-e2f53755c102`.
+- Verified production number `+********7681` points to phone ID `f2e36faa-5264-4955-8a18-e2f53755c102`.
 - Verified phone association routes to flow `dcccf542-587c-426c-a644-a4c6f24da6e4`, `FastAIBooking AI Reception`, `PUBLISHED`, `ACTIVE`.
 - Verified the flow uses Lex alias `KHMIXGA2US/JVIPIZDYE3`.
 - Verified voice timeout attributes: start timeout `8000`, global end timeout `3200`, max audio `20000`, service end timeout `1800`, date/time/staff end timeout `1600`, customer name end timeout `2000`, and interrupt enabled.
@@ -186,7 +186,7 @@ Connect:
 - Instance: `74f78377-766f-46b7-a745-4bc97b68a8dc`
 - Flow: `dcccf542-587c-426c-a644-a4c6f24da6e4`
 - Flow status: `PUBLISHED`, `ACTIVE`
-- Phone: `+18483487681`
+- Phone: `+********7681`
 - PhoneNumberId: `f2e36faa-5264-4955-8a18-e2f53755c102`
 - Connect flow update: not required
 

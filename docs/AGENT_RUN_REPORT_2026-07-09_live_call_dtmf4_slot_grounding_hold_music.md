@@ -4,8 +4,8 @@
 - Fixed only the Amazon Connect / Lex / Lambda phone booking flow, Admin AI debug display, and Connect human escalation hold path.
 - Live call under review:
   - Amazon Connect ContactId: `477db497-266c-4be9-b8ed-2091a6e64eed`
-  - Caller: `+84798171999`
-  - Called: `+18483487681`
+  - Caller: `+********1999`
+  - Called: `+********7681`
   - Internal AI log CallSession.id: `3175af7d-7c6c-4675-acf0-b3bf94dfcdaa`
 - Admin labels were clarified so the external Amazon Connect ContactId and internal `CallSession.id` are separate concepts.
 
@@ -126,11 +126,11 @@ These were deployed Lambda smokes, not real phone calls.
   - still points to Lex alias `KHMIXGA2US/JVIPIZDYE3`
   - still transfers to Human Escalation flow `c7386b94-56bb-4382-b517-ee890bbacb51`
 - Phone number verified:
-  - `+18483487681`
+  - `+********7681`
   - phone number id `f2e36faa-5264-4955-8a18-e2f53755c102`
   - status `CLAIMED`
   - instance `74f78377-766f-46b7-a745-4bc97b68a8dc`
-- AWS CLI does not expose the inbound phone-number-to-contact-flow mapping in `describe-phone-number`; a console check or real inbound call is still the definitive verification that `+18483487681` enters AI Reception.
+- AWS CLI does not expose the inbound phone-number-to-contact-flow mapping in `describe-phone-number`; a console check or real inbound call is still the definitive verification that `+********7681` enters AI Reception.
 
 ## Files Changed
 - `infra/lambda/booking-handler/index.mjs`
@@ -181,7 +181,7 @@ These were deployed Lambda smokes, not real phone calls.
 - API/Admin deployed to EC2 and are healthy.
 
 ## Retest Script
-1. Call `+18483487681` from the tester phone.
+1. Call `+********7681` from the tester phone.
 2. Say: `full set`.
 3. If the service menu is active, press `4`.
    - Expected AI log: `currentTurnTranscript = "4"`.

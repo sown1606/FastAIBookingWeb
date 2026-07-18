@@ -13,7 +13,7 @@ Scope: production P0/P1 hardening for Amazon Connect -> Lex Lambda -> internal A
 
 ## Production Evidence
 
-- Returning caller phone: `+84798171999`.
+- Returning caller phone: `+********1999`.
 - Known-caller evidence showed `recognizedCustomerId=9e917db5-ef1c-4ebd-92d1-14c57564cafb`, `recognizedCustomerName=lee`, `customerProfileSource=active_customer`.
 - Trang ASR call: session `6da41235-5b24-4641-99fe-c45bc8e9534d`, ContactId `d91f98a5-0a43-4494-8c61-c1ee325b073b`, repeated transcript `dang`.
 - Unsupported service call: session `fa7561c3-6f20-407c-9998-f2b4f4435158`, transcript `i want haircut`, previously produced `requestedStaff=haircut`.
@@ -91,7 +91,7 @@ Production smoke kept Trang on digit `2` across repeated invalid staff utterance
 ## Production Data Audit
 
 - Salon: Kiet Nails & Beauty, `9bd14a12-85ed-418a-af7d-3f5cb329c147`, timezone `America/New_York`.
-- Known caller `+84798171999`: one active matching customer record; deleted historical duplicates exist.
+- Known caller `+********1999`: one active matching customer record; deleted historical duplicates exist.
 - Trang: `903511ee-4849-43dd-85fb-73595e79a233`, active, bookable, not deleted.
 - Full Set: `41241879-49bf-42ba-a6d1-d7da9809d334`, active, duration 100 minutes.
 - Trang is mapped to Full Set.
@@ -188,14 +188,14 @@ Production health smoke:
 
 ## Synthetic Production Smoke
 
-Run ID: `1783925315334`
+Run ID: `********5334`
 
 Contact IDs:
 
-- Known caller: `codex-smoke-known-caller-1783925315334`
-- Gel fallback: `codex-smoke-gel-1783925315334`
-- Trang overlap: `codex-smoke-trang-dang-1783925315334`
-- Menu stability: `codex-smoke-menu-stability-1783925315334`
+- Known caller: `codex-smoke-known-caller-********5334`
+- Gel fallback: `codex-smoke-gel-********5334`
+- Trang overlap: `codex-smoke-trang-dang-********5334`
+- Menu stability: `codex-smoke-menu-stability-********5334`
 
 Results:
 

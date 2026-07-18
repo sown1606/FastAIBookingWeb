@@ -7,8 +7,8 @@ Focused on the live Amazon Connect / Lex / Lambda phone booking path, Admin AI l
 ## Root cause from live evidence
 
 - ContactId: `477db497-266c-4be9-b8ed-2091a6e64eed`
-- Caller: `+84798171999`
-- Called: `+18483487681`
+- Caller: `+********1999`
+- Called: `+********7681`
 - Admin call detail ID was the Amazon Connect `ContactId`.
 - AI detail `3175af7d-7c6c-4675-acf0-b3bf94dfcdaa` was the internal `CallSession.id`, not the Connect ContactId.
 - Lex was carrying cumulative slot memory into later turns. That allowed `requestedTime=4 PM` to appear on a turn where `inputTranscript` was only `tomorrow`.
@@ -69,7 +69,7 @@ Focused on the live Amazon Connect / Lex / Lambda phone booking path, Admin AI l
 
 ### Connect
 
-- Phone number: `+18483487681`
+- Phone number: `+********7681`
 - Phone number id: `f2e36faa-5264-4955-8a18-e2f53755c102`
 - Instance: `74f78377-766f-46b7-a745-4bc97b68a8dc`
 - `describe-phone-number` confirms the number is claimed on the expected instance. AWS CLI does not expose the phone-number-to-contact-flow association in `describe-phone-number`; no interactive handset call was placed from this environment.
@@ -224,7 +224,7 @@ Result:
 
 ## Retest script
 
-1. Call `+18483487681`.
+1. Call `+********7681`.
 2. At the first greeting, press `4`.
    - Expected: bot accepts `Full Set` immediately and asks for date, not service.
    - Admin/CloudWatch should show `dtmfRouting.route = service_menu`, `selection = Full Set`.

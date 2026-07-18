@@ -18,8 +18,8 @@ Current execution time was `2026-07-09 01:36 EDT` / `2026-07-09 05:36 UTC`, so t
 
 Latest real +84 record found:
 
-- Caller: `+84798171999`
-- Dialed: `+18483487681`
+- Caller: `+********1999`
+- Dialed: `+********7681`
 - Contact id: `cec28e0b-0c77-4a6e-9506-bbb05fe5072d`
 - Created: `2026-07-08T15:07:40.477Z`
 - Outcome: `AI_RECEPTION`, not transferred
@@ -89,7 +89,7 @@ Lambda final after deploy:
 
 - LastModified: `2026-07-09T05:47:48.000+0000`
 - CodeSha256: `Gg4MLxi5miJUwLHTGxVhOBvKbmeNrAZLUHssBesSK6I=`
-- Env keys present: `FASTAIBOOKING_API_INTERNAL_TOKEN`, `DEFAULT_SALON_ID`, `FASTAIBOOKING_API_BASE_URL`
+- Env keys present: `[INTERNAL_TOKEN_ENV]`, `DEFAULT_SALON_ID`, `FASTAIBOOKING_API_BASE_URL`
 
 API final after deploy:
 
@@ -133,7 +133,7 @@ I did not place a real phone call from Thuyet's device in this run. The deployed
 
 ## Manual Retest For Thuyet
 
-1. Call `+18483487681` from `+84798171999`.
+1. Call `+********7681` from `+********1999`.
 2. Say: `I want to book a Full Set tomorrow at 3 PM with Trang.`
 3. If asked for name, say: `Lee`.
 4. Expected: AI must not ask service/date/time/staff again and must not transfer.

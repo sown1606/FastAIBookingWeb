@@ -29,7 +29,7 @@ Contacts found:
 - `e266d6a2-3e4d-4417-9278-6ae62d8926c8`
   - Initiation: `2026-07-13T14:08:21.892Z`
   - Disconnect: `2026-07-13T14:08:33.129Z`
-  - Attributes: caller `+84798171999`, called `+18483487681`
+  - Attributes: caller `+********1999`, called `+********7681`
   - No `/aws/lambda/fastaibooking-booking-handler` events.
   - No `/aws/connect/fastaibooking` events.
   - No `/aws/lex/KHMIXGA2US` events.
@@ -73,7 +73,7 @@ The checked-in Connect flow artifact prompt was aligned to the required shorter 
 
 ## Synthetic Production Smokes
 
-Run ID: `codex-edge-1783969663947`.
+Run ID: `codex-edge-********3947`.
 
 - Pedicure tomorrow afternoon, any staff is fine:
   - Asked `requestedTime`.

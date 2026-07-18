@@ -40,7 +40,7 @@ Small follow-up to the completed `sunset` -> `Full Set` and operator queue hotfi
   - `NailServiceType` already had `Full Set` synonyms including `sunset` and `sun set`.
 - Connect before/final state:
   - Instance: `74f78377-766f-46b7-a745-4bc97b68a8dc`
-  - Phone `+18483487681`: claimed as `f2e36faa-5264-4955-8a18-e2f53755c102`.
+  - Phone `+********7681`: claimed as `f2e36faa-5264-4955-8a18-e2f53755c102`.
   - Flow association: phone ARN -> AI Reception ARN `arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/contact-flow/dcccf542-587c-426c-a644-a4c6f24da6e4`.
   - Operator queue `d0f2a5d8-e983-4609-9bbc-efb0881a465d`: `AGENTS_STAFFED=1`, `AGENTS_AVAILABLE=0`, `CONTACTS_IN_QUEUE=0`, snapshot `2026-07-15T09:28:08.132000-04:00`.
 

@@ -111,7 +111,7 @@ Lookup now runs before initial missing-slot selection. On a match it seeds:
 
 Lookup is cached per call with `FOUND`, `NOT_FOUND`, or `ERROR`, so the customer table is not queried every turn. Lookup failures do not delete captured booking fields.
 
-Production note: the historical `+84798171999` customer rows currently visible in production are soft-deleted, so live lookup for that exact phone now returns `NOT_FOUND`. The code path was verified against an active production customer and by regression tests.
+Production note: the historical `+********1999` customer rows currently visible in production are soft-deleted, so live lookup for that exact phone now returns `NOT_FOUND`. The code path was verified against an active production customer and by regression tests.
 
 ## 6. `g p s` Time Normalization
 

@@ -125,7 +125,7 @@ The original demo failure mode is fixed:
 
 Ready:
 
-- Current main flow is AWS: `848-702-9493 -> +1 848-348-7681 -> Amazon Connect Contact Flow -> Lex prod alias -> Booking Lambda -> POST /api/v1/internal/ai/appointments -> backend booking/escalation flow`.
+- Current main flow is AWS: `848-702-9493 -> +********7681 -> Amazon Connect Contact Flow -> Lex prod alias -> Booking Lambda -> POST /api/v1/internal/ai/appointments -> backend booking/escalation flow`.
 - CallRail is not in the main demo path. It remains optional legacy/integration code only.
 - AI Reception ON/OFF is external routing/redirect behavior before Amazon Connect. The backend flow does not use another in-app routing toggle.
 - Human Call Center remains a separate ON/OFF module.
@@ -133,7 +133,7 @@ Ready:
 
 Needs Manual AWS Console Setup:
 
-- Confirm carrier forwarding from `848-702-9493` to `+1 848-348-7681`.
+- Confirm carrier forwarding from `848-702-9493` to `+********7681`.
 - Confirm AI Reception and Human Escalation contact flows are published/active.
 - Confirm Operator Queue is enabled and an operator is logged into CCP as Available for live handoff testing.
 - Confirm Lex `prod` alias points at the intended bot version and Lambda hook.
@@ -157,7 +157,7 @@ Profile used: `nailnew`
 - AWS account: `197452633989`
 - Region: `us-east-1`
 - Amazon Connect instance: `fastaibooking`, id `74f78377-766f-46b7-a745-4bc97b68a8dc`, status `ACTIVE`
-- Demo Connect phone: `+18483487681`
+- Demo Connect phone: `+********7681`
 - AI contact flow: `FastAIBooking AI Reception`, id `dcccf542-587c-426c-a644-a4c6f24da6e4`, status `PUBLISHED`, state `ACTIVE`
 - Human escalation contact flow: `FastAIBooking Human Escalation`, id `c7386b94-56bb-4382-b517-ee890bbacb51`, status `PUBLISHED`, state `ACTIVE`
 - Operator queue: `FastAIBooking Operator Queue`, id `d0f2a5d8-e983-4609-9bbc-efb0881a465d`, status `ENABLED`
@@ -177,11 +177,11 @@ Profile used: `nailnew`
 - Lambda runtime: `nodejs20.x`
 - Lambda handler: `index.handler`
 - Lambda last modified in AWS verification: `2026-06-02T10:11:52.000+0000`
-- Lambda env var names only: `FASTAIBOOKING_API_INTERNAL_TOKEN`, `DEFAULT_SALON_ID`, `FASTAIBOOKING_API_BASE_URL`
+- Lambda env var names only: `[INTERNAL_TOKEN_ENV]`, `DEFAULT_SALON_ID`, `FASTAIBOOKING_API_BASE_URL`
 - CloudWatch Lambda errors checked after deployment/smoke: none found
 - Versioned AWS exports live in `infra/aws/lex/FastAIBookingBot-v8/` and `infra/aws/connect/contact-flows/`.
 
-Note: the default AWS profile points at account `794673701212` and lacks Connect/Lex/Lambda permissions. Use profile `nailnew` for this demo account.
+Note: the default AWS profile points at account `********1212` and lacks Connect/Lex/Lambda permissions. Use profile `nailnew` for this demo account.
 
 ## Intentional Out Of Scope
 
@@ -196,8 +196,8 @@ Salon:
 - Name: `Kiet Nails & Beauty`
 - Salon id: `9bd14a12-85ed-418a-af7d-3f5cb329c147`
 - Timezone: `America/New_York`
-- Demo Connect phone: `+18483487681`
-- Original demo phone: `+18487029493`
+- Demo Connect phone: `+********7681`
+- Original demo phone: `+********9493`
 
 Final active/bookable staff:
 
@@ -250,7 +250,7 @@ Availability:
 
 Smoke A: no staff preference
 
-- Input: `I want to book a pedicure tomorrow at 1 PM. My name is Kiet Nguyen. My phone number is 7325956266.`
+- Input: `I want to book a pedicure tomorrow at 1 PM. My name is Kiet Nguyen. My phone number is ******6266.`
 - Result: `BOOKED`
 - Staff: first available active staff, usually `Trang`
 - Caller message names the selected staff before completion.
@@ -258,7 +258,7 @@ Smoke A: no staff preference
 
 Smoke B: valid staff
 
-- Input: `I want to book a pedicure tomorrow at 1 PM with Kelly. My name is Kiet Nguyen. My phone number is 7325956266.`
+- Input: `I want to book a pedicure tomorrow at 1 PM with Kelly. My name is Kiet Nguyen. My phone number is ******6266.`
 - Result: `BOOKED`
 - Staff: `Kelly`
 - Caller message names `Kelly`.
@@ -266,7 +266,7 @@ Smoke B: valid staff
 
 Smoke C: invalid staff
 
-- Input: `I want to book a pedicure tomorrow at 1 PM with 111115. My name is Kiet Nguyen. My phone number is 7325956266.`
+- Input: `I want to book a pedicure tomorrow at 1 PM with 111115. My name is Kiet Nguyen. My phone number is ******6266.`
 - Result: staff clarification instead of booking
 - Caller message does not contain `111115`
 - Cleanup: appointment canceled
@@ -349,7 +349,7 @@ zip -j /tmp/fastaibooking-booking-handler.zip infra/lambda/booking-handler/index
 aws lambda update-function-code --profile nailnew --region us-east-1 --function-name fastaibooking-booking-handler --zip-file fileb:///tmp/fastaibooking-booking-handler.zip
 aws lambda wait function-updated --profile nailnew --region us-east-1 --function-name fastaibooking-booking-handler
 aws lambda get-function-configuration --profile nailnew --region us-east-1 --function-name fastaibooking-booking-handler
-aws logs filter-log-events --profile nailnew --region us-east-1 --log-group-name /aws/lambda/fastaibooking-booking-handler --start-time 1779321600000 --filter-pattern 'ERROR'
+aws logs filter-log-events --profile nailnew --region us-east-1 --log-group-name /aws/lambda/fastaibooking-booking-handler --start-time ********0000 --filter-pattern 'ERROR'
 aws lambda invoke --profile nailnew --region us-east-1 --function-name fastaibooking-booking-handler --payload fileb:///tmp/fastaibooking-lex-human-escalation-event.json /tmp/fastaibooking-lex-human-escalation-output.json
 ./infra/scripts/deploy_remote_ec2.sh
 curl -sS -o /dev/null -w '%{http_code}' https://api-new-nail.kendemo.com/health/liveness
@@ -362,15 +362,15 @@ Production data and smoke checks were run through the existing API/admin/interna
 
 ## Remaining Blockers
 
-- A real inbound call through `+18483487681` was not performed in this automated run.
+- A real inbound call through `+********7681` was not performed in this automated run.
 - Final manual acceptance should call the demo number with an operator logged into CCP and confirm audio, Lex, Lambda, backend logs, and operator pickup in one live session.
 - Earlier planning notes had conflicting staff examples. The current seeded AI booking staff are `Trang`, `Amy`, and `Kelly`.
 
 ## Next Manual Demo Steps
 
 1. Log an operator into Amazon Connect CCP with the `FastAIBooking Operator Routing Profile`.
-2. Call `+18483487681`.
-3. Book: "I want to book a pedicure tomorrow at 1 PM. My name is Kiet Nguyen. My phone number is 7325956266."
-4. Repeat invalid staff path: "I want to book a pedicure tomorrow at 1 PM with 111115. My name is Kiet Nguyen. My phone number is 7325956266."
+2. Call `+********7681`.
+3. Book: "I want to book a pedicure tomorrow at 1 PM. My name is Kiet Nguyen. My phone number is ******6266."
+4. Repeat invalid staff path: "I want to book a pedicure tomorrow at 1 PM with 111115. My name is Kiet Nguyen. My phone number is ******6266."
 5. Escalate: "I want to speak to a real person."
 6. Confirm the call transfers to `FastAIBooking Operator Queue` and appears in the operator dashboard.

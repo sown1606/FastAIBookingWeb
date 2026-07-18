@@ -62,7 +62,7 @@ Implementation commit: `2e253a82847da691f66e9159402586d562d725cc`
 ## 5. Production data dry-run
 
 - Salon: `9bd14a12-85ed-418a-af7d-3f5cb329c147`.
-- Phone: `+84798171999`.
+- Phone: `+********1999`.
 - Active matching customer:
   - `2cf44fef-9c45-411a-8ddd-160c0c6fcb9b`
   - firstName `lee`

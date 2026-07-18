@@ -1,9 +1,0 @@
-id,fullName,status,isBookable,deletedAt
-ad1786ae-a0ec-4521-9efc-47cb9ee30b4c,Alex,ACTIVE,t,
-e75b9b6d-ad6a-4060-b945-43f1358e3a79,Amy,ACTIVE,t,
-25406cde-99ef-4407-999d-cf42eaa67bc3,Kelly,ACTIVE,t,
-0227f285-efb4-47ac-bc01-82b2c0cec3f5,Kevin,ACTIVE,t,
-0ab5d14e-4088-40e9-bd70-62c7fc7dad55,Linh,ACTIVE,t,
-8daf2314-a9e1-4f87-9383-db7b7d33a554,Thien Le,ACTIVE,t,
-903511ee-4849-43dd-85fb-73595e79a233,Trang,ACTIVE,t,
-38514305-c859-4be4-9a13-2f229ad2ace1,duy,INACTIVE,f,2026-07-12 09:32:05.09

@@ -12,3 +12,9 @@ apps.zip
 secrets/
 firebase-notification-setup.local.md
 *.firebase-adminsdk.json
+*.zip
+*.pem
+docs/report-artifacts/
+*.raw
+*.recording.*
+*.presigned.*

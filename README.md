@@ -28,14 +28,14 @@ Primary demo salon:
 
 - Salon: `Kiet Nails & Beauty`
 - Original business number: `848-702-9493`
-- Carrier setup: T-Mobile no-answer forwarding code `**61*18483487681**10#`
+- Carrier setup: T-Mobile no-answer forwarding code `**61*********7681**10#`
 - Primary telephony layer: Amazon Connect
 - AI layer: Amazon Lex / Amazon AI
 - Human escalation layer: Amazon Connect Operator Queue
 
 Live demo path:
 
-`848-702-9493` -> `+1 848-348-7681` Amazon Connect phone number -> Amazon Connect Contact Flow -> Amazon Lex `prod` alias -> Booking Lambda `infra/lambda/booking-handler/index.mjs` -> `POST /api/v1/internal/ai/appointments` -> backend booking/escalation flow -> real appointment or Operator Queue handoff
+`848-702-9493` -> `+********7681` Amazon Connect phone number -> Amazon Connect Contact Flow -> Amazon Lex `prod` alias -> Booking Lambda `infra/lambda/booking-handler/index.mjs` -> `POST /api/v1/internal/ai/appointments` -> backend booking/escalation flow -> real appointment or Operator Queue handoff
 
 Important:
 
@@ -145,7 +145,7 @@ Main demo defaults in `.env.example` and `apps/api/.env.example`:
 
 - `CALL_PROVIDER=amazon_connect`
 - `AI_PROVIDER=amazon`
-- `DEMO_ORIGINAL_PHONE_NUMBER=8487029493`
+- `DEMO_ORIGINAL_PHONE_NUMBER=********9493`
 - `AMAZON_CONNECT_INSTANCE_URL=https://fastaibooking.my.connect.aws`
 - `AMAZON_CONNECT_CCP_URL=https://fastaibooking.my.connect.aws/ccp-v2/`
 - `AMAZON_LEX_LOCALE_ID=en_US`
@@ -233,7 +233,7 @@ docker compose exec -T postgres \
 Expected salon row:
 
 - `Kiet Nails & Beauty`
-- `+18487029493`
+- `+********9493`
 - the Amazon Connect forwarding number configured in `AMAZON_CONNECT_PHONE_NUMBER`
 
 Seeded provider call IDs useful for demo verification:
@@ -268,7 +268,7 @@ Ready:
 
 Needs manual AWS Console/setup verification:
 
-- Confirm the carrier forwards `848-702-9493` to `+1 848-348-7681`.
+- Confirm the carrier forwards `848-702-9493` to `+********7681`.
 - Confirm the AI Reception contact flow, Human Escalation contact flow, Operator Queue, Lex `prod` alias, and Lambda env var names are current in `us-east-1` under profile `nailnew`.
 - Log an operator into Amazon Connect CCP, set status to Available, and place one live customer call.
 

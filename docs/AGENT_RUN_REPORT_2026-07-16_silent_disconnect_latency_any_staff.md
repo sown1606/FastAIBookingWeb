@@ -4,8 +4,8 @@
 
 Production target:
 
-- Phone: `+18483487681`
-- Caller: `+84798171999`
+- Phone: `+********7681`
+- Caller: `+********1999`
 - Salon timezone: `America/New_York`
 - Connect flow: `dcccf542-587c-426c-a644-a4c6f24da6e4`
 - Lex bot/alias: `KHMIXGA2US / JVIPIZDYE3`

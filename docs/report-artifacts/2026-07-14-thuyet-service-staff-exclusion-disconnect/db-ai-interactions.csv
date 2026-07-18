@@ -1,7 +1,0 @@
-id,callSessionId,requestText,response,createdAt,last_asked,active_menu,excluded_names
-f82018a1-8972-4191-abf0-3f635c45b1c3,8bf498c5-3e50-42ef-9b81-22301c5c1a0b,i want to book food set tomorrow at two p m with chang correct,"<speak>You're all set. <break time=""300ms""/> Your full set is booked for tomorrow at 3 PM with Amy. Thank you for calling.</speak>",2026-07-14 09:02:31.967,,,
-3353cf2f-1a55-44db-a33c-c5765ca58c73,4684dc66-2144-42e4-bfb8-f36714ffc53e,fifty kill,"<speak>Welcome back, lee. How may I help you today?</speak>",2026-07-14 09:05:18.568,serviceName,service,
-9929a86a-3e13-481c-8e2f-037d6fc41f42,093c8031-2d71-4abd-85ca-d0c1a9e7bf6f,manicure,"<speak>Welcome back, lee. Got it. <break time=""300ms""/> What day would you like?</speak>",2026-07-14 09:06:55.241,requestedDate,,
-82b4de45-704e-4a15-a4c3-c013c60b39c8,b40b5a45-4cc6-40c6-a100-1838f4e0abda,i want to book manicure tomorrow at two pm with emmy,"<speak>Please say yes to confirm, or tell me what you would like to change.</speak>",2026-07-14 09:07:45.768,bookingConfirmation,,
-389cc91a-91ae-4af5-ac78-fb9bd34f2d44,aaed3837-94c9-43e0-82dd-236301df00b7,book manicure,"<speak>Got it, Manicure. Which staff would you like, Trang, Amy, Kelly, Kevin, or first available?</speak>",2026-07-14 09:08:17.597,staffPreference,staff,
-2983bcea-2d42-4a70-838b-7bbcea4873a2,0ca92531-fc37-45bd-a301-166b71df6506,i want another stop,"<speak>Please say yes to confirm, or tell me what you would like to change.</speak>",2026-07-14 09:09:28.287,bookingConfirmation,,

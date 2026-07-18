@@ -166,6 +166,7 @@ const envSchema = z.object({
   BOOKING_LAMBDA_FUNCTION_ARN: z.string().optional(),
   FASTAIBOOKING_API_BASE_URL: z.string().optional(),
   FASTAIBOOKING_API_INTERNAL_TOKEN: z.string().optional(),
+  FASTAIBOOKING_API_INTERNAL_TOKEN_PREVIOUS: z.string().optional(),
   DEFAULT_SALON_ID: nonEmptyStringOrUndefined,
   GOOGLE_CLOUD_PROJECT: z.string().optional(),
   VERTEX_PROJECT_ID: z.string().optional(),

@@ -1,8 +1,0 @@
-table_name,count
-CallSession,42
-AIInteractionLog,42
-BookingAttempt,42
-CallTranscript,52
-CallEscalation,6
-Appointment,12
-Customer,0

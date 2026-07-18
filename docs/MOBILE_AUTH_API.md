@@ -25,12 +25,12 @@ Content-Type: application/json
 {
   "fullName": "Linh Nguyen",
   "email": "linh@example.com",
-  "phone": "+17325550123",
+  "phone": "+********0123",
   "password": "Password123!",
   "salon": {
     "name": "Linh Nails",
     "contactEmail": "linh@example.com",
-    "contactPhone": "+17325550123",
+    "contactPhone": "+********0123",
     "timezone": "America/New_York",
     "addressLine1": "123 Main St",
     "city": "Edison",

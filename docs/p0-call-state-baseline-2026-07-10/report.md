@@ -88,8 +88,8 @@ The active live bot is `KHMIXGA2US` alias `JVIPIZDYE3` version `27`. The reposit
 - Name: `Kiet Nails & Beauty`
 - Status: `ACTIVE`
 - Timezone: `America/New_York`
-- Customer incoming phone: `+18483487681`
-- Original phone: `+18487029493`
+- Customer incoming phone: `+********7681`
+- Original phone: `+********9493`
 
 Business hours:
 

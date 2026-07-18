@@ -1,9 +1,9 @@
 # Thuyet Service, Staff Exclusion, and Disconnect Run Report
 
-Date: 2026-07-14  
-Salon: Kiet Nails & Beauty (`9bd14a12-85ed-418a-af7d-3f5cb329c147`)  
-Caller: `+84798171999` to `+18483487681`  
-Implementation commit: `7b24290` (`fix: stabilize service fallback and staff exclusions`)  
+Date: 2026-07-14
+Salon: Kiet Nails & Beauty (`9bd14a12-85ed-418a-af7d-3f5cb329c147`)
+Caller: `+********1999` to `+********7681`
+Implementation commit: `7b24290` (`fix: stabilize service fallback and staff exclusions`)
 Fix commit push result: `c4daf66..7b24290 main -> main`
 
 Artifacts are under `docs/report-artifacts/2026-07-14-thuyet-service-staff-exclusion-disconnect/`.
@@ -22,7 +22,7 @@ Greeting-only disconnect contact:
 - Initiation method: `INBOUND`
 - Queue/agent: none
 - Disconnect reason: not returned by `DescribeContact`
-- Attributes: caller `+84798171999`, called `+18483487681`, provider `AMAZON_CONNECT`
+- Attributes: caller `+********1999`, called `+********7681`, provider `AMAZON_CONNECT`
 - Lambda evidence: no matching app session and no Lambda log event for this contact
 - Final old-flow failure mode: initial Lex integration failure could cascade through Lex blocks whose prompts depended on `ConnectParticipantWithLexBot.Text`, then reach goodbye/disconnect without an intervening guaranteed audible recovery message.
 

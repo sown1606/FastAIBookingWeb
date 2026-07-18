@@ -134,17 +134,17 @@ Read-only health smoke:
 
 Synthetic Lex/Lambda/API smokes, no final `yes` sent:
 
-- `codex-basic-state-1783879209430-ptq`: `I want to book a p t q tomorrow` -> `serviceName=Pedicure`, `staffPreference` not `ptq`, then `Thuyet` preserved Pedicure, then `eleven am` preserved Pedicure and asked staff.
-- `codex-basic-state-1783879209430-alex-time`: Full Set tomorrow 2 PM with Alex -> time-only correction to 4 PM kept Alex ID `ad1786ae-a0ec-4521-9efc-47cb9ee30b4c`; subsequent `change it to 3:50 PM` kept Alex and set `requestedTime=15:50`.
-- `codex-basic-state-tail-1783879261478-tuesday`: Full Set Tuesday 3 PM with Alex -> `requestedDate=2026-07-14`, Alex IDs synchronized.
-- `codex-basic-state-tail-1783879261478-minutes`: Full Set tomorrow 3:50 PM with Alex -> exact minutes preserved, Alex IDs synchronized.
-- `codex-basic-state-tail-1783879261478-for-available`: Lex-only injected first-available turn did not produce the old technician-not-found behavior and created no records.
-- `codex-basic-state-api-any-1783879418035`: Direct production API explicit-any smoke for `for available` selected real availability with Trang ID `903511ee-4849-43dd-85fb-73595e79a233`, returned fresh confirmation, and created no appointment.
+- `codex-basic-state-********9430-ptq`: `I want to book a p t q tomorrow` -> `serviceName=Pedicure`, `staffPreference` not `ptq`, then `Thuyet` preserved Pedicure, then `eleven am` preserved Pedicure and asked staff.
+- `codex-basic-state-********9430-alex-time`: Full Set tomorrow 2 PM with Alex -> time-only correction to 4 PM kept Alex ID `ad1786ae-a0ec-4521-9efc-47cb9ee30b4c`; subsequent `change it to 3:50 PM` kept Alex and set `requestedTime=15:50`.
+- `codex-basic-state-tail-********1478-tuesday`: Full Set Tuesday 3 PM with Alex -> `requestedDate=2026-07-14`, Alex IDs synchronized.
+- `codex-basic-state-tail-********1478-minutes`: Full Set tomorrow 3:50 PM with Alex -> exact minutes preserved, Alex IDs synchronized.
+- `codex-basic-state-tail-********1478-for-available`: Lex-only injected first-available turn did not produce the old technician-not-found behavior and created no records.
+- `codex-basic-state-api-any-********8035`: Direct production API explicit-any smoke for `for available` selected real availability with Trang ID `903511ee-4849-43dd-85fb-73595e79a233`, returned fresh confirmation, and created no appointment.
 
 Production DB verification:
 
 - Backend-reaching smoke ContactIds each produced exactly 1 `CallSession`, 1 `BookingAttempt`, 1 `AIInteractionLog`, and 0 `Appointment`.
-- `codex-basic-state-tail-1783879261478-for-available` created 0 records because Lex closed before Lambda/API invocation in the injected state.
+- `codex-basic-state-tail-********1478-for-available` created 0 records because Lex closed before Lambda/API invocation in the injected state.
 
 Production logs verified:
 

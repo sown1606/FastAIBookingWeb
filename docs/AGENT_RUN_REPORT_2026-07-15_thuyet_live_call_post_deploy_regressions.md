@@ -3,7 +3,7 @@
 Date: 2026-07-15
 Branch: `main`
 Salon: Kiet Nails & Beauty (`9bd14a12-85ed-418a-af7d-3f5cb329c147`)
-Production phone: `+18483487681`
+Production phone: `+********7681`
 AWS region: `us-east-1`
 
 ## Scope
@@ -109,7 +109,7 @@ After:
 
 - Lambda `fastaibooking-booking-handler`: CodeSha256 `3qMPGC9oV5S7VLBxrW7aMAA0q+/CCemuHyXKviwT0NI=`, state `Active`, update status `Successful`.
 - Lex alias `JVIPIZDYE3`: bot version `33`, alias status `Available`, locale `en_US` status `Built`.
-- Connect phone `+18483487681` remains associated with flow `dcccf542-587c-426c-a644-a4c6f24da6e4`.
+- Connect phone `+********7681` remains associated with flow `dcccf542-587c-426c-a644-a4c6f24da6e4`.
 - Connect source/active normalized flow hash remains `d29c79777cc87ce84bf42ad555333c4a5d43339cc96cb3c5f8ff680896493652`.
 
 Key artifacts:
@@ -180,7 +180,7 @@ Artifact: `production-health-final.txt`.
 Only synthetic identifiers created by this execution were cleaned:
 
 - Contact ID prefix: `codex-20260715-postreg-%`
-- Synthetic customers: `+155520672%` with note `Synthetic Lex runtime validation 2026-07-15 post-deploy regressions%`
+- Synthetic customers: `+********0672%` with note `Synthetic Lex runtime validation 2026-07-15 post-deploy regressions%`
 
 Deleted:
 

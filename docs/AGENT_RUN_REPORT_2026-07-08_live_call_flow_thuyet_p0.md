@@ -12,7 +12,7 @@ The latest exported tester call data showed stale full-set service state reachin
 The exact phrase `AI services not available at this moment, goodbye` was not found in repo call-flow code, live Connect flow JSON, CloudWatch log search, or production AI/DB export. The likely source is a managed Lex/Connect failure path or older deployed artifact. Active Connect Lex error path now says a wait/transfer message, and backend/API failures return `Please wait while I connect you.`
 
 ## Live Phone/Contact Flow Path
-- Live AI number: `+18483487681`.
+- Live AI number: `+********7681`.
 - Connect instance: `74f78377-766f-46b7-a745-4bc97b68a8dc` (`fastaibooking`).
 - AI Reception flow: `FastAIBooking AI Reception`, id `dcccf542-587c-426c-a644-a4c6f24da6e4`.
 - Human Escalation flow: `FastAIBooking Human Escalation`, id `c7386b94-56bb-4382-b517-ee890bbacb51`.
@@ -25,7 +25,7 @@ The exact phrase `AI services not available at this moment, goodbye` was not fou
 - Lambda before: `2026-07-08T18:37:46.000+0000`, sha `gSYcd/qfnTBwtTXPj8ViJMzCNPNHgCVS4RqJHA8DpOk=`.
 - Lambda after: `2026-07-09T01:56:53.000+0000`, sha `TJ8DcCrnNET+T9Qoy4nf0ON7tFCPizd9ezv/0CsRcGw=`.
 - API deploy: rebuilt and restarted only `fastaibooking-api`; healthy image `sha256:ddbf68e3463024d37b91750f2f908e53e101d19ea033161daa88b6b5378a8227`, started `2026-07-09T01:57:49Z`.
-- Lambda env verified by key names: `FASTAIBOOKING_API_BASE_URL`, `FASTAIBOOKING_API_INTERNAL_TOKEN`, `DEFAULT_SALON_ID`.
+- Lambda env verified by key names: `FASTAIBOOKING_API_BASE_URL`, `[INTERNAL_TOKEN_ENV]`, `DEFAULT_SALON_ID`.
 
 ## AI Logs And Key Excerpts
 Production export saved: `docs/live-call-flow-thuyet-ai-logs-2026-07-08.json`.
@@ -38,7 +38,7 @@ Counts:
 - Latest AI interaction logs: `69`.
 
 Key latest live excerpt:
-- Contact id `cec28e0b-0c77-4a6e-9506-bbb05fe5072d`, caller `+84798171999`, dialed `+18483487681`.
+- Contact id `cec28e0b-0c77-4a6e-9506-bbb05fe5072d`, caller `+********1999`, dialed `+********7681`.
 - Transcript stored: `three`.
 - Raw Lex slots showed original service `full set`, but stale resolved service was stored in session attributes before this fix.
 - The call reached `MISSING_INFO` for `staffPreference`, not a successful booking.
@@ -99,7 +99,7 @@ Key latest live excerpt:
 - Manual phone validation still needs a real call with an operator logged into CCP as Available.
 
 ## Manual Phone Test Script For Thuyet
-1. Call `+18483487681`.
+1. Call `+********7681`.
 2. Say: `I want to book a full set.`
 3. If asked to use keypad, press `4`.
 4. Say: `My name is Thuyet.`

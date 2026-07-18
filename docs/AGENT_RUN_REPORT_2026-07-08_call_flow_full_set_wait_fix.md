@@ -254,18 +254,18 @@ time="2026-07-08T18:41:57Z" level=warning msg="Docker Compose is configured to b
 #13 DONE 0.1s
 
 #14 [api build 10/11] RUN npm run prisma:generate
-#14 0.755 
+#14 0.755
 #14 0.755 > @fastaibooking/api@1.0.0 prisma:generate
 #14 0.755 > prisma generate
-#14 0.755 
+#14 0.755
 #14 1.643 Prisma schema loaded from prisma/schema.prisma
-#14 3.613 
+#14 3.613
 #14 3.613 ✔ Generated Prisma Client (v5.22.0) to ./node_modules/@prisma/client in 785ms
-#14 3.613 
+#14 3.613
 #14 3.613 Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
-#14 3.613 
+#14 3.613
 #14 3.613 Tip: Easily identify and fix slow SQL queries in your app. Optimize helps you enhance your visibility: https://pris.ly/--optimize
-#14 3.613 
+#14 3.613
 #14 3.808 npm notice
 #14 3.808 npm notice New major version of npm available! 10.8.2 -> 11.18.0
 #14 3.808 npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.18.0
@@ -274,10 +274,10 @@ time="2026-07-08T18:41:57Z" level=warning msg="Docker Compose is configured to b
 #14 DONE 3.9s
 
 #15 [api build 11/11] RUN npm run build
-#15 0.396 
+#15 0.396
 #15 0.396 > @fastaibooking/api@1.0.0 build
 #15 0.396 > tsc -p tsconfig.json
-#15 0.396 
+#15 0.396
 #15 DONE 13.4s
 
 #16 [api runtime 3/8] RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
@@ -757,11 +757,11 @@ Wed Jul  8 18:46:57 UTC 2026
   ],
   "sessionAttributes": {
     "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147",
-    "CalledNumber": "+18483487681",
-    "CustomerEndpointAddress": "+18483487681",
+    "CalledNumber": "+********7681",
+    "CustomerEndpointAddress": "+********7681",
     "AmazonConnectContactId": "live-lambda-dtmf-20260708",
     "lastAskedSlot": "requestedDate",
-    "customerPhone": "+18483487681",
+    "customerPhone": "+********7681",
     "serviceName": "Full Set",
     "confirmedServiceName": "Full Set",
     "askedSlotsCount": "1",
@@ -776,10 +776,10 @@ Wed Jul  8 18:46:57 UTC 2026
     "customerPhone": {
       "shape": "Scalar",
       "value": {
-        "originalValue": "+18483487681",
-        "interpretedValue": "+18483487681",
+        "originalValue": "+********7681",
+        "interpretedValue": "+********7681",
         "resolvedValues": [
-          "+18483487681"
+          "+********7681"
         ]
       }
     },
@@ -811,14 +811,14 @@ Wed Jul  8 18:46:57 UTC 2026
   ],
   "sessionAttributes": {
     "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147",
-    "CalledNumber": "+18483487681",
-    "CustomerEndpointAddress": "+18483487681",
+    "CalledNumber": "+********7681",
+    "CustomerEndpointAddress": "+********7681",
     "AmazonConnectContactId": "live-lambda-dtmf-20260708",
     "lastAskedSlot": "requestedDate",
     "serviceName": "Full Set",
     "confirmedServiceName": "Full Set",
     "customerName": "Thuyet",
-    "customerPhone": "+18483487681",
+    "customerPhone": "+********7681",
     "initialBookingUtterance": "my name is Thuyet",
     "askedSlotsCount": "1",
     "fallbackCount": "1",
@@ -842,10 +842,10 @@ Wed Jul  8 18:46:57 UTC 2026
     "customerPhone": {
       "shape": "Scalar",
       "value": {
-        "originalValue": "+18483487681",
-        "interpretedValue": "+18483487681",
+        "originalValue": "+********7681",
+        "interpretedValue": "+********7681",
         "resolvedValues": [
-          "+18483487681"
+          "+********7681"
         ]
       }
     },
@@ -877,13 +877,13 @@ Wed Jul  8 18:46:57 UTC 2026
   ],
   "sessionAttributes": {
     "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147",
-    "CalledNumber": "+18483487681",
-    "CustomerEndpointAddress": "+18483487681",
+    "CalledNumber": "+********7681",
+    "CustomerEndpointAddress": "+********7681",
     "AmazonConnectContactId": "live-lambda-dtmf-20260708",
     "lastAskedSlot": "customerName",
     "serviceName": "Full Set",
     "confirmedServiceName": "Full Set",
-    "customerPhone": "+18483487681",
+    "customerPhone": "+********7681",
     "requestedDate": "2026-07-09",
     "requestedTime": "3 PM",
     "initialBookingUtterance": "tomorrow at 3 PM",
@@ -899,10 +899,10 @@ Wed Jul  8 18:46:57 UTC 2026
     "customerPhone": {
       "shape": "Scalar",
       "value": {
-        "originalValue": "+18483487681",
-        "interpretedValue": "+18483487681",
+        "originalValue": "+********7681",
+        "interpretedValue": "+********7681",
         "resolvedValues": [
-          "+18483487681"
+          "+********7681"
         ]
       }
     },
@@ -944,12 +944,12 @@ Wed Jul  8 18:46:57 UTC 2026
 Wed Jul  8 18:48:59 UTC 2026
 
 ### /aws/lambda/fastaibooking-booking-handler
-EVENTS	39774191342495229961796464196455160923594475984913498115	1783536430655	2026/07/08/[$LATEST]a9377b02470a4904a5515c9ff60ae63a	START RequestId: 42992c48-ee68-47f6-b77a-8abf8995f5a8 Version: $LATEST
-	1783536423936
-EVENTS	39774191344502297029664220279193375568132828520451735556	1783536430655	2026/07/08/[$LATEST]a9377b02470a4904a5515c9ff60ae63a	END RequestId: 42992c48-ee68-47f6-b77a-8abf8995f5a8
-	1783536424026
-EVENTS	39774191344502297029664220279193375568132828520451735557	1783536430655	2026/07/08/[$LATEST]a9377b02470a4904a5515c9ff60ae63a	REPORT RequestId: 42992c48-ee68-47f6-b77a-8abf8995f5a8	Duration: 89.51 ms	Billed Duration: 90 ms	Memory Size: 128 MB	Max Memory Used: 69 MB	
-	1783536424026
+EVENTS	39774191342495229961796464196455160923594475984913498115	********0655	2026/07/08/[$LATEST]a9377b02470a4904a5515c9ff60ae63a	START RequestId: 42992c48-ee68-47f6-b77a-8abf8995f5a8 Version: $LATEST
+	********3936
+EVENTS	39774191344502297029664220279193375568132828520451735556	********0655	2026/07/08/[$LATEST]a9377b02470a4904a5515c9ff60ae63a	END RequestId: 42992c48-ee68-47f6-b77a-8abf8995f5a8
+	********4026
+EVENTS	39774191344502297029664220279193375568132828520451735557	********0655	2026/07/08/[$LATEST]a9377b02470a4904a5515c9ff60ae63a	REPORT RequestId: 42992c48-ee68-47f6-b77a-8abf8995f5a8	Duration: 89.51 ms	Billed Duration: 90 ms	Memory Size: 128 MB	Max Memory Used: 69 MB
+	********4026
 
 ### /aws/connect/fastaibooking
 

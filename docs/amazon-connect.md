@@ -58,7 +58,7 @@ BOOKING_LAMBDA_FUNCTION_NAME=
 BOOKING_LAMBDA_FUNCTION_ARN=
 
 FASTAIBOOKING_API_BASE_URL=
-FASTAIBOOKING_API_INTERNAL_TOKEN=
+[INTERNAL_TOKEN_ENV]=
 ```
 
 Do not expose AWS credentials or internal backend tokens in frontend `VITE_*` env variables.
@@ -162,7 +162,7 @@ Troubleshooting blank embedded CCP:
 - The Get customer input block uses the Lex bot alias in `AMAZON_LEX_BOT_ALIAS_ID`.
 - `BookAppointmentIntent` has Lambda fulfillment enabled and invokes `BOOKING_LAMBDA_FUNCTION_ARN`.
 - `BookAppointmentIntent` collects customer name, customer phone, service, preferred date/time, and optional staff preference before fulfillment.
-- The booking Lambda calls `POST /api/v1/internal/ai/appointments` with `FASTAIBOOKING_API_INTERNAL_TOKEN`.
+- The booking Lambda calls `POST /api/v1/internal/ai/appointments` with `[INTERNAL_TOKEN_ENV]`.
 - The contact flow sets contact attributes where available: `salonId`, `callerPhone`, `contactId`, `callSessionId`, `provider=AMAZON_CONNECT`.
 - After each Lex result, the AI reception flow checks `$.Lex.SessionAttributes.transferToQueue`.
 - If `transferToQueue == true`, the flow transfers to `FastAIBooking Human Escalation`.

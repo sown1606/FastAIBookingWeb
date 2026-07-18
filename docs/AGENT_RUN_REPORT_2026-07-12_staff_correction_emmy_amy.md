@@ -8,7 +8,7 @@ P0 production hotfix for active booking staff recognition and staff correction. 
 
 - Incident call session: `e736ea1d-98de-47f6-ab0c-161e4bf3bf07`
 - Amazon Connect ContactId: `b3b78bc1-0119-43be-97fd-9a1efa71e402`
-- Caller: `+84798171999`
+- Caller: `+********1999`
 - Approx UTC time: `2026-07-12T11:39:13Z`
 - Approx Vietnam time: `2026-07-12 18:39 ICT`
 - Transcript sequence: caller asked for `pedicure tomorrow at eleven am with emmy`, then repeatedly corrected `no i want emmy not chang`.

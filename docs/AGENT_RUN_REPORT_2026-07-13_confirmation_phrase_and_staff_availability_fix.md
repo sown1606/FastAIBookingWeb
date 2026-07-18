@@ -172,7 +172,7 @@ Read-only smoke:
 
 Synthetic booking smoke:
 
-- ContactId: `codex-smoke-confirmation-alex-1783911324884`
+- ContactId: `codex-smoke-confirmation-alex-********4884`
 - Flow: Full Set with Alex at 11 AM -> `no change it into two pm` -> fresh confirmation -> `go ahead`
 - Correction result: `ConfirmIntent`
 - Correction staff: Alex, `ad1786ae-a0ec-4521-9efc-47cb9ee30b4c`

@@ -8,7 +8,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
-    "test": "NODE_ENV=test LOG_LEVEL=fatal JWT_SECRET=unit-test-jwt-secret-value REFRESH_TOKEN_SECRET=unit-test-refresh-secret-value DATABASE_URL=postgresql://unit:unit@localhost:5432/fastaibooking_unit FASTAIBOOKING_API_INTERNAL_TOKEN=unit-internal-token DEFAULT_SALON_ID=salon-default AMAZON_CONNECT_QUEUE_ID_DEFAULT=queue-default tsx --test --test-concurrency=1 \"test/**/*.test.ts\"",
+    "test": "NODE_ENV=test LOG_LEVEL=fatal FASTAIBOOKING_TEST_NOW_ISO=2026-07-17T10:00:00-04:00 JWT_SECRET=unit-test-jwt-secret-value REFRESH_TOKEN_SECRET=unit-test-refresh-secret-value DATABASE_URL=postgresql://unit:unit@localhost:5432/fastaibooking_unit FASTAIBOOKING_API_INTERNAL_TOKEN=unit-internal-token DEFAULT_SALON_ID=salon-default AMAZON_CONNECT_QUEUE_ID_DEFAULT=queue-default tsx --test --test-concurrency=1 \"test/**/*.test.ts\"",
     "email:test": "node ../../node_modules/tsx/dist/cli.mjs scripts/email-test.ts",
     "demo:repair-logins": "tsx scripts/ensure-demo-logins.ts",
     "smoke:prod-logins": "tsx scripts/smoke-demo-logins.ts",

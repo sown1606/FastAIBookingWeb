@@ -18,6 +18,7 @@ const FIRST_SERVICE_RETRY_PROMPT = "Sure. Which service would you like?";
 const SERVICE_MENU_PROMPT =
   "I can list the services once. Please say the service name, or press 0 for a person.";
 let importCounter = 0;
+process.env.FASTAIBOOKING_TEST_NOW_ISO ||= "2026-07-17T10:00:00-04:00";
 
 const slot = (value) => ({
   shape: "Scalar",
@@ -38,12 +39,13 @@ const slotWith = ({ originalValue, interpretedValue, resolvedValues }) => ({
 });
 
 const usEasternDate = (daysToAdd = 0) => {
+  const referenceDate = new Date(process.env.FASTAIBOOKING_TEST_NOW_ISO);
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/New_York",
     year: "numeric",
     month: "2-digit",
     day: "2-digit"
-  }).formatToParts(new Date());
+  }).formatToParts(Number.isNaN(referenceDate.getTime()) ? new Date() : referenceDate);
   const values = Object.fromEntries(
     parts
       .filter((part) => part.type !== "literal")
@@ -142,7 +144,7 @@ const jsonResponse = (payload, status = 200) => ({
   text: async () => JSON.stringify(payload)
 });
 
-const loadHandler = async (env = {}) => {
+const loadLambdaModule = async (env = {}) => {
   process.env.FASTAIBOOKING_API_BASE_URL = "https://api.example.test";
   process.env.FASTAIBOOKING_API_INTERNAL_TOKEN = "unit-internal-token";
   process.env.DEFAULT_SALON_ID = "salon-default";
@@ -151,9 +153,10 @@ const loadHandler = async (env = {}) => {
 
   const url = pathToFileURL(lambdaPath);
   url.searchParams.set("test", String(importCounter++));
-  const module = await import(url.href);
-  return module.handler;
+  return import(url.href);
 };
+
+const loadHandler = async (env = {}) => (await loadLambdaModule(env)).handler;
 
 const installFetchMock = (implementation) => {
   const calls = [];
@@ -191,6 +194,77 @@ const abortableDelayedJsonResponse = (payload, delayMs, signal) =>
 
 afterEach(() => {
   delete globalThis.fetch;
+});
+
+test("Lex response diagnostics allow a message-less Delegate response", async () => {
+  const { validateLexResponseForDiagnostics } = await loadLambdaModule();
+
+  const diagnostics = validateLexResponseForDiagnostics({
+    sessionState: {
+      dialogAction: { type: "Delegate" },
+      intent: {
+        name: "BookAppointmentIntent",
+        state: "InProgress",
+        slots: {}
+      }
+    }
+  });
+
+  assert.equal(diagnostics.valid, true);
+  assert.deepEqual(diagnostics.errors, []);
+  assert.equal(diagnostics.messageContentType, "None");
+  assert.deepEqual(diagnostics.ssmlValidation, { valid: true, reason: "no_message" });
+});
+
+test("Lex response diagnostics reject malformed ElicitSlot responses", async () => {
+  const { validateLexResponseForDiagnostics } = await loadLambdaModule();
+
+  const diagnostics = validateLexResponseForDiagnostics({
+    sessionState: {
+      dialogAction: { type: "ElicitSlot" },
+      intent: {
+        name: "BookAppointmentIntent",
+        state: "Fulfilled",
+        slots: {}
+      }
+    },
+    messages: [{ contentType: "PlainText", content: " " }]
+  });
+
+  assert.equal(diagnostics.valid, false);
+  assert.ok(diagnostics.errors.includes("missing_message"));
+  assert.ok(diagnostics.errors.includes("missing_slotToElicit"));
+  assert.ok(diagnostics.errors.includes("book_elicit_slot_not_in_progress"));
+});
+
+test("Lex response diagnostics validate PlainText and SSML separately", async () => {
+  const { validateLexResponseForDiagnostics } = await loadLambdaModule();
+
+  const plainText = validateLexResponseForDiagnostics({
+    sessionState: {
+      dialogAction: { type: "ElicitIntent" }
+    },
+    messages: [{ contentType: "PlainText", content: "How can I help?" }]
+  });
+  const validSsml = validateLexResponseForDiagnostics({
+    sessionState: {
+      dialogAction: { type: "ConfirmIntent" }
+    },
+    messages: [{ contentType: "SSML", content: "<speak>Does that work?</speak>" }]
+  });
+  const invalidSsml = validateLexResponseForDiagnostics({
+    sessionState: {
+      dialogAction: { type: "ConfirmIntent" }
+    },
+    messages: [{ contentType: "SSML", content: "Does that work?" }]
+  });
+
+  assert.equal(plainText.valid, true);
+  assert.deepEqual(plainText.ssmlValidation, { valid: true, reason: "not_ssml" });
+  assert.equal(validSsml.valid, true);
+  assert.deepEqual(validSsml.ssmlValidation, { valid: true, reason: "ok" });
+  assert.equal(invalidSsml.valid, false);
+  assert.ok(invalidSsml.errors.includes("invalid_ssml:missing_speak_root"));
 });
 
 test("production Full Set aliases exclude polluted ASR garbage in Lambda, API, and Lex v10 source", () => {
@@ -957,11 +1031,11 @@ test("Connect AI reception dynamic Lex prompts have a reachable literal fallback
   }
 });
 
-test("Connect source contract keeps production phone number on AI reception flow", () => {
-  const dotenv = readFileSync(path.join(repoRoot, ".env"), "utf8");
-  assert.match(dotenv, /AMAZON_CONNECT_PHONE_NUMBER=\+18483487681/);
-  assert.match(dotenv, /AMAZON_CONNECT_PHONE_NUMBER_ID=f2e36faa-5264-4955-8a18-e2f53755c102/);
-  assert.match(dotenv, /AMAZON_CONNECT_CONTACT_FLOW_ID_AI_RECEPTION=dcccf542-587c-426c-a644-a4c6f24da6e4/);
+test("Connect source contract documents required production env keys without local .env", () => {
+  const dotenvExample = readFileSync(path.join(repoRoot, ".env.production.example"), "utf8");
+  assert.match(dotenvExample, /^AMAZON_CONNECT_PHONE_NUMBER=$/m);
+  assert.match(dotenvExample, /^AMAZON_CONNECT_PHONE_NUMBER_ID=$/m);
+  assert.match(dotenvExample, /^AMAZON_CONNECT_CONTACT_FLOW_ID_AI_RECEPTION=$/m);
 });
 
 test("booking prompts are speech-first and service menu is not the greeting", () => {

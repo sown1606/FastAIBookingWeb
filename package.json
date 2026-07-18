@@ -13,7 +13,7 @@
     "dev:app": "npm --prefix apps/app run dev",
     "test": "npm run test:lambda && npm run test:api",
     "test:api": "npm --prefix apps/api run test",
-    "test:lambda": "NODE_ENV=test node --test --test-concurrency=1 tests/lambda/*.test.mjs",
+    "test:lambda": "NODE_ENV=test FASTAIBOOKING_TEST_NOW_ISO=2026-07-17T10:00:00-04:00 node --test --test-concurrency=1 tests/lambda/*.test.mjs",
     "build:api": "npm --prefix apps/api run build",
     "build:admin": "npm --prefix apps/admin run build",
     "build:app": "npm --prefix apps/app run build",

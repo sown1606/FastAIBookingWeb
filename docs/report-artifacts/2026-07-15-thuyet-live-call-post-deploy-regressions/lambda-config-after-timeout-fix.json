@@ -1,8 +1,0 @@
-{
-    "FunctionName": "fastaibooking-booking-handler",
-    "LastModified": "2026-07-15T07:06:32.000+0000",
-    "CodeSha256": "3qMPGC9oV5S7VLBxrW7aMAA0q+/CCemuHyXKviwT0NI=",
-    "State": "Active",
-    "LastUpdateStatus": "Successful",
-    "Runtime": "nodejs20.x"
-}

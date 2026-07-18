@@ -1690,6 +1690,17 @@ const digitSequenceFromUtterance = (value?: string | null): string[] => {
 const isDigitOnlyOrSequenceUtterance = (value?: string | null): boolean =>
   digitSequenceFromUtterance(value).length > 0;
 
+const getReferenceDateTime = (timezone: string): DateTime => {
+  const configured = process.env.FASTAIBOOKING_TEST_NOW_ISO;
+  if (!configured || process.env.NODE_ENV !== "test") {
+    return DateTime.now().setZone(timezone);
+  }
+  const parsed = DateTime.fromISO(configured, { setZone: true });
+  return parsed.isValid ? parsed.setZone(timezone) : DateTime.now().setZone(timezone);
+};
+
+const getReferenceJsDate = (): Date => getReferenceDateTime("utc").toJSDate();
+
 const parseMonthDayDateText = (value: string, timezone: string): DateTime | null => {
   const normalized = normalizeForMatch(value);
   const monthNames = Object.keys(MONTH_NUMBERS).join("|");
@@ -1709,7 +1720,7 @@ const parseMonthDayDateText = (value: string, timezone: string): DateTime | null
     return null;
   }
 
-  const now = DateTime.now().setZone(timezone);
+  const now = getReferenceDateTime(timezone);
   const parsed = DateTime.fromObject(
     {
       year: match[3] ? Number(match[3]) : now.year,
@@ -1787,7 +1798,7 @@ const buildWeekdayDateConflictMessage = (
 
 const parseLocalDateText = (value: string, timezone: string): DateTime | null => {
   const cleaned = normalizeForMatch(value);
-  const now = DateTime.now().setZone(timezone);
+  const now = getReferenceDateTime(timezone);
 
   if (
     cleaned === "today" ||
@@ -5384,7 +5395,7 @@ async function findUpcomingAppointmentsForCustomer(input: {
       salonId: input.salonId,
       customerId: input.customerId,
       startTime: {
-        gte: new Date()
+        gte: getReferenceJsDate()
       },
       status: {
         in: [AppointmentStatus.SCHEDULED, AppointmentStatus.CONFIRMED]
@@ -5485,7 +5496,7 @@ const parseRequestedStartTime = (input: {
 const isRequestedStartTimeInPast = (
   startTime: Date,
   timezone: string,
-  now = DateTime.now().setZone(timezone)
+  now = getReferenceDateTime(timezone)
 ): boolean => DateTime.fromJSDate(startTime, { zone: "utc" }).setZone(timezone) < now;
 
 const buildPastRequestedTimeMessage = (): string =>
@@ -5884,7 +5895,7 @@ const getSuggestedSlotsForService = async (input: {
 
   const localStart = input.preferredStartTime
     ? DateTime.fromJSDate(input.preferredStartTime, { zone: "utc" }).setZone(input.timezone)
-    : DateTime.now().setZone(input.timezone);
+    : getReferenceDateTime(input.timezone);
 
   for (let offset = 0; offset < input.daysAhead; offset += 1) {
     const localDate = localStart.plus({ days: offset }).toFormat("yyyy-MM-dd");
@@ -6653,7 +6664,7 @@ const formatLocalTimeForSpeech = (value: Date | string, timezone: string): strin
 
 const formatLocalDateTimeForSpeech = (value: Date, timezone: string): string => {
   const local = DateTime.fromJSDate(value, { zone: "utc" }).setZone(timezone);
-  const now = DateTime.now().setZone(timezone);
+  const now = getReferenceDateTime(timezone);
   const date =
     local.hasSame(now, "day")
       ? "today"
@@ -6849,7 +6860,7 @@ const formatKnownDateForPrompt = (value?: string, timezone = "America/New_York")
   if (!parsed?.isValid) {
     return undefined;
   }
-  const today = DateTime.now().setZone(timezone).startOf("day");
+  const today = getReferenceDateTime(timezone).startOf("day");
   if (parsed.hasSame(today, "day")) {
     return "today";
   }
@@ -6997,7 +7008,7 @@ const formatUpcomingAppointmentForSpeech = (
 
 const formatFinalConfirmationDateTimeForSpeech = (value: Date, timezone: string): string => {
   const local = DateTime.fromJSDate(value, { zone: "utc" }).setZone(timezone);
-  const today = DateTime.now().setZone(timezone).startOf("day");
+  const today = getReferenceDateTime(timezone).startOf("day");
   const appointmentDay = local.startOf("day");
   const dayOffset = Math.round(appointmentDay.diff(today, "days").days);
   const dayLabel =

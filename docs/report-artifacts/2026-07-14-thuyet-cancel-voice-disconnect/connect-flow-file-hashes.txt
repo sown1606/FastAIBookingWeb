@@ -1,2 +1,0 @@
-425eba27a1ec85f5892734161c9cad7747ae9b9dde4592b4e7099aef83c661ea  infra/aws/connect/contact-flows/ai-reception.json
-425eba27a1ec85f5892734161c9cad7747ae9b9dde4592b4e7099aef83c661ea  docs/report-artifacts/2026-07-14-thuyet-cancel-voice-disconnect/ai-reception-active-after.json

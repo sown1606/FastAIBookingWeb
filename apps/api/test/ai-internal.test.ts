@@ -14,7 +14,7 @@ import {
   ExternalProvider,
   StaffStatus
 } from "@prisma/client";
-import { DateTime } from "luxon";
+import { DateTime, Settings } from "luxon";
 import { app } from "../src/app";
 import { env } from "../src/config/env";
 import { prisma } from "../src/db/prisma";
@@ -31,10 +31,16 @@ const patches: Patch[] = [];
 let server: ReturnType<typeof app.listen>;
 let baseUrl = "";
 const originalInternalToken = env.FASTAIBOOKING_API_INTERNAL_TOKEN;
+const originalPreviousInternalToken = env.FASTAIBOOKING_API_INTERNAL_TOKEN_PREVIOUS;
 const originalDefaultSalonId = env.DEFAULT_SALON_ID;
 const originalQueueId = env.AMAZON_CONNECT_QUEUE_ID_DEFAULT;
 const originalStaffedAgentsOverride = process.env.AMAZON_CONNECT_STAFFED_AGENTS_OVERRIDE;
 const originalAvailableAgentsOverride = process.env.AMAZON_CONNECT_AVAILABLE_AGENTS_OVERRIDE;
+const frozenTestNow = DateTime.fromISO(
+  process.env.FASTAIBOOKING_TEST_NOW_ISO ?? "2026-07-17T10:00:00-04:00",
+  { setZone: true }
+);
+Settings.now = () => frozenTestNow.toMillis();
 
 const FUTURE_THURSDAY = "2026-08-06";
 const FUTURE_FRIDAY = "2026-08-07";
@@ -1141,6 +1147,7 @@ beforeEach(() => {
 
 after(async () => {
   env.FASTAIBOOKING_API_INTERNAL_TOKEN = originalInternalToken;
+  env.FASTAIBOOKING_API_INTERNAL_TOKEN_PREVIOUS = originalPreviousInternalToken;
   env.DEFAULT_SALON_ID = originalDefaultSalonId;
   env.AMAZON_CONNECT_QUEUE_ID_DEFAULT = originalQueueId;
   if (originalStaffedAgentsOverride === undefined) {
@@ -1207,6 +1214,7 @@ test("call flow customer text uses Full Set wording", () => {
 
 test("missing, invalid, and valid internal tokens are handled", async () => {
   env.FASTAIBOOKING_API_INTERNAL_TOKEN = undefined;
+  env.FASTAIBOOKING_API_INTERNAL_TOKEN_PREVIOUS = undefined;
   let result = await postInternalAppointment({}, undefined);
   assert.equal(result.response.status, 503);
   assert.equal(result.body.error.code, "AI_INTERNAL_TOKEN_MISSING");
@@ -1220,6 +1228,22 @@ test("missing, invalid, and valid internal tokens are handled", async () => {
   assert.equal(result.response.status, 201);
   assert.equal(result.body.success, true);
   assert.equal(state.bookingAttempts.length, 1);
+});
+
+test("temporary previous internal token is accepted only when configured", async () => {
+  env.FASTAIBOOKING_API_INTERNAL_TOKEN = "unit-new-internal-token";
+  env.FASTAIBOOKING_API_INTERNAL_TOKEN_PREVIOUS = undefined;
+  let result = await postInternalAppointment({}, "unit-old-internal-token");
+  assert.equal(result.response.status, 401);
+  assert.equal(result.body.error.code, "UNAUTHORIZED");
+
+  env.FASTAIBOOKING_API_INTERNAL_TOKEN_PREVIOUS = "unit-old-internal-token";
+  result = await postInternalAppointment(
+    bookingPayload({ customerName: undefined, staffPreference: "Trang" }),
+    "unit-old-internal-token"
+  );
+  assert.equal(result.response.status, 201);
+  assert.equal(result.body.success, true);
 });
 
 test("salon resolution supports explicit salonId, Amazon Connect called number, and default fallback", async () => {

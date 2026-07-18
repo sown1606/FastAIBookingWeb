@@ -23,7 +23,7 @@ AWS account/profile:
 - Human Escalation flow: `c7386b94-56bb-4382-b517-ee890bbacb51`.
 - Customer Queue flow: `6bdf546e-4e3a-4bf5-954f-fb78fa6a3d5b`.
 - Operator queue: `d0f2a5d8-e983-4609-9bbc-efb0881a465d`, `FastAIBooking Operator Queue`.
-- Phone number: `+18483487681`, phone number id `f2e36faa-5264-4955-8a18-e2f53755c102`.
+- Phone number: `+********7681`, phone number id `f2e36faa-5264-4955-8a18-e2f53755c102`.
 
 Production contacts inspected without mutation:
 
@@ -133,7 +133,7 @@ Synthetic cleanup:
 - Verified no appointment IDs on synthetic booking attempts.
 - Deleted only synthetic rows: 2 `AIInteractionLog`, 2 `BookingAttempt`, 2 `CallTranscript`, 0 `CallEvent`, 2 `CallSession`.
 - Post-cleanup counts for those IDs: `CallSession=0`, `BookingAttempt=0`, `AIInteractionLog=0`, `CallEscalation=0`.
-- Verified no synthetic `Customer` rows for `+1555071500%`.
+- Verified no synthetic `Customer` rows for `+********1500%`.
 
 ## AWS Before and After
 
@@ -161,7 +161,7 @@ Connect normalized active content hashes:
 
 Phone/queue:
 
-- `+18483487681` remains claimed to Connect instance `74f78377-766f-46b7-a745-4bc97b68a8dc`.
+- `+********7681` remains claimed to Connect instance `74f78377-766f-46b7-a745-4bc97b68a8dc`.
 - CLI-visible phone APIs do not expose inbound contact-flow association; active AI Reception flow remains `ACTIVE`/`PUBLISHED` and still references Lex alias `KHMIXGA2US/JVIPIZDYE3`.
 - Operator queue `d0f2a5d8-e983-4609-9bbc-efb0881a465d` remains `ENABLED`.
 

@@ -6,7 +6,7 @@ FastAIBooking now uses Amazon Connect directly as the main telephony, AI call fl
 
 ```text
 Salon original number: 848-702-9493
-  -> Amazon Connect phone number +1 848-348-7681
+  -> Amazon Connect phone number +********7681
   -> Amazon Connect Contact Flow
   -> Amazon Lex prod alias
   -> Booking Lambda

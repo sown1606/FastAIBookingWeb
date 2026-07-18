@@ -24,8 +24,8 @@ Query window:
 - Vietnam: `2026-07-15T21:35:00+07:00` to `2026-07-15T22:00:00+07:00`
 - UTC: `2026-07-15T14:35:00Z` to `2026-07-15T15:00:00Z`
 - Log group: `/aws/lambda/fastaibooking-booking-handler`
-- Caller observed: `+84798171999`
-- Called number: `+18483487681`
+- Caller observed: `+********1999`
+- Called number: `+********7681`
 
 The Lambda turn debug logs do not include `bookingAttempt.normalizedRequest`; that field is exported as `null` with a source note when unavailable.
 
@@ -115,7 +115,7 @@ Connect:
 - Updated content with greeting: `Hi, I can help book your appointment. Tell me the service, day, time, and staff. You can press 0 for a person.`
 - Deployed content has `2026-07-15-thuyet-voice-recognition-fullset-staff` 6 times and old source marker 0 times.
 - Lex alias ARN still points to `KHMIXGA2US/JVIPIZDYE3`.
-- Re-associated phone number `+18483487681` / `f2e36faa-5264-4955-8a18-e2f53755c102` to the AI Reception flow; command succeeded.
+- Re-associated phone number `+********7681` / `f2e36faa-5264-4955-8a18-e2f53755c102` to the AI Reception flow; command succeeded.
 
 ## Production Smokes
 

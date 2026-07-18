@@ -6,8 +6,8 @@ Date: 2026-07-09
 
 - Live call session: `a5e4a9d8-0930-43ea-9772-dc31985f6ce2`
 - Amazon Connect ContactId: `a1738e9e-fd50-493f-a7ce-2afaff660573`
-- Caller: `+84798171999`
-- Called number: `+18483487681`
+- Caller: `+********1999`
+- Called number: `+********7681`
 - Caller turn: `ah i want full set`
 
 ## Root Cause

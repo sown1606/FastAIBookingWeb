@@ -5,7 +5,7 @@ Repository: FastAIBooking
 Branch: `main`
 Salon: `Kiet Nails & Beauty`
 Salon ID: `9bd14a12-85ed-418a-af7d-3f5cb329c147`
-Called number: `+18483487681`
+Called number: `+********7681`
 AWS region: `us-east-1`
 
 ## Scope
@@ -255,7 +255,7 @@ Admin build emitted only the existing chunk-size warning.
 - Lambda code updated and verified active/successful.
 - Lex DRAFT service slot type updated, locale rebuilt, version `32` created, prod alias moved to version `32`.
 - Connect flow content published and re-exported; normalized source and active hashes match.
-- Inbound number `+18483487681` remains associated with the deployed AI Reception flow.
+- Inbound number `+********7681` remains associated with the deployed AI Reception flow.
 
 ## Remaining Limitations
 
@@ -270,7 +270,7 @@ Admin build emitted only the existing chunk-size warning.
 3. Repackage and deploy the prior Lambda source; verify CodeSha256 returns to the previous deployment or to the rollback artifact.
 4. Move Lex alias `JVIPIZDYE3` back to bot version `31` if rolling back the service synonyms.
 5. Publish the previous Connect flow content from `connect-flow-active-before.json` or the reverted source file.
-6. Verify phone number `+18483487681` still associates to flow `dcccf542-587c-426c-a644-a4c6f24da6e4`.
+6. Verify phone number `+********7681` still associates to flow `dcccf542-587c-426c-a644-a4c6f24da6e4`.
 7. Run health checks and one synthetic confirmation smoke before returning traffic to normal monitoring.
 
 ## Git Delivery

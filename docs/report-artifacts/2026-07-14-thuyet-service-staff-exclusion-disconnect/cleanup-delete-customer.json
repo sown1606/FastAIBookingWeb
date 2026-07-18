@@ -1,6 +1,0 @@
-prisma:query SELECT COUNT(*) FROM (SELECT "public"."Appointment"."id" FROM "public"."Appointment" WHERE "public"."Appointment"."customerId" = $1 OFFSET $2) AS "sub"
-{
-  "customerId": "03cd70db-b12a-40fb-9749-6ff0ee807d6f",
-  "appointmentCount": 1,
-  "deleted": null
-}

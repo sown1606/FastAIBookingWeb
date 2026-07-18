@@ -17,8 +17,8 @@ Evidence is saved under:
 - Tester timezone: `Asia/Ho_Chi_Minh`
 - Vietnam time: `2026-07-14 08:50-09:00`
 - UTC: `2026-07-14 01:50-02:00`
-- Caller: `+84798171999`
-- Called number: `+18483487681`
+- Caller: `+********1999`
+- Called number: `+********7681`
 - Salon: `Kiet Nails & Beauty`
 - Salon ID: `9bd14a12-85ed-418a-af7d-3f5cb329c147`
 - Amazon Connect instance ID: `74f78377-766f-46b7-a745-4bc97b68a8dc`
