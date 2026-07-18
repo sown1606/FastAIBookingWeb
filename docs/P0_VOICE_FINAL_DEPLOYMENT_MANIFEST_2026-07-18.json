@@ -1,0 +1,173 @@
+{
+  "finalStatus": "NOT_PROMOTED",
+  "createdAt": "2026-07-18T09:49:02Z",
+  "branch": "p0/voice-definitive-source-fix-20260718",
+  "initialResolvedHead": "71e433bd736bca723448abfc1fe1d6e89f66e82c",
+  "guardSourceCommitPushed": "634d6a821a106372fd200ae89d67fe7726e545bf",
+  "awsIdentity": {
+    "profile": "nailnew",
+    "region": "us-east-1",
+    "accountId": "197452633989",
+    "principalArn": "arn:aws:iam::197452633989:user/fastaibooking-codex-deployer",
+    "verified": true
+  },
+  "targets": {
+    "connectInstanceId": "74f78377-766f-46b7-a745-4bc97b68a8dc",
+    "lexBotId": "KHMIXGA2US",
+    "productionAliasId": "JVIPIZDYE3",
+    "canaryAliasId": "Z4DLL5S5B2",
+    "productionFlowId": "dcccf542-587c-426c-a644-a4c6f24da6e4",
+    "canaryFlowId": "70b6c12b-1a5f-4d37-aea3-943dc291acd3",
+    "productionLambdaName": "fastaibooking-booking-handler",
+    "canaryLambdaName": "fastaibooking-booking-handler-p0-canary-20260717"
+  },
+  "production": {
+    "promoted": false,
+    "lexVersion": "41",
+    "lambdaCodeSha256": "mR66LpeLRmt4CT4LHwxpqQkdizG2ZPtT3TFuF73YWq0=",
+    "lambdaRevisionId": "7e58a186-3c78-4b3c-8857-180bb0c5ce61",
+    "flowMarker": "2026-07-17-thuyet-voice-hotfix",
+    "flowNormalizedSha256": "199aa5ae084361b68be429ca8175fc20031871e6b1b496f8b116e5ca218e7347",
+    "maxSpeechDurationMs": 20000,
+    "endpointingMs": {
+      "global": 3200,
+      "service": 2800,
+      "date": 2200,
+      "time": 2200,
+      "staff": 2600,
+      "customerName": 2000,
+      "confirmation": 900
+    },
+    "wildcardInterruptEnabled": true
+  },
+  "canary": {
+    "lexVersion": "44",
+    "speechModelPreference": "Standard",
+    "speechDetectionSensitivity": "Default",
+    "lambdaCodeSha256": "jJXR3izYSEBglP95b2gJUs+car+E9iW5yJM2yx9AQHU=",
+    "lambdaRevisionId": "ed293842-52ed-4212-af5a-597f055e6159",
+    "flowMarker": "2026-07-18-p0-pstn-canary",
+    "flowNormalizedSha256": "27603a40bbdfc17e788df47c5c7e1c96ae0548f361effce47eabb75459203d9e",
+    "maxSpeechDurationMs": 12000,
+    "endpointingMs": {
+      "global": 1300,
+      "service": 1600,
+      "date": 1300,
+      "time": 1100,
+      "staff": 1400,
+      "customerName": 1200,
+      "confirmation": 700
+    },
+    "slotSpecificInterruptDisabled": true
+  },
+  "generatedProductionCandidate": {
+    "deployed": false,
+    "flowMarker": "2026-07-18-p0-pstn-production",
+    "flowNormalizedSha256": "38f00aa3fe014ea4db2756ed71532c594b6bd1b4424ada76621740e95ada1410",
+    "maxSpeechDurationMs": 12000
+  },
+  "observability": {
+    "lexAudioLoggingVerified": true,
+    "lexTextLoggingVerified": false,
+    "connectFlowLoggingVerifiedWithPstn": false,
+    "canaryTextLogGroup": "/aws/lex/KHMIXGA2US/p0-voice-regression-canary",
+    "connectLogGroup": "/aws/connect/fastaibooking",
+    "audioPrefix": "lex-canary-audio/",
+    "audioEvidence": [
+      {
+        "sessionId": "p0-continuation-20260718T092916",
+        "etag": "cfa838cddab073e3d01ae3655b40eb0a",
+        "sizeBytes": 42114,
+        "approxDurationSeconds": 2.63
+      }
+    ],
+    "deniedDiagnostics": [
+      {
+        "action": "iam:SimulatePrincipalPolicy",
+        "resource": "arn:aws:iam::197452633989:role/FastAIBookingLexConversationLogsRole20260718"
+      },
+      {
+        "action": "iam:GetRolePolicy",
+        "resource": "arn:aws:iam::197452633989:role/FastAIBookingLexConversationLogsRole20260718"
+      }
+    ]
+  },
+  "syntheticRecognizeUtterance": {
+    "sessions": [
+      {
+        "sessionId": "p0-continuation-20260718T092916",
+        "elapsedMs": 4999,
+        "topTranscriptRedacted": "Full Set today at three p. m. Any staff is fine",
+        "nluConfidence": 0.93
+      },
+      {
+        "sessionId": "p0-logrole-20260718T093424",
+        "elapsedMs": 5280
+      },
+      {
+        "sessionId": "p0-logresave-20260718T093603",
+        "elapsedMs": 3041
+      }
+    ],
+    "p50ElapsedMs": 4999,
+    "p95ElapsedMs": 5280,
+    "worstElapsedMs": 5280,
+    "passedLatencyGate": false
+  },
+  "canaryAcceptance": {
+    "routeCreated": false,
+    "criticalConsecutiveRoundsPassed": 0,
+    "extendedMatrixPassed": false,
+    "contactIds": [],
+    "callerHeardPlaybackMeasured": false
+  },
+  "productionAcceptance": {
+    "criticalConsecutiveRoundsPassed": 0,
+    "extendedMatrixPassed": false,
+    "contactIds": []
+  },
+  "appointments": {
+    "createdDuringRun": [],
+    "incidentAppointmentId": "3dbb0306-0959-42de-8285-8a583b199cba",
+    "incidentAppointmentStatus": "CANCELED",
+    "activeAppointmentCountFor4886": 0
+  },
+  "tests": {
+    "awsVerifyIdentity": "passed",
+    "lambdaRun1": {
+      "passed": 162,
+      "failed": 0,
+      "durationMs": 12151.644
+    },
+    "lambdaRun2": {
+      "passed": 162,
+      "failed": 0,
+      "durationMs": 12201.021
+    },
+    "api": {
+      "passed": 304,
+      "failed": 0,
+      "durationMs": 24545.256
+    },
+    "typecheckApi": "passed",
+    "typecheckAdmin": "passed",
+    "typecheckApp": "passed",
+    "buildApi": "passed",
+    "buildAdmin": "passed",
+    "buildApp": "passed",
+    "prismaGenerate": "passed",
+    "voiceDeployCanaryDryRun": "passed",
+    "voiceDeployProductionDryRun": "passed",
+    "secretScan": "passed"
+  },
+  "productionPromotionApproved": false,
+  "rollback": {
+    "productionRollbackRequired": false,
+    "customLexRoleRolledBack": true,
+    "temporaryCallerRouteRemoved": true
+  },
+  "pr": {
+    "compareUrl": "https://github.com/sown1606/FastAIBookingWeb/compare/main...p0/voice-definitive-source-fix-20260718",
+    "creationStatus": "pending-final-auth-check"
+  }
+}
