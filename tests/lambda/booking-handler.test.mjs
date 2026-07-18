@@ -1172,7 +1172,8 @@ test("phone voice source contract rejects Connect-unsafe speech settings", () =>
     readFileSync(path.join(repoRoot, "infra/aws/lex/FastAIBookingBot-v10/BotLocales/en_US/BotLocale.json"), "utf8")
   );
   assert.equal(locale.speechDetectionSensitivity, "Default");
-  assert.ok(locale.unifiedSpeechSettings, "v10 locale speech model settings must be explicit");
+  assert.deepEqual(locale.speechRecognitionSettings, { speechModelPreference: "Standard" });
+  assert.equal(locale.unifiedSpeechSettings, undefined);
   assert.match(
     readFileSync(apiAiServicePath, "utf8"),
     /confidence:\s*Number\.isFinite\(speechConfidence\)\s*\?\s*speechConfidence\s*:\s*null/,
@@ -9237,6 +9238,52 @@ test("DialogCodeHook rejects past requested date before customer name prompt", a
   assert.equal(attrs.requestedTime, undefined);
   assert.equal(response.sessionState.intent.slots.requestedDate, null);
   assert.equal(response.sessionState.intent.slots.requestedTime, null);
+});
+
+test("DialogCodeHook rejects unresolved spoken yesterday before customer name prompt", async () => {
+  const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
+  globalThis.fetch = async () => {
+    throw new Error("fetch should not be called for unresolved past date");
+  };
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "Full Set yesterday at three p m any staff is fine",
+      inputMode: "Speech",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+84798171999",
+          AmazonConnectContactId: "connect-unresolved-yesterday",
+          customerPhone: "+84798171999",
+          lastAskedSlot: "serviceName"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          state: "InProgress",
+          confirmationState: "None",
+          slots: {
+            serviceName: slot("Full Set"),
+            requestedTime: slot("three p m"),
+            staffPreference: slot("Any staff is fine"),
+            requestedDate: null
+          }
+        }
+      }
+    })
+  );
+
+  const attrs = response.sessionState.sessionAttributes;
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "requestedDate");
+  assert.match(response.messages[0].content, /That time has already passed/i);
+  assert.equal(attrs.serviceName, "Full Set");
+  assert.equal(attrs.staffPreference, "Any staff");
+  assert.equal(attrs.requestedDate, undefined);
+  assert.equal(attrs.requestedTime, undefined);
+  assert.equal(attrs.rejectedRequestedDate, "explicit_past_reference");
 });
 
 test("Lex exports route first-turn service digits through BookAppointmentIntent", () => {

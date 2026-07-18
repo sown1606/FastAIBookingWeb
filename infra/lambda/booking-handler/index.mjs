@@ -1373,6 +1373,19 @@ function hasCurrentTurnDatePhrase(transcript) {
   return Boolean(getPreferredDateCandidate(raw));
 }
 
+function hasExplicitUnresolvedPastDateReference(transcript) {
+  const normalized = normalizeForMatch(transcript);
+  if (!normalized) {
+    return false;
+  }
+  if (/\b(?:not|dont|do not|don't)\s+(?:for\s+)?(?:yesterday|last\s+(?:night|week|month|year))\b/.test(normalized)) {
+    return false;
+  }
+  return /\b(?:yesterday|last\s+(?:sunday|monday|tuesday|wednesday|thursday|friday|saturday|night|week|month|year))\b/.test(
+    normalized
+  );
+}
+
 function getActiveVoiceSlot(sessionAttributes = {}) {
   if (sessionAttributes.lastAskedSlot) {
     return String(sessionAttributes.lastAskedSlot);
@@ -7381,6 +7394,18 @@ async function handleLexEvent(event, analysis = {}) {
       !shouldEscalate && intentName === "BookAppointmentIntent"
         ? getPastRequestedDateTimeDecision(event, knownAfterTimeSanitization)
         : null;
+    const unresolvedPastDateReference =
+      !shouldEscalate &&
+      intentName === "BookAppointmentIntent" &&
+      !knownAfterTimeSanitization.requestedDate &&
+      hasExplicitUnresolvedPastDateReference(getCurrentTurnTranscript(event));
+    if (unresolvedPastDateReference) {
+      return buildPastRequestedDateTimeResponse(event, {
+        requestedDate: "explicit_past_reference",
+        requestedTime: knownAfterTimeSanitization.requestedTime || "",
+        timeZone
+      });
+    }
     if (pastRequestedDateTime) {
       return buildPastRequestedDateTimeResponse(event, pastRequestedDateTime);
     }
