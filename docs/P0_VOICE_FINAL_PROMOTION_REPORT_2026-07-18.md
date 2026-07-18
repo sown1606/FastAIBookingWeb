@@ -161,7 +161,8 @@ N-best/confidence source:
 ## Git And PR
 
 - Guard/source commit pushed: `634d6a821a106372fd200ae89d67fe7726e545bf`
-- PR creation: pending final report commit and GitHub auth check.
+- Report commit pushed before PR auth check: `2b6ced9a9c39f216ac3adae2e7d02ff1ef2e95f5`
+- PR creation: unavailable because `gh auth status` returned not logged in.
 - Compare URL: `https://github.com/sown1606/FastAIBookingWeb/compare/main...p0/voice-definitive-source-fix-20260718`
 
 ## Rollback

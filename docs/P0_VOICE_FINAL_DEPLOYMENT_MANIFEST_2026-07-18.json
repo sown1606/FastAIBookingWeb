@@ -168,6 +168,7 @@
   },
   "pr": {
     "compareUrl": "https://github.com/sown1606/FastAIBookingWeb/compare/main...p0/voice-definitive-source-fix-20260718",
-    "creationStatus": "pending-final-auth-check"
+    "creationStatus": "unavailable-gh-not-authenticated",
+    "pushedReportCommitAtAuthCheck": "2b6ced9a9c39f216ac3adae2e7d02ff1ef2e95f5"
   }
 }
