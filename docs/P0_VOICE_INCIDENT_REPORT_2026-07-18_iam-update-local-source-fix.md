@@ -51,8 +51,8 @@ Canary before this run:
 Canary after this run:
 - Lex alias `Z4DLL5S5B2` now points to immutable version `44`.
 - Lex v44 locale uses `speechRecognitionSettings.speechModelPreference=Standard`, `speechDetectionSensitivity=Default`, and no unified speech model.
-- Canary Lambda code SHA is `jJXR3izYSEBglP95b2gJUs+car+E9iW5yJM2yx9AQHU=`, revision `8e7f76d5-0f0b-4b09-b8c4-4b5161e77e80`.
-- Canary Connect flow marker is `2026-07-18-p0-definitive-voice-fix`, normalized SHA `fc510d5c4ac5c10ba583b8932bceca34eee821791175a44f87aee18cd0289da3`.
+- Canary Lambda code SHA is `jJXR3izYSEBglP95b2gJUs+car+E9iW5yJM2yx9AQHU=`, revision `ed293842-52ed-4212-af5a-597f055e6159`.
+- Canary Connect flow is normalized SHA `fc510d5c4ac5c10ba583b8932bceca34eee821791175a44f87aee18cd0289da3`. Its published `connectFlowSourceVersion` attributes still read `2026-07-17-p0-voice-regression-fix`; the corrected speech attributes and SHA were verified live, but the marker string needs a follow-up source marker cleanup before it can be used as the only acceptance signal.
 
 Canary Connect speech values after:
 - max speech duration `12000`
