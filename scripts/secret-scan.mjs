@@ -68,6 +68,7 @@ const VALUE_CATEGORY_ALLOWLIST = new Map([
   ["scripts/secret-scan.mjs", new Set(PATTERNS.map((pattern) => pattern.category))],
   ["scripts/secret-history-scan.mjs", new Set(PATTERNS.map((pattern) => pattern.category))],
   ["scripts/sanitize-aws-artifact.mjs", new Set(PATTERNS.map((pattern) => pattern.category))],
+  ["scripts/aws/verify-fastaibooking-aws-identity.sh", new Set(["session_token_name"])],
   ["infra/lambda/booking-handler/index.mjs", new Set(["internal_token_variable_name"])],
   ["apps/api/src/modules/ai-reception/ai-reception.service.ts", new Set(["internal_token_variable_name"])],
   ["apps/api/src/modules/ai/ai.routes.ts", new Set(["internal_token_variable_name"])],

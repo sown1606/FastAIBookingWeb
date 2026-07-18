@@ -786,7 +786,15 @@ test("Connect AI reception has one reachable greeting and no outer service promp
   assert.equal(primary.Parameters.LexSessionAttributes.initialVoiceBookingContext, "true");
   assert.equal(primary.Parameters.LexSessionAttributes.audioTimeoutProfile, "p0_balanced_endpointing_initial_v1");
   assert.equal(primary.Parameters.LexSessionAttributes.connectRecoveryStage, "initial");
-  assert.equal(primary.Parameters.LexSessionAttributes.connectFlowSourceVersion, "2026-07-18-p0-definitive-voice-fix");
+  assert.equal(primary.Parameters.LexSessionAttributes.connectFlowSourceVersion, "2026-07-18-p0-pstn-production");
+  const flowMarkers = new Set();
+  for (const action of aiReceptionFlow.Actions) {
+    const marker = action.Parameters?.LexSessionAttributes?.connectFlowSourceVersion ?? action.Parameters?.Attributes?.connectFlowSourceVersion;
+    if (marker) {
+      flowMarkers.add(marker);
+    }
+  }
+  assert.deepEqual([...flowMarkers], ["2026-07-18-p0-pstn-production"]);
   assert.equal(recovery.Parameters.Text, "$.Lex.SessionAttributes.connectContinuationPrompt");
   assert.equal(recovery.Transitions.NextAction, "check-transfer-to-queue");
   assert.equal(recovery.Parameters.LexSessionAttributes.connectRecoveryStage, "$.Attributes.connectRecoveryStage");

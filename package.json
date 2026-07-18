@@ -25,6 +25,11 @@
     "simulate:callrail-escalation": "npm --prefix apps/api run simulate:callrail-escalation",
     "migrate": "npm --prefix apps/api run prisma:migrate:deploy",
     "seed": "npm --prefix apps/api run prisma:seed",
+    "aws:verify-identity": "bash scripts/aws/verify-fastaibooking-aws-identity.sh",
+    "voice:deploy:canary:dry-run": "bash scripts/aws/deploy-voice-stack.sh --target canary --dry-run",
+    "voice:deploy:canary": "bash scripts/aws/deploy-voice-stack.sh --target canary",
+    "voice:deploy:production:dry-run": "bash scripts/aws/deploy-voice-stack.sh --target production --dry-run",
+    "voice:deploy:production": "bash scripts/aws/deploy-voice-stack.sh --target production",
     "deploy:ec2": "./infra/scripts/deploy_remote_ec2.sh",
     "docker:up": "docker compose up -d --build",
     "docker:down": "docker compose down"
