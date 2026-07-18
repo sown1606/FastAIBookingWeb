@@ -134,4 +134,11 @@ Because no live deployment occurred, there is no deployed stack generation to ro
 
 ## Commit and Push
 
-Commit SHA and pushed branch are recorded in the final handoff after Git commit/push completes.
+Source-fix commit: `a6b8341d2063e4c313b2387f2557fce259260253`
+
+Pushed branch: `p0/voice-definitive-source-fix-20260718`
+
+Draft PR status: attempted through the GitHub connector after push, but GitHub returned `422 must be a collaborator`. The GitHub CLI is not installed in this environment, so draft PR creation remains blocked here.
+
+PR creation URL from the push response:
+`https://github.com/sown1606/FastAIBookingWeb/pull/new/p0/voice-definitive-source-fix-20260718`
