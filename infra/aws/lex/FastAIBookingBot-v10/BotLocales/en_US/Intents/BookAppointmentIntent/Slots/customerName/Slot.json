@@ -99,7 +99,7 @@
         }
       ],
       "maxRetries": 3,
-      "allowInterrupt": true,
+      "allowInterrupt": false,
       "messageSelectionStrategy": "Random",
       "promptAttemptsSpecification": {
         "Retry2": {
@@ -113,8 +113,8 @@
           "audioAndDTMFInputSpecification": {
             "startTimeoutMs": 8000,
             "audioSpecification": {
-              "endTimeoutMs": 2000,
-              "maxLengthMs": 20000
+              "endTimeoutMs": 1200,
+              "maxLengthMs": 12000
             },
             "dtmfSpecification": {
               "maxLength": 1,
@@ -123,7 +123,7 @@
               "endCharacter": "#"
             }
           },
-          "allowInterrupt": true
+          "allowInterrupt": false
         },
         "Retry3": {
           "textInputSpecification": {
@@ -136,8 +136,8 @@
           "audioAndDTMFInputSpecification": {
             "startTimeoutMs": 8000,
             "audioSpecification": {
-              "endTimeoutMs": 2000,
-              "maxLengthMs": 20000
+              "endTimeoutMs": 1200,
+              "maxLengthMs": 12000
             },
             "dtmfSpecification": {
               "maxLength": 1,
@@ -146,7 +146,7 @@
               "endCharacter": "#"
             }
           },
-          "allowInterrupt": true
+          "allowInterrupt": false
         },
         "Initial": {
           "textInputSpecification": {
@@ -159,8 +159,8 @@
           "audioAndDTMFInputSpecification": {
             "startTimeoutMs": 8000,
             "audioSpecification": {
-              "endTimeoutMs": 2000,
-              "maxLengthMs": 20000
+              "endTimeoutMs": 1200,
+              "maxLengthMs": 12000
             },
             "dtmfSpecification": {
               "maxLength": 1,
@@ -169,7 +169,7 @@
               "endCharacter": "#"
             }
           },
-          "allowInterrupt": true
+          "allowInterrupt": false
         },
         "Retry1": {
           "textInputSpecification": {
@@ -182,8 +182,8 @@
           "audioAndDTMFInputSpecification": {
             "startTimeoutMs": 8000,
             "audioSpecification": {
-              "endTimeoutMs": 2000,
-              "maxLengthMs": 20000
+              "endTimeoutMs": 1200,
+              "maxLengthMs": 12000
             },
             "dtmfSpecification": {
               "maxLength": 1,
@@ -192,7 +192,7 @@
               "endCharacter": "#"
             }
           },
-          "allowInterrupt": true
+          "allowInterrupt": false
         }
       }
     },

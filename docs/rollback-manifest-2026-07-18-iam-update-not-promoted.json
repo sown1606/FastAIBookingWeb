@@ -1,0 +1,28 @@
+{
+  "createdAt": "2026-07-18T06:39:21Z",
+  "status": "NOT_PROMOTED",
+  "deploymentPerformed": false,
+  "rollbackRequired": false,
+  "awsIdentity": {
+    "verified": false,
+    "errorCode": "InvalidClientTokenId",
+    "errorMessage": "The security token included in the request is invalid.",
+    "region": "us-east-1"
+  },
+  "liveResourcesCaptured": false,
+  "liveResourcesCaptureReason": "sts:GetCallerIdentity failed before any Connect, Lex, Lambda, CloudWatch, or S3 read could be trusted.",
+  "localSourceState": {
+    "connectFlowSourceMarker": "2026-07-18-p0-definitive-voice-fix",
+    "connectFlowSourceSha256": "44e4bb4ea7da60eccc5523ff9d1b0e857a4965c30e7e7a6006feb8fb4b8b550e",
+    "lambdaSourceSha256": "361e0fd66531adb18e986934bc145e00e5422dbb8112419b9bd88ae78b723138",
+    "apiAiServiceSourceSha256": "8092ed16b9e705b00285463dd8d1a8985a0d0137d21f66cc8b6b5eefd8c27b63"
+  },
+  "restorePlan": {
+    "requiredIfDeploymentHadOccurred": [
+      "restore previous Lex alias version",
+      "restore previous Lambda code and configuration",
+      "restore previous published Connect flow content"
+    ],
+    "thisRunAction": "No AWS resources were modified, so no rollback command was executed."
+  }
+}

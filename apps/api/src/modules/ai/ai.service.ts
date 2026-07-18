@@ -2109,6 +2109,11 @@ const isClearlyStructuredBookingRequest = (
   return hasService && hasDate && hasTime && hasStaff;
 };
 
+const isBookingLikeUtterance = (value?: string | null): boolean =>
+  /\b(?:book|booking|schedule|appointment|service|nail|nails|pedicure|manicure|full\s*set|today|tomorrow|any\s+staff|first\s+available|at|am|pm)\b/i.test(
+    normalizeForMatch(value)
+  );
+
 const buildVoiceSlotMutationPolicy = (input: {
   slotName: string;
   proposedValue?: string;
@@ -3108,7 +3113,7 @@ type CreateAIInteractionLogInput = {
   parsedOutput: unknown;
   isValid: boolean;
   validationErrors?: unknown;
-  confidence?: number;
+  confidence?: number | null;
   interactionKey?: string;
   isSynthetic?: boolean;
 };
@@ -4399,6 +4404,14 @@ const isAmbiguousFirstAvailableStaffCandidate = (
   if (!normalized || getActiveVoiceSlot(attributes) !== "staffPreference") {
     return false;
   }
+  return hasGuardedFirstAvailableStaffTail(normalized);
+};
+
+const hasGuardedFirstAvailableStaffTail = (normalizedValue: string): boolean => {
+  const normalized = normalizeForMatch(normalizedValue);
+  if (!normalized) {
+    return false;
+  }
   const tail = stripAnyStaffTrailingFiller(normalized)
     .replace(/\s+(?:music|background music|noise)$/, "")
     .trim();
@@ -4408,8 +4421,6 @@ const isAmbiguousFirstAvailableStaffCandidate = (
   return Boolean(
     /\b(?:and\s+)?(?:it\s+s|its|it\s+is|it)?\s*stopp?ed\s+at\s+(?:five|5)\b/.test(tail) ||
       [
-        "annie stop",
-        "anny stop",
         "any stop",
         "anystop",
         "edit stop",
@@ -4442,9 +4453,58 @@ const isAmbiguousFirstAvailableStaffCandidate = (
         "and hes up for hire able",
         "is up for hire able",
         "he s up for hire able",
-        "hes up for hire able"
+        "hes up for hire able",
+        "the end is high"
       ].some((alias) => tail === alias || tail.endsWith(` ${alias}`))
   );
+};
+
+const findProposedTodayDateClarification = (input: {
+  serviceName?: string;
+  requestedDate?: string;
+  requestedTime?: string;
+  currentTurnTranscript?: string;
+  transcriptText?: string;
+  timezone: string;
+}): {
+  proposedRequestedDate: string;
+  reason: "dropped_today_day_at_time";
+  matchedTranscript: string;
+} | null => {
+  if (input.requestedDate || !input.serviceName || !input.requestedTime) {
+    return null;
+  }
+  const text = input.currentTurnTranscript ?? input.transcriptText ?? "";
+  const normalized = normalizeForMatch(text);
+  if (!normalized || isNegative(text)) {
+    return null;
+  }
+  if (/\b(?:some|another|a|one|next)\s+day\b/.test(normalized)) {
+    return null;
+  }
+  if (/\b(?:today|tomorrow|tonight|sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/.test(normalized)) {
+    return null;
+  }
+  if (new RegExp(MONTH_DAY_PATTERN, "i").test(text) || new RegExp(ISO_DATE_PATTERN, "i").test(text)) {
+    return null;
+  }
+  const timeCandidate = extractTimeCandidate(text, { currentTurnHasDatePhrase: true });
+  const parsedTime = timeCandidate ? parseLocalTimeText(timeCandidate, { currentTurnHasDatePhrase: true }) : null;
+  if (!parsedTime || parsedTime.ambiguous) {
+    return null;
+  }
+  const spokenNumberNormalized = normalizeForMatch(normalizeSpokenNumbers(normalizeHourMinuteTimeExpression(text)));
+  if (!/\bday\s+at\s+\d{1,2}(?::\d{2})?\s*(?:a\s*m|p\s*m|am|pm)\b/.test(spokenNumberNormalized)) {
+    return null;
+  }
+  const today = normalizeRequestedDateForState("today", input.timezone);
+  return today
+    ? {
+        proposedRequestedDate: today,
+        reason: "dropped_today_day_at_time",
+        matchedTranscript: text
+      }
+    : null;
 };
 
 const isRejectedFirstAvailableStaffCandidate = (
@@ -4462,6 +4522,7 @@ const isRejectedFirstAvailableStaffCandidate = (
 const findProposedAnyStaffClarification = (input: {
   serviceName?: string;
   requestedDate?: string;
+  proposedRequestedDate?: string;
   requestedTime?: string;
   staffPreference?: string;
   currentTurnTranscript?: string;
@@ -4473,27 +4534,28 @@ const findProposedAnyStaffClarification = (input: {
   asrAlternativesUsed: boolean;
   matchedTranscript: string;
 } | null => {
-  if (
-    getActiveVoiceSlot(input.attributes) !== "staffPreference" ||
-    input.staffPreference ||
-    !input.serviceName ||
-    !input.requestedDate ||
-    !input.requestedTime
-  ) {
+  const topTranscript = input.currentTurnTranscript ?? input.transcriptText ?? "";
+  const activeStaffSlot = getActiveVoiceSlot(input.attributes) === "staffPreference";
+  const hasCompleteBookingFrame =
+    Boolean(input.serviceName && (input.requestedDate || input.proposedRequestedDate) && input.requestedTime) &&
+    isBookingLikeUtterance(topTranscript);
+  if (!activeStaffSlot && !hasCompleteBookingFrame) {
     return null;
   }
-  const topTranscript = input.currentTurnTranscript ?? input.transcriptText ?? "";
+  if (input.staffPreference || !input.serviceName || !(input.requestedDate || input.proposedRequestedDate) || !input.requestedTime) {
+    return null;
+  }
   const staffContext = {
     ...staffPhraseContextFromAttributes(input.attributes),
     serviceName: input.serviceName,
-    requestedDate: input.requestedDate,
+    requestedDate: input.requestedDate ?? input.proposedRequestedDate,
     requestedTime: input.requestedTime,
     lastAskedSlot: "staffPreference"
   };
   if (normalizeAnyStaffPhrase(topTranscript, staffContext)) {
     return null;
   }
-  if (isAmbiguousFirstAvailableStaffCandidate(topTranscript, input.attributes)) {
+  if (hasGuardedFirstAvailableStaffTail(topTranscript)) {
     return {
       proposedStaffPreference: "Any staff",
       reason: "ambiguous_first_available_asr",
@@ -4515,6 +4577,26 @@ const findProposedAnyStaffClarification = (input: {
     asrAlternativesUsed: true,
     matchedTranscript: alternativeMatch.transcript
   };
+};
+
+const buildBookingFrameRepairConfirmationPrompt = (
+  input: {
+    serviceName: string;
+    proposedRequestedDate: string;
+    requestedTime: string;
+    proposedStaffPreference: "Any staff";
+  },
+  timezone: string
+): string => {
+  const date = formatKnownDateForPrompt(input.proposedRequestedDate, timezone);
+  const time = formatKnownTimeForPrompt(input.requestedTime);
+  const staff =
+    normalizeForMatch(input.proposedStaffPreference) === "any staff"
+      ? "the first available staff"
+      : input.proposedStaffPreference;
+  return speak(
+    `I heard ${escapeSsml(input.serviceName)} ${escapeSsml(date)} at ${escapeSsml(time)} with ${escapeSsml(staff)}. Is that right?`
+  );
 };
 
 const isStaffConfirmationRejection = (value?: string | null): boolean => {
@@ -6249,11 +6331,30 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
     hasUnsafeSunsetWithoutExplicitFullSetAlias(serviceRecognitionText) &&
     (normalizedServiceCandidate === "full set" ||
       /\bsun\s*set\b/.test(normalizedServiceCandidate));
-  const serviceName =
+  let serviceName =
     fullSetFromTranscript ??
     (serviceCandidate && !unsafeSunsetServiceSlot && !isClearlyInvalidServiceName(serviceCandidate)
       ? getCustomerFacingServiceName(serviceCandidate)
       : undefined);
+  const initialBookingUtterance = readStringAttribute(attributes, ["initialBookingUtterance"]);
+  const initialFullSetService =
+    serviceDtmfSelection && initialBookingUtterance
+      ? recognizeFullSetFromText(initialBookingUtterance, {
+          lastAskedSlot: "serviceName",
+          activeDtmfMenu: "service"
+        })
+      : undefined;
+  if (
+    serviceDtmfSelection &&
+    initialFullSetService &&
+    normalizeForMatch(initialFullSetService) !== normalizeForMatch(serviceDtmfSelection)
+  ) {
+    attributes.awaitingServiceConfirmation = "true";
+    attributes.proposedServiceName = serviceDtmfSelection;
+    attributes.serviceDtmfConflictWithInitialUtterance = initialFullSetService;
+    attributes.clarificationReason = "service_dtmf_conflicts_initial_utterance";
+    serviceName = undefined;
+  }
   const previousRequestedDate = normalizeRequestedDateForState(
     readBookingFieldAttribute(attributes, "requestedDate")
   );
@@ -8292,6 +8393,38 @@ export const createAmazonConnectAIAppointment = async (
     normalized.attributes.timeRecognitionDiagnostics = JSON.stringify(timeRecognition);
   }
 
+  const awaitingBookingFrameRepairConfirmation =
+    readStringAttribute(normalized.attributes, ["awaitingBookingFrameRepairConfirmation"]) === "true";
+  const proposedFrameDate = readStringAttribute(normalized.attributes, ["proposedRequestedDate"]);
+  const proposedFrameStaff = readStringAttribute(normalized.attributes, ["proposedStaffPreference"]);
+  if (
+    awaitingBookingFrameRepairConfirmation &&
+    isAffirmative(normalized.currentTurnTranscript) &&
+    proposedFrameDate &&
+    proposedFrameStaff
+  ) {
+    normalized.requestedDate = proposedFrameDate;
+    normalized.staffPreference = proposedFrameStaff;
+    normalized.staffId = undefined;
+    normalized.confirmationState = undefined;
+    normalized.attributes.awaitingBookingFrameRepairConfirmation = "false";
+    normalized.attributes.proposedRequestedDate = "";
+    normalized.attributes.proposedStaffPreference = "";
+    normalized.attributes.bookingFrameRepairConfirmed = "true";
+    normalized.attributes.awaitingFinalBookingConfirmation = "false";
+    normalized.attributes.bookingConfirmationAsked = "false";
+  } else if (awaitingBookingFrameRepairConfirmation && isNegative(normalized.currentTurnTranscript)) {
+    normalized.requestedDate = undefined;
+    normalized.staffPreference = undefined;
+    normalized.staffId = undefined;
+    normalized.confirmationState = undefined;
+    normalized.attributes.awaitingBookingFrameRepairConfirmation = "false";
+    normalized.attributes.proposedRequestedDate = "";
+    normalized.attributes.proposedStaffPreference = "";
+    normalized.attributes.bookingFrameRepairConfirmed = "false";
+    normalized.attributes.bookingFrameRepairRejected = "true";
+  }
+
   const awaitingServiceConfirmation =
     readStringAttribute(normalized.attributes, ["awaitingServiceConfirmation"]) === "true";
   const proposedServiceName = readStringAttribute(normalized.attributes, ["proposedServiceName"]);
@@ -9145,6 +9278,12 @@ export const createAmazonConnectAIAppointment = async (
             responsePayloadBase.sessionAttributes ?? inferredResponseSessionAttributes,
           turnStateDiagnostics
         };
+    const asrDiagnosticsForConfidence = recordFromUnknown(turnStateDiagnostics.asrDiagnostics);
+    const asrConfidenceSource = readStringValue(asrDiagnosticsForConfidence.confidenceSource);
+    const speechConfidence =
+      asrConfidenceSource === "event.transcriptions.transcriptionConfidence"
+        ? Number(asrDiagnosticsForConfidence.transcriptionConfidence ?? asrDiagnosticsForConfidence.confidence)
+        : NaN;
 
     return upsertAmazonConnectBookingAIInteractionLog({
       salonId: salon.id,
@@ -9164,7 +9303,7 @@ export const createAmazonConnectAIAppointment = async (
         parsed: inputForInteraction.parsed
       },
       isValid: inputForInteraction.isValid,
-      confidence: 1,
+      confidence: Number.isFinite(speechConfidence) ? speechConfidence : null,
       isSynthetic: isSyntheticAmazonConnectIdentity(normalized.contactId)
     });
   };
@@ -10359,11 +10498,20 @@ export const createAmazonConnectAIAppointment = async (
     normalized.currentTurnTranscript ?? normalized.transcriptText,
     normalized.attributes
   );
+  const proposedTodayDate = findProposedTodayDateClarification({
+    serviceName: normalized.serviceName,
+    requestedDate: normalized.requestedDate,
+    requestedTime: normalized.requestedTime,
+    currentTurnTranscript: normalized.currentTurnTranscript,
+    transcriptText: normalized.transcriptText,
+    timezone: salon.timezone
+  });
   const alternativeFirstAvailableStaffProposal =
     !awaitingStaffConfirmation && !ambiguousFirstAvailableStaffProposal
       ? findProposedAnyStaffClarification({
           serviceName: normalized.serviceName,
           requestedDate: normalized.requestedDate,
+          proposedRequestedDate: proposedTodayDate?.proposedRequestedDate,
           requestedTime: normalized.requestedTime,
           staffPreference: normalized.staffPreference,
           currentTurnTranscript: normalized.currentTurnTranscript,
@@ -10419,6 +10567,125 @@ export const createAmazonConnectAIAppointment = async (
   if (!missingFields.has("staffPreference") && staffResolution.status === "explicit_any") {
     normalized.staffPreference = "Any staff";
     normalized.staffId = undefined;
+  }
+  if (proposedTodayDate && proposedFirstAvailableStaff && normalized.serviceName && normalized.requestedTime) {
+    const message = buildBookingFrameRepairConfirmationPrompt(
+      {
+        serviceName: normalized.serviceName,
+        proposedRequestedDate: proposedTodayDate.proposedRequestedDate,
+        requestedTime: normalized.requestedTime,
+        proposedStaffPreference: proposedFirstAvailableStaff.proposedStaffPreference
+      },
+      salon.timezone
+    );
+    const voiceSlotDecisions = [
+      buildVoiceSlotDecision({
+        slot: "requestedDate",
+        action: "propose",
+        canonicalValue: proposedTodayDate.proposedRequestedDate,
+        reason: proposedTodayDate.reason,
+        confidenceBand: "medium",
+        evidence: [proposedTodayDate.matchedTranscript],
+        alternativesUsed: false
+      }),
+      buildVoiceSlotDecision({
+        slot: "staffPreference",
+        action: "propose",
+        canonicalValue: proposedFirstAvailableStaff.proposedStaffPreference,
+        reason: proposedFirstAvailableStaff.reason,
+        confidenceBand: "medium",
+        evidence: [proposedFirstAvailableStaff.matchedTranscript],
+        alternativesUsed: proposedFirstAvailableStaff.asrAlternativesUsed
+      })
+    ];
+    const lexSessionAttributes = buildKnownSessionAttributes({
+      requestedDate: undefined,
+      staffPreference: undefined,
+      staffId: undefined,
+      selectedStaffId: undefined,
+      confirmedStaffId: undefined,
+      confirmedStaffName: undefined,
+      awaitingBookingFrameRepairConfirmation: "true",
+      proposedRequestedDate: proposedTodayDate.proposedRequestedDate,
+      proposedStaffPreference: proposedFirstAvailableStaff.proposedStaffPreference,
+      bookingFrameRepairReason: "dropped_today_and_first_available_asr",
+      clarificationReason: "booking_frame_repair_confirmation",
+      voiceSlotDecisions: JSON.stringify(voiceSlotDecisions),
+      awaitingFinalBookingConfirmation: "false",
+      bookingConfirmationAsked: "false",
+      lastAskedSlot: "bookingConfirmation",
+      askedSlotsCount: "1",
+      fallbackCount: "1",
+      errorCount: "1"
+    });
+    const parsed = buildInternalParsedIntent({
+      intentType: "BOOK_APPOINTMENT",
+      customerName: normalized.customerName,
+      customerPhone: normalized.customerPhone,
+      serviceName: normalized.serviceName,
+      staffPreference: undefined,
+      requestedDateTime: undefined,
+      missingFields: ["preferredDateTime", "staffPreference"],
+      isReadyToBook: false
+    });
+    const bookingAttempt = await createAttempt({
+      status: BookingAttemptStatus.NEEDS_INPUT,
+      failureReason: "Medium-confidence booking frame repair requires confirmation.",
+      normalizedRequest: {
+        serviceName: normalized.serviceName,
+        requestedTime: normalized.requestedTime,
+        proposedRequestedDate: proposedTodayDate.proposedRequestedDate,
+        proposedStaffPreference: proposedFirstAvailableStaff.proposedStaffPreference,
+        bookingFrameRepairReason: "dropped_today_and_first_available_asr",
+        timezone: salon.timezone
+      }
+    });
+    const aiInteraction = await createInteraction({
+      outcome: "MISSING_INFO",
+      message,
+      parsed,
+      bookingAttemptId: bookingAttempt.id,
+      responsePayload: {
+        missingFields: ["preferredDateTime", "staffPreference"],
+        promptMissingFields: ["bookingConfirmation"],
+        slotToElicit: "bookingConfirmation",
+        bookingFrameRepairReason: "dropped_today_and_first_available_asr",
+        sessionAttributes: lexSessionAttributes
+      },
+      isValid: true
+    });
+    await finalizeCall({
+      outcome: "MISSING_INFO",
+      bookingAttemptId: bookingAttempt.id,
+      bookingStatus: bookingAttempt.status,
+      parsed,
+      message,
+      failureReason: bookingAttempt.failureReason ?? undefined
+    });
+
+    return {
+      outcome: "MISSING_INFO" as const,
+      message,
+      lexResponse: {
+        fulfillmentState: "InProgress",
+        message,
+        messageContentType: "SSML",
+        dialogAction: {
+          type: "ElicitSlot",
+          slotToElicit: "bookingConfirmation"
+        },
+        sessionAttributes: lexSessionAttributes
+      },
+      appointment: null,
+      bookingAttempt,
+      callSession,
+      transcript,
+      aiInteraction,
+      escalation: null,
+      alternatives: [],
+      missingFields: ["preferredDateTime", "staffPreference"],
+      salonResolutionSource: resolutionSource
+    };
   }
   if (missingFields.size > 0 || !requestedStartTime) {
     const elicitDecision = getElicitSlotForMissingFields(
@@ -10484,13 +10751,28 @@ export const createAmazonConnectAIAppointment = async (
             attributes: normalized.attributes
           })
         : null;
+    const serviceDtmfConflictProposal =
+      elicitDecision.slotToElicit === "serviceName" &&
+      readStringAttribute(normalized.attributes, ["awaitingServiceConfirmation"]) === "true" &&
+      readStringAttribute(normalized.attributes, ["serviceDtmfConflictWithInitialUtterance"]) &&
+      readStringAttribute(normalized.attributes, ["proposedServiceName"])
+        ? {
+            proposedServiceName: readStringAttribute(normalized.attributes, ["proposedServiceName"])!,
+            previousServiceName: readStringAttribute(normalized.attributes, ["serviceDtmfConflictWithInitialUtterance"])!,
+            reason: "service_dtmf_conflicts_initial_utterance" as const
+          }
+        : null;
 
     const timeConfirmationPrompt =
       readStringAttribute(normalized.attributes, ["awaitingTimeConfirmation"]) === "true" &&
       readStringAttribute(normalized.attributes, ["proposedRequestedTime"])
         ? speak(`Did you mean ${escapeSsml(readStringAttribute(normalized.attributes, ["proposedRequestedTime"])!)}?`)
         : undefined;
-    const serviceConfirmationPrompt = proposedServiceClarification
+    const serviceConfirmationPrompt = serviceDtmfConflictProposal
+      ? speak(
+          `I heard ${escapeSsml(serviceDtmfConflictProposal.proposedServiceName)} from the keypad. Is ${escapeSsml(serviceDtmfConflictProposal.proposedServiceName)} the service you want?`
+        )
+      : proposedServiceClarification
       ? buildProposedServicePrompt(normalized, salon.timezone)
       : undefined;
     const staffConfirmationPrompt = proposedFirstAvailableStaff
@@ -10544,7 +10826,35 @@ export const createAmazonConnectAIAppointment = async (
           menuWasSpoken: shouldSpeakNumberedStaffMenu ? "true" : undefined
         }
       : {};
-    const proposedServiceAttributes = proposedServiceClarification
+    const proposedServiceAttributes = serviceDtmfConflictProposal
+      ? {
+          awaitingServiceConfirmation: "true",
+          proposedServiceName: serviceDtmfConflictProposal.proposedServiceName,
+          serviceDtmfConflictWithInitialUtterance: serviceDtmfConflictProposal.previousServiceName,
+          clarificationReason: serviceDtmfConflictProposal.reason,
+          voiceSlotDecisions: withVoiceSlotDecision(
+            normalized.attributes,
+            buildVoiceSlotDecision({
+              slot: "serviceName",
+              action: "propose",
+              canonicalValue: serviceDtmfConflictProposal.proposedServiceName,
+              reason: serviceDtmfConflictProposal.reason,
+              confidenceBand: "medium",
+              evidence: [
+                `initial=${serviceDtmfConflictProposal.previousServiceName}`,
+                `dtmf=${serviceDtmfConflictProposal.proposedServiceName}`
+              ],
+              alternativesUsed: false
+            })
+          ),
+          proposedSlotMutation: JSON.stringify({
+            slotName: "serviceName",
+            proposedValue: serviceDtmfConflictProposal.proposedServiceName,
+            previousValue: serviceDtmfConflictProposal.previousServiceName,
+            reason: serviceDtmfConflictProposal.reason
+          })
+        }
+      : proposedServiceClarification
       ? {
           awaitingServiceConfirmation: "true",
           proposedServiceName: proposedServiceClarification.proposedServiceName,

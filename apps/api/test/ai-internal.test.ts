@@ -1981,6 +1981,74 @@ test("staff-turn edit stop if i asks first-available confirmation without changi
   assert.equal(state.appointments.length, 0);
 });
 
+test("observed one-shot full set day transcript asks combined frame repair confirmation", async () => {
+  const phrase = "full set day at three p m the end is high";
+  const result = await postInternalAppointment(
+    bookingPayload({
+      customerName: "Kiet Nguyen",
+      customerPhone: "+17325956266",
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      amazonConnectContactId: "connect-observed-frame-repair",
+      currentTurnTranscript: phrase,
+      transcript: phrase,
+      attributes: {
+        currentTurnTranscript: phrase,
+        knownCallerAcknowledged: "true"
+      }
+    })
+  );
+
+  const attrs = result.body.data.lexResponse.sessionAttributes;
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "bookingConfirmation");
+  assert.equal(attrs.serviceName, "Full Set");
+  assert.equal(attrs.requestedDate, undefined);
+  assert.match(attrs.requestedTime, /^(?:3 PM|15:00)$/);
+  assert.equal(attrs.staffPreference, undefined);
+  assert.equal(attrs.awaitingBookingFrameRepairConfirmation, "true");
+  assert.equal(attrs.proposedRequestedDate, DateTime.now().setZone("America/New_York").toFormat("yyyy-MM-dd"));
+  assert.equal(attrs.proposedStaffPreference, "Any staff");
+  assert.match(
+    result.body.data.lexResponse.message,
+    /I heard Full Set today at 3 PM with the first available staff\. Is that right\?/i
+  );
+  assert.equal(state.appointments.length, 0);
+});
+
+test("the end is high alone does not map to first available", async () => {
+  const phrase = "the end is high";
+  const result = await postInternalAppointment(
+    bookingPayload({
+      customerName: "Kiet Nguyen",
+      customerPhone: "+17325956266",
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      amazonConnectContactId: "connect-end-high-negative",
+      currentTurnTranscript: phrase,
+      transcript: phrase,
+      attributes: {
+        currentTurnTranscript: phrase,
+        knownCallerAcknowledged: "true"
+      }
+    })
+  );
+
+  const attrs = result.body.data.lexResponse.sessionAttributes;
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(attrs.proposedStaffPreference, undefined);
+  assert.equal(attrs.awaitingBookingFrameRepairConfirmation, undefined);
+  assert.notEqual(attrs.staffPreference, "Any staff");
+  assert.equal(state.appointments.length, 0);
+});
+
 test("N-best first-available staff alternative asks confirmation without committing staff", async () => {
   const today = DateTime.now().setZone("America/New_York").toFormat("yyyy-MM-dd");
   const result = await postInternalAppointment(
@@ -5039,6 +5107,53 @@ test("after service DTMF 4, name and date turns keep Full Set", async () => {
   assert.notEqual(dateTurn.body.data.lexResponse.sessionAttributes.transferToQueue, "true");
   assert.notEqual(dateTurn.body.data.lexResponse.sessionAttributes.forceHumanEscalation, "true");
   assert.notEqual(dateTurn.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
+});
+
+test("dropped initial Full Set turn prevents bare service DTMF 5 from silently booking Dip Powder", async () => {
+  const result = await postInternalAppointment(
+    bookingPayload({
+      customerName: "Kiet Nguyen",
+      customerPhone: "+17325956266",
+      serviceName: undefined,
+      requestedDate: FUTURE_THURSDAY,
+      requestedTime: "3 PM",
+      staffPreference: "Any staff",
+      confirmationState: undefined,
+      transcript: "5",
+      currentTurnTranscript: "5",
+      amazonConnectContactId: "3988268e-c6c3-4fdc-a273-d460b157fa7d",
+      attributes: {
+        initialBookingUtterance: "Full Set",
+        lastAskedSlot: "serviceName",
+        activeDtmfMenu: "service",
+        activeDtmfOptionsJson: JSON.stringify({
+          "1": "Pedicure",
+          "2": "Manicure",
+          "3": "Gel Manicure",
+          "4": "Full Set",
+          "5": "Dip Powder",
+          "0": "__operator__"
+        }),
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266",
+        requestedDate: FUTURE_THURSDAY,
+        requestedTime: "3 PM",
+        staffPreference: "Any staff"
+      }
+    })
+  );
+
+  const attrs = result.body.data.lexResponse.sessionAttributes;
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
+  assert.equal(attrs.serviceName, undefined);
+  assert.equal(attrs.confirmedServiceName, undefined);
+  assert.equal(attrs.proposedServiceName, "Dip Powder");
+  assert.equal(attrs.awaitingServiceConfirmation, "true");
+  assert.equal(attrs.serviceDtmfConflictWithInitialUtterance, "Full Set");
+  assert.match(result.body.data.lexResponse.message, /I heard Dip Powder from the keypad\. Is Dip Powder the service you want\?/i);
+  assert.equal(state.appointments.length, 0);
 });
 
 test("staff DTMF applies only to staffPreference and reaches confirmation", async () => {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 
@@ -380,8 +380,8 @@ test("July 15 Lex v10 confirmation and ASR source contracts are present", () => 
 
   assert.match(lambdaSource, /"mini q"/);
   assert.match(apiSource, /"mini q"/);
-  assert.match(lambdaSource, /"annie stop"/);
-  assert.match(apiSource, /"annie stop"/);
+  assert.doesNotMatch(lambdaSource, /"annie stop"/);
+  assert.doesNotMatch(apiSource, /"annie stop"/);
   assert.match(lambdaSource, /speak with a person/);
   assert.match(apiSource, /speak with a person/);
   assert.ok(bookIntent.slotPriorities.some((slotPriority) => slotPriority.slotName === "bookingConfirmation"));
@@ -715,6 +715,28 @@ const assertPathHasAudibleActionBeforeLex = (flow, fromId, message) => {
   return path;
 };
 
+const listJsonFiles = (root) => {
+  const entries = readdirSync(root, { withFileTypes: true });
+  return entries.flatMap((entry) => {
+    const fullPath = path.join(root, entry.name);
+    if (entry.isDirectory()) {
+      return listJsonFiles(fullPath);
+    }
+    return entry.isFile() && entry.name.endsWith(".json") ? [fullPath] : [];
+  });
+};
+
+const walkJsonValues = (value, visit, pointer = "$") => {
+  visit(value, pointer);
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) => walkJsonValues(entry, visit, `${pointer}[${index}]`));
+    return;
+  }
+  if (value && typeof value === "object") {
+    Object.entries(value).forEach(([key, entry]) => walkJsonValues(entry, visit, `${pointer}.${key}`));
+  }
+};
+
 test("Connect AI reception has one reachable greeting and no outer service prompt loop", () => {
   const aiReceptionFlow = JSON.parse(
     readFileSync(path.join(connectRoot, "ai-reception.json"), "utf8")
@@ -746,27 +768,25 @@ test("Connect AI reception has one reachable greeting and no outer service promp
   const finalRecovery = actionsById.get("41e3f239-5b57-4363-92fc-9d594579fa98");
   assert.equal(primary.Parameters.Text, CANONICAL_SERVICE_PROMPT);
   assert.doesNotMatch(primary.Parameters.Text, /press 1 for Pedicure/i);
-  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:allow-interrupt:*:*"], "true");
+  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:allow-interrupt:*:*"], undefined);
+  assert.equal(
+    primary.Parameters.LexSessionAttributes["x-amz-lex:allow-interrupt:BookAppointmentIntent:serviceName"],
+    "false"
+  );
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:start-timeout-ms:*:*"], "9000");
-  assert.ok(
-    Number(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:*:*"]) >= 4200,
-    "global audio end timeout must preserve the prior slow-speech floor"
-  );
-  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:max-length-ms:*:*"], "20000");
-  assert.ok(
-    Number(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName"]) >= 3200,
-    "serviceName end timeout must not regress below the previous safe value"
-  );
-  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedDate"], "2200");
-  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedTime"], "2200");
-  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference"], "2600");
-  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:customerName"], "2000");
-  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:bookingConfirmation"], "900");
+  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:*:*"], "1300");
+  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:max-length-ms:*:*"], "12000");
+  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName"], "1600");
+  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedDate"], "1300");
+  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedTime"], "1100");
+  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference"], "1400");
+  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:customerName"], "1200");
+  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:bookingConfirmation"], "700");
   assert.equal(primary.Parameters.LexSessionAttributes.lastAskedSlot, "serviceName");
   assert.equal(primary.Parameters.LexSessionAttributes.initialVoiceBookingContext, "true");
-  assert.equal(primary.Parameters.LexSessionAttributes.audioTimeoutProfile, "p0_slow_speech_recovery_initial_v1");
+  assert.equal(primary.Parameters.LexSessionAttributes.audioTimeoutProfile, "p0_balanced_endpointing_initial_v1");
   assert.equal(primary.Parameters.LexSessionAttributes.connectRecoveryStage, "initial");
-  assert.equal(primary.Parameters.LexSessionAttributes.connectFlowSourceVersion, "2026-07-17-p0-voice-regression-fix");
+  assert.equal(primary.Parameters.LexSessionAttributes.connectFlowSourceVersion, "2026-07-18-p0-definitive-voice-fix");
   assert.equal(recovery.Parameters.Text, "$.Lex.SessionAttributes.connectContinuationPrompt");
   assert.equal(recovery.Transitions.NextAction, "check-transfer-to-queue");
   assert.equal(recovery.Parameters.LexSessionAttributes.connectRecoveryStage, "$.Attributes.connectRecoveryStage");
@@ -1036,6 +1056,11 @@ test("Connect source contract documents required production env keys without loc
   assert.match(dotenvExample, /^AMAZON_CONNECT_PHONE_NUMBER=$/m);
   assert.match(dotenvExample, /^AMAZON_CONNECT_PHONE_NUMBER_ID=$/m);
   assert.match(dotenvExample, /^AMAZON_CONNECT_CONTACT_FLOW_ID_AI_RECEPTION=$/m);
+  assert.doesNotMatch(dotenvExample, /change-this/i);
+  assert.match(dotenvExample, /^JWT_SECRET=$/m);
+  assert.match(dotenvExample, /^REFRESH_TOKEN_SECRET=$/m);
+  assert.match(dotenvExample, /^DATABASE_PASSWORD=$/m);
+  assert.match(dotenvExample, /^DATABASE_URL=$/m);
 });
 
 test("booking prompts are speech-first and service menu is not the greeting", () => {
@@ -1072,41 +1097,87 @@ test("booking prompts are speech-first and service menu is not the greeting", ()
   assert.doesNotMatch(FIRST_SERVICE_RETRY_PROMPT, /press 1 for Pedicure/i);
 });
 
-test("Lex booking slot prompt attempts allow interrupt and use phone-friendly audio windows", () => {
+test("Lex booking slot prompt attempts disable barge-in and use Connect-safe audio windows", () => {
   const slotRoot = path.join(
     repoRoot,
     "infra/aws/lex/FastAIBookingBot-v10/BotLocales/en_US/Intents/BookAppointmentIntent/Slots"
   );
-  const slowSpeechServiceEndTimeoutMinMs = 3200;
   const expected = {
-    serviceName: { startMin: 8000, endMin: slowSpeechServiceEndTimeoutMinMs, endMax: 4200, maxMin: 20000 },
-    requestedDate: { startMin: 8000, endMin: 2100, endMax: 2300, maxMin: 20000 },
-    requestedTime: { startMin: 8000, endMin: 2100, endMax: 2300, maxMin: 20000 },
-    staffPreference: { startMin: 8000, endMin: 2500, endMax: 2700, maxMin: 20000 },
-    customerName: { startMin: 8000, endMin: 1900, endMax: 2100, maxMin: 20000 },
-    customerPhone: { startMin: 8000, endMin: 1900, endMax: 2100, maxMin: 20000 }
+    serviceName: { startMin: 8000, endMin: 1500, endMax: 1700, max: 12000 },
+    requestedDate: { startMin: 8000, endMin: 1200, endMax: 1400, max: 12000 },
+    requestedTime: { startMin: 8000, endMin: 1000, endMax: 1200, max: 12000 },
+    staffPreference: { startMin: 8000, endMin: 1300, endMax: 1500, max: 12000 },
+    customerName: { startMin: 8000, endMin: 1100, endMax: 1300, max: 12000 },
+    customerPhone: { startMin: 8000, endMin: 1100, endMax: 1300, max: 12000 },
+    bookingConfirmation: { startMin: 6000, endMin: 600, endMax: 800, max: 12000 }
   };
 
   for (const [slotName, range] of Object.entries(expected)) {
     const slot = JSON.parse(readFileSync(path.join(slotRoot, slotName, "Slot.json"), "utf8"));
     const prompt = slot.valueElicitationSetting.promptSpecification;
-    assert.equal(prompt.allowInterrupt, true, `${slotName} prompt allowInterrupt`);
+    assert.equal(prompt.allowInterrupt, false, `${slotName} prompt allowInterrupt`);
     for (const [attemptName, attempt] of Object.entries(prompt.promptAttemptsSpecification)) {
       const audio = attempt.audioAndDTMFInputSpecification.audioSpecification;
-      assert.equal(attempt.allowInterrupt, true, `${slotName}.${attemptName} allowInterrupt`);
+      assert.equal(attempt.allowInterrupt, false, `${slotName}.${attemptName} allowInterrupt`);
       assert.ok(
         attempt.audioAndDTMFInputSpecification.startTimeoutMs >= range.startMin,
         `${slotName}.${attemptName} start timeout`
       );
       assert.ok(
         audio.endTimeoutMs >= range.endMin && audio.endTimeoutMs <= range.endMax,
-        `${slotName}.${attemptName} end timeout preserves measured slow-speech floor`
+        `${slotName}.${attemptName} end timeout uses balanced endpointing`
       );
-      assert.ok(audio.maxLengthMs >= range.maxMin, `${slotName}.${attemptName} max length`);
+      assert.equal(audio.maxLengthMs, range.max, `${slotName}.${attemptName} max length`);
     }
     const failureAction = slot.valueElicitationSetting.slotCaptureSetting?.failureNextStep?.dialogAction?.type;
     assert.notEqual(failureAction, "StartIntent", `${slotName} must not jump to FallbackIntent on slot failure`);
   }
+});
+
+test("phone voice source contract rejects Connect-unsafe speech settings", () => {
+  const failures = [];
+  const connectFiles = listJsonFiles(connectRoot);
+  const lexFiles = lexRoots.flatMap(({ root }) => listJsonFiles(root));
+
+  for (const file of [...connectFiles, ...lexFiles]) {
+    const json = JSON.parse(readFileSync(file, "utf8"));
+    const relativeFile = path.relative(repoRoot, file);
+    walkJsonValues(json, (value, pointer) => {
+      if (!value || typeof value !== "object" || Array.isArray(value)) {
+        return;
+      }
+      for (const [key, entry] of Object.entries(value)) {
+        if (key.includes("x-amz-lex:audio:max-length-ms") || key === "maxLengthMs") {
+          const maxLengthMs = Number(entry);
+          if (!Number.isFinite(maxLengthMs) || maxLengthMs > 15000) {
+            failures.push(`${relativeFile}${pointer}.${key}=${entry}`);
+          }
+        }
+        if (key === "x-amz-lex:allow-interrupt:*:*" && String(entry).toLowerCase() === "true") {
+          failures.push(`${relativeFile}${pointer}.${key}=true`);
+        }
+      }
+    });
+  }
+  assert.deepEqual(failures, []);
+
+  const aiReceptionFlow = JSON.parse(readFileSync(path.join(connectRoot, "ai-reception.json"), "utf8"));
+  for (const action of aiReceptionFlow.Actions.filter((item) => item.Type === "ConnectParticipantWithLexBot")) {
+    const aliasArn = action.Parameters?.LexV2Bot?.AliasArn;
+    assert.equal(typeof aliasArn, "string", `${action.Identifier} must use an explicit Lex alias ARN`);
+    assert.doesNotMatch(aliasArn, /(?:^|[:/])DRAFT(?:$|[:/])/i, `${action.Identifier} must not use Draft`);
+  }
+
+  const locale = JSON.parse(
+    readFileSync(path.join(repoRoot, "infra/aws/lex/FastAIBookingBot-v10/BotLocales/en_US/BotLocale.json"), "utf8")
+  );
+  assert.equal(locale.speechDetectionSensitivity, "Default");
+  assert.ok(locale.unifiedSpeechSettings, "v10 locale speech model settings must be explicit");
+  assert.match(
+    readFileSync(apiAiServicePath, "utf8"),
+    /confidence:\s*Number\.isFinite\(speechConfidence\)\s*\?\s*speechConfidence\s*:\s*null/,
+    "Amazon Connect speech confidence must not be fabricated"
+  );
 });
 
 test("DialogCodeHook with service and time prompts staff next", async () => {
@@ -2057,6 +2128,93 @@ test("DialogCodeHook staff-turn stopped-at-five does not overwrite trusted 3 PM"
   assert.equal(attrs.staffPreference, undefined);
   assert.notEqual(response.sessionState.intent.slots.requestedTime?.value?.interpretedValue, "5 PM");
   assert.match(response.messages[0].content, /I still have Full Set today at 3 PM\. Did you mean first available\?/i);
+});
+
+test("DialogCodeHook observed full set day transcript asks combined frame repair confirmation", async () => {
+  const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
+  installFetchMock(() => {
+    throw new Error("fetch should not be called before combined frame repair confirmation");
+  });
+
+  const phrase = "full set day at three p m the end is high";
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: phrase,
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: "connect-observed-frame-repair",
+          customerName: "Kiet Nguyen",
+          customerPhone: "+17325956266"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          name: "BookAppointmentIntent",
+          state: "InProgress",
+          confirmationState: "None",
+          slots: {
+            serviceName: slot("Full Set"),
+            requestedTime: slot("3 PM")
+          }
+        }
+      }
+    })
+  );
+
+  const attrs = response.sessionState.sessionAttributes;
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "bookingConfirmation");
+  assert.equal(attrs.serviceName, "Full Set");
+  assert.equal(attrs.requestedDate, undefined);
+  assert.equal(attrs.staffPreference, undefined);
+  assert.equal(attrs.awaitingBookingFrameRepairConfirmation, "true");
+  assert.equal(attrs.proposedRequestedDate, usEasternDate(0));
+  assert.equal(attrs.proposedStaffPreference, "Any staff");
+  assert.match(
+    response.messages[0].content,
+    /I heard Full Set today at 3 PM with the first available staff\. Is that right\?/i
+  );
+});
+
+test("DialogCodeHook the end is high alone does not map to first available", async () => {
+  const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
+  installFetchMock(() => {
+    throw new Error("fetch should not be called for isolated first-available noise");
+  });
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "the end is high",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: "connect-end-high-negative",
+          customerName: "Kiet Nguyen",
+          customerPhone: "+17325956266"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          name: "BookAppointmentIntent",
+          state: "InProgress",
+          confirmationState: "None",
+          slots: {}
+        }
+      }
+    })
+  );
+
+  const attrs = response.sessionState.sessionAttributes;
+  assert.equal(attrs.proposedStaffPreference, undefined);
+  assert.equal(attrs.awaitingBookingFrameRepairConfirmation, undefined);
+  assert.notEqual(attrs.staffPreference, "Any staff");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName");
 });
 
 test("DialogCodeHook uses N-best first-available staff alternative as a proposal only", async () => {
@@ -5096,6 +5254,62 @@ test("DialogCodeHook active service DTMF menu routes 4 to Full Set", async () =>
   assert.equal(response.sessionState.sessionAttributes.confirmedServiceName, "Full Set");
   assert.equal(response.sessionState.sessionAttributes.requestedTime, undefined);
   assert.notEqual(response.sessionState.dialogAction.slotToElicit, "serviceName");
+});
+
+test("DialogCodeHook dropped initial Full Set turn makes conflicting service DTMF 5 a proposal", async () => {
+  const handler = await loadHandler();
+  globalThis.fetch = async () => {
+    throw new Error("fetch should not be called before conflicting service DTMF confirmation");
+  };
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputMode: "DTMF",
+      inputTranscript: "5",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: "3988268e-c6c3-4fdc-a273-d460b157fa7d",
+          customerName: "Kiet Nguyen",
+          customerPhone: "+17325956266",
+          initialBookingUtterance: "Full Set",
+          requestedDate: usEasternDate(1),
+          requestedTime: "3 PM",
+          staffPreference: "Any staff",
+          lastAskedSlot: "serviceName",
+          activeDtmfMenu: "service",
+          activeDtmfOptionsJson: JSON.stringify({
+            "1": "Pedicure",
+            "2": "Manicure",
+            "3": "Gel Manicure",
+            "4": "Full Set",
+            "5": "Dip Powder",
+            "0": "__operator__"
+          })
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          name: "BookAppointmentIntent",
+          state: "InProgress",
+          confirmationState: "None",
+          slots: {}
+        }
+      }
+    })
+  );
+
+  const attrs = response.sessionState.sessionAttributes;
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName");
+  assert.equal(attrs.serviceName, undefined);
+  assert.equal(attrs.confirmedServiceName, undefined);
+  assert.equal(attrs.proposedServiceName, "Dip Powder");
+  assert.equal(attrs.awaitingServiceConfirmation, "true");
+  assert.equal(attrs.serviceDtmfConflictWithInitialUtterance, "Full Set");
+  assert.match(response.messages[0].content, /I heard Dip Powder from the keypad\. Is Dip Powder the service you want\?/i);
 });
 
 test("DialogCodeHook phone set alone does not resolve to Full Set", async () => {

@@ -34,7 +34,7 @@
         }
       ],
       "maxRetries": 2,
-      "allowInterrupt": true,
+      "allowInterrupt": false,
       "messageSelectionStrategy": "Random",
       "promptAttemptsSpecification": {
         "Initial": {
@@ -48,8 +48,8 @@
           "audioAndDTMFInputSpecification": {
             "startTimeoutMs": 6000,
             "audioSpecification": {
-              "endTimeoutMs": 900,
-              "maxLengthMs": 15000
+              "endTimeoutMs": 700,
+              "maxLengthMs": 12000
             },
             "dtmfSpecification": {
               "maxLength": 1,
@@ -58,7 +58,7 @@
               "endCharacter": "#"
             }
           },
-          "allowInterrupt": true
+          "allowInterrupt": false
         },
         "Retry1": {
           "textInputSpecification": {
@@ -71,8 +71,8 @@
           "audioAndDTMFInputSpecification": {
             "startTimeoutMs": 6000,
             "audioSpecification": {
-              "endTimeoutMs": 900,
-              "maxLengthMs": 15000
+              "endTimeoutMs": 700,
+              "maxLengthMs": 12000
             },
             "dtmfSpecification": {
               "maxLength": 1,
@@ -81,7 +81,7 @@
               "endCharacter": "#"
             }
           },
-          "allowInterrupt": true
+          "allowInterrupt": false
         },
         "Retry2": {
           "textInputSpecification": {
@@ -94,8 +94,8 @@
           "audioAndDTMFInputSpecification": {
             "startTimeoutMs": 6000,
             "audioSpecification": {
-              "endTimeoutMs": 900,
-              "maxLengthMs": 15000
+              "endTimeoutMs": 700,
+              "maxLengthMs": 12000
             },
             "dtmfSpecification": {
               "maxLength": 1,
@@ -104,7 +104,7 @@
               "endCharacter": "#"
             }
           },
-          "allowInterrupt": true
+          "allowInterrupt": false
         }
       }
     },
