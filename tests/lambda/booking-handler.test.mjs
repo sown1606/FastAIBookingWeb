@@ -6430,11 +6430,16 @@ test("DialogCodeHook customer names colliding with staff names remain customerNa
       })
     );
 
-    assert.equal(response.sessionState.dialogAction.type, "Delegate");
+    assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
+    assert.equal(response.sessionState.dialogAction.slotToElicit, "bookingConfirmation");
+    assert.equal(response.messages[0].contentType, "PlainText");
+    assert.match(response.messages[0].content, new RegExp(`${name}, just to confirm: Full Set tomorrow at 3 PM with Trang\\. Is that correct\\?`, "i"));
     assert.equal(response.sessionState.sessionAttributes.customerName, name);
     assert.equal(response.sessionState.intent.slots.customerName.value.interpretedValue, name);
     assert.equal(response.sessionState.sessionAttributes.staffPreference, "Trang");
     assert.equal(response.sessionState.intent.slots.staffPreference.value.interpretedValue, "Trang");
+    assert.equal(response.sessionState.sessionAttributes.awaitingFinalBookingConfirmation, "true");
+    assert.equal(response.sessionState.sessionAttributes.bookingConfirmationAsked, "true");
     assert.notEqual(response.sessionState.sessionAttributes.transferToQueue, "true");
     assert.notEqual(response.sessionState.sessionAttributes.forceHumanEscalation, "true");
   }

@@ -2515,9 +2515,7 @@ function analyzeLexTurnSanitization(event) {
   const recognizedService = currentTurnServiceMention(event);
   const serviceAliasCorrectionRaw = getScopedServiceAliasCorrectionRaw(event);
   const shouldStrictlyGroundSlots = Boolean(previous.lastAskedSlot);
-  const customerNameTurnOwnsTranscript =
-    previous.lastAskedSlot === "customerName" &&
-    !(dtmfRouting.accepted && dtmfRouting.route === "staff_menu");
+  const customerNameTurnOwnsTranscript = previous.lastAskedSlot === "customerName";
   const finalConfirmationOnlyPhrase =
     isFinalBookingConfirmationActive(event) && isFinalConfirmationOnlyPhrase(currentTurnTranscript);
   const currentTurnStaffMention = customerNameTurnOwnsTranscript || finalConfirmationOnlyPhrase
@@ -2617,7 +2615,13 @@ function analyzeLexTurnSanitization(event) {
     }
   }
 
-  if (scopedStaffDigit && scopedStaffDigit !== "0" && dtmfRouting.accepted && dtmfRouting.route === "staff_menu") {
+  if (
+    previous.lastAskedSlot !== "customerName" &&
+    scopedStaffDigit &&
+    scopedStaffDigit !== "0" &&
+    dtmfRouting.accepted &&
+    dtmfRouting.route === "staff_menu"
+  ) {
     const { name: staffSlotName } = getSlotObject(slots, slotNames.staffPreference);
     sanitizedSlots[staffSlotName || "staffPreference"] = buildLexSlot(dtmfRouting.selection);
     replacementInputTranscript = dtmfRouting.selection;
@@ -5121,9 +5125,8 @@ function buildKnownBookingSessionAttributes(event) {
     getKnownField(event, "staffPreference"),
     previous
   );
-  const customerNameTurnOwnsTranscript =
-    previous.lastAskedSlot === "customerName" &&
-    !(staffDtmfSelection && !staffDtmfSelection.invalid);
+  const customerNameTurnOwnsTranscript = previous.lastAskedSlot === "customerName";
+  const effectiveStaffDtmfSelection = previous.lastAskedSlot === "customerName" ? "" : staffDtmfSelection;
   const currentTurnStaffMention = customerNameTurnOwnsTranscript
     ? ""
     : extractStaffFromTranscript(event.inputTranscript, previous);
@@ -5205,18 +5208,18 @@ function buildKnownBookingSessionAttributes(event) {
     requestedDate: finalDate,
     requestedTime: finalTime,
     staffPreference:
-      (staffDtmfSelection && !staffDtmfSelection.invalid ? staffDtmfSelection.staffName : "") ||
+      (effectiveStaffDtmfSelection && !effectiveStaffDtmfSelection.invalid ? effectiveStaffDtmfSelection.staffName : "") ||
       currentTurnStaffMention ||
       cleanPreviousStaffPreference ||
       knownStaffPreference ||
       historicalStaffMention,
     staffId:
-      (staffDtmfSelection && !staffDtmfSelection.invalid ? staffDtmfSelection.staffId : "") ||
+      (effectiveStaffDtmfSelection && !effectiveStaffDtmfSelection.invalid ? effectiveStaffDtmfSelection.staffId : "") ||
       (!currentTurnStaffMention && cleanPreviousStaffPreference
         ? previous.staffId || previous.selectedStaffId
         : ""),
     selectedStaffId:
-      (staffDtmfSelection && !staffDtmfSelection.invalid ? staffDtmfSelection.staffId : "") ||
+      (effectiveStaffDtmfSelection && !effectiveStaffDtmfSelection.invalid ? effectiveStaffDtmfSelection.staffId : "") ||
       (!currentTurnStaffMention && cleanPreviousStaffPreference
         ? previous.selectedStaffId || previous.staffId
         : ""),
@@ -5227,11 +5230,11 @@ function buildKnownBookingSessionAttributes(event) {
       knownService ||
       historicalRecoveredService,
     confirmedStaffName:
-      (staffDtmfSelection && !staffDtmfSelection.invalid ? staffDtmfSelection.staffName : "") ||
+      (effectiveStaffDtmfSelection && !effectiveStaffDtmfSelection.invalid ? effectiveStaffDtmfSelection.staffName : "") ||
       currentTurnStaffMention ||
       previous.confirmedStaffName,
     confirmedStaffId:
-      (staffDtmfSelection && !staffDtmfSelection.invalid ? staffDtmfSelection.staffId : "") ||
+      (effectiveStaffDtmfSelection && !effectiveStaffDtmfSelection.invalid ? effectiveStaffDtmfSelection.staffId : "") ||
       (!currentTurnStaffMention && cleanPreviousStaffPreference ? previous.confirmedStaffId : ""),
     initialBookingUtterance: initial,
     serviceAliasCorrectionRaw,
@@ -5251,9 +5254,9 @@ function buildKnownBookingSessionAttributes(event) {
     delete merged.requestedDate;
   }
   if (
-    staffDtmfSelection &&
-    !staffDtmfSelection.invalid &&
-    normalizeForMatch(staffDtmfSelection.staffName) === "any staff"
+    effectiveStaffDtmfSelection &&
+    !effectiveStaffDtmfSelection.invalid &&
+    normalizeForMatch(effectiveStaffDtmfSelection.staffName) === "any staff"
   ) {
     delete merged.staffId;
     delete merged.selectedStaffId;
@@ -5453,6 +5456,32 @@ function shouldDelegateCompletedCustomerNameDialogTurn(event) {
       known.requestedTime &&
       known.staffPreference &&
       !getBookingSlotToElicit(event)
+  );
+}
+
+function buildCompletedCustomerNameConfirmationResponse(event) {
+  const known = buildKnownBookingSessionAttributes(event);
+  const knownEvent = withSessionAttributes(event, known);
+  const summary = buildKnownBookingPromptSummary(knownEvent, { forPhrase: false });
+  const prefix = known.customerName ? `${known.customerName}, just to confirm: ` : "Just to confirm: ";
+  return buildLexResponse(
+    knownEvent,
+    summary ? `${prefix}${summary}. Is that correct?` : "Just to confirm, is that correct?",
+    "InProgress",
+    {
+      awaitingFinalBookingConfirmation: "true",
+      bookingConfirmationAsked: "true",
+      lastAskedSlot: "bookingConfirmation",
+      forceHumanEscalation: "false",
+      transferToQueue: "false"
+    },
+    {
+      dialogAction: {
+        type: "ElicitSlot",
+        slotToElicit: "bookingConfirmation"
+      },
+      messageContentType: "PlainText"
+    }
   );
 }
 
@@ -9257,7 +9286,7 @@ async function handleLexEvent(event, analysis = {}) {
 	        intentName === "BookAppointmentIntent" &&
 	        shouldDelegateCompletedCustomerNameDialogTurn(event)
 	      ) {
-	        return buildDelegateResponse(event);
+	        return buildCompletedCustomerNameConfirmationResponse(event);
 	      }
 	    }
 
