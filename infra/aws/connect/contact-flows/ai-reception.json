@@ -328,7 +328,7 @@
           "speechModelPreference": "standard_default",
           "audioTimeoutProfile": "p0_balanced_endpointing_initial_v1",
           "connectRecoveryStage": "initial",
-          "connectFlowSourceVersion": "2026-07-18-p0-pstn-production",
+          "connectFlowSourceVersion": "2026-07-20-voice-never-silent-clarification-hotfix",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedDate": "1300",
           "x-amz-lex:allow-interrupt:BookAppointmentIntent:serviceName": "false",
           "x-amz-lex:allow-interrupt:BookAppointmentIntent:requestedDate": "false",
@@ -480,7 +480,7 @@
           "outerRecoveryAttempt": "true",
           "connectRecoveryStage": "$.Attributes.connectRecoveryStage",
           "connectErrorCode": "$.Attributes.connectErrorCode",
-          "connectFlowSourceVersion": "2026-07-18-p0-pstn-production",
+          "connectFlowSourceVersion": "2026-07-20-voice-never-silent-clarification-hotfix",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedDate": "1300",
           "x-amz-lex:allow-interrupt:BookAppointmentIntent:serviceName": "false",
           "x-amz-lex:allow-interrupt:BookAppointmentIntent:requestedDate": "false",
@@ -630,7 +630,7 @@
           "outerRecoveryAttempt": "final",
           "connectRecoveryStage": "final_dtmf_opportunity",
           "connectErrorCode": "$.Attributes.connectErrorCode",
-          "connectFlowSourceVersion": "2026-07-18-p0-pstn-production",
+          "connectFlowSourceVersion": "2026-07-20-voice-never-silent-clarification-hotfix",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedDate": "1300",
           "x-amz-lex:allow-interrupt:BookAppointmentIntent:serviceName": "false",
           "x-amz-lex:allow-interrupt:BookAppointmentIntent:requestedDate": "false",
@@ -740,7 +740,7 @@
           "initialContactId": "$.InitialContactId",
           "connectRecoveryStage": "initial",
           "connectLastErrorBranch": "none",
-          "connectFlowSourceVersion": "2026-07-18-p0-pstn-production"
+          "connectFlowSourceVersion": "2026-07-20-voice-never-silent-clarification-hotfix"
         },
         "TargetContact": "Current"
       },
@@ -903,7 +903,7 @@
           "connectRecoveryStage": "initial_lex_error",
           "connectLastErrorBranch": "$.ErrorCode",
           "connectErrorCode": "$.ErrorCode",
-          "connectFlowSourceVersion": "2026-07-18-p0-pstn-production",
+          "connectFlowSourceVersion": "2026-07-20-voice-never-silent-clarification-hotfix",
           "conversationComplete": "false"
         },
         "TargetContact": "Current"
@@ -943,7 +943,7 @@
           "connectRecoveryStage": "retry_lex_error",
           "connectLastErrorBranch": "$.ErrorCode",
           "connectErrorCode": "$.ErrorCode",
-          "connectFlowSourceVersion": "2026-07-18-p0-pstn-production",
+          "connectFlowSourceVersion": "2026-07-20-voice-never-silent-clarification-hotfix",
           "conversationComplete": "false"
         },
         "TargetContact": "Current"
@@ -1088,7 +1088,7 @@
           "outerRecoveryAttempt": "true",
           "connectRecoveryStage": "$.Attributes.connectRecoveryStage",
           "connectErrorCode": "$.Attributes.connectErrorCode",
-          "connectFlowSourceVersion": "2026-07-18-p0-pstn-production",
+          "connectFlowSourceVersion": "2026-07-20-voice-never-silent-clarification-hotfix",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedDate": "1300",
           "x-amz-lex:allow-interrupt:BookAppointmentIntent:serviceName": "false",
           "x-amz-lex:allow-interrupt:BookAppointmentIntent:requestedDate": "false",
@@ -1097,7 +1097,7 @@
           "x-amz-lex:allow-interrupt:BookAppointmentIntent:customerName": "false",
           "x-amz-lex:allow-interrupt:BookAppointmentIntent:bookingConfirmation": "false"
         },
-        "Text": "Please continue with the appointment detail."
+        "Text": "Sorry, I didn't catch that. Could you say it again?"
       },
       "Transitions": {
         "NextAction": "check-transfer-to-queue",

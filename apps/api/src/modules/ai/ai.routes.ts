@@ -17,11 +17,12 @@ import {
   suggestSlotsRequestSchema
 } from "./ai.schemas";
 import {
-	  bookingFromText,
-	  bookingFromTranscript,
-	  createAmazonConnectAIAppointment,
-	  createAmazonConnectAIRecoverableFailure,
-	  exportAIInteractions,
+  bookingFromText,
+  bookingFromTranscript,
+  createAmazonConnectAIAppointment,
+  createAmazonConnectAIRecoverableFailure,
+  exportAIInteractions,
+  getAmazonConnectReleaseEvidenceForInternal,
   getAIInteractionById,
   listAIInteractions,
   parseBookingText,
@@ -93,6 +94,16 @@ const operatorQueueOutcomeSchema = z.object({
     "QUEUE_AT_CAPACITY",
     "CONNECT_FLOW_ERROR"
   ])
+});
+
+const internalReleaseEvidenceParamsSchema = z.object({
+  contactId: z.string().trim().min(1).max(160)
+});
+
+const getApiReleaseIdentity = () => ({
+  VOICE_API_RELEASE_ID: env.FASTAIBOOKING_API_RELEASE_ID ?? "",
+  VOICE_API_SOURCE_SHA256: env.FASTAIBOOKING_API_SOURCE_SHA256 ?? "",
+  VOICE_API_VARIANT: env.FASTAIBOOKING_API_VARIANT ?? ""
 });
 
 const extractInternalToken = (authorizationHeader?: string, internalHeader?: string | string[]) => {
@@ -377,10 +388,11 @@ aiInternalRouter.post(
 	            callSessionId: recoveryResult.callSession?.id ?? null,
 		            transcriptId: null,
 		            aiInteractionId: recoveryResult.aiInteraction?.id ?? null,
-		            escalationId: null,
+	            escalationId: null,
 	            missingFields: recoveryResult.missingFields,
 	            alternatives: recoveryResult.alternatives,
-	            salonResolutionSource: recoveryResult.salonResolutionSource
+	            salonResolutionSource: recoveryResult.salonResolutionSource,
+	            apiRelease: getApiReleaseIdentity()
 	          }
 	        });
 	      } catch (recoveryError) {
@@ -408,7 +420,11 @@ aiInternalRouter.post(
 	      );
 	      return sendSuccess(res, {
 	        statusCode: 200,
-	        ...safeRecoverableResponse(reason, payloadWithTiming)
+	        ...safeRecoverableResponse(reason, payloadWithTiming),
+	        data: {
+	          ...safeRecoverableResponse(reason, payloadWithTiming).data,
+	          apiRelease: getApiReleaseIdentity()
+	        }
 	      });
 	    }
     logWaitCoverage({
@@ -429,7 +445,24 @@ aiInternalRouter.post(
         escalationId: result.escalation?.id ?? null,
         missingFields: result.missingFields,
         alternatives: result.alternatives,
-        salonResolutionSource: result.salonResolutionSource
+        salonResolutionSource: result.salonResolutionSource,
+        apiRelease: getApiReleaseIdentity()
+      }
+    });
+  })
+);
+
+aiInternalRouter.get(
+  "/release-evidence/:contactId",
+  requireInternalApiToken,
+  validate(internalReleaseEvidenceParamsSchema, "params"),
+  asyncHandler(async (req, res) => {
+    const { contactId } = req.params as z.infer<typeof internalReleaseEvidenceParamsSchema>;
+    const result = await getAmazonConnectReleaseEvidenceForInternal(contactId);
+    return sendSuccess(res, {
+      data: {
+        ...result,
+        apiRelease: getApiReleaseIdentity()
       }
     });
   })

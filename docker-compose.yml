@@ -20,6 +20,7 @@ services:
       - private
 
   api:
+    image: ${FASTAIBOOKING_API_IMAGE:-fastaibooking-api:production-local}
     build:
       context: .
       dockerfile: apps/api/Dockerfile
@@ -36,6 +37,75 @@ services:
       DATABASE_HOST: postgres
       DATABASE_URL: postgresql://${DATABASE_USER:-postgres}:${DATABASE_PASSWORD:-postgres}@postgres:5432/${DATABASE_NAME:-fastaibooking}
       FIREBASE_SERVICE_ACCOUNT_PATH: ${FIREBASE_SERVICE_ACCOUNT_PATH:-/run/secrets/firebase/fastaibooking-firebase-adminsdk.json}
+      FASTAIBOOKING_API_RELEASE_ID: ${FASTAIBOOKING_API_RELEASE_ID:-}
+      FASTAIBOOKING_API_SOURCE_SHA256: ${FASTAIBOOKING_API_SOURCE_SHA256:-}
+      FASTAIBOOKING_API_VARIANT: ${FASTAIBOOKING_API_VARIANT:-production}
+    volumes:
+      - ./secrets/firebase:/run/secrets/firebase:ro
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/health/liveness').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+    networks:
+      - private
+      - public
+
+  api-voice-canary:
+    image: ${FASTAIBOOKING_API_CANARY_IMAGE:-fastaibooking-api:canary-unset}
+    container_name: fastaibooking-api-voice-canary
+    profiles:
+      - voice-canary
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 3000
+      DATABASE_HOST: postgres
+      DATABASE_URL: postgresql://${DATABASE_USER:-postgres}:${DATABASE_PASSWORD:-postgres}@postgres:5432/${DATABASE_NAME:-fastaibooking}
+      FIREBASE_SERVICE_ACCOUNT_PATH: ${FIREBASE_SERVICE_ACCOUNT_PATH:-/run/secrets/firebase/fastaibooking-firebase-adminsdk.json}
+      FASTAIBOOKING_API_RELEASE_ID: ${FASTAIBOOKING_API_RELEASE_ID:-}
+      FASTAIBOOKING_API_SOURCE_SHA256: ${FASTAIBOOKING_API_SOURCE_SHA256:-}
+      FASTAIBOOKING_API_VARIANT: canary
+    volumes:
+      - ./secrets/firebase:/run/secrets/firebase:ro
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/health/liveness').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+    networks:
+      - private
+      - public
+
+  api-production-next:
+    image: ${FASTAIBOOKING_API_PRODUCTION_NEXT_IMAGE:-fastaibooking-api:production-next-unset}
+    container_name: fastaibooking-api-production-next
+    profiles:
+      - voice-production
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 3000
+      DATABASE_HOST: postgres
+      DATABASE_URL: postgresql://${DATABASE_USER:-postgres}:${DATABASE_PASSWORD:-postgres}@postgres:5432/${DATABASE_NAME:-fastaibooking}
+      FIREBASE_SERVICE_ACCOUNT_PATH: ${FIREBASE_SERVICE_ACCOUNT_PATH:-/run/secrets/firebase/fastaibooking-firebase-adminsdk.json}
+      FASTAIBOOKING_API_RELEASE_ID: ${FASTAIBOOKING_API_RELEASE_ID:-}
+      FASTAIBOOKING_API_SOURCE_SHA256: ${FASTAIBOOKING_API_SOURCE_SHA256:-}
+      FASTAIBOOKING_API_VARIANT: production
     volumes:
       - ./secrets/firebase:/run/secrets/firebase:ro
     expose:

@@ -35,12 +35,20 @@ const getPushNotificationHealth = () => ({
   missing: env.integrationStatuses.pushNotifications.missing
 });
 
+const getReleaseIdentity = () => ({
+  releaseId: env.FASTAIBOOKING_API_RELEASE_ID ?? "",
+  sourceSha256: env.FASTAIBOOKING_API_SOURCE_SHA256 ?? "",
+  variant: env.FASTAIBOOKING_API_VARIANT ?? "",
+  nodeEnv: env.NODE_ENV
+});
+
 healthRouter.get(
   "/",
   asyncHandler(async (_req, res) => {
     return sendSuccess(res, {
       data: {
         status: "ok",
+        release: getReleaseIdentity(),
         timestamp: new Date().toISOString()
       }
     });
@@ -53,6 +61,7 @@ healthRouter.get(
     return sendSuccess(res, {
       data: {
         status: "ok",
+        release: getReleaseIdentity(),
         timestamp: new Date().toISOString()
       }
     });
@@ -72,6 +81,7 @@ healthRouter.get(
           amazonConnect,
           pushNotifications
         },
+        release: getReleaseIdentity(),
         timestamp: new Date().toISOString()
       }
     });
@@ -91,6 +101,21 @@ healthRouter.get(
           amazonConnect,
           pushNotifications
         },
+        release: getReleaseIdentity(),
+        timestamp: new Date().toISOString()
+      }
+    });
+  })
+);
+
+healthRouter.get(
+  "/release",
+  asyncHandler(async (_req, res) => {
+    await prisma.$queryRaw`SELECT 1`;
+    return sendSuccess(res, {
+      data: {
+        status: "ok",
+        release: getReleaseIdentity(),
         timestamp: new Date().toISOString()
       }
     });

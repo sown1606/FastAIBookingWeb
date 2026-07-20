@@ -6,7 +6,7 @@
   "voiceSettings": null,
   "nluConfidenceThreshold": 0.4,
   "speechRecognitionSettings": {
-    "speechModelPreference": "Standard"
+    "speechModelPreference": "Neural"
   },
   "speechDetectionSensitivity": "Default"
 }

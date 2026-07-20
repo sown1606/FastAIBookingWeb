@@ -5,6 +5,11 @@ node_modules
 .env.*
 !.env.example
 apps/api/dist
+diagnostics
+logs
+secrets
+*.pem
+*.zip
 *.log
 README.md
 fastAibooking.pem

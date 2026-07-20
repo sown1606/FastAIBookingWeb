@@ -34,8 +34,12 @@ const originalInternalToken = env.FASTAIBOOKING_API_INTERNAL_TOKEN;
 const originalPreviousInternalToken = env.FASTAIBOOKING_API_INTERNAL_TOKEN_PREVIOUS;
 const originalDefaultSalonId = env.DEFAULT_SALON_ID;
 const originalQueueId = env.AMAZON_CONNECT_QUEUE_ID_DEFAULT;
+const originalApiReleaseId = env.FASTAIBOOKING_API_RELEASE_ID;
+const originalApiSourceSha256 = env.FASTAIBOOKING_API_SOURCE_SHA256;
+const originalApiVariant = env.FASTAIBOOKING_API_VARIANT;
 const originalStaffedAgentsOverride = process.env.AMAZON_CONNECT_STAFFED_AGENTS_OVERRIDE;
 const originalAvailableAgentsOverride = process.env.AMAZON_CONNECT_AVAILABLE_AGENTS_OVERRIDE;
+const originalTestNowIso = process.env.FASTAIBOOKING_TEST_NOW_ISO;
 const frozenTestNow = DateTime.fromISO(
   process.env.FASTAIBOOKING_TEST_NOW_ISO ?? "2026-07-17T10:00:00-04:00",
   { setZone: true }
@@ -1020,6 +1024,23 @@ const bookingPayload = (overrides: Record<string, unknown> = {}) => ({
   ...overrides
 });
 
+const withFixedNow = async <T>(iso: string, run: () => Promise<T>): Promise<T> => {
+  const previousNowIso = process.env.FASTAIBOOKING_TEST_NOW_ISO;
+  const fixedNow = DateTime.fromISO(iso, { setZone: true });
+  process.env.FASTAIBOOKING_TEST_NOW_ISO = iso;
+  Settings.now = () => fixedNow.toMillis();
+  try {
+    return await run();
+  } finally {
+    if (previousNowIso === undefined) {
+      delete process.env.FASTAIBOOKING_TEST_NOW_ISO;
+    } else {
+      process.env.FASTAIBOOKING_TEST_NOW_ISO = previousNowIso;
+    }
+    Settings.now = () => frozenTestNow.toMillis();
+  }
+};
+
 const assertBookingConfirmationDialog = (
   dialogAction: { type?: string; slotToElicit?: string },
   message?: string
@@ -1150,6 +1171,9 @@ after(async () => {
   env.FASTAIBOOKING_API_INTERNAL_TOKEN_PREVIOUS = originalPreviousInternalToken;
   env.DEFAULT_SALON_ID = originalDefaultSalonId;
   env.AMAZON_CONNECT_QUEUE_ID_DEFAULT = originalQueueId;
+  env.FASTAIBOOKING_API_RELEASE_ID = originalApiReleaseId;
+  env.FASTAIBOOKING_API_SOURCE_SHA256 = originalApiSourceSha256;
+  env.FASTAIBOOKING_API_VARIANT = originalApiVariant;
   if (originalStaffedAgentsOverride === undefined) {
     delete process.env.AMAZON_CONNECT_STAFFED_AGENTS_OVERRIDE;
   } else {
@@ -1160,6 +1184,12 @@ after(async () => {
   } else {
     process.env.AMAZON_CONNECT_AVAILABLE_AGENTS_OVERRIDE = originalAvailableAgentsOverride;
   }
+  if (originalTestNowIso === undefined) {
+    delete process.env.FASTAIBOOKING_TEST_NOW_ISO;
+  } else {
+    process.env.FASTAIBOOKING_TEST_NOW_ISO = originalTestNowIso;
+  }
+  Settings.now = () => frozenTestNow.toMillis();
   for (const item of patches.reverse()) {
     item.target[item.key] = item.original;
   }
@@ -1228,6 +1258,36 @@ test("missing, invalid, and valid internal tokens are handled", async () => {
   assert.equal(result.response.status, 201);
   assert.equal(result.body.success, true);
   assert.equal(state.bookingAttempts.length, 1);
+});
+
+test("internal AI appointment response and persisted attempt include API release identity", async () => {
+  env.FASTAIBOOKING_API_INTERNAL_TOKEN = "unit-internal-token";
+  env.FASTAIBOOKING_API_RELEASE_ID = "voice-unit-api";
+  env.FASTAIBOOKING_API_SOURCE_SHA256 = "source-sha-unit";
+  env.FASTAIBOOKING_API_VARIANT = "canary";
+
+  const contactId = "connect-api-release-identity";
+  const result = await postInternalAppointment(
+    bookingPayload({
+      amazonConnectContactId: contactId,
+      attributes: {
+        AmazonConnectContactId: contactId,
+        VOICE_RELEASE_ID: "voice-unit",
+        VOICE_VARIANT: "canary",
+        VOICE_SOURCE_SHA256: "voice-source",
+        VOICE_LAMBDA_FUNCTION_VERSION: "7",
+        VOICE_LAMBDA_CODE_SHA256: "lambda-code"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.apiRelease.VOICE_API_RELEASE_ID, "voice-unit-api");
+  assert.equal(result.body.data.apiRelease.VOICE_API_SOURCE_SHA256, "source-sha-unit");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.VOICE_API_RELEASE_ID, "voice-unit-api");
+  const attempt = state.bookingAttempts.find((item) => item.callSessionId === result.body.data.callSessionId);
+  assert.equal((attempt?.normalizedRequest as any)?.releaseIdentity?.VOICE_API_RELEASE_ID, "voice-unit-api");
+  assert.equal((attempt?.normalizedRequest as any)?.releaseIdentity?.VOICE_LAMBDA_CODE_SHA256, "lambda-code");
 });
 
 test("temporary previous internal token is accepted only when configured", async () => {
@@ -1514,8 +1574,29 @@ test("known caller Full Set today at 3 PM with Amy confirms directly", async () 
 });
 
 test("known caller exact Full Set any-staff request selects first eligible staff", async () => {
-  for (const [index, phrase] of [
-    "Full Set today at 3 PM, any staff is fine."
+  const today = DateTime.now().setZone("America/New_York").toFormat("yyyy-MM-dd");
+  const tomorrow = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  for (const [index, { phrase, expectedDate }] of [
+    {
+      phrase: "Full set tomorrow at 3 PM with any staff",
+      expectedDate: tomorrow
+    },
+    {
+      phrase: "Fullset tomorrow 3 PM any staff",
+      expectedDate: tomorrow
+    },
+    {
+      phrase: "Book a nail full set tomorrow at three with first available",
+      expectedDate: tomorrow
+    },
+    {
+      phrase: "Full Set tomorrow at 3 PM, no preference",
+      expectedDate: tomorrow
+    },
+    {
+      phrase: "Full Set today at 3 PM, any staff is fine.",
+      expectedDate: today
+    }
   ].entries()) {
     resetMockState();
     state.customers.push({
@@ -1527,7 +1608,6 @@ test("known caller exact Full Set any-staff request selects first eligible staff
       createdAt: new Date("2026-01-10T00:00:00.000Z")
     } as any);
 
-    const today = DateTime.now().setZone("America/New_York").toFormat("yyyy-MM-dd");
     const result = await postInternalAppointment(
       bookingPayload({
         customerName: undefined,
@@ -1551,13 +1631,17 @@ test("known caller exact Full Set any-staff request selects first eligible staff
     assertBookingConfirmationDialog(result.body.data.lexResponse.dialogAction, phrase);
     const attrs = result.body.data.lexResponse.sessionAttributes;
     assert.equal(attrs.serviceName, "Full Set", phrase);
-    assert.equal(attrs.requestedDate, today, phrase);
+    assert.equal(attrs.requestedDate, expectedDate, phrase);
     assert.equal(attrs.requestedTime, "15:00", phrase);
     assert.equal(attrs.staffPreference, "Trang", phrase);
     assert.equal(attrs.staffId, ids.trang, phrase);
     assert.equal(attrs.customerName, "Lee", phrase);
     assert.match(result.body.data.lexResponse.message, /You said first available\. Trang is available/i, phrase);
-    assert.match(result.body.data.lexResponse.message, /Full Set today at 3 PM with Trang/i, phrase);
+    assert.match(
+      result.body.data.lexResponse.message,
+      new RegExp(`Full Set ${expectedDate === today ? "today" : "tomorrow"} at 3 PM with Trang`, "i"),
+      phrase
+    );
     assert.doesNotMatch(result.body.data.lexResponse.message, /Which staff|didn't find that technician/i, phrase);
     assert.equal(state.appointments.length, 0, phrase);
   }
@@ -1870,6 +1954,119 @@ test("live distorted Full Set transcripts do not silently commit service", async
   }
 });
 
+test("truncated set tails propose Full Set without committing service", async () => {
+  const monday = DateTime.now().setZone("America/New_York").plus({ days: 3 }).toFormat("yyyy-MM-dd");
+  for (const [phrase, seedAttributes, expected] of [
+    [
+      "set tomorrow",
+      {
+        requestedTime: "3 PM"
+      },
+      {
+        date: DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd"),
+        time: "3 PM"
+      }
+    ],
+    [
+      "set tomorrow two p m",
+      {},
+      {
+        date: DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd"),
+        time: "14:00"
+      }
+    ],
+    [
+      "i want a pool set on monday",
+      {},
+      {
+        date: monday,
+        time: undefined
+      }
+    ]
+  ] as const) {
+    resetMockState();
+    const result = await postInternalAppointment(
+      bookingPayload({
+        customerName: "Synthetic Caller",
+        customerPhone: "+15555550123",
+        serviceName: undefined,
+        requestedDate: undefined,
+        requestedTime: undefined,
+        staffPreference: undefined,
+        confirmationState: undefined,
+        amazonConnectContactId: `connect-api-truncated-full-set-${phrase.replace(/\W+/g, "-")}`,
+        currentTurnTranscript: phrase,
+        transcript: phrase,
+        attributes: {
+          currentTurnTranscript: phrase,
+          lastAskedSlot: "serviceName",
+          activeDtmfMenu: "service",
+          knownCallerAcknowledged: "true",
+          ...seedAttributes
+        }
+      })
+    );
+
+    const attrs = result.body.data.lexResponse.sessionAttributes;
+    assert.equal(result.response.status, 200, phrase);
+    assert.equal(result.body.data.outcome, "MISSING_INFO", phrase);
+    assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName", phrase);
+    assert.equal(attrs.serviceName, undefined, phrase);
+    assert.equal(attrs.proposedServiceName, "Full Set", phrase);
+    assert.equal(attrs.awaitingServiceConfirmation, "true", phrase);
+    assert.equal(attrs.requestedDate, expected.date, phrase);
+    assert.equal(attrs.requestedTime, expected.time, phrase);
+    assert.match(result.body.data.lexResponse.message, /Did you say Full Set/i, phrase);
+    const decisions = JSON.parse(attrs.voiceSlotDecisions);
+    const serviceDecision = decisions.find(
+      (decision: { slot?: string; action?: string }) =>
+        decision.slot === "serviceName" && decision.action === "propose"
+    );
+    assert.equal(serviceDecision?.canonicalValue, "Full Set", phrase);
+    assert.equal(state.appointments.length, 0, phrase);
+  }
+});
+
+test("unrelated truncated set phrases do not propose Full Set", async () => {
+  for (const phrase of [
+    "set the alarm tomorrow",
+    "reset tomorrow",
+    "sunset tomorrow",
+    "set up a meeting tomorrow"
+  ]) {
+    resetMockState();
+    const result = await postInternalAppointment(
+      bookingPayload({
+        customerName: "Synthetic Caller",
+        customerPhone: "+15555550123",
+        serviceName: undefined,
+        requestedDate: undefined,
+        requestedTime: undefined,
+        staffPreference: undefined,
+        confirmationState: undefined,
+        amazonConnectContactId: `connect-api-truncated-negative-${phrase.replace(/\W+/g, "-")}`,
+        currentTurnTranscript: phrase,
+        transcript: phrase,
+        attributes: {
+          currentTurnTranscript: phrase,
+          requestedTime: "3 PM",
+          lastAskedSlot: "serviceName",
+          activeDtmfMenu: "service",
+          knownCallerAcknowledged: "true"
+        }
+      })
+    );
+
+    const attrs = result.body.data.lexResponse.sessionAttributes;
+    assert.equal(result.response.status, 200, phrase);
+    assert.equal(result.body.data.outcome, "MISSING_INFO", phrase);
+    assert.equal(attrs.serviceName, undefined, phrase);
+    assert.equal(attrs.proposedServiceName, undefined, phrase);
+    assert.equal(attrs.proposedStaffPreference, undefined, phrase);
+    assert.equal(state.appointments.length, 0, phrase);
+  }
+});
+
 test("service-slot full jet proposes Full Set without requiring date and time", async () => {
   const result = await postInternalAppointment(
     bookingPayload({
@@ -2017,6 +2214,208 @@ test("observed one-shot full set day transcript asks combined frame repair confi
     result.body.data.lexResponse.message,
     /I heard Full Set today at 3 PM with the first available staff\. Is that right\?/i
   );
+  assert.equal(state.appointments.length, 0);
+});
+
+test("Contact A replay preserves date time and combines Any staff plus Full Set repair", async () => {
+  const requestedDate = FUTURE_THURSDAY;
+  for (const [firstPhrase, secondPhrase] of [
+    ["with any stop", "food set"],
+    ["food set", "with any stop"]
+  ] as const) {
+    resetMockState();
+    const contactId = `connect-api-contact-a-${firstPhrase.replace(/\W+/g, "-")}`;
+    const first = await postInternalAppointment(
+      bookingPayload({
+        customerName: "Synthetic Caller",
+        customerPhone: "+15555550000",
+        serviceName: undefined,
+        requestedDate: undefined,
+        requestedTime: undefined,
+        staffPreference: undefined,
+        confirmationState: undefined,
+        amazonConnectContactId: contactId,
+        currentTurnTranscript: firstPhrase,
+        transcript: firstPhrase,
+        attributes: {
+          AmazonConnectContactId: contactId,
+          customerName: "Synthetic Caller",
+          customerPhone: "+15555550000",
+          requestedDate,
+          requestedTime: "3 PM",
+          lastAskedSlot: "serviceName",
+          activeDtmfMenu: "service"
+        }
+      })
+    );
+    assert.equal([200, 201].includes(first.response.status), true, firstPhrase);
+    assert.equal(first.body.data.lexResponse.sessionAttributes.requestedDate, requestedDate, firstPhrase);
+    assert.match(first.body.data.lexResponse.sessionAttributes.requestedTime, /^(?:3 PM|15:00)$/, firstPhrase);
+
+    const second = await postInternalAppointment(
+      bookingPayload({
+        customerName: undefined,
+        customerPhone: undefined,
+        serviceName: undefined,
+        requestedDate: undefined,
+        requestedTime: undefined,
+        staffPreference: undefined,
+        confirmationState: undefined,
+        amazonConnectContactId: contactId,
+        currentTurnTranscript: secondPhrase,
+        transcript: secondPhrase,
+        attributes: {
+          ...first.body.data.lexResponse.sessionAttributes,
+          AmazonConnectContactId: contactId,
+          lastAskedSlot: "serviceName",
+          activeDtmfMenu: "service",
+          currentTurnTranscript: secondPhrase
+        }
+      })
+    );
+    const attrs = second.body.data.lexResponse.sessionAttributes;
+    assert.equal([200, 201].includes(second.response.status), true, secondPhrase);
+    assert.equal(second.body.data.lexResponse.dialogAction.slotToElicit, "bookingConfirmation", secondPhrase);
+    assert.equal(attrs.awaitingBookingFrameRepairConfirmation, "true", secondPhrase);
+    assert.equal(attrs.proposedServiceName, "Full Set", secondPhrase);
+    assert.equal(attrs.proposedStaffPreference, "Any staff", secondPhrase);
+    assert.equal(attrs.requestedDate, requestedDate, secondPhrase);
+    assert.match(attrs.requestedTime, /^(?:3 PM|15:00)$/, secondPhrase);
+    assert.match(second.body.data.lexResponse.message, /I heard Full Set .* at 3 PM with the first available staff\. Is that right\?/i);
+
+    const confirmed = await postInternalAppointment(
+      bookingPayload({
+        customerName: undefined,
+        customerPhone: undefined,
+        serviceName: undefined,
+        requestedDate: undefined,
+        requestedTime: undefined,
+        staffPreference: undefined,
+        confirmationState: undefined,
+        amazonConnectContactId: contactId,
+        currentTurnTranscript: "yes",
+        transcript: "yes",
+        attributes: {
+          ...attrs,
+          AmazonConnectContactId: contactId,
+          lastAskedSlot: "bookingConfirmation"
+        }
+      })
+    );
+    const confirmedAttrs = confirmed.body.data.lexResponse.sessionAttributes;
+    assert.equal([200, 201].includes(confirmed.response.status), true, firstPhrase);
+    assert.equal(confirmedAttrs.serviceName, "Full Set", firstPhrase);
+    assert.equal(confirmedAttrs.requestedDate, requestedDate, firstPhrase);
+    assert.match(confirmedAttrs.requestedTime, /^(?:3 PM|15:00)$/, firstPhrase);
+    assert.equal(confirmedAttrs.staffPreference, "Trang", firstPhrase);
+    assert.equal(state.appointments.length, 0, firstPhrase);
+  }
+});
+
+test("Contact B replay guards repeated malformed Any staff before accepting once", async () => {
+  resetMockState();
+  const requestedDate = FUTURE_THURSDAY;
+  const contactId = "connect-api-contact-b-replay";
+  const baseAttrs = {
+    AmazonConnectContactId: contactId,
+    customerName: "Synthetic Caller",
+    customerPhone: "+15555550000",
+    serviceName: "Full Set",
+    confirmedServiceName: "Full Set",
+    requestedDate,
+    requestedTime: "3 PM",
+    lastAskedSlot: "staffPreference",
+    activeDtmfMenu: "staff"
+  };
+  const lowConfidence = await postInternalAppointment(
+    bookingPayload({
+      customerName: undefined,
+      customerPhone: undefined,
+      serviceName: "Full Set",
+      requestedDate,
+      requestedTime: "3 PM",
+      staffPreference: undefined,
+      confirmationState: undefined,
+      amazonConnectContactId: contactId,
+      currentTurnTranscript: "and it's not",
+      transcript: "and it's not",
+      attributes: baseAttrs
+    })
+  );
+  let attrs = lowConfidence.body.data.lexResponse.sessionAttributes;
+  assert.equal([200, 201].includes(lowConfidence.response.status), true);
+  assert.equal(attrs.serviceName, "Full Set");
+  assert.equal(attrs.proposedStaffPreference, "Any staff");
+  assert.equal(attrs.awaitingStaffConfirmation, "true");
+  assert.match(lowConfidence.body.data.lexResponse.message, /Did you mean first available/i);
+  let decisions = JSON.parse(attrs.voiceSlotDecisions);
+  let staffDecision = decisions.find(
+    (decision: { slot?: string; action?: string }) =>
+      decision.slot === "staffPreference" && decision.action === "propose"
+  );
+  assert.equal(staffDecision?.confidenceBand, "low");
+
+  const repeated = await postInternalAppointment(
+    bookingPayload({
+      customerName: undefined,
+      customerPhone: undefined,
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      amazonConnectContactId: contactId,
+      currentTurnTranscript: "any top",
+      transcript: "any top",
+      attributes: {
+        ...attrs,
+        AmazonConnectContactId: contactId,
+        lastAskedSlot: "staffPreference",
+        activeDtmfMenu: "staff"
+      }
+    })
+  );
+  attrs = repeated.body.data.lexResponse.sessionAttributes;
+  assert.equal([200, 201].includes(repeated.response.status), true);
+  assert.equal(attrs.proposedStaffPreference, "Any staff");
+  assert.match(repeated.body.data.lexResponse.message, /Did you mean first available/i);
+  assert.doesNotMatch(repeated.body.data.lexResponse.message, /Press 1 for|operator/i);
+  decisions = JSON.parse(attrs.voiceSlotDecisions);
+  staffDecision = decisions.find(
+    (decision: { slot?: string; action?: string }) =>
+      decision.slot === "staffPreference" &&
+      decision.action === "propose" &&
+      Array.isArray((decision as { evidence?: unknown }).evidence) &&
+      ((decision as { evidence: string[] }).evidence.includes("any top"))
+  );
+  assert.equal(staffDecision?.confidenceBand, "medium");
+
+  const confirmed = await postInternalAppointment(
+    bookingPayload({
+      customerName: undefined,
+      customerPhone: undefined,
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      amazonConnectContactId: contactId,
+      currentTurnTranscript: "yes",
+      transcript: "yes",
+      attributes: {
+        ...attrs,
+        AmazonConnectContactId: contactId,
+        lastAskedSlot: "staffPreference"
+      }
+    })
+  );
+  const confirmedAttrs = confirmed.body.data.lexResponse.sessionAttributes;
+  assert.equal([200, 201].includes(confirmed.response.status), true);
+  assertBookingConfirmationDialog(confirmed.body.data.lexResponse.dialogAction);
+  assert.equal(confirmedAttrs.serviceName, "Full Set");
+  assert.equal(confirmedAttrs.requestedDate, requestedDate);
+  assert.match(confirmedAttrs.requestedTime, /^(?:3 PM|15:00)$/);
+  assert.equal(confirmedAttrs.staffPreference, "Trang");
   assert.equal(state.appointments.length, 0);
 });
 
@@ -2487,6 +2886,73 @@ test("customerName turn rejects with Kevin noise and accepts clear call-me phras
   assert.equal(noise.body.data.lexResponse.sessionAttributes.customerName, undefined);
   assert.equal(state.customers.some((customer) => customer.firstName === "with"), false);
   assert.notEqual(state.bookingAttempts.at(-1)?.customerName, "with");
+
+  const smallTalk = await postInternalAppointment(
+    bookingPayload({
+      customerName: undefined,
+      customerPhone: "+18483481234",
+      serviceName: "Full Set",
+      requestedDate,
+      requestedTime: "3 PM",
+      staffPreference: "Trang",
+      confirmationState: undefined,
+      currentTurnTranscript: "I'm doing well thank you",
+      transcript: "I'm doing well thank you",
+      attributes: {
+        lastAskedSlot: "customerName",
+        askedSlotsCount: "1",
+        serviceName: "Full Set",
+        requestedDate,
+        requestedTime: "3 PM",
+        staffPreference: "Trang",
+        customerPhone: "+18483481234"
+      }
+    })
+  );
+
+  assert.equal(smallTalk.response.status, 200);
+  assert.equal(smallTalk.body.data.lexResponse.dialogAction.slotToElicit, "customerName");
+  assert.equal(smallTalk.body.data.lexResponse.sessionAttributes.customerName, undefined);
+  assert.equal(smallTalk.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
+  assert.equal(smallTalk.body.data.lexResponse.sessionAttributes.requestedDate, requestedDate);
+  assert.equal(smallTalk.body.data.lexResponse.sessionAttributes.requestedTime, "3 PM");
+  assert.equal(smallTalk.body.data.lexResponse.sessionAttributes.customerPhone, "+18483481234");
+  assert.match(smallTalk.body.data.lexResponse.message, /What is your first name/i);
+  assert.equal(state.customers.some((customer) => customer.firstName === "doing"), false);
+  assert.notEqual(state.bookingAttempts.at(-1)?.customerName, "doing well thank you");
+
+  const affirmativeNoise = await postInternalAppointment(
+    bookingPayload({
+      customerName: undefined,
+      customerPhone: "+18483481234",
+      serviceName: "Full Set",
+      requestedDate,
+      requestedTime: "3 PM",
+      staffPreference: "Trang",
+      confirmationState: undefined,
+      currentTurnTranscript: "yeah",
+      transcript: "yeah",
+      attributes: {
+        lastAskedSlot: "customerName",
+        askedSlotsCount: "1",
+        serviceName: "Full Set",
+        requestedDate,
+        requestedTime: "3 PM",
+        staffPreference: "Trang",
+        customerPhone: "+18483481234"
+      }
+    })
+  );
+
+  assert.equal(affirmativeNoise.response.status, 200);
+  assert.equal(affirmativeNoise.body.data.lexResponse.dialogAction.slotToElicit, "customerName");
+  assert.equal(affirmativeNoise.body.data.lexResponse.sessionAttributes.customerName, undefined);
+  assert.equal(affirmativeNoise.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
+  assert.equal(affirmativeNoise.body.data.lexResponse.sessionAttributes.requestedDate, requestedDate);
+  assert.equal(affirmativeNoise.body.data.lexResponse.sessionAttributes.requestedTime, "3 PM");
+  assert.match(affirmativeNoise.body.data.lexResponse.message, /What is your first name/i);
+  assert.equal(state.customers.some((customer) => customer.firstName === "yeah"), false);
+  assert.notEqual(state.bookingAttempts.at(-1)?.customerName, "yeah");
 
   const clearName = await postInternalAppointment(
     bookingPayload({
@@ -3364,6 +3830,36 @@ test("Full Set speech aliases resolve to the active Full Set service", async () 
   }
 });
 
+test("single-word Fullset returns a non-empty follow-up prompt", async () => {
+  const result = await postInternalAppointment(
+    bookingPayload({
+      customerName: "Synthetic Caller",
+      customerPhone: "+15555550123",
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      amazonConnectContactId: "connect-api-fullset-single",
+      currentTurnTranscript: "Fullset",
+      transcript: "Fullset",
+      attributes: {
+        currentTurnTranscript: "Fullset",
+        customerName: "Synthetic Caller",
+        customerPhone: "+15555550123"
+      }
+    })
+  );
+
+  const lexResponse = result.body.data.lexResponse;
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(lexResponse.sessionAttributes.serviceName, "Full Set");
+  assert.notEqual(lexResponse.dialogAction.slotToElicit, "serviceName");
+  assert.ok(String(lexResponse.message || "").trim().length > 0);
+  assert.equal(state.appointments.length, 0);
+});
+
 test("polluted Full Set ASR phrases do not resolve directly", async () => {
   for (const phrase of [
     "fun fact",
@@ -4021,7 +4517,7 @@ test("generic gel resolves the preferred Gel Manicure service", async () => {
   assert.equal(state.appointments.length, 0);
 });
 
-test("current food set does not overwrite stale placeholder service", async () => {
+test("current food set proposes Full Set without overwriting stale placeholder service", async () => {
   const result = await postInternalAppointment(
     bookingPayload({
       serviceName: undefined,
@@ -4047,7 +4543,8 @@ test("current food set does not overwrite stale placeholder service", async () =
   assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
   assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, undefined);
   assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedServiceName, undefined);
-  assert.equal(result.body.data.lexResponse.sessionAttributes.proposedServiceName, undefined);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.proposedServiceName, "Full Set");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.awaitingServiceConfirmation, "true");
   assert.notEqual(state.bookingAttempts.at(-1)?.requestedService, "Full Set");
 });
 
@@ -4747,7 +5244,7 @@ test("unclear customer name digit noise asks caller to spell", async () => {
   assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitSlot");
   assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "customerName");
   assert.equal(result.body.data.lexResponse.sessionAttributes.customerName, undefined);
-  assert.match(result.body.data.lexResponse.message, /Could you say your first name slowly/i);
+  assert.match(result.body.data.lexResponse.message, /What is your first name/i);
   assert.equal(state.appointments.length, 0);
 });
 
@@ -5380,12 +5877,14 @@ test("Any staff exact phrase and live ASR variants never persist raw unmatched s
 
   for (const phrase of [
     "any stop",
+    "any top",
     "anystop",
     "any stop if i",
     "any stuff",
     "any star",
     "and is up for hire able",
     "and he's up for hire able",
+    "and it's not",
     "and it's thirty five",
     "and it's top a five",
     "and it's top e five",
@@ -5425,14 +5924,19 @@ test("Any staff exact phrase and live ASR variants never persist raw unmatched s
         decision.slot === "staffPreference" && decision.action === "propose"
     );
     assert.equal(staffDecision?.canonicalValue, "Any staff", phrase);
-    assert.equal(staffDecision?.confidenceBand, "medium", phrase);
+    assert.equal(staffDecision?.confidenceBand, phrase === "and it's not" ? "low" : "medium", phrase);
     assert.equal(state.appointments.length, 0, phrase);
   }
 });
 
 test("explicit first-available rejections do not propose Any staff", async () => {
   const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
-  for (const phrase of ["not first available", "and it's not a five"]) {
+  for (const phrase of [
+    "not first available",
+    "I do not want any staff",
+    "and it's not a five",
+    "another staff, not first available"
+  ]) {
     resetMockState();
     const result = await postInternalAppointment(
       bookingPayload({
@@ -5931,7 +6435,7 @@ test("final confirmation-only phrases preserve trusted Alex and book exactly onc
   }
 });
 
-test("denied final confirmations do not create appointments and preserve booking slots", async () => {
+test("denied final confirmations do not create appointments and enter post-rejection choice state", async () => {
   const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
 
   for (const phrase of [
@@ -5977,11 +6481,461 @@ test("denied final confirmations do not create appointments and preserve booking
     assert.equal(result.body.data.outcome, "MISSING_INFO", phrase);
     assert.equal(state.appointments.length, 0, phrase);
     assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Full Set", phrase);
-    assert.equal(result.body.data.lexResponse.sessionAttributes.requestedDate, requestedDate, phrase);
-    assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "3 PM", phrase);
-    assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Trang", phrase);
-    assert.match(result.body.data.lexResponse.message, /Which detail would you like to change/i, phrase);
+	    assert.equal(result.body.data.lexResponse.sessionAttributes.requestedDate, requestedDate, phrase);
+	    assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "3 PM", phrase);
+	    assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Trang", phrase);
+	    assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitIntent", phrase);
+	    assert.match(result.body.data.lexResponse.message, /Would you like to start a new booking, change a detail, or stop/i, phrase);
+	    assert.doesNotMatch(result.body.data.lexResponse.message, /Which detail would you like to change/i, phrase);
+	    assert.equal(result.body.data.lexResponse.sessionAttributes.awaitingRejectedBookingChoice, "true", phrase);
+	    assert.equal(result.body.data.lexResponse.sessionAttributes.awaitingFinalBookingConfirmation, undefined, phrase);
+	    assert.equal(result.body.data.lexResponse.sessionAttributes.bookingConfirmationAsked, undefined, phrase);
+	    assert.equal(result.body.data.lexResponse.sessionAttributes.lastAskedSlot, undefined, phrase);
+	    assert.equal(result.body.data.lexResponse.sessionAttributes.slotToElicit, undefined, phrase);
+	    assert.equal(result.body.data.lexResponse.sessionAttributes.bookingConfirmation, undefined, phrase);
   }
+});
+
+test("relative weekday parsing uses salon-local July 20 policy for next and this Monday", async () =>
+  withFixedNow("2026-07-20T05:55:00-04:00", async () => {
+    for (const phrase of ["next Monday", "next week Monday", "next-week Monday", "nextweek Monday", "Monday next week"]) {
+      resetMockState();
+      const result = await postInternalAppointment(
+        bookingPayload({
+          serviceName: "Full Set",
+          requestedDate: undefined,
+          requestedTime: "3 PM",
+          staffPreference: "Amy",
+          staffId: ids.amy,
+          confirmationState: undefined,
+          amazonConnectContactId: `connect-date-${phrase.replace(/\W+/g, "-")}`,
+          currentTurnTranscript: phrase,
+          transcript: phrase,
+          attributes: {
+            lastAskedSlot: "requestedDate",
+            serviceName: "Full Set",
+            requestedTime: "3 PM",
+            staffPreference: "Amy",
+            staffId: ids.amy,
+            customerName: "Kiet Nguyen",
+            customerPhone: "+17325956266"
+          }
+        })
+      );
+
+      assert.equal(result.response.status, 200, phrase);
+      assert.equal(result.body.data.lexResponse.sessionAttributes.requestedDate, "2026-07-27", phrase);
+      assert.doesNotMatch(result.body.data.lexResponse.message, /\btoday\b/i, phrase);
+      assert.equal(state.appointments.length, 0, phrase);
+    }
+
+    resetMockState();
+    const thisMonday = await postInternalAppointment(
+      bookingPayload({
+        serviceName: "Full Set",
+        requestedDate: undefined,
+        requestedTime: "3 PM",
+        staffPreference: "Amy",
+        staffId: ids.amy,
+        confirmationState: undefined,
+        amazonConnectContactId: "connect-this-monday-july-20",
+        currentTurnTranscript: "this Monday",
+        transcript: "this Monday",
+        attributes: {
+          lastAskedSlot: "requestedDate",
+          serviceName: "Full Set",
+          requestedTime: "3 PM",
+          staffPreference: "Amy",
+          staffId: ids.amy,
+          customerName: "Kiet Nguyen",
+          customerPhone: "+17325956266"
+        }
+      })
+    );
+    assert.equal(thisMonday.body.data.lexResponse.sessionAttributes.requestedDate, "2026-07-20");
+  }));
+
+test("bare same-day Monday and relative explicit date conflicts ask clarification", async () =>
+  withFixedNow("2026-07-20T05:55:00-04:00", async () => {
+    const base = {
+      serviceName: "Full Set",
+      requestedDate: undefined,
+      requestedTime: "3 PM",
+      staffPreference: "Amy",
+      staffId: ids.amy,
+      confirmationState: undefined,
+      attributes: {
+        lastAskedSlot: "requestedDate",
+        serviceName: "Full Set",
+        requestedTime: "3 PM",
+        staffPreference: "Amy",
+        staffId: ids.amy,
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266"
+      }
+    };
+    const bare = await postInternalAppointment(
+      bookingPayload({
+        ...base,
+        amazonConnectContactId: "connect-bare-monday-ambiguous",
+        currentTurnTranscript: "Monday",
+        transcript: "Monday"
+      })
+    );
+
+    assert.equal(bare.response.status, 200);
+    assert.equal(bare.body.data.lexResponse.dialogAction.type, "ElicitSlot");
+    assert.equal(bare.body.data.lexResponse.dialogAction.slotToElicit, "requestedDate");
+    assert.equal(bare.body.data.lexResponse.sessionAttributes.requestedDate, undefined);
+    assert.match(bare.body.data.lexResponse.message, /today, Monday, July 20/i);
+    assert.match(bare.body.data.lexResponse.message, /next Monday, July 27/i);
+    assert.equal(state.appointments.length, 0);
+
+    resetMockState();
+    const conflict = await postInternalAppointment(
+      bookingPayload({
+        ...base,
+        amazonConnectContactId: "connect-next-week-monday-july-20-conflict",
+        currentTurnTranscript: "next week Monday July 20",
+        transcript: "next week Monday July 20"
+      })
+    );
+    assert.equal(conflict.response.status, 200);
+    assert.equal(conflict.body.data.lexResponse.dialogAction.slotToElicit, "requestedDate");
+    assert.equal(conflict.body.data.lexResponse.sessionAttributes.requestedDate, undefined);
+    assert.match(conflict.body.data.lexResponse.message, /today, Monday, July 20/i);
+    assert.match(conflict.body.data.lexResponse.message, /next Monday, July 27/i);
+    assert.equal(state.appointments.length, 0);
+  }));
+
+test("weekday parsing uses salon timezone when UTC date differs", async () =>
+  withFixedNow("2026-07-20T00:30:00Z", async () => {
+    state.businessHours = state.businessHours.map((hour) => ({
+      ...hour,
+      openTime: "00:00",
+      closeTime: "23:59"
+    }));
+    const result = await postInternalAppointment(
+      bookingPayload({
+        serviceName: "Full Set",
+        requestedDate: undefined,
+        requestedTime: "11 PM",
+        staffPreference: "Amy",
+        staffId: ids.amy,
+        confirmationState: undefined,
+        amazonConnectContactId: "connect-timezone-local-sunday",
+        currentTurnTranscript: "this Sunday",
+        transcript: "this Sunday",
+        attributes: {
+          lastAskedSlot: "requestedDate",
+          serviceName: "Full Set",
+          requestedTime: "11 PM",
+          staffPreference: "Amy",
+          staffId: ids.amy,
+          customerName: "Kiet Nguyen",
+          customerPhone: "+17325956266"
+        }
+      })
+    );
+
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.data.lexResponse.sessionAttributes.requestedDate, "2026-07-19");
+  }));
+
+test("contextual any stat one-shot keeps next-week date and first-available staff proposal", async () =>
+  withFixedNow("2026-07-20T05:55:00-04:00", async () => {
+    const result = await postInternalAppointment(
+      bookingPayload({
+        serviceName: undefined,
+        requestedDate: undefined,
+        requestedTime: undefined,
+        staffPreference: undefined,
+        staffId: undefined,
+        confirmationState: undefined,
+        amazonConnectContactId: "connect-any-stat-next-week-monday",
+        currentTurnTranscript: "any stat full set next week Monday at three p m",
+        transcript: "any stat full set next week Monday at three p m",
+        attributes: {
+          currentTurnTranscript: "any stat full set next week Monday at three p m",
+          customerName: "Kiet Nguyen",
+          customerPhone: "+17325956266"
+        }
+      })
+    );
+
+    const attrs = result.body.data.lexResponse.sessionAttributes;
+    assert.equal(result.response.status, 200);
+    assert.equal(attrs.serviceName, "Full Set");
+    assert.equal(attrs.requestedDate, "2026-07-27");
+    assert.match(attrs.requestedTime, /^(?:3 PM|15:00)$/);
+    assert.ok(
+      attrs.staffPreference === "Any staff" ||
+        attrs.proposedStaffPreference === "Any staff" ||
+        /first available/i.test(result.body.data.lexResponse.message),
+      JSON.stringify({
+        dialogAction: result.body.data.lexResponse.dialogAction,
+        message: result.body.data.lexResponse.message,
+        staffPreference: attrs.staffPreference,
+        proposedStaffPreference: attrs.proposedStaffPreference,
+        staffClarificationReason: attrs.staffClarificationReason,
+        voiceSlotDecisions: attrs.voiceSlotDecisions
+      })
+    );
+    assert.notEqual(result.body.data.lexResponse.dialogAction.slotToElicit, "staffPreference");
+    assert.doesNotMatch(result.body.data.lexResponse.message, /\btoday\b/i);
+    assert.equal(state.appointments.length, 0);
+  }));
+
+test("post-rejection restart choices clear stale booking frame", async () =>
+  withFixedNow("2026-07-20T05:55:00-04:00", async () => {
+    const contactId = "connect-post-rejection-restart";
+    const denied = await postInternalAppointment(
+      bookingPayload({
+        serviceName: "Full Set",
+        requestedDate: "2026-07-20",
+        requestedTime: "3 PM",
+        staffPreference: "Trang",
+        staffId: ids.trang,
+        confirmationState: "None",
+        amazonConnectContactId: contactId,
+        currentTurnTranscript: "no",
+        transcript: "no",
+        attributes: {
+          lastAskedSlot: "bookingConfirmation",
+          awaitingFinalBookingConfirmation: "true",
+          bookingConfirmationAsked: "true",
+          serviceName: "Full Set",
+          confirmedServiceName: "Full Set",
+          requestedDate: "2026-07-20",
+          requestedTime: "3 PM",
+          staffPreference: "Trang",
+          staffId: ids.trang,
+          confirmedStaffName: "Trang",
+          customerName: "Kiet Nguyen",
+          customerPhone: "+17325956266"
+        }
+      })
+    );
+
+    assert.equal(denied.body.data.lexResponse.sessionAttributes.awaitingRejectedBookingChoice, "true");
+    assert.match(denied.body.data.lexResponse.message, /start a new booking, change a detail, or stop/i);
+    assert.equal(state.appointments.length, 0);
+
+    const restart = await postInternalAppointment(
+      bookingPayload({
+        serviceName: "Full Set",
+        requestedDate: "2026-07-20",
+        requestedTime: "3 PM",
+        staffPreference: "Trang",
+        staffId: ids.trang,
+        confirmationState: "None",
+        amazonConnectContactId: contactId,
+        currentTurnTranscript: "I want to book a new appointment",
+        transcript: "I want to book a new appointment",
+        attributes: {
+          ...denied.body.data.lexResponse.sessionAttributes,
+          AmazonConnectContactId: contactId,
+          currentTurnTranscript: "I want to book a new appointment"
+        }
+      })
+    );
+
+    const attrs = restart.body.data.lexResponse.sessionAttributes;
+    assert.equal(restart.response.status, 200);
+    assert.equal(restart.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
+    assert.match(restart.body.data.lexResponse.message, /Sure, let's start a new appointment/i);
+    assert.doesNotMatch(restart.body.data.lexResponse.message, /Which detail would you like to change/i);
+    assert.equal(attrs.serviceName, undefined);
+    assert.equal(attrs.requestedDate, undefined);
+    assert.equal(attrs.requestedTime, undefined);
+    assert.equal(attrs.staffPreference, undefined);
+    assert.equal(attrs.staffId, undefined);
+    assert.equal(state.appointments.length, 0);
+  }));
+
+test("direct ASR restart and restart-with-details discard old final-confirmation frame", async () =>
+  withFixedNow("2026-07-20T05:55:00-04:00", async () => {
+    const oldDraft = {
+      serviceName: "Full Set",
+      requestedDate: "2026-07-20",
+      requestedTime: "3 PM",
+      staffPreference: "Trang",
+      staffId: ids.trang,
+      confirmationState: "None",
+      attributes: {
+        lastAskedSlot: "bookingConfirmation",
+        awaitingFinalBookingConfirmation: "true",
+        bookingConfirmationAsked: "true",
+        serviceName: "Full Set",
+        confirmedServiceName: "Full Set",
+        requestedDate: "2026-07-20",
+        requestedTime: "3 PM",
+        staffPreference: "Trang",
+        staffId: ids.trang,
+        confirmedStaffName: "Trang",
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266"
+      }
+    };
+    const direct = await postInternalAppointment(
+      bookingPayload({
+        ...oldDraft,
+        amazonConnectContactId: "connect-direct-asr-apartment-restart",
+        currentTurnTranscript: "No I say no I want to book new apartment",
+        transcript: "No I say no I want to book new apartment"
+      })
+    );
+    assert.equal(direct.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
+    assert.equal(direct.body.data.lexResponse.sessionAttributes.serviceName, undefined);
+    assert.equal(direct.body.data.lexResponse.sessionAttributes.requestedTime, undefined);
+    assert.equal(direct.body.data.lexResponse.sessionAttributes.staffPreference, undefined);
+    assert.match(direct.body.data.lexResponse.message, /Sure, let's start a new appointment/i);
+
+    resetMockState();
+    const detailed = await postInternalAppointment(
+      bookingPayload({
+        ...oldDraft,
+        amazonConnectContactId: "connect-restart-with-details",
+        currentTurnTranscript: "No, book a Manicure next week Monday at 2 PM with Amy.",
+        transcript: "No, book a Manicure next week Monday at 2 PM with Amy."
+      })
+    );
+    const attrs = detailed.body.data.lexResponse.sessionAttributes;
+    assert.equal(detailed.response.status, 200);
+    assertBookingConfirmationDialog(detailed.body.data.lexResponse.dialogAction);
+    assert.equal(attrs.serviceName, "Manicure");
+    assert.equal(attrs.requestedDate, "2026-07-27");
+    assert.match(attrs.requestedTime, /^(?:2 PM|14:00)$/);
+    assert.equal(attrs.staffPreference, "Amy");
+    assert.equal(attrs.staffId, ids.amy);
+    assert.notEqual(attrs.serviceName, "Full Set");
+    assert.notEqual(attrs.staffPreference, "Trang");
+    assert.equal(state.appointments.length, 0);
+  }));
+
+test("post-rejection repeated no closes without repeating rejection menu", async () => {
+  const contactId = "connect-repeated-no-after-rejection";
+  const denied = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Full Set",
+      requestedDate: FUTURE_THURSDAY,
+      requestedTime: "3 PM",
+      staffPreference: "Trang",
+      staffId: ids.trang,
+      confirmationState: "None",
+      amazonConnectContactId: contactId,
+      currentTurnTranscript: "no",
+      transcript: "no",
+      attributes: {
+        lastAskedSlot: "bookingConfirmation",
+        awaitingFinalBookingConfirmation: "true",
+        bookingConfirmationAsked: "true",
+        serviceName: "Full Set",
+        requestedDate: FUTURE_THURSDAY,
+        requestedTime: "3 PM",
+        staffPreference: "Trang",
+        staffId: ids.trang,
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266"
+      }
+    })
+  );
+
+  const repeated = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Full Set",
+      requestedDate: FUTURE_THURSDAY,
+      requestedTime: "3 PM",
+      staffPreference: "Trang",
+      staffId: ids.trang,
+      confirmationState: "None",
+      amazonConnectContactId: contactId,
+      currentTurnTranscript: "no",
+      transcript: "no",
+      attributes: {
+        ...denied.body.data.lexResponse.sessionAttributes,
+        currentTurnTranscript: "no"
+      }
+    })
+  );
+
+  assert.equal(repeated.body.data.lexResponse.dialogAction.type, "Close");
+  assert.match(repeated.body.data.lexResponse.message, /Goodbye/i);
+  assert.doesNotMatch(repeated.body.data.lexResponse.message, /start a new booking, change a detail, or stop/i);
+  assert.equal(state.appointments.length, 0);
+});
+
+test("reused provider request id with distinct human turns is not treated as duplicate", async () => {
+  const contactId = "connect-reused-request-id-distinct";
+  const sharedProviderRequestId = "lex-request-reused-distinct";
+  const first = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Full Set",
+      requestedDate: FUTURE_THURSDAY,
+      requestedTime: "3 PM",
+      staffPreference: "Trang",
+      staffId: ids.trang,
+      confirmationState: "None",
+      amazonConnectContactId: contactId,
+      currentTurnTranscript: "no no no",
+      transcript: "no no no",
+      attributes: {
+        lastAskedSlot: "bookingConfirmation",
+        awaitingFinalBookingConfirmation: "true",
+        bookingConfirmationAsked: "true",
+        serviceName: "Full Set",
+        requestedDate: FUTURE_THURSDAY,
+        requestedTime: "3 PM",
+        staffPreference: "Trang",
+        staffId: ids.trang,
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266",
+        humanTurnId: `${contactId}:human:no-no-no`,
+        providerTurnId: `${contactId}:provider:${sharedProviderRequestId}`,
+        providerRequestId: sharedProviderRequestId,
+        lexRequestId: sharedProviderRequestId,
+        lexPhase: "DialogCodeHook"
+      }
+    })
+  );
+
+  const second = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Full Set",
+      requestedDate: FUTURE_THURSDAY,
+      requestedTime: "3 PM",
+      staffPreference: "Trang",
+      staffId: ids.trang,
+      confirmationState: "None",
+      amazonConnectContactId: contactId,
+      currentTurnTranscript: "I want to book a new appointment",
+      transcript: "I want to book a new appointment",
+      attributes: {
+        ...first.body.data.lexResponse.sessionAttributes,
+        humanTurnId: `${contactId}:human:new-appointment`,
+        providerTurnId: `${contactId}:provider:${sharedProviderRequestId}`,
+        providerRequestId: sharedProviderRequestId,
+        lexRequestId: sharedProviderRequestId,
+        lexPhase: "FulfillmentCodeHook",
+        currentTurnTranscript: "I want to book a new appointment"
+      }
+    })
+  );
+
+  assert.equal(first.body.data.lexResponse.sessionAttributes.awaitingRejectedBookingChoice, "true");
+  assert.equal(second.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
+  assert.match(second.body.data.lexResponse.message, /Sure, let's start a new appointment/i);
+  assert.doesNotMatch(second.body.data.lexResponse.message, /start a new booking, change a detail, or stop/i);
+  assert.equal(state.aiInteractionLogs.length, 1);
+  const turnHistory = state.aiInteractionLogs[0].responsePayload.turnHistory;
+  assert.equal(turnHistory.length, 2);
+  assert.equal(turnHistory[0].humanTurnId, `${contactId}:human:no-no-no`);
+  assert.equal(turnHistory[1].humanTurnId, `${contactId}:human:new-appointment`);
+  assert.equal(turnHistory[1].turnStateDiagnostics.duplicateDisposition, "provider_request_id_reused_for_distinct_human_turn");
+  assert.notEqual(
+    turnHistory[1].turnStateDiagnostics.staleOrDuplicateRejectionReason,
+    "duplicate_human_turn"
+  );
 });
 
 test("final confirmation change request updates only the requested time before reconfirming", async () => {
@@ -7041,6 +7995,194 @@ test("staff change before final confirmation requires a fresh confirmation befor
   assert.equal(state.appointments[0].staffId, ids.amy);
 });
 
+test("final confirmation malformed Any staff replacement preserves Amy until confirmed", async () => {
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 3 }).toFormat("yyyy-MM-dd");
+  const contactId = "connect-api-final-any-staff-replacement";
+  const proposal = await postInternalAppointment(
+    bookingPayload({
+      customerName: "Synthetic Caller",
+      customerPhone: "+15555550123",
+      serviceName: "Full Set",
+      requestedDate,
+      requestedTime: "3 PM",
+      staffPreference: "Amy",
+      staffId: ids.amy,
+      confirmationState: "None",
+      amazonConnectContactId: contactId,
+      currentTurnTranscript: "uh no uh i need stop if i",
+      transcript: "uh no uh i need stop if i",
+      attributes: {
+        AmazonConnectContactId: contactId,
+        lastAskedSlot: "bookingConfirmation",
+        awaitingFinalBookingConfirmation: "true",
+        bookingConfirmationAsked: "true",
+        serviceName: "Full Set",
+        confirmedServiceName: "Full Set",
+        requestedDate,
+        requestedTime: "3 PM",
+        staffPreference: "Amy",
+        staffId: ids.amy,
+        selectedStaffId: ids.amy,
+        confirmedStaffId: ids.amy,
+        confirmedStaffName: "Amy",
+        customerName: "Synthetic Caller",
+        customerPhone: "+15555550123"
+      }
+    })
+  );
+
+  const proposalAttrs = proposal.body.data.lexResponse.sessionAttributes;
+  assert.equal(proposal.response.status, 200);
+  assert.equal(proposal.body.data.outcome, "MISSING_INFO");
+  assert.equal(state.appointments.length, 0);
+  assert.equal(proposal.body.data.lexResponse.dialogAction.type, "ElicitSlot");
+  assert.equal(proposal.body.data.lexResponse.dialogAction.slotToElicit, "staffPreference");
+  assert.equal(proposalAttrs.serviceName, "Full Set");
+  assert.equal(proposalAttrs.requestedDate, requestedDate);
+  assert.equal(proposalAttrs.requestedTime, "3 PM");
+  assert.equal(proposalAttrs.staffPreference, "Amy");
+  assert.equal(proposalAttrs.staffId, ids.amy);
+  assert.equal(proposalAttrs.proposedStaffPreference, "Any staff");
+  assert.equal(proposalAttrs.awaitingStaffConfirmation, "true");
+  assert.equal(proposalAttrs.awaitingFinalBookingConfirmation, "false");
+  assert.match(proposal.body.data.lexResponse.message, /Did you mean first available instead of Amy/i);
+  const proposalDecisions = JSON.parse(proposalAttrs.voiceSlotDecisions);
+  const replacementDecision = proposalDecisions.find(
+    (decision: { slot?: string; action?: string }) =>
+      decision.slot === "staffPreference" && decision.action === "propose"
+  );
+  assert.equal(replacementDecision?.canonicalValue, "Any staff");
+  assert.equal(replacementDecision?.reason, "final_confirmation_staff_replacement_asr");
+
+  const confirmed = await postInternalAppointment(
+    bookingPayload({
+      customerName: "Synthetic Caller",
+      customerPhone: "+15555550123",
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      staffId: undefined,
+      confirmationState: "None",
+      amazonConnectContactId: contactId,
+      currentTurnTranscript: "yes",
+      transcript: "yes",
+      attributes: {
+        ...proposalAttrs,
+        AmazonConnectContactId: contactId,
+        currentTurnTranscript: "yes",
+        lastAskedSlot: "staffPreference"
+      }
+    })
+  );
+
+  const confirmedAttrs = confirmed.body.data.lexResponse.sessionAttributes;
+  assert.equal(confirmed.response.status, 200);
+  assert.equal(confirmed.body.data.outcome, "MISSING_INFO");
+  assert.equal(state.appointments.length, 0);
+  assertBookingConfirmationDialog(confirmed.body.data.lexResponse.dialogAction);
+  assert.equal(confirmedAttrs.serviceName, "Full Set");
+  assert.equal(confirmedAttrs.requestedDate, requestedDate);
+  assert.equal(confirmedAttrs.requestedTime, "3 PM");
+  assert.equal(confirmedAttrs.staffPreference, "Trang");
+  assert.equal(confirmedAttrs.staffId, ids.trang);
+  assert.equal(confirmedAttrs.proposedStaffPreference || "", "");
+  assert.equal(confirmedAttrs.awaitingFinalBookingConfirmation, "true");
+});
+
+test("exact final confirmation any-staff change uses normal reconfirmation path", async () => {
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 3 }).toFormat("yyyy-MM-dd");
+  const result = await postInternalAppointment(
+    bookingPayload({
+      customerName: "Synthetic Caller",
+      customerPhone: "+15555550123",
+      serviceName: "Full Set",
+      requestedDate,
+      requestedTime: "3 PM",
+      staffPreference: "Amy",
+      staffId: ids.amy,
+      confirmationState: "None",
+      amazonConnectContactId: "connect-api-final-exact-any-staff",
+      currentTurnTranscript: "No, any staff is fine.",
+      transcript: "No, any staff is fine.",
+      attributes: {
+        lastAskedSlot: "bookingConfirmation",
+        awaitingFinalBookingConfirmation: "true",
+        bookingConfirmationAsked: "true",
+        serviceName: "Full Set",
+        confirmedServiceName: "Full Set",
+        requestedDate,
+        requestedTime: "3 PM",
+        staffPreference: "Amy",
+        staffId: ids.amy,
+        selectedStaffId: ids.amy,
+        confirmedStaffId: ids.amy,
+        confirmedStaffName: "Amy",
+        customerName: "Synthetic Caller",
+        customerPhone: "+15555550123"
+      }
+    })
+  );
+
+  const attrs = result.body.data.lexResponse.sessionAttributes;
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assertBookingConfirmationDialog(result.body.data.lexResponse.dialogAction);
+  assert.equal(attrs.serviceName, "Full Set");
+  assert.equal(attrs.requestedDate, requestedDate);
+  assert.equal(attrs.requestedTime, "3 PM");
+  assert.equal(attrs.staffPreference, "Trang");
+  assert.equal(attrs.staffId, ids.trang);
+  assert.equal(attrs.proposedStaffPreference, undefined);
+  assert.doesNotMatch(result.body.data.lexResponse.message, /Which detail would you like to change/i);
+  assert.equal(state.appointments.length, 0);
+});
+
+test("final confirmation no keep Amy does not propose Any staff or clear Amy", async () => {
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 3 }).toFormat("yyyy-MM-dd");
+  const result = await postInternalAppointment(
+    bookingPayload({
+      customerName: "Synthetic Caller",
+      customerPhone: "+15555550123",
+      serviceName: "Full Set",
+      requestedDate,
+      requestedTime: "3 PM",
+      staffPreference: "Amy",
+      staffId: ids.amy,
+      confirmationState: "None",
+      amazonConnectContactId: "connect-api-final-keep-amy",
+      currentTurnTranscript: "no, keep Amy",
+      transcript: "no, keep Amy",
+      attributes: {
+        lastAskedSlot: "bookingConfirmation",
+        awaitingFinalBookingConfirmation: "true",
+        bookingConfirmationAsked: "true",
+        serviceName: "Full Set",
+        confirmedServiceName: "Full Set",
+        requestedDate,
+        requestedTime: "3 PM",
+        staffPreference: "Amy",
+        staffId: ids.amy,
+        selectedStaffId: ids.amy,
+        confirmedStaffId: ids.amy,
+        confirmedStaffName: "Amy",
+        customerName: "Synthetic Caller",
+        customerPhone: "+15555550123"
+      }
+    })
+  );
+
+  const attrs = result.body.data.lexResponse.sessionAttributes;
+  assert.equal(result.response.status, 200);
+  assert.equal(attrs.serviceName, "Full Set");
+  assert.equal(attrs.requestedDate, requestedDate);
+  assert.equal(attrs.requestedTime, "3 PM");
+  assert.equal(attrs.staffPreference, "Amy");
+  assert.equal(attrs.staffId, ids.amy);
+  assert.equal(attrs.proposedStaffPreference, undefined);
+  assert.equal(state.appointments.length, 0);
+});
+
 test("final confirmation no with Trang or Jang instead updates staff and reconfirms", async () => {
   const today = DateTime.now().setZone("America/New_York").toFormat("yyyy-MM-dd");
 
@@ -7412,16 +8554,21 @@ test("first available ASR variants enter explicit-any flow without staff clarifi
 
 test("malformed first-available ASR tails ask confirmation without committing staff", async () => {
   const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
-  for (const phrase of [
-    "any stuff",
-    "any stop",
-    "any stop is fine",
-    "and it's thirty five",
-    "and its thirty five",
-    "and it's top five",
-    "it's top five",
-    "any top five"
-  ]) {
+  for (const [phrase, expectedConfidenceBand] of [
+    ["any stuff", "medium"],
+    ["any stop", "medium"],
+    ["any stop is fine", "medium"],
+    ["and it's not a fight", "low"],
+    ["and it's top", "medium"],
+    ["at least happy five", "medium"],
+    ["i need stop if i", "medium"],
+    ["need stop if i", "medium"],
+    ["and it's thirty five", "medium"],
+    ["and its thirty five", "medium"],
+    ["and it's top five", "medium"],
+    ["it's top five", "medium"],
+    ["any top five", "medium"]
+  ] as const) {
     resetMockState();
     const result = await postInternalAppointment(
       bookingPayload({
@@ -7452,6 +8599,156 @@ test("malformed first-available ASR tails ask confirmation without committing st
     assert.equal(attrs.proposedStaffPreference, "Any staff", phrase);
     assert.equal(attrs.awaitingStaffConfirmation, "true", phrase);
     assert.match(result.body.data.lexResponse.message, /Did you mean first available/i, phrase);
+    const decisions = JSON.parse(attrs.voiceSlotDecisions);
+    const staffDecision = decisions.find(
+      (decision: { slot?: string; action?: string }) =>
+        decision.slot === "staffPreference" && decision.action === "propose"
+    );
+    assert.equal(staffDecision?.canonicalValue, "Any staff", phrase);
+    assert.equal(staffDecision?.confidenceBand, expectedConfidenceBand, phrase);
+    assert.equal(state.appointments.length, 0, phrase);
+  }
+});
+
+test("out-of-order malformed Any staff is retained while service frame is incomplete", async () => {
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  for (const [phrase, seedAttributes, expectedConfidenceBand] of [
+    [
+      "at least happy five",
+      {
+        requestedDate,
+        requestedTime: "2 PM"
+      },
+      "medium"
+    ],
+    [
+      "and it's not a fight",
+      {},
+      "low"
+    ]
+  ] as const) {
+    resetMockState();
+    const result = await postInternalAppointment(
+      bookingPayload({
+        customerName: "Synthetic Caller",
+        customerPhone: "+15555550123",
+        serviceName: undefined,
+        requestedDate: undefined,
+        requestedTime: undefined,
+        staffPreference: undefined,
+        confirmationState: undefined,
+        amazonConnectContactId: `connect-api-pending-any-staff-${phrase.replace(/\W+/g, "-")}`,
+        currentTurnTranscript: phrase,
+        transcript: phrase,
+        attributes: {
+          currentTurnTranscript: phrase,
+          lastAskedSlot: "serviceName",
+          activeDtmfMenu: "service",
+          knownCallerAcknowledged: "true",
+          customerName: "Synthetic Caller",
+          customerPhone: "+15555550123",
+          ...seedAttributes
+        }
+      })
+    );
+
+    const attrs = result.body.data.lexResponse.sessionAttributes;
+    assert.equal(result.response.status, 200, phrase);
+    assert.equal(result.body.data.outcome, "MISSING_INFO", phrase);
+    assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName", phrase);
+    assert.equal(attrs.staffPreference, undefined, phrase);
+    assert.equal(attrs.proposedStaffPreference, "Any staff", phrase);
+    assert.equal(attrs.awaitingStaffConfirmation, undefined, phrase);
+    assert.equal(attrs.clarificationReason, "out_of_order_staff_proposal_preserved", phrase);
+    const decisions = JSON.parse(attrs.voiceSlotDecisions);
+    const staffDecision = decisions.find(
+      (decision: { slot?: string; action?: string }) =>
+        decision.slot === "staffPreference" && decision.action === "propose"
+    );
+    assert.equal(staffDecision?.canonicalValue, "Any staff", phrase);
+    assert.equal(staffDecision?.confidenceBand, expectedConfidenceBand, phrase);
+    assert.equal(state.appointments.length, 0, phrase);
+  }
+});
+
+test("malformed Any staff negatives do not propose or mutate trusted state", async () => {
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  for (const [phrase, attributes] of [
+    [
+      "and it's top priority outside a booking staff context",
+      {
+        lastAskedSlot: "requestedDate",
+        serviceName: "Manicure",
+        requestedDate
+      }
+    ],
+    [
+      "at least five technicians",
+      {
+        lastAskedSlot: "staffPreference",
+        activeDtmfMenu: "staff",
+        serviceName: "Manicure",
+        requestedDate,
+        requestedTime: "5 PM"
+      }
+    ],
+    [
+      "I need to stop",
+      {
+        lastAskedSlot: "staffPreference",
+        activeDtmfMenu: "staff",
+        serviceName: "Manicure",
+        requestedDate,
+        requestedTime: "5 PM"
+      }
+    ],
+    [
+      "not first available",
+      {
+        lastAskedSlot: "staffPreference",
+        activeDtmfMenu: "staff",
+        serviceName: "Manicure",
+        requestedDate,
+        requestedTime: "5 PM"
+      }
+    ],
+    [
+      "any time is fine",
+      {
+        lastAskedSlot: "staffPreference",
+        activeDtmfMenu: "staff",
+        serviceName: "Manicure",
+        requestedDate,
+        requestedTime: "5 PM"
+      }
+    ]
+  ] as const) {
+    resetMockState();
+    const result = await postInternalAppointment(
+      bookingPayload({
+        customerName: "Synthetic Caller",
+        customerPhone: "+15555550123",
+        serviceName: "Manicure",
+        requestedDate,
+        requestedTime: "5 PM",
+        staffPreference: undefined,
+        confirmationState: undefined,
+        amazonConnectContactId: `connect-api-any-staff-negative-${phrase.replace(/\W+/g, "-")}`,
+        currentTurnTranscript: phrase,
+        transcript: phrase,
+        attributes: {
+          currentTurnTranscript: phrase,
+          customerName: "Synthetic Caller",
+          customerPhone: "+15555550123",
+          ...attributes
+        }
+      })
+    );
+
+    const attrs = result.body.data.lexResponse.sessionAttributes;
+    assert.equal(result.response.status, 200, phrase);
+    assert.equal(attrs.staffPreference, undefined, phrase);
+    assert.equal(attrs.proposedStaffPreference, undefined, phrase);
     assert.equal(state.appointments.length, 0, phrase);
   }
 });
@@ -8938,6 +10235,7 @@ test("post-disconnect stale Amazon Connect turn is rejected without booking muta
       attributes: {
         AmazonConnectContactId: contactId,
         lambdaReceivedAt: "2026-07-16T08:27:19.606Z",
+        lambdaRespondedAt: "2026-07-16T08:27:01.606Z",
         providerTranscriptTimestamp: "2026-07-16T08:27:19.606Z"
       }
     })
@@ -8946,7 +10244,10 @@ test("post-disconnect stale Amazon Connect turn is rejected without booking muta
   assert.equal(result.response.status, 200);
   assert.equal(result.body.data.outcome, "MISSING_INFO");
   assert.equal(result.body.data.lexResponse.sessionAttributes.staleOrDuplicateRejectionReason, "provider_disconnected");
-  assert.equal(result.body.data.lexResponse.sessionAttributes.conversationComplete, "false");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.conversationState, "TERMINAL");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.conversationOutcome, "PROVIDER_DISCONNECTED");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.conversationComplete, "true");
+  assert.equal(result.body.data.lexResponse.dialogAction.type, "Close");
   assert.equal(state.callSessions.length, 1);
   assert.equal(state.callSessions[0].status, CallSessionStatus.COMPLETED);
   assert.equal(state.callSessions[0].endedAt.toISOString(), providerDisconnectedAt);
@@ -8963,6 +10264,11 @@ test("post-disconnect stale Amazon Connect turn is rejected without booking muta
     state.aiInteractionLogs[0].responsePayload.turnHistory.at(-1).turnStateDiagnostics.staleOrDuplicateRejectionReason,
     "provider_disconnected"
   );
+  assert.equal(state.aiInteractionLogs[0].responsePayload.turnStateDiagnostics.promptExpectedToPlay, false);
+  assert.equal(state.aiInteractionLogs[0].responsePayload.turnStateDiagnostics.lambdaRespondedAt, null);
+  assert.equal(state.aiInteractionLogs[0].responsePayload.turnHistory.at(-1).lambdaRespondedAt, null);
+  assert.ok(Date.parse(state.aiInteractionLogs[0].responsePayload.turnStateDiagnostics.apiStartedAt) <=
+    Date.parse(state.aiInteractionLogs[0].responsePayload.turnStateDiagnostics.apiCompletedAt));
 });
 
 test("confirmed booking retry for the same Amazon Connect contact does not create a duplicate appointment", async () => {
@@ -9037,10 +10343,10 @@ test("duplicate Lex phases for one human turn do not rerun booking business logi
   assert.equal(state.transcripts.length, 1);
   assert.equal(state.aiInteractionLogs.length, 1);
   assert.equal(state.aiInteractionLogs[0].responsePayload.turnHistory.length, 1);
-  assert.equal(
-    state.aiInteractionLogs[0].responsePayload.turnHistory[0].turnStateDiagnostics.staleOrDuplicateRejectionReason,
-    "duplicate_human_turn"
-  );
+	  assert.equal(
+	    state.aiInteractionLogs[0].responsePayload.turnHistory[0].turnStateDiagnostics.staleOrDuplicateRejectionReason,
+	    "duplicate_same_human_turn"
+	  );
 });
 
 test("duplicate DialogCodeHook phone set turn returns same valid audible requestedDate response", async () => {
@@ -9095,10 +10401,10 @@ test("duplicate DialogCodeHook phone set turn returns same valid audible request
   assert.equal(turn.playbackEvidenceStage, "LAMBDA_RESPONSE_ONLY");
   assert.equal(turn.promptPlaybackConfirmed, false);
   assert.equal(typeof turn.lambdaResponseFingerprint, "string");
-  assert.equal(
-    turn.turnStateDiagnostics.staleOrDuplicateRejectionReason,
-    "duplicate_human_turn"
-  );
+	  assert.equal(
+	    turn.turnStateDiagnostics.staleOrDuplicateRejectionReason,
+	    "provider_phase_duplicate"
+	  );
 });
 
 test("explicit human intent requests Connect transfer without provider queue confirmation", async () => {

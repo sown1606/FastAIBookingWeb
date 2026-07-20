@@ -332,8 +332,9 @@ const SERVICE_ALIASES: Record<string, string[]> = {
   ]
 };
 
+const WEEKDAY_WORD_PATTERN = "sunday|monday|tuesday|wednesday|thursday|friday|saturday";
 const DATE_PHRASE_PATTERN =
-  "\\b(?:tomorrow\\s+(?:morning|afternoon|evening|night)|this\\s+(?:morning|afternoon|evening)|tonight|today|tomorrow|(?:this|next)\\s+(?:sunday|monday|tuesday|wednesday|thursday|friday|saturday)|sunday|monday|tuesday|wednesday|thursday|friday|saturday)\\b";
+  `\\b(?:tomorrow\\s+(?:morning|afternoon|evening|night)|this\\s+(?:morning|afternoon|evening)|tonight|today|tomorrow|(?:this|next)\\s+(?:${WEEKDAY_WORD_PATTERN})|next[-\\s]?week\\s+(?:${WEEKDAY_WORD_PATTERN})|nextweek\\s+(?:${WEEKDAY_WORD_PATTERN})|(?:the\\s+)?(?:${WEEKDAY_WORD_PATTERN})\\s+next\\s+week|(?:${WEEKDAY_WORD_PATTERN}))\\b`;
 
 const SPOKEN_HOUR_PATTERN =
   "one|two|three|tree|tri|four|five|fife|six|seven|eight|nine|ten|eleven|twelve";
@@ -451,6 +452,7 @@ const ANY_STAFF_PHRASES = new Set([
   "who is available"
 ]);
 const CONTEXTUAL_ANY_STAFF_PHRASES = new Set([
+  "any stat",
   "what available",
   "who available",
   "one available",
@@ -462,6 +464,114 @@ const CONTEXTUAL_ANY_STAFF_PHRASES = new Set([
   "staff is fine",
   "available"
 ]);
+
+const BOOKING_FRAME_RESET_KEYS = [
+  "serviceName",
+  "ServiceName",
+  "service",
+  "Service",
+  "confirmedServiceName",
+  "serviceId",
+  "requestedDate",
+  "RequestedDate",
+  "preferredDate",
+  "PreferredDate",
+  "requestedTime",
+  "RequestedTime",
+  "preferredTime",
+  "PreferredTime",
+  "staffPreference",
+  "StaffPreference",
+  "staffId",
+  "selectedStaffId",
+  "confirmedStaffId",
+  "confirmedStaffName",
+  "bookingConfirmation",
+  "BookingConfirmation",
+  "confirmationState",
+  "confirmationFingerprint",
+  "bookingConfirmationFingerprint",
+  "awaitingFinalBookingConfirmation",
+  "bookingConfirmationAsked",
+  "awaitingRejectedBookingChoice",
+  "finalConfirmationChangeRequest",
+  "lastAskedSlot",
+  "slotToElicit",
+  "activeDtmfMenu",
+  "activeDtmfOptionsJson",
+  "awaitingAlternativeSelection",
+  "aiAlternativeSlots",
+  "alternativeOfferId",
+  "anchorRequestedDate",
+  "anchorRequestedTime",
+  "anchorRequestedStaff",
+  "rejectedOptionKeys",
+  "proposedStaffPreference",
+  "proposedRequestedDate",
+  "proposedRequestedTime",
+  "proposedServiceName",
+  "staffReplacementPreviousStaff",
+  "staffReplacementPreviousStaffId",
+  "staffReplacementPreviousSelectedStaffId",
+  "staffReplacementPreviousConfirmedStaffId",
+  "staffExclusionState",
+  "excludedStaffIds",
+  "excludedStaffNames",
+  "awaitingStaffConfirmation",
+  "awaitingServiceConfirmation",
+  "awaitingTimeConfirmation",
+  "awaitingBookingFrameRepairConfirmation",
+  "bookingFrameRepairReason",
+  "bookingFrameRepairConfirmed",
+  "bookingFrameRepairRejected",
+  "serviceClarificationReason",
+  "serviceClarificationHeard",
+  "serviceSuggestionName",
+  "staffClarificationReason",
+  "dateClarificationReason",
+  "weekdayDateConflict",
+  "dateDecisionDiagnostic",
+  "businessHoursDecision",
+  "availabilityReasonCode",
+  "offerAttemptCount",
+  "bookingRequestFingerprint",
+  "currentTurnSemanticType",
+  "voiceSlotDecisions",
+  "proposedSlotMutation",
+  "acceptedSlotMutations",
+  "preventedSlotMutations",
+  "asrAlternativesUsed",
+  "menuWasSpoken",
+  "staffMenuWasSpoken",
+  "staffDtmfOptions",
+  "staffDtmfStaffIds",
+  "staffDtmfPromptText",
+  "invalidStaffPreferenceIgnored",
+  "unrecognizedStaffUtterance",
+  "staffResolutionStatus",
+  "staffRecognitionFailureCount",
+  "serviceRecognitionFailureCount",
+  "serviceClarificationAttempts",
+  "serviceFallbackCount",
+  "invalidServiceCount",
+  "serviceFallbackOffered",
+  "scopedServiceDtmfInput",
+  "scopedStaffDtmfInput"
+];
+const FINAL_CONFIRMATION_CLEAR_KEYS = [
+  "bookingConfirmation",
+  "BookingConfirmation",
+  "confirmationState",
+  "confirmationFingerprint",
+  "bookingConfirmationFingerprint",
+  "awaitingFinalBookingConfirmation",
+  "bookingConfirmationAsked",
+  "finalConfirmationChangeRequest",
+  "lastAskedSlot",
+  "slotToElicit",
+  "activeDtmfMenu",
+  "activeDtmfOptionsJson"
+];
 const OPERATOR_TRANSFER_PROMPT = "Let me check for an available operator.";
 const OPERATOR_BUSY_PROMPT = "All of our operators are currently busy. Please call back later. Goodbye.";
 
@@ -484,6 +594,24 @@ const CUSTOMER_NAME_NOISE = new Set([
   "ah",
   "uh",
   "um",
+  "hi",
+  "hello",
+  "good",
+  "i m good",
+  "im good",
+  "i am good",
+  "doing well",
+  "i m doing well",
+  "im doing well",
+  "i am doing well",
+  "doing well thank you",
+  "i m doing well thank you",
+  "im doing well thank you",
+  "i am doing well thank you",
+  "thank you",
+  "thanks",
+  "yeah",
+  "how are you",
   "with",
   "at",
   "on",
@@ -525,6 +653,11 @@ const CUSTOMER_NAME_NOISE = new Set([
   "timeout",
   "timed out"
 ]);
+const CUSTOMER_NAME_SMALL_TALK_PATTERNS = [
+  /^(?:i\s*(?:am|'m|m)\s*)?(?:doing\s+well|good|fine|okay|ok)(?:\s+thank\s+you|\s+thanks)?$/,
+  /^(?:thank\s+you|thanks|yes|yeah|yep|okay|ok|hello|hi)$/,
+  /^(?:how\s+are\s+you|how\s+you\s+doing|how\s+is\s+it\s+going)$/
+];
 const SERVICE_DTMF_PROMPT =
   "Hi, I can help book your appointment. Tell me the service, day, time, and staff. You can press 0 for a person.";
 const SERVICE_DTMF_OPTIONS_PROMPT =
@@ -546,16 +679,52 @@ const normalizeForMatch = (value?: string | null): string => {
 
 const compactForMatch = (value?: string | null): string => normalizeForMatch(value).replace(/\s/g, "");
 
+const uniqueStrings = (values: unknown[] = []): string[] =>
+  Array.from(
+    new Set(
+      values
+        .map((value) => String(value ?? "").trim())
+        .filter(Boolean)
+    )
+  );
+
+const parseSessionAttributeKeysToClear = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return uniqueStrings(value);
+  }
+  const raw = typeof value === "string" ? value.trim() : "";
+  if (!raw) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return uniqueStrings(parsed);
+    }
+  } catch {
+    // Fall through to comma-delimited parsing.
+  }
+  return uniqueStrings(raw.split(","));
+};
+
+const getBookingFrameResetKeys = (extraKeys: string[] = []): string[] =>
+  uniqueStrings([...BOOKING_FRAME_RESET_KEYS, ...extraKeys]);
+
+const getFinalConfirmationClearKeys = (extraKeys: string[] = []): string[] =>
+  uniqueStrings([...FINAL_CONFIRMATION_CLEAR_KEYS, ...extraKeys]);
+
+const applyAttributeClears = <T extends Record<string, unknown>>(attributes: T, keys: string[]): T => {
+  for (const key of parseSessionAttributeKeysToClear(keys)) {
+    delete attributes[key];
+  }
+  return attributes;
+};
+
 const DEDICATED_FULL_SET_ALIASES = [
   "full set",
   "fullset",
   "full-set"
 ];
-const LOW_CONFIDENCE_FULL_SET_ALIAS_COMPACTS = new Set(
-  DEDICATED_FULL_SET_ALIASES
-    .filter((alias) => !["full set", "fullset", "full-set"].includes(alias))
-    .map((alias) => compactForMatch(alias))
-);
 
 const findDedicatedFullSetAlias = (value?: string | null): string | undefined => {
   const compact = compactForMatch(value);
@@ -602,11 +771,7 @@ const recognizeFullSetFromText = (
   if (!alias) {
     return undefined;
   }
-  const aliasCompact = compactForMatch(alias);
-  if (!LOW_CONFIDENCE_FULL_SET_ALIAS_COMPACTS.has(aliasCompact)) {
-    return "Full Set";
-  }
-  return hasFullSetBookingContext(value, context) ? "Full Set" : undefined;
+  return "Full Set";
 };
 
 const INVALID_SERVICE_PLACEHOLDERS = new Set([
@@ -783,7 +948,19 @@ const isNegative = (value?: string | null): boolean => {
   return /^(no|nope|not that|not correct|change it|update it|wrong|two|2)$/i.test(normalizeForMatch(value));
 };
 
-type FinalBookingConfirmationOutcome = "AFFIRMED" | "DENIED" | "CHANGE_REQUEST" | "UNKNOWN";
+const hasExplicitFirstAvailableStaffRejection = (value?: string | null): boolean => {
+  const normalized = normalizeForMatch(value);
+  if (!normalized) {
+    return false;
+  }
+  return Boolean(
+    /\bnot\s+(?:any\s+staff|first\s+available|the\s+first\s+available)\b/.test(normalized) ||
+      /\b(?:do\s+not|don\s+t|dont)\s+want\s+(?:any\s+staff|first\s+available|the\s+first\s+available)\b/.test(normalized) ||
+      /\banother\s+staff\b.*\bnot\s+(?:first\s+available|any\s+staff)\b/.test(normalized)
+  );
+};
+
+type FinalBookingConfirmationOutcome = "AFFIRMED" | "DENIED" | "CHANGE_REQUEST" | "NEW_BOOKING" | "UNKNOWN";
 
 const FINAL_CONFIRMATION_ONLY_PHRASES = new Set([
   "yes",
@@ -828,6 +1005,41 @@ const hasStaticServiceAliasInText = (value?: string | null): boolean => {
     });
 };
 
+const hasFreshBookingRestartIntent = (value?: string | null): boolean => {
+  const normalized = normalizeForMatch(value);
+  if (!normalized) {
+    return false;
+  }
+  const appointmentWord = /\b(?:appointment|booking)\b/.test(normalized);
+  const contextualApartment =
+    /\bapartment\b/.test(normalized) &&
+    /\b(?:book|schedule|new|another|make|start\s+over|restart|appointment)\b/.test(normalized);
+  if (
+    /\b(?:start\s+over|restart(?:\s+the\s+booking)?|start\s+a\s+new\s+booking|new\s+booking|book\s+again|book\s+another|make\s+another)\b/.test(
+      normalized
+    )
+  ) {
+    return true;
+  }
+  if (
+    /\b(?:i\s+want\s+to\s+book|want\s+to\s+book|need\s+to\s+book|book|schedule|make)\b/.test(normalized) &&
+    /\b(?:new|another|different)\b/.test(normalized) &&
+    (appointmentWord || contextualApartment)
+  ) {
+    return true;
+  }
+  if (/\b(?:i\s+need|need|want)\s+(?:a\s+)?different\s+(?:appointment|booking|apartment)\b/.test(normalized)) {
+    return true;
+  }
+  return Boolean(
+    /^(?:no|nope|nah|wait\s+no|no\s+i\s+say\s+no)\b/.test(normalized) &&
+      /\bbook\b/.test(normalized) &&
+      (hasStaticServiceAliasInText(value) ||
+        new RegExp(DATE_PHRASE_PATTERN, "i").test(value ?? "") ||
+        Boolean(extractTimeCandidate(value ?? "")))
+  );
+};
+
 const classifyFinalBookingConfirmation = (
   value?: string | null,
   options: { hasExplicitStaffChange?: boolean } = {}
@@ -855,12 +1067,16 @@ const classifyFinalBookingConfirmation = (
   const hasExplicitNegation =
     /\b(?:no|nope|nah|wrong|not correct|not right|do not|don t|dont|cancel it|wait no|change it|update it)\b/.test(normalized) ||
     /^(?:2|two)$/.test(normalized);
-  const hasAffirmation =
+	  const hasAffirmation =
     /\b(?:yes|yeah|yep|correct|right|sure|ok|okay)\b/.test(normalized) ||
     /^(?:1|one)$/.test(normalized) ||
     /\b(?:that s right|that is right|sounds good|that s fine|that is fine|go ahead|please book it|book it|confirm it)\b/.test(
       normalized
-    );
+	    );
+
+  if (hasFreshBookingRestartIntent(value)) {
+    return "NEW_BOOKING";
+  }
 
   if (hasStaffChangeRequest) {
     return "CHANGE_REQUEST";
@@ -1001,6 +1217,7 @@ const isInvalidCustomerNameNoise = (value?: string | null): boolean => {
   return Boolean(
     normalized &&
       (CUSTOMER_NAME_NOISE.has(normalized) ||
+        CUSTOMER_NAME_SMALL_TALK_PATTERNS.some((pattern) => pattern.test(normalized)) ||
         isDigitOnlyOrSequenceUtterance(value) ||
         /\b(book|booking|appointment|service|pedicure|manicure|full set|dip|powder|first available|any staff|tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|morning|afternoon|evening|night|am|pm|with|at|on|for|to|by|from|and|the|please|phone|number|zero|one|two|three|four|five|six|seven|eight|nine|ten)\b/.test(
           normalized
@@ -1116,6 +1333,37 @@ const staffAliasMatchesInText = (normalizedText: string, alias: string): number[
   return matches;
 };
 
+const containsKnownStaffAliasText = (
+  value?: string | null,
+  context: StaffPhraseContext = {}
+): boolean => {
+  const normalizedText = normalizeForMatch(value);
+  if (!normalizedText) {
+    return false;
+  }
+  const staticMatch = Object.entries(STAFF_ALIAS_PHRASES).some(([canonical, aliases]) =>
+    [canonical, ...aliases].some(
+      (alias) =>
+        !shouldSkipStaffAlias(canonical, alias, normalizedText, context) &&
+        staffAliasMatchesInText(normalizedText, alias).length > 0
+    )
+  );
+  if (staticMatch) {
+    return true;
+  }
+  return Object.values(readStaffDtmfOptions(context as Record<string, unknown>)).some((staffName) => {
+    const normalizedStaffName = normalizeForMatch(staffName);
+    if (!normalizedStaffName || normalizedStaffName === "any staff") {
+      return false;
+    }
+    const firstName = normalizeForMatch(staffName.split(/\s+/)[0]);
+    return (
+      staffAliasMatchesInText(normalizedText, normalizedStaffName).length > 0 ||
+      (firstName && staffAliasMatchesInText(normalizedText, firstName).length > 0)
+    );
+  });
+};
+
 const isNegatedStaffAlias = (normalizedText: string, matchIndex: number): boolean => {
   const before = normalizedText.slice(0, matchIndex).trim();
   return /\b(?:not|except|but\s+not|don\s+t\s+want|dont\s+want|do\s+not\s+want)(?:\s+(?:the|that|this|one|staff|technician|tech))?$/.test(
@@ -1138,12 +1386,16 @@ type StaffPhraseContext = {
 
 type VoiceSlotDecision = {
   slot: "serviceName" | "requestedDate" | "requestedTime" | "staffPreference" | "customerName" | "bookingConfirmation";
-  action: "accept" | "propose" | "reject" | "ignore";
+  action: "accept" | "propose" | "reject" | "preserve" | "ignore";
   canonicalValue?: string;
   entityId?: string;
   reason: string;
   confidenceBand: "high" | "medium" | "low";
   evidence: string[];
+  source: "dtmf" | "exact_catalog" | "lex_resolved" | "transcript" | "asr_alternative" | "contextual_repair";
+  activeSlot: string;
+  negated: boolean;
+  requiresConfirmation: boolean;
   alternativesUsed: boolean;
 };
 
@@ -1186,9 +1438,9 @@ const isStaffSelectionContext = (
       context.activeDtmfMenu === "staff" ||
       hasExplicitStaffContextCue(normalizedText, context) ||
       /\b(?:staff|technician|tech)\b/.test(normalizedText) ||
-      /\b(?:any\s+staff|any\s+technician|any\s+tech|first\s+avai?lable|the\s+first\s+available|for\s+available)\b/.test(
-        normalizedText
-      )
+      /\b(?:any\s+staff|any\s+stat|any\s+technician|any\s+tech|first\s+avai?lable|the\s+first\s+available|for\s+available)\b/.test(
+	        normalizedText
+	      )
   );
 
 const stripAnyStaffTrailingFiller = (normalizedText: string): string => {
@@ -1207,7 +1459,7 @@ const normalizeAnyStaffPhrase = (
   if (!normalized) {
     return undefined;
   }
-  if (/\bnot\s+(?:any\s+staff|first\s+available|the\s+first\s+available)\b/.test(normalized)) {
+  if (hasExplicitFirstAvailableStaffRejection(value)) {
     return undefined;
   }
 
@@ -1492,9 +1744,10 @@ const hasStaffCuePhrase = (
   const normalized = normalizeForMatch(value);
   return Boolean(
     normalized &&
-      (hasExplicitStaffContextCue(normalized, context) ||
-        /\bnot\s+(?!today\b|tomorrow\b|monday\b|tuesday\b|wednesday\b|thursday\b|friday\b|saturday\b|sunday\b|correct\b|right\b|book\b|it\b|that\b|this\b|my\b|me\b|name\b)[a-z][a-z'-]{1,40}\b/.test(normalized))
-  );
+	      (hasExplicitStaffContextCue(normalized, context) ||
+        /\b(?:any\s+staff|any\s+stat|first\s+avai?lable|the\s+first\s+available)\b/.test(normalized) ||
+	        /\bnot\s+(?!today\b|tomorrow\b|monday\b|tuesday\b|wednesday\b|thursday\b|friday\b|saturday\b|sunday\b|correct\b|right\b|book\b|it\b|that\b|this\b|my\b|me\b|name\b)[a-z][a-z'-]{1,40}\b/.test(normalized))
+	  );
 };
 
 const STAFF_FUZZY_STOP_TOKENS = new Set([
@@ -1746,6 +1999,123 @@ const findSpokenWeekdayToken = (value?: string | null): string | undefined => {
   return normalized.match(/\b(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/)?.[1];
 };
 
+const getRelativeWeekdayPhraseCandidate = (
+  value?: string | null
+): { text: string; weekday: string; mode: "this" | "next" | "next_week" | "bare"; index: number } | null => {
+  const normalized = normalizeForMatch(value);
+  if (!normalized) {
+    return null;
+  }
+  const candidates: Array<{ text: string; weekday: string; mode: "this" | "next" | "next_week" | "bare"; index: number }> = [];
+  const add = (match: RegExpMatchArray | null, mode: "this" | "next" | "next_week" | "bare") => {
+    if (!match?.[0] || match.index === undefined) {
+      return;
+    }
+    const weekday = match[1] ?? match[2];
+    if (!weekday) {
+      return;
+    }
+    candidates.push({
+      text: match[0],
+      weekday,
+      mode,
+      index: match.index
+    });
+  };
+  add(normalized.match(new RegExp(`\\bnext\\s+week\\s+(${WEEKDAY_WORD_PATTERN})\\b`)), "next_week");
+  add(normalized.match(new RegExp(`\\bnextweek\\s+(${WEEKDAY_WORD_PATTERN})\\b`)), "next_week");
+  add(normalized.match(new RegExp(`\\b(?:the\\s+)?(${WEEKDAY_WORD_PATTERN})\\s+next\\s+week\\b`)), "next_week");
+  add(normalized.match(new RegExp(`\\bnext\\s+(${WEEKDAY_WORD_PATTERN})\\b`)), "next");
+  add(normalized.match(new RegExp(`\\bthis\\s+(${WEEKDAY_WORD_PATTERN})\\b`)), "this");
+  const occupied = candidates.map((candidate) => [candidate.index, candidate.index + candidate.text.length]);
+  for (const match of normalized.matchAll(new RegExp(`\\b(${WEEKDAY_WORD_PATTERN})\\b`, "g"))) {
+    const index = match.index ?? 0;
+    if (occupied.some(([start, end]) => index >= start && index < end)) {
+      continue;
+    }
+    add(match, "bare");
+  }
+  return candidates.sort((left, right) => left.index - right.index)[0] ?? null;
+};
+
+const resolveRelativeWeekdayCandidate = (
+  candidate: NonNullable<ReturnType<typeof getRelativeWeekdayPhraseCandidate>>,
+  timezone: string
+): DateTime | null => {
+  const weekday = WEEKDAY_INDEXES[candidate.weekday];
+  if (!weekday) {
+    return null;
+  }
+  const now = getReferenceDateTime(timezone);
+  let daysUntil = (weekday - now.weekday + 7) % 7;
+  if (candidate.mode === "next" || candidate.mode === "next_week") {
+    daysUntil += 7;
+  }
+  return now.plus({ days: daysUntil }).startOf("day");
+};
+
+const getBareSameDayWeekdayClarification = (
+  value: string | undefined,
+  timezone: string
+): {
+  weekday: string;
+  todayDate: string;
+  nextDate: string;
+  todayLabel: string;
+  nextLabel: string;
+} | null => {
+  if (value && (parseMonthDayDateText(value, timezone)?.isValid || parseIsoDateOnlyText(value, timezone)?.isValid)) {
+    return null;
+  }
+  const candidate = getRelativeWeekdayPhraseCandidate(value);
+  if (!candidate || candidate.mode !== "bare") {
+    return null;
+  }
+  const weekday = WEEKDAY_INDEXES[candidate.weekday];
+  const now = getReferenceDateTime(timezone).startOf("day");
+  if (!weekday || now.weekday !== weekday) {
+    return null;
+  }
+  const next = now.plus({ days: 7 });
+  return {
+    weekday: WEEKDAY_LABELS[weekday] ?? candidate.weekday,
+    todayDate: now.toFormat("yyyy-MM-dd"),
+    nextDate: next.toFormat("yyyy-MM-dd"),
+    todayLabel: formatConflictDate(now),
+    nextLabel: formatConflictDate(next)
+  };
+};
+
+const buildBareSameDayWeekdayMessage = (
+  clarification: NonNullable<ReturnType<typeof getBareSameDayWeekdayClarification>>
+): string =>
+  speak(
+    `Do you mean today, ${escapeSsml(clarification.todayLabel)}, or next ${escapeSsml(clarification.nextLabel)}?`
+  );
+
+const buildDateDecisionDiagnostic = (input: {
+  rawTranscript?: string;
+  timezone: string;
+  selectedDate?: string | null;
+  decisionReason: string;
+  clarificationReason?: string;
+  candidates?: unknown[];
+  explicitDateCandidate?: string;
+  relativePhrase?: string;
+}): Record<string, unknown> => ({
+  rawTranscript: input.rawTranscript ?? "",
+  salonTimezone: input.timezone,
+  referenceLocalDateTime: getReferenceDateTime(input.timezone).toISO(),
+  referenceLocalDate: getReferenceDateTime(input.timezone).toFormat("yyyy-MM-dd"),
+  selectedDate: input.selectedDate ?? null,
+  decisionReason: input.decisionReason,
+  confidenceBand: input.clarificationReason ? "needs_clarification" : "high",
+  clarificationReason: input.clarificationReason,
+  candidates: input.candidates ?? [],
+  explicitDateCandidate: input.explicitDateCandidate,
+  parsedRelativePhrase: input.relativePhrase
+});
+
 const formatConflictDate = (value: DateTime): string => value.toFormat("cccc, LLLL d");
 
 const getWeekdayDateConflict = (
@@ -1756,10 +2126,13 @@ const getWeekdayDateConflict = (
   explicitDate: string;
   explicitMonthDay: string;
   explicitDateLabel: string;
-  actualWeekday: string;
-  intendedDate: string;
-  intendedDateLabel: string;
-} | null => {
+	  actualWeekday: string;
+	  intendedDate: string;
+	  intendedDateLabel: string;
+  explicitChoiceLabel?: string;
+  intendedChoiceLabel?: string;
+  conflictReason?: "weekday_date_conflict" | "relative_explicit_conflict";
+	} | null => {
   if (!value?.trim()) {
     return null;
   }
@@ -1768,6 +2141,33 @@ const getWeekdayDateConflict = (
     return null;
   }
   const explicitDate = parseMonthDayDateText(value, timezone) ?? parseIsoDateOnlyText(value, timezone);
+  const relativeCandidate = getRelativeWeekdayPhraseCandidate(value);
+  const relativeDate = relativeCandidate ? resolveRelativeWeekdayCandidate(relativeCandidate, timezone) : null;
+  if (
+    explicitDate?.isValid &&
+    relativeCandidate &&
+    relativeCandidate.mode !== "bare" &&
+    relativeDate?.isValid &&
+    explicitDate.toFormat("yyyy-MM-dd") !== relativeDate.toFormat("yyyy-MM-dd")
+  ) {
+    const spokenWeekdayIndex = WEEKDAY_INDEXES[relativeCandidate.weekday];
+    const explicitDateValue = explicitDate.toFormat("yyyy-MM-dd");
+    const explicitDateLabel = formatConflictDate(explicitDate);
+    const intendedDateLabel = formatConflictDate(relativeDate);
+    const todayDate = getReferenceDateTime(timezone).toFormat("yyyy-MM-dd");
+    return {
+      spokenWeekday: spokenWeekdayIndex ? WEEKDAY_LABELS[spokenWeekdayIndex] ?? relativeCandidate.weekday : relativeCandidate.weekday,
+      explicitDate: explicitDateValue,
+      explicitMonthDay: explicitDate.toFormat("LLLL d"),
+      explicitDateLabel,
+      explicitChoiceLabel: `${explicitDateValue === todayDate ? "today, " : ""}${explicitDateLabel}`,
+      actualWeekday: WEEKDAY_LABELS[explicitDate.weekday] ?? explicitDate.toFormat("cccc"),
+      intendedDate: relativeDate.toFormat("yyyy-MM-dd"),
+      intendedDateLabel,
+      intendedChoiceLabel: `next ${intendedDateLabel}`,
+      conflictReason: "relative_explicit_conflict"
+    };
+  }
   if (!explicitDate?.isValid) {
     return null;
   }
@@ -1776,7 +2176,7 @@ const getWeekdayDateConflict = (
     return null;
   }
   const intendedDate = parseLocalDateText(weekdayToken, timezone);
-  return {
+	  return {
     spokenWeekday: WEEKDAY_LABELS[spokenWeekdayIndex] ?? weekdayToken,
     explicitDate: explicitDate.toFormat("yyyy-MM-dd"),
     explicitMonthDay: explicitDate.toFormat("LLLL d"),
@@ -1785,7 +2185,8 @@ const getWeekdayDateConflict = (
     intendedDate: intendedDate?.toFormat("yyyy-MM-dd") ?? "",
     intendedDateLabel: intendedDate?.isValid
       ? formatConflictDate(intendedDate)
-      : (WEEKDAY_LABELS[spokenWeekdayIndex] ?? weekdayToken)
+      : (WEEKDAY_LABELS[spokenWeekdayIndex] ?? weekdayToken),
+    conflictReason: "weekday_date_conflict"
   };
 };
 
@@ -1793,7 +2194,9 @@ const buildWeekdayDateConflictMessage = (
   conflict: NonNullable<ReturnType<typeof getWeekdayDateConflict>>
 ): string =>
   speak(
-    `${escapeSsml(conflict.explicitMonthDay)} is ${escapeSsml(conflict.actualWeekday)}. Did you mean ${escapeSsml(conflict.explicitDateLabel)}, or ${escapeSsml(conflict.intendedDateLabel)}?`
+    conflict.conflictReason === "relative_explicit_conflict"
+      ? `Did you mean ${escapeSsml(conflict.explicitChoiceLabel ?? conflict.explicitDateLabel)}, or ${escapeSsml(conflict.intendedChoiceLabel ?? conflict.intendedDateLabel)}?`
+      : `${escapeSsml(conflict.explicitMonthDay)} is ${escapeSsml(conflict.actualWeekday)}. Did you mean ${escapeSsml(conflict.explicitDateLabel)}, or ${escapeSsml(conflict.intendedDateLabel)}?`
   );
 
 const parseLocalDateText = (value: string, timezone: string): DateTime | null => {
@@ -1819,16 +2222,9 @@ const parseLocalDateText = (value: string, timezone: string): DateTime | null =>
     return now.plus({ days: 1 }).startOf("day");
   }
 
-  const weekdayMatch = cleaned.match(
-    /^(?:(this|next)\s+)?(sunday|monday|tuesday|wednesday|thursday|friday|saturday)$/
-  );
-  const weekday = weekdayMatch ? WEEKDAY_INDEXES[weekdayMatch[2]!] : WEEKDAY_INDEXES[cleaned];
-  if (weekday !== undefined) {
-    let daysUntil = weekday - now.weekday;
-    if (daysUntil < 0 || (daysUntil === 0 && weekdayMatch?.[1] === "next")) {
-      daysUntil += 7;
-    }
-    return now.plus({ days: daysUntil }).startOf("day");
+  const relativeWeekdayCandidate = getRelativeWeekdayPhraseCandidate(cleaned);
+  if (relativeWeekdayCandidate && relativeWeekdayCandidate.text === cleaned) {
+    return resolveRelativeWeekdayCandidate(relativeWeekdayCandidate, timezone);
   }
 
   const isoDate = DateTime.fromISO(value.trim(), { zone: timezone });
@@ -2182,6 +2578,10 @@ const buildVoiceSlotDecision = (input: {
   reason?: string;
   confidenceBand?: VoiceSlotDecision["confidenceBand"];
   evidence?: Array<string | null | undefined>;
+  source?: VoiceSlotDecision["source"];
+  activeSlot?: string;
+  negated?: boolean;
+  requiresConfirmation?: boolean;
   alternativesUsed?: boolean;
 }): VoiceSlotDecision => ({
   slot: input.slot,
@@ -2194,6 +2594,11 @@ const buildVoiceSlotDecision = (input: {
     .map((item) => item?.trim())
     .filter((item): item is string => Boolean(item))
     .slice(0, 5),
+  source: input.source ?? "contextual_repair",
+  activeSlot: input.activeSlot ?? "",
+  negated: Boolean(input.negated),
+  requiresConfirmation:
+    input.requiresConfirmation === undefined ? input.action === "propose" : Boolean(input.requiresConfirmation),
   alternativesUsed: Boolean(input.alternativesUsed)
 });
 
@@ -2226,6 +2631,10 @@ const mutationPolicyToVoiceSlotDecision = (
       decision.proposedValue ? `proposed=${decision.proposedValue}` : undefined,
       decision.previousValue ? `previous=${decision.previousValue}` : undefined
     ],
+    source: decision.accepted ? "transcript" : "contextual_repair",
+    activeSlot: decision.activeSlot ?? "",
+    negated: decision.reason === "caller_rejected_proposed_value",
+    requiresConfirmation: false,
     alternativesUsed
   });
 
@@ -2412,6 +2821,16 @@ const getPreferredDateCandidate = (
         kind
       }));
 
+  const relativeMatches = collect(DATE_PHRASE_PATTERN, "relative").sort(
+    (left, right) => left.index - right.index
+  );
+  const strongRelative = relativeMatches.find((candidate) => {
+    const relative = getRelativeWeekdayPhraseCandidate(candidate.text);
+    return relative && relative.mode !== "bare";
+  });
+  if (strongRelative) {
+    return strongRelative;
+  }
   const explicitMatches = [
     ...collect(ISO_DATE_PATTERN, "explicit"),
     ...collect(MONTH_DAY_PATTERN, "explicit")
@@ -2419,10 +2838,6 @@ const getPreferredDateCandidate = (
   if (explicitMatches.length) {
     return explicitMatches[explicitMatches.length - 1] ?? null;
   }
-
-  const relativeMatches = collect(DATE_PHRASE_PATTERN, "relative").sort(
-    (left, right) => left.index - right.index
-  );
   return relativeMatches[0] ?? null;
 };
 
@@ -3280,10 +3695,18 @@ const buildAmazonConnectTurnHistoryItem = (input: {
       readStringValue(requestAttributes.lexRequestId) ||
       readStringValue(turnDiagnostics.lexRequestId) ||
       null,
-    lexPhase:
-      readStringValue(requestAttributes.lexPhase) ||
-      readStringValue(turnDiagnostics.lexPhase) ||
-      readStringValue(requestPayload.invocationSource) ||
+	    lexPhase:
+	      readStringValue(requestAttributes.lexPhase) ||
+	      readStringValue(turnDiagnostics.lexPhase) ||
+	      readStringValue(requestPayload.invocationSource) ||
+	      null,
+    transcriptFingerprint:
+      readStringValue(requestAttributes.transcriptFingerprint) ||
+      readStringValue(turnDiagnostics.transcriptFingerprint) ||
+      null,
+    duplicateDisposition:
+      readStringValue(turnDiagnostics.duplicateDisposition) ||
+      readStringValue(requestAttributes.duplicateDisposition) ||
       null,
     currentTurnTranscript:
       responsePayload.currentTurnTranscript ??
@@ -3428,11 +3851,16 @@ const withAmazonConnectTurnHistory = (
 
 const getIncomingTurnIdentity = (input: CreateAmazonConnectAIAppointmentInput) => {
   const attributes = recordFromUnknown(input.attributes);
+  const transcript = readStringValue(input.currentTurnTranscript) || readStringValue(input.text);
   return {
     humanTurnId: readStringValue(attributes.humanTurnId),
     providerTurnId: readStringValue(attributes.providerTurnId),
+    providerRequestId: readStringValue(attributes.providerRequestId),
     lexPhase: readStringValue(attributes.lexPhase),
-    lexRequestId: readStringValue(attributes.lexRequestId)
+    lexRequestId: readStringValue(attributes.lexRequestId),
+    transcriptFingerprint: transcript
+      ? createHash("sha256").update(normalizeForMatch(transcript)).digest("hex").slice(0, 24)
+      : ""
   };
 };
 
@@ -3445,10 +3873,47 @@ const turnMatchesIncomingIdentity = (
   const turnHumanId = readStringValue(record.humanTurnId) || readStringValue(diagnostics.humanTurnId);
   const turnProviderId =
     readStringValue(record.providerTurnId) || readStringValue(diagnostics.providerTurnId);
-  if (identity.humanTurnId && turnHumanId === identity.humanTurnId) {
-    return true;
+  if (identity.humanTurnId && turnHumanId) {
+    return turnHumanId === identity.humanTurnId;
   }
-  return Boolean(identity.providerTurnId && turnProviderId === identity.providerTurnId);
+  return Boolean(
+    identity.providerTurnId &&
+      turnProviderId === identity.providerTurnId &&
+      (!identity.humanTurnId || !turnHumanId)
+  );
+};
+
+const getDuplicateDisposition = (
+  turn: unknown,
+  identity: ReturnType<typeof getIncomingTurnIdentity>
+): "duplicate_same_human_turn" | "provider_phase_duplicate" => {
+  const record = recordFromUnknown(turn);
+  const diagnostics = recordFromUnknown(record.turnStateDiagnostics);
+  const turnProviderId = readStringValue(record.providerTurnId) || readStringValue(diagnostics.providerTurnId);
+  return identity.providerTurnId && turnProviderId === identity.providerTurnId
+    ? "provider_phase_duplicate"
+    : "duplicate_same_human_turn";
+};
+
+const findProviderRequestIdReuse = (
+  turnHistory: unknown[],
+  identity: ReturnType<typeof getIncomingTurnIdentity>
+): unknown | null => {
+  const providerRequestId = identity.providerRequestId || identity.lexRequestId;
+  if (!providerRequestId || !identity.humanTurnId) {
+    return null;
+  }
+  return turnHistory.find((turn) => {
+    const record = recordFromUnknown(turn);
+    const diagnostics = recordFromUnknown(record.turnStateDiagnostics);
+    const turnHumanId = readStringValue(record.humanTurnId) || readStringValue(diagnostics.humanTurnId);
+    const turnProviderRequestId =
+      readStringValue(record.providerRequestId) ||
+      readStringValue(diagnostics.providerRequestId) ||
+      readStringValue(record.lexRequestId) ||
+      readStringValue(diagnostics.lexRequestId);
+    return Boolean(turnProviderRequestId === providerRequestId && turnHumanId && turnHumanId !== identity.humanTurnId);
+  }) ?? null;
 };
 
 const KNOWN_BOOKING_SLOT_NAMES = new Set([
@@ -3550,6 +4015,7 @@ const findDuplicateAmazonConnectTurn = async (
   if (!matchedTurn) {
     return null;
   }
+  const duplicateDisposition = getDuplicateDisposition(matchedTurn, identity);
   const updatedHistory = turnHistory.map((turn) => {
     if (!turnMatchesIncomingIdentity(turn, identity)) {
       return turn;
@@ -3559,10 +4025,11 @@ const findDuplicateAmazonConnectTurn = async (
       ...record,
       turnStateDiagnostics: {
         ...recordFromUnknown(record.turnStateDiagnostics),
-        staleOrDuplicateRejectionReason: "duplicate_human_turn",
-        duplicateDisposition: "merged_without_business_execution",
+        staleOrDuplicateRejectionReason: duplicateDisposition,
+        duplicateDisposition,
         duplicateLexPhase: identity.lexPhase || null,
-        duplicateLexRequestId: identity.lexRequestId || null
+        duplicateLexRequestId: identity.lexRequestId || null,
+        incomingTranscriptFingerprint: identity.transcriptFingerprint || null
       }
     };
   });
@@ -3625,20 +4092,20 @@ const buildProviderDisconnectedStaleTurnResponse = async (input: {
       staleOrDuplicateRejectionReason: "provider_disconnected",
       providerDisconnectedAt: input.providerDisconnectedAt.toISOString(),
       rejectedTurnTimestamp: input.turnTimestamp.toISOString(),
-      conversationState: "CONTINUE",
-      conversationOutcome: "NEEDS_INPUT",
-      conversationComplete: "false",
+      conversationState: "TERMINAL",
+      conversationOutcome: "PROVIDER_DISCONNECTED",
+      conversationComplete: "true",
       forceHumanEscalation: "false",
       transferToQueue: "false"
     }).filter(([, value]) => value !== undefined && value !== null && String(value).trim() !== "")
   ) as Record<string, string>;
-  const message = "I'm still here. Please repeat that detail when you're ready.";
+  const message = "The caller already disconnected.";
   const lexResponse = {
-    fulfillmentState: "InProgress",
+    fulfillmentState: "Fulfilled",
     message,
     messageContentType: "PlainText",
     dialogAction: {
-      type: "ElicitIntent"
+      type: "Close"
     },
     sessionAttributes
   };
@@ -4328,6 +4795,82 @@ const hasScopedFullSetPhoneticCandidate = (value?: string | null): boolean => {
   );
 };
 
+const hasTruncatedSetFullSetCandidate = (value?: string | null): boolean => {
+  const normalized = normalizeForMatch(value);
+  if (!normalized || hasUnsafeSunsetWithoutExplicitFullSetAlias(value)) {
+    return false;
+  }
+  if (!/^set(?:\s|$)/.test(normalized) || normalized === "set") {
+    return false;
+  }
+  if (/\b(?:set\s+up|the\s+alarm|alarm|meeting|reminder|timer|reset)\b/.test(normalized)) {
+    return false;
+  }
+  return hasGroundedDatePhrase(value) || hasGroundedTimePhrase(value, {
+    currentTurnHasDatePhrase: hasGroundedDatePhrase(value)
+  });
+};
+
+const getActiveCatalogServiceNamesForRepair = (
+  attributes?: Record<string, unknown>
+): string[] => {
+  const activeNamesRaw = readStringAttribute(attributes, ["activeServiceNames"]);
+  const activeNames = (() => {
+    if (!activeNamesRaw) {
+      return [];
+    }
+    try {
+      const parsed = JSON.parse(activeNamesRaw);
+      return Array.isArray(parsed)
+        ? parsed.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+        : [];
+    } catch {
+      return [];
+    }
+  })();
+  const serviceOptions = parseJsonStringRecord(readStringAttribute(attributes, ["serviceDtmfOptions"]));
+  const dtmfNames = Object.values(
+    Object.keys(serviceOptions).length ? serviceOptions : SERVICE_DTMF_OPTIONS
+  ).filter(
+    (value) => value && value !== "__operator__"
+  );
+  return activeNames.length ? activeNames : dtmfNames;
+};
+
+const catalogAllowsTruncatedFullSetRepair = (
+  attributes?: Record<string, unknown>
+): boolean => {
+  const catalogNames = getActiveCatalogServiceNamesForRepair(attributes);
+  const hasFullSet = catalogNames.some((serviceName) => normalizeForMatch(serviceName) === "full set");
+  const hasAmbiguousSetService = catalogNames.some((serviceName) => {
+    const normalized = normalizeForMatch(serviceName);
+    return normalized === "set" || (normalized.endsWith(" set") && normalized !== "full set");
+  });
+  return hasFullSet && !hasAmbiguousSetService;
+};
+
+const transcriptHasExactDifferentServiceForFullSetRepair = (
+  value?: string | null,
+  attributes?: Record<string, unknown>
+): boolean => {
+  const serviceName = recognizeFullSetFromText(value, {
+    lastAskedSlot: readStringAttribute(attributes, ["lastAskedSlot"]),
+    activeDtmfMenu: readStringAttribute(attributes, ["activeDtmfMenu"])
+  })
+    ? "Full Set"
+    : undefined;
+  if (serviceName) {
+    return false;
+  }
+  const normalized = compactForMatch(value);
+  return getActiveCatalogServiceNamesForRepair(attributes)
+    .filter((candidate) => normalizeForMatch(candidate) !== "full set" && candidate !== "__operator__")
+    .some((candidate) => {
+      const compact = compactForMatch(candidate);
+      return compact.length >= 4 && normalized.includes(compact);
+    });
+};
+
 const hasStrongServiceSlotFullSetCandidate = (value?: string | null): boolean => {
   const normalized = normalizeForMatch(value);
   if (!normalized || hasUnsafeSunsetWithoutExplicitFullSetAlias(value)) {
@@ -4358,6 +4901,9 @@ const findProposedFullSetServiceClarification = (input: {
   }
   const staffContext = staffPhraseContextFromAttributes(input.attributes);
   const candidates = getAsrDecisionTranscripts(topTranscript, input.attributes);
+  if (candidates.some((candidate) => transcriptHasExactDifferentServiceForFullSetRepair(candidate.transcript, input.attributes))) {
+    return null;
+  }
   const alternativeMatch = candidates.find(
     (candidate) =>
       candidate.source === "alternative" &&
@@ -4380,10 +4926,25 @@ const findProposedFullSetServiceClarification = (input: {
     /\b(?:today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|at|am|pm|appointment|book|booking|service)\b/.test(
       normalizeForMatch(topTranscript)
     );
-  const hasServiceSlotOnlyContext =
-    serviceSlotActive && hasStrongServiceSlotFullSetCandidate(topTranscript);
+  const truncatedSetCandidate = hasTruncatedSetFullSetCandidate(topTranscript);
+  const currentTurnHasDateOrTime =
+    hasGroundedDatePhrase(topTranscript) ||
+    hasGroundedTimePhrase(topTranscript, {
+      lastAskedSlot: readStringAttribute(input.attributes, ["lastAskedSlot"]),
+      currentTurnHasDatePhrase: hasGroundedDatePhrase(topTranscript)
+    });
+  const knownDateOrTime = Boolean(input.requestedDate || input.requestedTime);
   if (
-    hasScopedFullSetPhoneticCandidate(topTranscript) &&
+    truncatedSetCandidate &&
+    (!catalogAllowsTruncatedFullSetRepair(input.attributes) ||
+      (!currentTurnHasDateOrTime && !knownDateOrTime))
+  ) {
+    return null;
+  }
+  const hasServiceSlotOnlyContext =
+    serviceSlotActive && (hasScopedFullSetPhoneticCandidate(topTranscript) || truncatedSetCandidate);
+  if (
+    (hasScopedFullSetPhoneticCandidate(topTranscript) || truncatedSetCandidate) &&
     (hasServiceSlotOnlyContext || hasBookingContext)
   ) {
     return {
@@ -4412,6 +4973,9 @@ const hasGuardedFirstAvailableStaffTail = (normalizedValue: string): boolean => 
   if (!normalized) {
     return false;
   }
+  if (hasExplicitFirstAvailableStaffRejection(normalized)) {
+    return false;
+  }
   const tail = stripAnyStaffTrailingFiller(normalized)
     .replace(/\s+(?:music|background music|noise)$/, "")
     .trim();
@@ -4422,13 +4986,22 @@ const hasGuardedFirstAvailableStaffTail = (normalizedValue: string): boolean => 
     /\b(?:and\s+)?(?:it\s+s|its|it\s+is|it)?\s*stopp?ed\s+at\s+(?:five|5)\b/.test(tail) ||
       [
         "any stop",
+        "any top",
         "anystop",
         "edit stop",
         "edit stop if i",
         "any stop if i",
+        "i need stop if i",
+        "i need stop",
+        "need stop if i",
+        "need stop",
         "any stuff",
         "any star",
         "any star is fine",
+        "and it s top",
+        "and its top",
+        "and it is top",
+        "at least happy five",
         "and it s thirty five",
         "and its thirty five",
         "and it is thirty five",
@@ -4457,6 +5030,30 @@ const hasGuardedFirstAvailableStaffTail = (normalizedValue: string): boolean => 
         "the end is high"
       ].some((alias) => tail === alias || tail.endsWith(` ${alias}`))
   );
+};
+
+const hasLowConfidenceFirstAvailableStaffTail = (value?: string | null): boolean => {
+  const normalized = normalizeForMatch(value);
+  if (!normalized || hasExplicitFirstAvailableStaffRejection(normalized)) {
+    return false;
+  }
+  const tail = stripAnyStaffTrailingFiller(normalized)
+    .replace(/\s+(?:music|background music|noise)$/, "")
+    .trim();
+  return [
+    "and it s not",
+    "and its not",
+    "and it is not",
+    "it s not",
+    "its not",
+    "it is not",
+    "and it s not a fight",
+    "and its not a fight",
+    "and it is not a fight",
+    "it s not a fight",
+    "its not a fight",
+    "it is not a fight"
+  ].some((alias) => tail === alias || tail.endsWith(` ${alias}`));
 };
 
 const findProposedTodayDateClarification = (input: {
@@ -4515,7 +5112,8 @@ const isRejectedFirstAvailableStaffCandidate = (
   if (!normalized || getActiveVoiceSlot(attributes) !== "staffPreference") {
     return false;
   }
-  return /\bnot\s+(?:any\s+staff|the\s+first\s+available|first\s+available)\b/.test(normalized) ||
+  return hasExplicitFirstAvailableStaffRejection(value) ||
+    /\bnot\s+(?:any\s+staff|the\s+first\s+available|first\s+available)\b/.test(normalized) ||
     /\bnot\s+(?:a\s+)?(?:five|5)\b/.test(normalized);
 };
 
@@ -4530,19 +5128,60 @@ const findProposedAnyStaffClarification = (input: {
   attributes?: Record<string, unknown>;
 }): {
   proposedStaffPreference: "Any staff";
-  reason: "asr_alternative_first_available" | "ambiguous_first_available_asr";
+  reason: "asr_alternative_first_available" | "ambiguous_first_available_asr" | "out_of_order_first_available";
+  confidenceBand: "medium" | "low";
   asrAlternativesUsed: boolean;
   matchedTranscript: string;
 } | null => {
   const topTranscript = input.currentTurnTranscript ?? input.transcriptText ?? "";
-  const activeStaffSlot = getActiveVoiceSlot(input.attributes) === "staffPreference";
+  if (hasExplicitFirstAvailableStaffRejection(topTranscript)) {
+    return null;
+  }
+  const activeSlot = getActiveVoiceSlot(input.attributes);
+  const activeStaffSlot = activeSlot === "staffPreference";
+  const activeServiceSlot =
+    activeSlot === "serviceName" ||
+    readStringAttribute(input.attributes, ["lastAskedSlot"]) === "serviceName" ||
+    readStringAttribute(input.attributes, ["activeDtmfMenu"]) === "service";
+  const hasDateAndTime = Boolean((input.requestedDate || input.proposedRequestedDate) && input.requestedTime);
   const hasCompleteBookingFrame =
     Boolean(input.serviceName && (input.requestedDate || input.proposedRequestedDate) && input.requestedTime) &&
     isBookingLikeUtterance(topTranscript);
-  if (!activeStaffSlot && !hasCompleteBookingFrame) {
+  const hasNamedTrustedStaff = Boolean(
+    input.staffPreference &&
+      normalizeForMatch(input.staffPreference) !== "any staff"
+  );
+  const hasFinalConfirmationReplacementContext =
+    readStringAttribute(input.attributes, ["awaitingFinalBookingConfirmation"]) === "true" ||
+    readStringAttribute(input.attributes, ["bookingConfirmationAsked"]) === "true" ||
+    readStringAttribute(input.attributes, ["lastAskedSlot"]) === "bookingConfirmation";
+  const canProposeFinalConfirmationReplacement =
+    hasFinalConfirmationReplacementContext &&
+    hasNamedTrustedStaff &&
+    Boolean(input.serviceName && (input.requestedDate || input.proposedRequestedDate) && input.requestedTime);
+  const hasOutOfOrderStaffRepairContext =
+    activeServiceSlot &&
+    !input.staffPreference &&
+    !readStringAttribute(input.attributes, ["confirmedStaffName"]);
+  if (
+    !activeStaffSlot &&
+    !hasCompleteBookingFrame &&
+    !hasOutOfOrderStaffRepairContext &&
+    !canProposeFinalConfirmationReplacement
+  ) {
     return null;
   }
-  if (input.staffPreference || !input.serviceName || !(input.requestedDate || input.proposedRequestedDate) || !input.requestedTime) {
+  if (
+    input.staffPreference &&
+    !canProposeFinalConfirmationReplacement
+  ) {
+    return null;
+  }
+  if (
+    !canProposeFinalConfirmationReplacement &&
+    !hasOutOfOrderStaffRepairContext &&
+    (!hasDateAndTime || !input.serviceName)
+  ) {
     return null;
   }
   const staffContext = {
@@ -4552,15 +5191,64 @@ const findProposedAnyStaffClarification = (input: {
     requestedTime: input.requestedTime,
     lastAskedSlot: "staffPreference"
   };
-  if (normalizeAnyStaffPhrase(topTranscript, staffContext)) {
-    return null;
+  const topAnyStaffPhrase = normalizeAnyStaffPhrase(topTranscript, staffContext);
+  const topLowConfidenceTail = hasLowConfidenceFirstAvailableStaffTail(topTranscript);
+	  const topGuardedTail = hasGuardedFirstAvailableStaffTail(topTranscript);
+	  if (topAnyStaffPhrase) {
+    if (hasCompleteBookingFrame) {
+      return {
+        proposedStaffPreference: "Any staff",
+        reason: "ambiguous_first_available_asr",
+        confidenceBand: "medium",
+        asrAlternativesUsed: getAsrDecisionTranscripts(topTranscript, input.attributes).length > 1,
+        matchedTranscript: topTranscript
+      };
+    }
+	    if (!hasOutOfOrderStaffRepairContext) {
+	      return null;
+	    }
+    return {
+      proposedStaffPreference: "Any staff",
+      reason: "out_of_order_first_available",
+      confidenceBand: "medium",
+      asrAlternativesUsed: getAsrDecisionTranscripts(topTranscript, input.attributes).length > 1,
+      matchedTranscript: topTranscript
+    };
   }
-  if (hasGuardedFirstAvailableStaffTail(topTranscript)) {
+  if (topLowConfidenceTail) {
     return {
       proposedStaffPreference: "Any staff",
       reason: "ambiguous_first_available_asr",
+      confidenceBand: "low",
       asrAlternativesUsed: getAsrDecisionTranscripts(topTranscript, input.attributes).length > 1,
       matchedTranscript: topTranscript
+    };
+  }
+  if (topGuardedTail) {
+    return {
+      proposedStaffPreference: "Any staff",
+      reason: "ambiguous_first_available_asr",
+      confidenceBand: "medium",
+      asrAlternativesUsed: getAsrDecisionTranscripts(topTranscript, input.attributes).length > 1,
+      matchedTranscript: topTranscript
+    };
+  }
+  if (containsKnownStaffAliasText(topTranscript, input.attributes)) {
+    return null;
+  }
+  const ambiguousAlternativeMatch = getAsrDecisionTranscripts(topTranscript, input.attributes).find(
+    (candidate) =>
+      candidate.source === "alternative" &&
+      (hasLowConfidenceFirstAvailableStaffTail(candidate.transcript) ||
+        hasGuardedFirstAvailableStaffTail(candidate.transcript))
+  );
+  if (ambiguousAlternativeMatch) {
+    return {
+      proposedStaffPreference: "Any staff",
+      reason: "ambiguous_first_available_asr",
+      confidenceBand: hasLowConfidenceFirstAvailableStaffTail(ambiguousAlternativeMatch.transcript) ? "low" : "medium",
+      asrAlternativesUsed: true,
+      matchedTranscript: ambiguousAlternativeMatch.transcript
     };
   }
   const alternativeMatch = getAsrDecisionTranscripts(topTranscript, input.attributes).find(
@@ -4574,6 +5262,7 @@ const findProposedAnyStaffClarification = (input: {
   return {
     proposedStaffPreference: "Any staff",
     reason: "asr_alternative_first_available",
+    confidenceBand: "medium",
     asrAlternativesUsed: true,
     matchedTranscript: alternativeMatch.transcript
   };
@@ -4581,21 +5270,24 @@ const findProposedAnyStaffClarification = (input: {
 
 const buildBookingFrameRepairConfirmationPrompt = (
   input: {
-    serviceName: string;
-    proposedRequestedDate: string;
+    serviceName?: string;
+    proposedServiceName?: string;
+    requestedDate?: string;
+    proposedRequestedDate?: string;
     requestedTime: string;
     proposedStaffPreference: "Any staff";
   },
   timezone: string
 ): string => {
-  const date = formatKnownDateForPrompt(input.proposedRequestedDate, timezone);
+  const serviceName = input.proposedServiceName ?? input.serviceName;
+  const date = formatKnownDateForPrompt(input.proposedRequestedDate ?? input.requestedDate, timezone);
   const time = formatKnownTimeForPrompt(input.requestedTime);
   const staff =
     normalizeForMatch(input.proposedStaffPreference) === "any staff"
       ? "the first available staff"
       : input.proposedStaffPreference;
   return speak(
-    `I heard ${escapeSsml(input.serviceName)} ${escapeSsml(date)} at ${escapeSsml(time)} with ${escapeSsml(staff)}. Is that right?`
+    `I heard ${escapeSsml(serviceName)} ${escapeSsml(date)} at ${escapeSsml(time)} with ${escapeSsml(staff)}. Is that right?`
   );
 };
 
@@ -5918,32 +6610,35 @@ const buildAmazonConnectTimingDiagnostics = (input: {
 }) => {
   const attributes = input.attributes ?? {};
   const apiCompletedAt = new Date().toISOString();
-  const apiStartedAt = readStringValue(attributes.apiStartedAt);
+  const rawApiStartedAt = readStringValue(attributes.apiStartedAt);
   const lambdaReceivedAt = readStringValue(attributes.lambdaReceivedAt);
-  const lambdaRespondedAt = readStringValue(attributes.lambdaRespondedAt);
+  const rawLambdaRespondedAt = readStringValue(attributes.lambdaRespondedAt);
   const providerDisconnectedAt =
     input.providerDisconnectedAt?.toISOString() ||
     readStringValue(attributes.providerDisconnectedAt);
-  const apiStartedMs = apiStartedAt ? Date.parse(apiStartedAt) : NaN;
+  const apiStartedMs = rawApiStartedAt ? Date.parse(rawApiStartedAt) : NaN;
   const apiCompletedMs = Date.parse(apiCompletedAt);
   const lambdaReceivedMs = lambdaReceivedAt ? Date.parse(lambdaReceivedAt) : NaN;
-  const lambdaRespondedMs = lambdaRespondedAt ? Date.parse(lambdaRespondedAt) : NaN;
-  const providedApiProcessingMs = Number(attributes.apiProcessingMs);
-  const providedLambdaProcessingMs = Number(attributes.lambdaProcessingMs);
+  const rawLambdaRespondedMs = rawLambdaRespondedAt ? Date.parse(rawLambdaRespondedAt) : NaN;
+  const apiStartedAt =
+    Number.isFinite(apiStartedMs) && apiStartedMs <= apiCompletedMs ? rawApiStartedAt : null;
+  const lambdaRespondedAt =
+    Number.isFinite(rawLambdaRespondedMs) &&
+    (!Number.isFinite(lambdaReceivedMs) || rawLambdaRespondedMs >= lambdaReceivedMs) &&
+    rawLambdaRespondedMs >= apiCompletedMs
+      ? rawLambdaRespondedAt
+      : null;
+  const lambdaRespondedMs = lambdaRespondedAt ? rawLambdaRespondedMs : NaN;
   return {
     providerTranscriptTimestamp: readStringValue(attributes.providerTranscriptTimestamp) || null,
     lambdaReceivedAt: lambdaReceivedAt || null,
-    apiStartedAt: apiStartedAt || null,
+    apiStartedAt,
     apiCompletedAt,
-    lambdaRespondedAt: lambdaRespondedAt || null,
-    lambdaProcessingMs: Number.isFinite(providedLambdaProcessingMs)
-      ? providedLambdaProcessingMs
-      : Number.isFinite(lambdaReceivedMs) && Number.isFinite(lambdaRespondedMs)
+    lambdaRespondedAt,
+    lambdaProcessingMs: Number.isFinite(lambdaReceivedMs) && Number.isFinite(lambdaRespondedMs)
         ? Math.max(0, lambdaRespondedMs - lambdaReceivedMs)
         : null,
-    apiProcessingMs: Number.isFinite(providedApiProcessingMs)
-      ? providedApiProcessingMs
-      : Number.isFinite(apiStartedMs) && Number.isFinite(apiCompletedMs)
+    apiProcessingMs: Number.isFinite(apiStartedMs) && Number.isFinite(apiCompletedMs)
         ? Math.max(0, apiCompletedMs - apiStartedMs)
         : null,
     connectBranch:
@@ -6177,6 +6872,31 @@ const buildStructuredCallSummary = (input: {
 const asTrimmedString = (value?: unknown): string | undefined => {
   const trimmed = typeof value === "string" ? value.trim() : undefined;
   return trimmed && trimmed.length > 0 ? trimmed : undefined;
+};
+
+const buildApiReleaseIdentity = () => ({
+  VOICE_API_RELEASE_ID: env.FASTAIBOOKING_API_RELEASE_ID ?? "",
+  VOICE_API_SOURCE_SHA256: env.FASTAIBOOKING_API_SOURCE_SHA256 ?? "",
+  VOICE_API_VARIANT: env.FASTAIBOOKING_API_VARIANT ?? ""
+});
+
+const buildVoiceReleaseIdentity = (attributes?: Record<string, unknown>) => {
+  const source = recordFromUnknown(attributes);
+  const pick = (name: string) => asTrimmedString(source[name]);
+  return {
+    VOICE_RELEASE_ID: pick("VOICE_RELEASE_ID"),
+    VOICE_VARIANT: pick("VOICE_VARIANT"),
+    VOICE_SOURCE_SHA256: pick("VOICE_SOURCE_SHA256"),
+    VOICE_CONNECT_FLOW_ID: pick("VOICE_CONNECT_FLOW_ID"),
+    VOICE_CONNECT_MARKER: pick("VOICE_CONNECT_MARKER") ?? pick("connectFlowSourceVersion"),
+    VOICE_LEX_ALIAS_ID: pick("VOICE_LEX_ALIAS_ID"),
+    VOICE_LEX_ALIAS_ARN: pick("VOICE_LEX_ALIAS_ARN"),
+    VOICE_LEX_BOT_VERSION: pick("VOICE_LEX_BOT_VERSION"),
+    VOICE_LAMBDA_FUNCTION_NAME: pick("VOICE_LAMBDA_FUNCTION_NAME"),
+    VOICE_LAMBDA_FUNCTION_VERSION: pick("VOICE_LAMBDA_FUNCTION_VERSION"),
+    VOICE_LAMBDA_CODE_SHA256: pick("VOICE_LAMBDA_CODE_SHA256"),
+    ...buildApiReleaseIdentity()
+  };
 };
 
 const findKnownCallerMemoryByPhone = async (input: {
@@ -6469,6 +7189,74 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
       "AMAZON_CONNECT",
     attributes
   };
+};
+
+const currentTurnHasBookingDetails = (input: ReturnType<typeof normalizeAmazonConnectAppointmentInput>): boolean =>
+  {
+    const text = input.currentTurnTranscript ?? input.transcriptText;
+    return Boolean(
+      hasStaticServiceAliasInText(text) ||
+      hasGroundedDatePhrase(text) ||
+      hasGroundedTimePhrase(input.currentTurnTranscript ?? input.transcriptText, {
+        lastAskedSlot: readStringAttribute(input.attributes, ["lastAskedSlot"]),
+        currentTurnSemanticType: readStringAttribute(input.attributes, ["currentTurnSemanticType"])
+      }) ||
+      normalizeAnyStaffPhrase(text, staffPhraseContextFromAttributes(input.attributes))
+    );
+  };
+
+const applyFreshBookingResetToNormalized = (
+  normalized: ReturnType<typeof normalizeAmazonConnectAppointmentInput>,
+  extra: Record<string, unknown> = {}
+): void => {
+  applyAttributeClears(normalized.attributes, getBookingFrameResetKeys());
+  normalized.serviceName = undefined;
+  normalized.requestedDate = undefined;
+  normalized.requestedTime = undefined;
+  normalized.staffPreference = undefined;
+  normalized.staffId = undefined;
+  normalized.bookingConfirmation = undefined;
+  normalized.confirmationState = undefined;
+  Object.assign(normalized.attributes, {
+    ...extra,
+    freshBookingRestart: "true",
+    restartBookingFrameCleared: "true",
+    awaitingFinalBookingConfirmation: "false",
+    bookingConfirmationAsked: "false",
+    awaitingRejectedBookingChoice: "false",
+    sessionAttributeKeysToClear: JSON.stringify(getBookingFrameResetKeys())
+  });
+};
+
+const classifyRejectedBookingChoice = (
+  value: string | undefined,
+  normalized: ReturnType<typeof normalizeAmazonConnectAppointmentInput>
+): "NEW_BOOKING" | "CHANGE_REQUEST" | "CHANGE_DETAIL_MENU" | "STOP" | "UNKNOWN" => {
+  const normalizedText = normalizeForMatch(value);
+  if (!normalizedText) {
+    return "UNKNOWN";
+  }
+  if (
+    /^(?:no|nope|nah|no thanks|never mind|nevermind|forget it|stop|i m done|im done|done)$/.test(normalizedText) ||
+    /\b(?:do not book anything|don t book anything|dont book anything|no thanks|never mind|forget it|stop|goodbye)\b/.test(
+      normalizedText
+    )
+  ) {
+    return "STOP";
+  }
+  if (hasFreshBookingRestartIntent(value) || isAffirmative(value)) {
+    return "NEW_BOOKING";
+  }
+  if (/\bchange(?:\s+a)?\s+detail\b/.test(normalizedText) && !currentTurnHasBookingDetails(normalized)) {
+    return "CHANGE_DETAIL_MENU";
+  }
+  if (
+    currentTurnHasBookingDetails(normalized) ||
+    /\b(?:change|make it|instead|switch|move it|use)\b/.test(normalizedText)
+  ) {
+    return "CHANGE_REQUEST";
+  }
+  return "UNKNOWN";
 };
 
 const pickNormalizedAppointmentDebug = (
@@ -7332,7 +8120,7 @@ const buildLexMessage = (input: {
           : (input.attemptCount ?? 1) >= 3
           ? "Could you spell your first name, one letter at a time?"
           : isRetry
-          ? "Sorry, I didn't catch your name. Could you say your first name slowly?"
+          ? "Sorry, I didn't catch your name. What is your first name?"
           : summary
             ? `I have your ${escapeSsml(summary)}. <break time="300ms"/> May I have your name, please?`
             : "I'd be happy to help. May I have your name, please?"
@@ -7479,9 +8267,12 @@ const getElicitSlotForMissingFields = (
       lastAskedSlot: "requestedTime",
       currentTurnHasDatePhrase: hasGroundedDatePhrase(currentTurnTranscript)
     });
-  let slotToElicit = "serviceName";
-  if (shouldKeepActiveTimeSlot) {
-    slotToElicit = "requestedTime";
+	  let slotToElicit = "serviceName";
+  const freshBookingRestart = readStringAttribute(normalized.attributes, ["freshBookingRestart"]) === "true";
+	  if (freshBookingRestart && missingFields.has("serviceName")) {
+    slotToElicit = "serviceName";
+  } else if (shouldKeepActiveTimeSlot) {
+	    slotToElicit = "requestedTime";
   } else if (missingFields.has("customerName")) {
     slotToElicit = "customerName";
   } else if (missingFields.has("serviceName")) {
@@ -7903,6 +8694,7 @@ export const createAmazonConnectAIRecoverableFailure = async (
       staffPreference: normalized.staffPreference,
       staffId: normalized.staffId,
       selectedStaffId: normalized.staffId,
+      releaseIdentity: buildVoiceReleaseIdentity(normalized.attributes),
       recoverableErrorReason: options.reason,
       recoverableErrorCode: errorCode
     }),
@@ -7910,6 +8702,7 @@ export const createAmazonConnectAIRecoverableFailure = async (
     rawInput: toJson({
       ...input,
       authorization: undefined,
+      releaseIdentity: buildVoiceReleaseIdentity(normalized.attributes),
       normalizedProvider: normalized.provider
     }),
     createdByUserId: actorUserId
@@ -7956,6 +8749,7 @@ export const createAmazonConnectAIRecoverableFailure = async (
     promptMissingFields,
     errorCode,
     recoverableErrorReason: options.reason,
+    releaseIdentity: buildVoiceReleaseIdentity(normalized.attributes),
     callerSafeResponseText: message,
     lexResponse,
     sessionAttributes: baseSessionAttributes,
@@ -7971,7 +8765,8 @@ export const createAmazonConnectAIRecoverableFailure = async (
       errorCode,
       recoverableErrorReason: options.reason,
       responseMessage: message,
-      slotToElicit: dialogAction.slotToElicit
+      slotToElicit: dialogAction.slotToElicit,
+      releaseIdentity: buildVoiceReleaseIdentity(normalized.attributes)
     }
   };
   const aiInteraction = await upsertAmazonConnectBookingAIInteractionLog({
@@ -8018,7 +8813,13 @@ export const createAmazonConnectAIRecoverableFailure = async (
 export const createAmazonConnectAIAppointment = async (
   input: CreateAmazonConnectAIAppointmentInput
 ) => {
+  const apiStartedAt = new Date().toISOString();
+  input.attributes = {
+    ...recordFromUnknown(input.attributes),
+    apiStartedAt
+  };
   const normalized = normalizeAmazonConnectAppointmentInput(input);
+  normalized.attributes.apiStartedAt = apiStartedAt;
   const normalizedBeforeDebug = pickNormalizedAppointmentDebug(normalized);
   let customerNameSourceOverride = readStringAttribute(normalized.attributes, ["customerNameSource"]);
   let customerNameNeedsReview = readStringAttribute(normalized.attributes, ["customerNameNeedsReview"]) === "true";
@@ -8062,8 +8863,8 @@ export const createAmazonConnectAIAppointment = async (
     amazonConnectPhoneNumber: normalized.amazonConnectPhoneNumber,
     calledNumber: normalized.calledNumber
   });
-  if (callSession) {
-    const staleTurn = isPostProviderDisconnectTurn(input, callSession);
+	  if (callSession) {
+	    const staleTurn = isPostProviderDisconnectTurn(input, callSession);
     if (staleTurn.stale && staleTurn.providerDisconnectedAt) {
       return buildProviderDisconnectedStaleTurnResponse({
         request: input,
@@ -8075,19 +8876,71 @@ export const createAmazonConnectAIAppointment = async (
         turnTimestamp: staleTurn.turnTimestamp
       });
     }
-    const duplicateResponse = await findDuplicateAmazonConnectTurn(
-      `AMAZON_CONNECT:${AMAZON_CONNECT_BOOKING_TASK}:${callSession.id}`,
-      input
-    );
-    if (duplicateResponse) {
+	    const duplicateResponse = await findDuplicateAmazonConnectTurn(
+	      `AMAZON_CONNECT:${AMAZON_CONNECT_BOOKING_TASK}:${callSession.id}`,
+	      input
+	    );
+	    if (duplicateResponse) {
       return {
         ...duplicateResponse,
-        callSession
-      };
-    }
+	        callSession
+	      };
+	    }
+      const existingInteraction = await prisma.aiInteractionLog.findUnique({
+        where: {
+          interactionKey: `AMAZON_CONNECT:${AMAZON_CONNECT_BOOKING_TASK}:${callSession.id}`
+        }
+      });
+      const providerRequestReuse = existingInteraction
+        ? findProviderRequestIdReuse(
+            getAmazonConnectTurnHistory(existingInteraction.responsePayload),
+            getIncomingTurnIdentity(input)
+          )
+        : null;
+      if (providerRequestReuse) {
+        normalized.attributes.duplicateDisposition = "provider_request_id_reused_for_distinct_human_turn";
+        normalized.attributes.providerRequestIdReuseDetected = "true";
+      }
+	  }
+  const initialActiveBookingConfirmationSlot =
+    readStringAttribute(normalized.attributes, ["lastAskedSlot"]) === "bookingConfirmation" ||
+    readStringAttribute(normalized.attributes, ["slotToElicit"]) === "bookingConfirmation" ||
+    Boolean(normalized.bookingConfirmation);
+  const initialAwaitingFinalBookingConfirmation =
+    readStringAttribute(normalized.attributes, ["awaitingRejectedBookingChoice"]) !== "true" &&
+    (readStringAttribute(normalized.attributes, ["awaitingFinalBookingConfirmation"]) === "true" ||
+      (readStringAttribute(normalized.attributes, ["bookingConfirmationAsked", "finalBookingConfirmationAsked"]) === "true" &&
+        initialActiveBookingConfirmationSlot));
+  const initialFinalConfirmationOutcome = initialAwaitingFinalBookingConfirmation
+    ? classifyFinalBookingConfirmation(normalized.currentTurnTranscript ?? normalized.transcriptText)
+    : "UNKNOWN";
+  const initialFinalConfirmationRestarts = initialFinalConfirmationOutcome === "NEW_BOOKING";
+  if (initialFinalConfirmationRestarts) {
+    applyFreshBookingResetToNormalized(normalized, {
+      restartBookingWithDetails: currentTurnHasBookingDetails(normalized) ? "true" : "false"
+    });
   }
-  let activeBookingAttempt = callSession
-    ? await prisma.bookingAttempt.findFirst({
+  const initialAwaitingRejectedBookingChoice =
+    readStringAttribute(normalized.attributes, ["awaitingRejectedBookingChoice"]) === "true";
+  const initialRejectedBookingChoice = initialAwaitingRejectedBookingChoice
+    ? classifyRejectedBookingChoice(normalized.currentTurnTranscript ?? normalized.transcriptText, normalized)
+    : "UNKNOWN";
+  const postRejectedChoiceStops = initialRejectedBookingChoice === "STOP";
+  const postRejectedChoiceNeedsDetailMenu = initialRejectedBookingChoice === "CHANGE_DETAIL_MENU";
+  const postRejectedChoiceRestarts = initialRejectedBookingChoice === "NEW_BOOKING";
+  const postRejectedChoiceChangesDraft = initialRejectedBookingChoice === "CHANGE_REQUEST";
+  if (postRejectedChoiceRestarts) {
+    applyFreshBookingResetToNormalized(normalized, {
+      restartBookingWithDetails: currentTurnHasBookingDetails(normalized) ? "true" : "false"
+    });
+  } else if (postRejectedChoiceChangesDraft) {
+    normalized.attributes.awaitingRejectedBookingChoice = "false";
+    normalized.attributes.awaitingFinalBookingConfirmation = "false";
+    normalized.attributes.bookingConfirmationAsked = "false";
+    normalized.attributes.finalConfirmationChangeRequest = "true";
+  }
+	  let activeBookingAttempt = callSession
+	    ? await prisma.bookingAttempt.findFirst({
         where: {
           callSessionId: callSession.id,
           status: BookingAttemptStatus.NEEDS_INPUT
@@ -8096,8 +8949,11 @@ export const createAmazonConnectAIAppointment = async (
           createdAt: "desc"
         }
       })
-    : null;
-  const activeNormalizedRequest =
+	    : null;
+  if (postRejectedChoiceRestarts || initialFinalConfirmationRestarts) {
+    activeBookingAttempt = null;
+  }
+	  const activeNormalizedRequest =
     activeBookingAttempt?.normalizedRequest &&
     typeof activeBookingAttempt.normalizedRequest === "object" &&
     !Array.isArray(activeBookingAttempt.normalizedRequest)
@@ -8342,11 +9198,76 @@ export const createAmazonConnectAIAppointment = async (
       ).padStart(2, "0")}`;
     }
   }
-  const currentTurnExplicitDate = extractExplicitDate(normalized.currentTurnTranscript, salon.timezone);
-  const currentTurnExplicitTime = extractExplicitTime(normalized.currentTurnTranscript, {
-    lastAskedSlot: readStringAttribute(normalized.attributes, ["lastAskedSlot"]),
-    currentTurnSemanticType: readStringAttribute(normalized.attributes, ["currentTurnSemanticType"])
-  });
+  const currentTurnDateText = normalized.currentTurnTranscript ?? normalized.transcriptText;
+	  const currentTurnExplicitDate = extractExplicitDate(currentTurnDateText, salon.timezone);
+  const currentTurnWeekdayDateConflict = getWeekdayDateConflict(currentTurnDateText, salon.timezone);
+  const currentTurnBareSameDayWeekday = getBareSameDayWeekdayClarification(currentTurnDateText, salon.timezone);
+  let currentTurnDateClarification:
+    | {
+        message: string;
+        reasonCode: "WEEKDAY_DATE_CONFLICT" | "BARE_SAME_DAY_WEEKDAY_AMBIGUOUS" | "RELATIVE_EXPLICIT_CONFLICT";
+        diagnostic: Record<string, unknown>;
+      }
+    | null = null;
+  if (currentTurnWeekdayDateConflict) {
+    currentTurnDateClarification = {
+      message: buildWeekdayDateConflictMessage(currentTurnWeekdayDateConflict),
+      reasonCode:
+        currentTurnWeekdayDateConflict.conflictReason === "relative_explicit_conflict"
+          ? "RELATIVE_EXPLICIT_CONFLICT"
+          : "WEEKDAY_DATE_CONFLICT",
+      diagnostic: buildDateDecisionDiagnostic({
+        rawTranscript: currentTurnDateText,
+        timezone: salon.timezone,
+        selectedDate: null,
+        decisionReason: currentTurnWeekdayDateConflict.conflictReason ?? "weekday_date_conflict",
+        clarificationReason: currentTurnWeekdayDateConflict.conflictReason ?? "weekday_date_conflict",
+        candidates: [
+          {
+            source: "explicit",
+            date: currentTurnWeekdayDateConflict.explicitDate,
+            label: currentTurnWeekdayDateConflict.explicitDateLabel
+          },
+          {
+            source: "relative",
+            date: currentTurnWeekdayDateConflict.intendedDate,
+            label: currentTurnWeekdayDateConflict.intendedDateLabel
+          }
+        ],
+        explicitDateCandidate: currentTurnWeekdayDateConflict.explicitDate
+      })
+    };
+    normalized.requestedDate = undefined;
+  } else if (currentTurnBareSameDayWeekday) {
+    currentTurnDateClarification = {
+      message: buildBareSameDayWeekdayMessage(currentTurnBareSameDayWeekday),
+      reasonCode: "BARE_SAME_DAY_WEEKDAY_AMBIGUOUS",
+      diagnostic: buildDateDecisionDiagnostic({
+        rawTranscript: currentTurnDateText,
+        timezone: salon.timezone,
+        selectedDate: null,
+        decisionReason: "bare_same_day_weekday_ambiguous",
+        clarificationReason: "bare_same_day_weekday_ambiguous",
+        candidates: [
+          {
+            source: "today",
+            date: currentTurnBareSameDayWeekday.todayDate,
+            label: currentTurnBareSameDayWeekday.todayLabel
+          },
+          {
+            source: "next_week",
+            date: currentTurnBareSameDayWeekday.nextDate,
+            label: currentTurnBareSameDayWeekday.nextLabel
+          }
+        ]
+      })
+    };
+    normalized.requestedDate = undefined;
+  }
+	  const currentTurnExplicitTime = extractExplicitTime(normalized.currentTurnTranscript, {
+	    lastAskedSlot: readStringAttribute(normalized.attributes, ["lastAskedSlot"]),
+	    currentTurnSemanticType: readStringAttribute(normalized.attributes, ["currentTurnSemanticType"])
+	  });
   const awaitingTimeConfirmation =
     readStringAttribute(normalized.attributes, ["awaitingTimeConfirmation"]) === "true";
   const proposedRequestedTime = readStringAttribute(normalized.attributes, ["proposedRequestedTime"]);
@@ -8359,9 +9280,9 @@ export const createAmazonConnectAIAppointment = async (
     normalized.attributes.awaitingTimeConfirmation = "false";
     normalized.attributes.proposedRequestedTime = "";
   }
-  if (currentTurnExplicitDate) {
-    normalized.requestedDate = currentTurnExplicitDate;
-  }
+	  if (currentTurnExplicitDate && !currentTurnDateClarification) {
+	    normalized.requestedDate = currentTurnExplicitDate;
+	  }
   if (currentTurnExplicitTime && !localTimesEquivalent(normalized.requestedTime, currentTurnExplicitTime)) {
     const explicitTimeMutationPolicy = buildVoiceSlotMutationPolicy({
       slotName: "requestedTime",
@@ -8396,30 +9317,42 @@ export const createAmazonConnectAIAppointment = async (
   const awaitingBookingFrameRepairConfirmation =
     readStringAttribute(normalized.attributes, ["awaitingBookingFrameRepairConfirmation"]) === "true";
   const proposedFrameDate = readStringAttribute(normalized.attributes, ["proposedRequestedDate"]);
+  const proposedFrameService = readStringAttribute(normalized.attributes, ["proposedServiceName"]);
   const proposedFrameStaff = readStringAttribute(normalized.attributes, ["proposedStaffPreference"]);
   if (
     awaitingBookingFrameRepairConfirmation &&
     isAffirmative(normalized.currentTurnTranscript) &&
-    proposedFrameDate &&
+    (proposedFrameDate || proposedFrameService) &&
     proposedFrameStaff
   ) {
-    normalized.requestedDate = proposedFrameDate;
+    if (proposedFrameDate) {
+      normalized.requestedDate = proposedFrameDate;
+    }
+    if (proposedFrameService) {
+      normalized.serviceName = proposedFrameService;
+      normalized.attributes.serviceRecognitionConfirmed = "true";
+    }
     normalized.staffPreference = proposedFrameStaff;
     normalized.staffId = undefined;
     normalized.confirmationState = undefined;
     normalized.attributes.awaitingBookingFrameRepairConfirmation = "false";
     normalized.attributes.proposedRequestedDate = "";
+    normalized.attributes.proposedServiceName = "";
     normalized.attributes.proposedStaffPreference = "";
     normalized.attributes.bookingFrameRepairConfirmed = "true";
+    normalized.attributes.lastAskedSlot = "bookingFrameRepairConfirmation";
     normalized.attributes.awaitingFinalBookingConfirmation = "false";
     normalized.attributes.bookingConfirmationAsked = "false";
   } else if (awaitingBookingFrameRepairConfirmation && isNegative(normalized.currentTurnTranscript)) {
-    normalized.requestedDate = undefined;
+    if (proposedFrameDate) {
+      normalized.requestedDate = undefined;
+    }
     normalized.staffPreference = undefined;
     normalized.staffId = undefined;
     normalized.confirmationState = undefined;
     normalized.attributes.awaitingBookingFrameRepairConfirmation = "false";
     normalized.attributes.proposedRequestedDate = "";
+    normalized.attributes.proposedServiceName = "";
     normalized.attributes.proposedStaffPreference = "";
     normalized.attributes.bookingFrameRepairConfirmed = "false";
     normalized.attributes.bookingFrameRepairRejected = "true";
@@ -8450,15 +9383,43 @@ export const createAmazonConnectAIAppointment = async (
     normalized.staffId = undefined;
     normalized.attributes.awaitingStaffConfirmation = "false";
     normalized.attributes.proposedStaffPreference = "";
+    normalized.attributes.staffReplacementPreviousStaff = "";
+    normalized.attributes.staffReplacementPreviousStaffId = "";
+    normalized.attributes.staffReplacementPreviousSelectedStaffId = "";
+    normalized.attributes.staffReplacementPreviousConfirmedStaffId = "";
     normalized.attributes.staffRecognitionConfirmed = "true";
     normalized.attributes.staffClarificationReason = "staff_proposal_confirmed";
   } else if (awaitingStaffConfirmation && isStaffConfirmationRejection(normalized.currentTurnTranscript)) {
-    normalized.staffPreference = undefined;
-    normalized.staffId = undefined;
+    const replacementPreviousStaff = readStringAttribute(normalized.attributes, ["staffReplacementPreviousStaff"]);
+    if (replacementPreviousStaff) {
+      normalized.staffPreference = replacementPreviousStaff;
+      normalized.staffId =
+        readStringAttribute(normalized.attributes, ["staffReplacementPreviousStaffId"]) ??
+        normalized.staffId;
+      normalized.attributes.confirmedStaffName = replacementPreviousStaff;
+      normalized.attributes.confirmedStaffId =
+        readStringAttribute(normalized.attributes, ["staffReplacementPreviousConfirmedStaffId"]) ??
+        normalized.attributes.confirmedStaffId;
+      normalized.attributes.selectedStaffId =
+        readStringAttribute(normalized.attributes, ["staffReplacementPreviousSelectedStaffId"]) ??
+        normalized.attributes.selectedStaffId;
+      normalized.attributes.awaitingFinalBookingConfirmation = "true";
+      normalized.attributes.bookingConfirmationAsked = "true";
+      normalized.attributes.lastAskedSlot = "bookingConfirmation";
+    } else {
+      normalized.staffPreference = undefined;
+      normalized.staffId = undefined;
+    }
     normalized.attributes.awaitingStaffConfirmation = "false";
     normalized.attributes.proposedStaffPreference = "";
+    normalized.attributes.staffReplacementPreviousStaff = "";
+    normalized.attributes.staffReplacementPreviousStaffId = "";
+    normalized.attributes.staffReplacementPreviousSelectedStaffId = "";
+    normalized.attributes.staffReplacementPreviousConfirmedStaffId = "";
     normalized.attributes.staffRecognitionConfirmed = "false";
-    normalized.attributes.staffClarificationReason = "staff_proposal_rejected";
+    normalized.attributes.staffClarificationReason = replacementPreviousStaff
+      ? "staff_replacement_proposal_rejected"
+      : "staff_proposal_rejected";
   }
 
   if (!unsupportedServiceRequest && !normalized.serviceName && normalized.transcriptText) {
@@ -8468,15 +9429,21 @@ export const createAmazonConnectAIAppointment = async (
     }
   }
 
-  const awaitingAlternativeSelection =
-    readStringAttribute(normalized.attributes, ["awaitingAlternativeSelection"]) === "true";
-  const awaitingFinalBookingConfirmation =
-    readStringAttribute(normalized.attributes, [
-      "awaitingFinalBookingConfirmation",
-      "bookingConfirmationAsked",
-      "finalBookingConfirmationAsked"
-    ]) === "true" ||
-    readStringAttribute(normalized.attributes, ["lastAskedSlot"]) === "bookingConfirmation";
+	  const awaitingAlternativeSelection =
+	    readStringAttribute(normalized.attributes, ["awaitingAlternativeSelection"]) === "true";
+  const activeBookingConfirmationSlot =
+    readStringAttribute(normalized.attributes, ["lastAskedSlot"]) === "bookingConfirmation" ||
+    readStringAttribute(normalized.attributes, ["slotToElicit"]) === "bookingConfirmation" ||
+    Boolean(normalized.bookingConfirmation);
+	  const awaitingFinalBookingConfirmation =
+    readStringAttribute(normalized.attributes, ["awaitingRejectedBookingChoice"]) !== "true" &&
+    readStringAttribute(normalized.attributes, ["freshBookingRestart"]) !== "true" &&
+    (readStringAttribute(normalized.attributes, ["awaitingFinalBookingConfirmation"]) === "true" ||
+      (readStringAttribute(normalized.attributes, [
+        "bookingConfirmationAsked",
+        "finalBookingConfirmationAsked"
+      ]) === "true" &&
+        activeBookingConfirmationSlot));
   const customerNameTurnOwnsTranscript =
     readStringAttribute(normalized.attributes, ["lastAskedSlot"]) === "customerName" &&
     readStringAttribute(normalized.attributes, ["activeDtmfMenu"]) !== "staff";
@@ -8623,10 +9590,14 @@ export const createAmazonConnectAIAppointment = async (
           )
         })
       : "UNKNOWN";
-    if (awaitingFinalBookingConfirmation && finalConfirmationOutcome === "AFFIRMED") {
-      normalized.confirmationState = "Confirmed";
-    } else if (awaitingFinalBookingConfirmation && finalConfirmationOutcome === "DENIED") {
-      normalized.confirmationState = "Denied";
+	    if (awaitingFinalBookingConfirmation && finalConfirmationOutcome === "NEW_BOOKING") {
+      applyFreshBookingResetToNormalized(normalized, {
+        restartBookingWithDetails: currentTurnHasBookingDetails(normalized) ? "true" : "false"
+      });
+    } else if (awaitingFinalBookingConfirmation && finalConfirmationOutcome === "AFFIRMED") {
+	      normalized.confirmationState = "Confirmed";
+	    } else if (awaitingFinalBookingConfirmation && finalConfirmationOutcome === "DENIED") {
+	      normalized.confirmationState = "Denied";
     } else if (awaitingFinalBookingConfirmation && finalConfirmationOutcome === "CHANGE_REQUEST") {
       normalized.confirmationState = undefined;
       const changedDate = extractExplicitDate(finalConfirmationText, salon.timezone);
@@ -8850,6 +9821,7 @@ export const createAmazonConnectAIAppointment = async (
       unrecognizedStaffUtterance: normalized.unrecognizedStaffUtterance,
       excludedStaffIds: Array.from(staffExclusionState.ids.values()),
       excludedStaffNames: Array.from(staffExclusionState.names.values()),
+      releaseIdentity: buildVoiceReleaseIdentity(normalized.attributes),
       bookingRequestFingerprint,
       ...inputNormalizedRequest
     });
@@ -8876,6 +9848,7 @@ export const createAmazonConnectAIAppointment = async (
       failureReason: inputForAttempt.failureReason ?? null,
       rawInput: toJson({
         ...input,
+        releaseIdentity: buildVoiceReleaseIdentity(normalized.attributes),
         normalizedProvider: normalized.provider
       }),
       createdByUserId: actorUserId
@@ -9162,8 +10135,19 @@ export const createAmazonConnectAIAppointment = async (
       stateVersionAfter:
         inferredResponseSessionAttributes.stateVersion ?? inferredResponseSessionAttributes.turnSequence,
       internalApiInvocationCount: 1,
-      staleOrDuplicateRejectionReason: null,
-      duplicateDisposition: "processed",
+	      staleOrDuplicateRejectionReason: null,
+	      duplicateDisposition:
+	        input.attributes?.duplicateDisposition ??
+	        (input.attributes?.providerRequestIdReuseDetected === "true"
+	          ? "provider_request_id_reused_for_distinct_human_turn"
+	          : "processed_new_human_turn"),
+      transcriptFingerprint:
+        input.attributes?.transcriptFingerprint ??
+        createHash("sha256")
+          .update(normalizeForMatch(normalized.currentTurnTranscript ?? normalized.transcriptText))
+          .digest("hex")
+          .slice(0, 24),
+      providerRequestIdReuseDetected: input.attributes?.providerRequestIdReuseDetected ?? "false",
       turnDirective:
         responsePayloadBase.turnDirective ??
         responsePayloadBase.confirmationOutcome ??
@@ -9191,10 +10175,13 @@ export const createAmazonConnectAIAppointment = async (
           responsePayloadBase.asrDiagnostics ??
           inferredResponseSessionAttributes.asrDiagnostics
       ),
-      timeRecognition: parseDiagnosticJson(
-        responsePayloadBase.timeRecognition ?? inferredResponseSessionAttributes.timeRecognitionDiagnostics
+	      timeRecognition: parseDiagnosticJson(
+	        responsePayloadBase.timeRecognition ?? inferredResponseSessionAttributes.timeRecognitionDiagnostics
+	      ),
+      dateDecision: parseDiagnosticJson(
+        responsePayloadBase.dateDecisionDiagnostic ?? inferredResponseSessionAttributes.dateDecisionDiagnostic
       ),
-      availabilityReasonCode: responsePayloadBase.availabilityReasonCode,
+	      availabilityReasonCode: responsePayloadBase.availabilityReasonCode,
       serviceClarificationReason: responsePayloadBase.serviceClarificationReason,
       menuFingerprint:
         inferredResponseSessionAttributes.menuFingerprint ??
@@ -9230,7 +10217,7 @@ export const createAmazonConnectAIAppointment = async (
 	      messageContentType: responseMessageContentType,
 	      ssmlValidation: responseSsmlValidation,
 	      lexResponseSchemaValid: Boolean(inputForInteraction.message && responseSsmlValidation.valid),
-	      responseFingerprint: createHash("sha256")
+      responseFingerprint: createHash("sha256")
 	        .update(
 	          JSON.stringify({
 	            message: inputForInteraction.message,
@@ -9248,7 +10235,8 @@ export const createAmazonConnectAIAppointment = async (
       conversationStateAfter: inferredResponseSessionAttributes.conversationState,
       conversationOutcomeAfter: inferredResponseSessionAttributes.conversationOutcome,
       conversationCompleteBefore: input.attributes?.conversationComplete,
-      conversationCompleteAfter: inferredResponseSessionAttributes.conversationComplete
+      conversationCompleteAfter: inferredResponseSessionAttributes.conversationComplete,
+      releaseIdentity: buildVoiceReleaseIdentity(normalized.attributes)
     };
     const responsePayload = responsePayloadDebug
       ? {
@@ -9308,17 +10296,17 @@ export const createAmazonConnectAIAppointment = async (
     });
   };
 
-  const buildKnownSessionAttributes = (
-    extra: Record<string, string | number | null | undefined> = {}
-  ): Record<string, string> => {
+	  const buildKnownSessionAttributes = (
+	    extra: Record<string, string | number | null | undefined> = {}
+	  ): Record<string, string> => {
     const terminalBooking =
       extra.bookingOutcome === "BOOKED" ||
       extra.bookingOutcome === "RESCHEDULED" ||
       extra.bookingOutcome === "CANCELED";
     const defaultConversationState = terminalBooking ? "COMPLETE" : "CONTINUE";
     const defaultConversationOutcome = terminalBooking ? String(extra.bookingOutcome) : "NEEDS_INPUT";
-    return Object.fromEntries(
-      Object.entries({
+	    const built = Object.fromEntries(
+	      Object.entries({
         conversationState: defaultConversationState,
         conversationOutcome: defaultConversationOutcome,
         conversationComplete: terminalBooking ? "true" : "false",
@@ -9363,14 +10351,25 @@ export const createAmazonConnectAIAppointment = async (
         excludedStaffNames: readStringAttribute(normalized.attributes, ["excludedStaffNames"]),
         callSessionId: callSession?.id,
         amazonConnectContactId: normalized.contactId,
-        ...extra
-      })
-        .filter(([, value]) => value !== undefined && value !== null && String(value).trim() !== "")
-        .map(([key, value]) => [key, String(value)])
-    );
-  };
+        ...buildVoiceReleaseIdentity(normalized.attributes),
+	        ...extra
+	      })
+	        .filter(([, value]) => value !== undefined && value !== null && String(value).trim() !== "")
+	        .map(([key, value]) => [key, String(value)])
+	    );
+    const keysToClear = parseSessionAttributeKeysToClear(built.sessionAttributeKeysToClear);
+    for (const key of keysToClear) {
+      if (key !== "sessionAttributeKeysToClear") {
+        delete built[key];
+      }
+    }
+    if (keysToClear.length) {
+      built.sessionAttributeKeysToClear = JSON.stringify(keysToClear);
+    }
+    return built;
+	  };
 
-  const buildHumanEscalationSessionAttributes = (
+	  const buildHumanEscalationSessionAttributes = (
     reason: string,
     escalation?: Awaited<ReturnType<typeof createOrUpdateCallEscalation>> | null,
     extra: Record<string, string | number | null | undefined> = {}
@@ -9400,10 +10399,99 @@ export const createAmazonConnectAIAppointment = async (
       queueId: canTransferToQueue ? escalation?.queueId : undefined,
       operatorQueueOutcome,
       ...extra
-    });
-  };
+	    });
+	  };
 
-  const requestedDateTimeText = [normalized.requestedDate, normalized.requestedTime]
+  if (postRejectedChoiceStops || postRejectedChoiceNeedsDetailMenu) {
+    const resetKeys = postRejectedChoiceStops
+      ? getBookingFrameResetKeys()
+      : getFinalConfirmationClearKeys();
+    const message = postRejectedChoiceStops
+      ? speak("Okay, I won't book an appointment. Goodbye.")
+      : speak("What would you like to change: the service, day or time, or technician?");
+    const parsed = buildInternalParsedIntent({
+      intentType: "BOOK_APPOINTMENT",
+      customerName: normalized.customerName,
+      customerPhone: normalized.customerPhone,
+      serviceName: normalized.serviceName,
+      staffPreference: normalized.staffPreference,
+      requestedDateTime: normalized.requestedDate,
+      missingFields: [],
+      isReadyToBook: false
+    });
+    const bookingAttempt = await createAttempt({
+      status: BookingAttemptStatus.NEEDS_INPUT,
+      failureReason: postRejectedChoiceStops
+        ? "Caller stopped after rejecting final confirmation."
+        : "Caller asked to change a detail after rejecting final confirmation.",
+      normalizedRequest: {
+        postRejectedChoice: initialRejectedBookingChoice,
+        timezone: salon.timezone
+      }
+    });
+    const lexSessionAttributes = buildKnownSessionAttributes({
+      awaitingRejectedBookingChoice: postRejectedChoiceStops ? "false" : "true",
+      awaitingFinalBookingConfirmation: "false",
+      bookingConfirmationAsked: "false",
+      sessionAttributeKeysToClear: JSON.stringify(resetKeys),
+      forceHumanEscalation: "false",
+      transferToQueue: "false",
+      ...(postRejectedChoiceStops
+        ? {
+            conversationState: "COMPLETE",
+            conversationOutcome: "CALLER_GOODBYE",
+            conversationComplete: "true"
+          }
+        : {
+            conversationState: "CONTINUE",
+            conversationOutcome: "NEEDS_INPUT",
+            conversationComplete: "false"
+          })
+    });
+    const aiInteraction = await createInteraction({
+      outcome: "MISSING_INFO",
+      message,
+      parsed,
+      bookingAttemptId: bookingAttempt.id,
+      responsePayload: {
+        postRejectedChoice: initialRejectedBookingChoice,
+        sessionAttributes: lexSessionAttributes
+      },
+      isValid: true
+    });
+    await finalizeCall({
+      outcome: "MISSING_INFO",
+      bookingAttemptId: bookingAttempt.id,
+      bookingStatus: bookingAttempt.status,
+      parsed,
+      message,
+      failureReason: bookingAttempt.failureReason ?? undefined
+    });
+    return {
+      outcome: "MISSING_INFO" as const,
+      message,
+      lexResponse: {
+        fulfillmentState: postRejectedChoiceStops ? "Fulfilled" : "InProgress",
+        message,
+        messageContentType: "SSML",
+        dialogAction: {
+          type: postRejectedChoiceStops ? "Close" : "ElicitIntent"
+        },
+        sessionAttributes: lexSessionAttributes
+      },
+      appointment: null,
+      bookingAttempt,
+      callSession,
+      transcript,
+      aiInteraction,
+      escalation: null,
+      alternatives: [],
+      missingFields: [],
+      salonResolutionSource: resolutionSource
+    };
+  }
+
+	  const requestedDateTimeText = [normalized.requestedDate, normalized.requestedTime]
     .filter((value): value is string => Boolean(value))
     .join(" ");
 
@@ -10226,7 +11314,11 @@ export const createAmazonConnectAIAppointment = async (
   const returnRejectedDateTime = async (inputForRejection: {
     message: string;
     failureReason: string;
-    reasonCode: "WEEKDAY_DATE_CONFLICT" | "PAST_REQUESTED_TIME";
+	    reasonCode:
+        | "WEEKDAY_DATE_CONFLICT"
+        | "RELATIVE_EXPLICIT_CONFLICT"
+        | "BARE_SAME_DAY_WEEKDAY_AMBIGUOUS"
+        | "PAST_REQUESTED_TIME";
     clearTime: boolean;
     requestedStartTime?: Date | null;
     responsePayload?: Record<string, unknown>;
@@ -10253,9 +11345,13 @@ export const createAmazonConnectAIAppointment = async (
     const lexSessionAttributes = buildKnownSessionAttributes({
       requestedDate: undefined,
       requestedTime: inputForRejection.clearTime ? undefined : normalized.requestedTime,
-      dateClarificationReason: inputForRejection.reasonCode,
-      availabilityReasonCode: inputForRejection.reasonCode,
-      aiAlternativeSlots: "[]",
+	      dateClarificationReason: inputForRejection.reasonCode,
+	      availabilityReasonCode: inputForRejection.reasonCode,
+        dateDecisionDiagnostic:
+          typeof inputForRejection.responsePayload?.dateDecisionDiagnostic === "object"
+            ? JSON.stringify(inputForRejection.responsePayload.dateDecisionDiagnostic)
+            : undefined,
+	      aiAlternativeSlots: "[]",
       awaitingAlternativeSelection: "false",
       awaitingFinalBookingConfirmation: "false",
       bookingConfirmationAsked: "false",
@@ -10326,10 +11422,26 @@ export const createAmazonConnectAIAppointment = async (
       missingFields: ["preferredDateTime"],
       salonResolutionSource: resolutionSource
     };
-  };
+	  };
 
-  const weekdayDateConflict = getWeekdayDateConflict(
-    normalized.currentTurnTranscript ?? normalized.transcriptText,
+  if (currentTurnDateClarification) {
+    return await returnRejectedDateTime({
+      message: currentTurnDateClarification.message,
+      failureReason: "Requested date needs caller clarification.",
+      reasonCode: currentTurnDateClarification.reasonCode,
+      clearTime: false,
+      requestedStartTime,
+      responsePayload: {
+        dateDecisionDiagnostic: currentTurnDateClarification.diagnostic
+      },
+      normalizedRequest: {
+        dateDecisionDiagnostic: currentTurnDateClarification.diagnostic
+      }
+    });
+  }
+
+	  const weekdayDateConflict = getWeekdayDateConflict(
+	    normalized.currentTurnTranscript ?? normalized.transcriptText,
     salon.timezone
   );
   if (weekdayDateConflict) {
@@ -10507,7 +11619,7 @@ export const createAmazonConnectAIAppointment = async (
     timezone: salon.timezone
   });
   const alternativeFirstAvailableStaffProposal =
-    !awaitingStaffConfirmation && !ambiguousFirstAvailableStaffProposal
+    !ambiguousFirstAvailableStaffProposal
       ? findProposedAnyStaffClarification({
           serviceName: normalized.serviceName,
           requestedDate: normalized.requestedDate,
@@ -10523,12 +11635,142 @@ export const createAmazonConnectAIAppointment = async (
     ? {
         proposedStaffPreference: "Any staff" as const,
         reason: "ambiguous_first_available_asr",
+        confidenceBand: hasLowConfidenceFirstAvailableStaffTail(
+          normalized.currentTurnTranscript ?? normalized.transcriptText
+        )
+          ? "low" as const
+          : "medium" as const,
         asrAlternativesUsed: false,
         matchedTranscript: normalized.currentTurnTranscript ?? normalized.transcriptText ?? ""
       }
     : alternativeFirstAvailableStaffProposal;
   const staffProposalRejectedThisTurn =
     readStringAttribute(normalized.attributes, ["staffClarificationReason"]) === "staff_proposal_rejected";
+  if (
+    awaitingFinalBookingConfirmation &&
+    proposedFirstAvailableStaff &&
+    staffNameBeforeCurrentTurn &&
+    normalizeForMatch(staffNameBeforeCurrentTurn) !== "any staff" &&
+    normalized.serviceName &&
+    normalized.requestedDate &&
+    normalized.requestedTime &&
+    requestedStartTime
+  ) {
+    const replacementRequestedStartTime = requestedStartTime;
+    const voiceSlotDecision = buildVoiceSlotDecision({
+      slot: "staffPreference",
+      action: "propose",
+      canonicalValue: proposedFirstAvailableStaff.proposedStaffPreference,
+      reason: "final_confirmation_staff_replacement_asr",
+      confidenceBand: proposedFirstAvailableStaff.confidenceBand,
+      evidence: [proposedFirstAvailableStaff.matchedTranscript],
+      source: proposedFirstAvailableStaff.asrAlternativesUsed ? "asr_alternative" : "contextual_repair",
+      activeSlot: readStringAttribute(normalized.attributes, ["lastAskedSlot"]) ?? "bookingConfirmation",
+      negated: false,
+      requiresConfirmation: true,
+      alternativesUsed: proposedFirstAvailableStaff.asrAlternativesUsed
+    });
+    const message = speak(
+      `Did you mean first available instead of ${escapeSsml(staffNameBeforeCurrentTurn)}?`
+    );
+    const lexSessionAttributes = buildKnownSessionAttributes({
+      staffPreference: staffNameBeforeCurrentTurn,
+      staffId: staffIdBeforeCurrentTurn,
+      selectedStaffId: readStringAttribute(normalized.attributes, ["selectedStaffId"]),
+      confirmedStaffId: readStringAttribute(normalized.attributes, ["confirmedStaffId"]),
+      confirmedStaffName: staffNameBeforeCurrentTurn,
+      awaitingStaffConfirmation: "true",
+      proposedStaffPreference: proposedFirstAvailableStaff.proposedStaffPreference,
+      staffClarificationReason: "final_confirmation_staff_replacement_asr",
+      clarificationReason: "final_confirmation_staff_replacement_asr",
+      staffProposalConfidenceBand: proposedFirstAvailableStaff.confidenceBand,
+      asrAlternativesUsed: proposedFirstAvailableStaff.asrAlternativesUsed ? "true" : "false",
+      staffReplacementPreviousStaff: staffNameBeforeCurrentTurn,
+      staffReplacementPreviousStaffId: staffIdBeforeCurrentTurn,
+      staffReplacementPreviousSelectedStaffId: readStringAttribute(normalized.attributes, ["selectedStaffId"]),
+      staffReplacementPreviousConfirmedStaffId: readStringAttribute(normalized.attributes, ["confirmedStaffId"]),
+      voiceSlotDecisions: withVoiceSlotDecision(normalized.attributes, voiceSlotDecision),
+      awaitingFinalBookingConfirmation: "false",
+      bookingConfirmationAsked: "false",
+      lastAskedSlot: "staffPreference",
+      slotToElicit: "staffPreference",
+      askedSlotsCount: "1",
+      fallbackCount: "1",
+      errorCount: "1"
+    });
+    const parsed = buildInternalParsedIntent({
+      intentType: "BOOK_APPOINTMENT",
+      customerName: normalized.customerName,
+      customerPhone: normalized.customerPhone,
+      serviceName: normalized.serviceName,
+      staffPreference: staffNameBeforeCurrentTurn,
+      requestedDateTime: replacementRequestedStartTime.toISOString(),
+      missingFields: ["staffPreference"],
+      isReadyToBook: false
+    });
+    const bookingAttempt = await createAttempt({
+      status: BookingAttemptStatus.NEEDS_INPUT,
+      requestedStartTime: replacementRequestedStartTime,
+      failureReason: "Final confirmation staff replacement requires confirmation.",
+      normalizedRequest: {
+        serviceName: normalized.serviceName,
+        requestedDate: normalized.requestedDate,
+        requestedTime: normalized.requestedTime,
+        trustedStaffPreference: staffNameBeforeCurrentTurn,
+        proposedStaffPreference: proposedFirstAvailableStaff.proposedStaffPreference,
+        staffReplacementReason: "final_confirmation_staff_replacement_asr",
+        startTimeIso: replacementRequestedStartTime.toISOString(),
+        timezone: salon.timezone
+      }
+    });
+    const aiInteraction = await createInteraction({
+      outcome: "MISSING_INFO",
+      message,
+      parsed,
+      bookingAttemptId: bookingAttempt.id,
+      responsePayload: {
+        missingFields: ["staffPreference"],
+        promptMissingFields: ["staffPreference"],
+        slotToElicit: "staffPreference",
+        proposedStaffPreference: proposedFirstAvailableStaff.proposedStaffPreference,
+        trustedStaffPreference: staffNameBeforeCurrentTurn,
+        sessionAttributes: lexSessionAttributes
+      },
+      isValid: true
+    });
+    await finalizeCall({
+      outcome: "MISSING_INFO",
+      bookingAttemptId: bookingAttempt.id,
+      bookingStatus: bookingAttempt.status,
+      parsed,
+      message,
+      failureReason: bookingAttempt.failureReason ?? undefined
+    });
+
+    return {
+      outcome: "MISSING_INFO" as const,
+      message,
+      lexResponse: {
+        fulfillmentState: "InProgress",
+        message,
+        messageContentType: "SSML",
+        dialogAction: {
+          type: "ElicitSlot",
+          slotToElicit: "staffPreference"
+        },
+        sessionAttributes: lexSessionAttributes
+      },
+      appointment: null,
+      bookingAttempt,
+      callSession,
+      transcript,
+      aiInteraction,
+      escalation: null,
+      alternatives: [],
+      missingFields: ["staffPreference"],
+      salonResolutionSource: resolutionSource
+    };
+  }
 
   const missingFields = new Set<string>();
   if (!normalized.customerName) {
@@ -10593,8 +11835,12 @@ export const createAmazonConnectAIAppointment = async (
         action: "propose",
         canonicalValue: proposedFirstAvailableStaff.proposedStaffPreference,
         reason: proposedFirstAvailableStaff.reason,
-        confidenceBand: "medium",
+        confidenceBand: proposedFirstAvailableStaff.confidenceBand,
         evidence: [proposedFirstAvailableStaff.matchedTranscript],
+        source: proposedFirstAvailableStaff.asrAlternativesUsed ? "asr_alternative" : "contextual_repair",
+        activeSlot: readStringAttribute(normalized.attributes, ["lastAskedSlot"]),
+        negated: false,
+        requiresConfirmation: true,
         alternativesUsed: proposedFirstAvailableStaff.asrAlternativesUsed
       })
     ];
@@ -10751,6 +11997,183 @@ export const createAmazonConnectAIAppointment = async (
             attributes: normalized.attributes
           })
         : null;
+    const pendingFirstAvailableStaffProposal =
+      proposedFirstAvailableStaff ??
+      (readStringAttribute(normalized.attributes, ["proposedStaffPreference"])
+        ? {
+            proposedStaffPreference: "Any staff" as const,
+            reason:
+              readStringAttribute(normalized.attributes, ["staffClarificationReason"]) ||
+              readStringAttribute(normalized.attributes, ["clarificationReason"]) ||
+              "pending_first_available_asr",
+            confidenceBand:
+              (readStringAttribute(normalized.attributes, ["staffProposalConfidenceBand"]) as "medium" | "low") ||
+              "medium",
+            asrAlternativesUsed:
+              readStringAttribute(normalized.attributes, ["asrAlternativesUsed"]) === "true",
+            matchedTranscript:
+              readStringAttribute(normalized.attributes, ["unrecognizedStaffUtterance"]) ||
+              readStringAttribute(normalized.attributes, ["proposedStaffPreference"]) ||
+              "Any staff"
+          }
+        : null);
+    const pendingFullSetServiceProposal =
+      proposedServiceClarification ??
+      (readStringAttribute(normalized.attributes, ["proposedServiceName"])
+        ? {
+            proposedServiceName: "Full Set" as const,
+            reason:
+              readStringAttribute(normalized.attributes, ["serviceClarificationReason"]) ||
+              readStringAttribute(normalized.attributes, ["clarificationReason"]) ||
+              "pending_full_set_asr",
+            asrAlternativesUsed:
+              readStringAttribute(normalized.attributes, ["asrAlternativesUsed"]) === "true",
+            matchedTranscript:
+              readStringAttribute(normalized.attributes, ["serviceAliasCorrectionRaw"]) ||
+              readStringAttribute(normalized.attributes, ["proposedServiceName"]) ||
+              "Full Set"
+          }
+        : null);
+    const activeVoiceSlot = readStringAttribute(normalized.attributes, ["lastAskedSlot"]);
+    const deferOutOfOrderStaffProposal =
+      Boolean(proposedFirstAvailableStaff) &&
+      activeVoiceSlot === "serviceName" &&
+      elicitDecision.slotToElicit !== "staffPreference";
+    if (
+      pendingFullSetServiceProposal &&
+      pendingFirstAvailableStaffProposal &&
+      normalized.requestedDate &&
+      normalized.requestedTime &&
+      !normalized.staffPreference &&
+      !readStringAttribute(normalized.attributes, ["confirmedStaffName"])
+    ) {
+      const message = buildBookingFrameRepairConfirmationPrompt(
+        {
+          proposedServiceName: pendingFullSetServiceProposal.proposedServiceName,
+          requestedDate: normalized.requestedDate,
+          requestedTime: normalized.requestedTime,
+          proposedStaffPreference: pendingFirstAvailableStaffProposal.proposedStaffPreference
+        },
+        salon.timezone
+      );
+      const voiceSlotDecisions = [
+        buildVoiceSlotDecision({
+          slot: "serviceName",
+          action: "propose",
+          canonicalValue: pendingFullSetServiceProposal.proposedServiceName,
+          reason: pendingFullSetServiceProposal.reason,
+          confidenceBand: "medium",
+          evidence: [pendingFullSetServiceProposal.matchedTranscript],
+          source: pendingFullSetServiceProposal.asrAlternativesUsed ? "asr_alternative" : "contextual_repair",
+          activeSlot: activeVoiceSlot,
+          negated: false,
+          requiresConfirmation: true,
+          alternativesUsed: pendingFullSetServiceProposal.asrAlternativesUsed
+        }),
+        buildVoiceSlotDecision({
+          slot: "staffPreference",
+          action: "propose",
+          canonicalValue: pendingFirstAvailableStaffProposal.proposedStaffPreference,
+          reason: pendingFirstAvailableStaffProposal.reason,
+          confidenceBand: pendingFirstAvailableStaffProposal.confidenceBand,
+          evidence: [pendingFirstAvailableStaffProposal.matchedTranscript],
+          source: pendingFirstAvailableStaffProposal.asrAlternativesUsed ? "asr_alternative" : "contextual_repair",
+          activeSlot: activeVoiceSlot,
+          negated: false,
+          requiresConfirmation: true,
+          alternativesUsed: pendingFirstAvailableStaffProposal.asrAlternativesUsed
+        })
+      ];
+      const lexSessionAttributes = buildKnownSessionAttributes({
+        serviceName: undefined,
+        staffPreference: undefined,
+        staffId: undefined,
+        selectedStaffId: undefined,
+        confirmedStaffId: undefined,
+        confirmedStaffName: undefined,
+        awaitingBookingFrameRepairConfirmation: "true",
+        proposedServiceName: pendingFullSetServiceProposal.proposedServiceName,
+        proposedStaffPreference: pendingFirstAvailableStaffProposal.proposedStaffPreference,
+        staffProposalConfidenceBand: pendingFirstAvailableStaffProposal.confidenceBand,
+        bookingFrameRepairReason: "full_set_and_first_available_asr",
+        clarificationReason: "booking_frame_repair_confirmation",
+        voiceSlotDecisions: JSON.stringify(voiceSlotDecisions),
+        awaitingFinalBookingConfirmation: "false",
+        bookingConfirmationAsked: "false",
+        lastAskedSlot: "bookingConfirmation",
+        askedSlotsCount: "1",
+        fallbackCount: "1",
+        errorCount: "1"
+      });
+      const parsed = buildInternalParsedIntent({
+        intentType: "BOOK_APPOINTMENT",
+        customerName: normalized.customerName,
+        customerPhone: normalized.customerPhone,
+        serviceName: undefined,
+        staffPreference: undefined,
+        requestedDateTime: undefined,
+        missingFields: ["serviceName", "staffPreference"],
+        isReadyToBook: false
+      });
+      const bookingAttempt = await createAttempt({
+        status: BookingAttemptStatus.NEEDS_INPUT,
+        failureReason: "Medium-confidence booking frame repair requires confirmation.",
+        normalizedRequest: {
+          requestedDate: normalized.requestedDate,
+          requestedTime: normalized.requestedTime,
+          proposedServiceName: pendingFullSetServiceProposal.proposedServiceName,
+          proposedStaffPreference: pendingFirstAvailableStaffProposal.proposedStaffPreference,
+          bookingFrameRepairReason: "full_set_and_first_available_asr",
+          timezone: salon.timezone
+        }
+      });
+      const aiInteraction = await createInteraction({
+        outcome: "MISSING_INFO",
+        message,
+        parsed,
+        bookingAttemptId: bookingAttempt.id,
+        responsePayload: {
+          missingFields: ["serviceName", "staffPreference"],
+          promptMissingFields: ["bookingConfirmation"],
+          slotToElicit: "bookingConfirmation",
+          bookingFrameRepairReason: "full_set_and_first_available_asr",
+          sessionAttributes: lexSessionAttributes
+        },
+        isValid: true
+      });
+      await finalizeCall({
+        outcome: "MISSING_INFO",
+        bookingAttemptId: bookingAttempt.id,
+        bookingStatus: bookingAttempt.status,
+        parsed,
+        message,
+        failureReason: bookingAttempt.failureReason ?? undefined
+      });
+
+      return {
+        outcome: "MISSING_INFO" as const,
+        message,
+        lexResponse: {
+          fulfillmentState: "InProgress",
+          message,
+          messageContentType: "SSML",
+          dialogAction: {
+            type: "ElicitSlot",
+            slotToElicit: "bookingConfirmation"
+          },
+          sessionAttributes: lexSessionAttributes
+        },
+        appointment: null,
+        bookingAttempt,
+        callSession,
+        transcript,
+        aiInteraction,
+        escalation: null,
+        alternatives: [],
+        missingFields: ["serviceName", "staffPreference"],
+        salonResolutionSource: resolutionSource
+      };
+    }
     const serviceDtmfConflictProposal =
       elicitDecision.slotToElicit === "serviceName" &&
       readStringAttribute(normalized.attributes, ["awaitingServiceConfirmation"]) === "true" &&
@@ -10775,13 +12198,19 @@ export const createAmazonConnectAIAppointment = async (
       : proposedServiceClarification
       ? buildProposedServicePrompt(normalized, salon.timezone)
       : undefined;
-    const staffConfirmationPrompt = proposedFirstAvailableStaff
+    const staffConfirmationPrompt = proposedFirstAvailableStaff && !deferOutOfOrderStaffProposal
       ? buildAmbiguousStaffConfirmationPrompt(normalized, salon.timezone)
       : staffProposalRejectedThisTurn
         ? buildStaffConfirmationRejectedPrompt(normalized, staffPromptOptions)
         : undefined;
-    const message = serviceConfirmationPrompt ?? staffConfirmationPrompt ?? timeConfirmationPrompt ?? buildLexMessage({
-      outcome: "MISSING_INFO",
+    const freshRestartNeedsService =
+      readStringAttribute(normalized.attributes, ["freshBookingRestart"]) === "true" &&
+      elicitDecision.slotToElicit === "serviceName" &&
+      !currentTurnHasBookingDetails(normalized);
+	    const message = freshRestartNeedsService
+      ? speak("Sure, let's start a new appointment. What service would you like?")
+      : serviceConfirmationPrompt ?? staffConfirmationPrompt ?? timeConfirmationPrompt ?? buildLexMessage({
+	      outcome: "MISSING_INFO",
       missingFields: elicitDecision.promptMissingFields,
       staffOptions: staffPromptOptions,
       knownFields: normalized,
@@ -10816,7 +12245,7 @@ export const createAmazonConnectAIAppointment = async (
           normalized,
           salon.timezone
         )
-    });
+	    });
     const staffPromptAttributes = shouldPromptStaff
       ? {
           ...buildStaffPromptSessionAttributes(staffPromptOptions),
@@ -10869,6 +12298,10 @@ export const createAmazonConnectAIAppointment = async (
               reason: proposedServiceClarification.reason,
               confidenceBand: "medium",
               evidence: [proposedServiceClarification.matchedTranscript],
+              source: proposedServiceClarification.asrAlternativesUsed ? "asr_alternative" : "contextual_repair",
+              activeSlot: activeVoiceSlot,
+              negated: false,
+              requiresConfirmation: true,
               alternativesUsed: proposedServiceClarification.asrAlternativesUsed
             })
           ),
@@ -10882,10 +12315,13 @@ export const createAmazonConnectAIAppointment = async (
       : {};
     const proposedStaffAttributes = proposedFirstAvailableStaff
       ? {
-          awaitingStaffConfirmation: "true",
+          awaitingStaffConfirmation: deferOutOfOrderStaffProposal ? undefined : "true",
           proposedStaffPreference: proposedFirstAvailableStaff.proposedStaffPreference,
           staffClarificationReason: proposedFirstAvailableStaff.reason,
-          clarificationReason: proposedFirstAvailableStaff.reason,
+          clarificationReason: deferOutOfOrderStaffProposal
+            ? "out_of_order_staff_proposal_preserved"
+            : proposedFirstAvailableStaff.reason,
+          staffProposalConfidenceBand: proposedFirstAvailableStaff.confidenceBand,
           asrAlternativesUsed: proposedFirstAvailableStaff.asrAlternativesUsed ? "true" : "false",
           voiceSlotDecisions: withVoiceSlotDecision(
             normalized.attributes,
@@ -10894,8 +12330,12 @@ export const createAmazonConnectAIAppointment = async (
               action: "propose",
               canonicalValue: proposedFirstAvailableStaff.proposedStaffPreference,
               reason: proposedFirstAvailableStaff.reason,
-              confidenceBand: "medium",
+              confidenceBand: proposedFirstAvailableStaff.confidenceBand,
               evidence: [proposedFirstAvailableStaff.matchedTranscript],
+              source: proposedFirstAvailableStaff.asrAlternativesUsed ? "asr_alternative" : "contextual_repair",
+              activeSlot: readStringAttribute(normalized.attributes, ["lastAskedSlot"]),
+              negated: false,
+              requiresConfirmation: true,
               alternativesUsed: proposedFirstAvailableStaff.asrAlternativesUsed
             })
           ),
@@ -12158,8 +13598,9 @@ export const createAmazonConnectAIAppointment = async (
     };
   }
 
-  if (isConfirmationDenied(normalized.confirmationState)) {
-    const message = speak("No problem. <break time=\"300ms\"/> Which detail would you like to change?");
+	  if (isConfirmationDenied(normalized.confirmationState)) {
+    const resetKeys = getFinalConfirmationClearKeys();
+	    const message = speak("Okay, I won't book that appointment. <break time=\"300ms\"/> Would you like to start a new booking, change a detail, or stop?");
     const parsed = buildInternalParsedIntent({
       intentType: "BOOK_APPOINTMENT",
       customerName: normalized.customerName,
@@ -12189,10 +13630,12 @@ export const createAmazonConnectAIAppointment = async (
       message,
       parsed,
       bookingAttemptId: bookingAttempt.id,
-      responsePayload: {
-        confirmationState: normalized.confirmationState,
-        awaitingFinalBookingConfirmation: false
-      },
+	      responsePayload: {
+	        confirmationState: normalized.confirmationState,
+	        awaitingFinalBookingConfirmation: false,
+        awaitingRejectedBookingChoice: true,
+        sessionAttributeKeysToClear: resetKeys
+	      },
       isValid: true
     });
     await finalizeCall({
@@ -12214,13 +13657,17 @@ export const createAmazonConnectAIAppointment = async (
         dialogAction: {
           type: "ElicitIntent"
         },
-        sessionAttributes: buildKnownSessionAttributes({
-          aiAlternativeSlots: "[]",
-          awaitingAlternativeSelection: "false",
-          awaitingFinalBookingConfirmation: "false",
-          bookingConfirmationAsked: "false"
-        })
-      },
+	        sessionAttributes: buildKnownSessionAttributes({
+	          aiAlternativeSlots: "[]",
+	          awaitingAlternativeSelection: "false",
+	          awaitingFinalBookingConfirmation: "false",
+	          bookingConfirmationAsked: "false",
+          awaitingRejectedBookingChoice: "true",
+          sessionAttributeKeysToClear: JSON.stringify(resetKeys),
+          forceHumanEscalation: "false",
+          transferToQueue: "false"
+	        })
+	      },
       appointment: null,
       bookingAttempt,
       callSession,
@@ -13883,6 +15330,162 @@ export const buildAIInteractionCallDebugForAdminPayload = (
     callerPhone: callSession?.callerPhone ?? interaction.bookingAttempt?.customerPhone ?? null,
     calledNumber: callSession?.dialedPhone ?? callSession?.trackingNumber ?? null,
     turnHistories
+  };
+};
+
+const redactReleaseEvidenceValue = (value: unknown): unknown => {
+  if (typeof value === "string") {
+    const phoneRedacted = value.replace(/\+?\d[\d\s().-]{7,}\d/g, (match) => {
+      const digits = match.replace(/\D/g, "");
+      return digits.length >= 8 ? `[redacted-phone:${createHash("sha256").update(digits).digest("hex").slice(0, 12)}]` : match;
+    });
+    return phoneRedacted;
+  }
+  if (Array.isArray(value)) {
+    return value.map(redactReleaseEvidenceValue);
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, entry]) => {
+        const lowerKey = key.toLowerCase();
+        if (/(phone|caller|customerphone|number)$/.test(lowerKey)) {
+          return [key, redactReleaseEvidenceValue(String(entry ?? ""))];
+        }
+        return [key, redactReleaseEvidenceValue(entry)];
+      })
+    );
+  }
+  return value;
+};
+
+const collectReleaseIdentitiesFromDebug = (debug: ReturnType<typeof buildAIInteractionCallDebugForAdminPayload>) => {
+  const identities = new Map<string, Record<string, unknown>>();
+  const addIdentity = (value: unknown) => {
+    const record = recordFromUnknown(value);
+    const releaseIdentity = recordFromUnknown(record.releaseIdentity);
+    const merged = {
+      ...record,
+      ...releaseIdentity
+    };
+    const relevant = Object.fromEntries(
+      Object.entries(merged).filter(([key, entry]) => key.startsWith("VOICE_") && entry !== undefined && entry !== null && String(entry).trim() !== "")
+    );
+    if (Object.keys(relevant).length) {
+      identities.set(sha256JsonForEvidence(relevant), relevant);
+    }
+  };
+  for (const item of debug.aiInteractions ?? []) {
+    addIdentity(item.requestPayload);
+    addIdentity(recordFromUnknown(item.requestPayload).attributes);
+    addIdentity(item.responsePayload);
+    addIdentity(recordFromUnknown(item.responsePayload).sessionAttributes);
+    addIdentity(recordFromUnknown(item.responsePayload).turnStateDiagnostics);
+  }
+  for (const attempt of debug.bookingAttempts ?? []) {
+    addIdentity(attempt.normalizedRequest);
+    addIdentity(attempt.rawInput);
+  }
+  for (const turn of debug.turnHistories ?? []) {
+    addIdentity(turn.turnStateDiagnostics);
+    addIdentity(turn.sessionAttributesAfter);
+  }
+  return Array.from(identities.values());
+};
+
+const sha256JsonForEvidence = (value: unknown) =>
+  createHash("sha256").update(JSON.stringify(value)).digest("hex");
+
+export const getAmazonConnectReleaseEvidenceForInternal = async (contactId: string) => {
+  const trimmedContactId = contactId.trim();
+  const callSession = await prisma.callSession.findUnique({
+    where: {
+      provider_providerCallId: {
+        provider: ExternalProvider.AMAZON_CONNECT,
+        providerCallId: trimmedContactId
+      }
+    },
+    include: {
+      events: {
+        orderBy: { receivedAt: "asc" }
+      },
+      transcripts: {
+        orderBy: { createdAt: "asc" }
+      },
+      bookingAttempts: {
+        orderBy: { createdAt: "asc" },
+        include: {
+          appointment: true
+        }
+      },
+      aiInteractions: {
+        orderBy: { createdAt: "asc" }
+      },
+      callEscalations: {
+        orderBy: { createdAt: "asc" }
+      }
+    }
+  });
+  const fallbackInteraction = callSession
+    ? null
+    : await prisma.aiInteractionLog.findFirst({
+        where: {
+          OR: [
+            {
+              requestPayload: {
+                path: ["amazonConnectContactId"],
+                equals: trimmedContactId
+              }
+            },
+            {
+              requestPayload: {
+                path: ["contactId"],
+                equals: trimmedContactId
+              }
+            },
+            {
+              requestPayload: {
+                path: ["attributes", "AmazonConnectContactId"],
+                equals: trimmedContactId
+              }
+            }
+          ]
+        },
+        orderBy: { createdAt: "desc" },
+        include: {
+          callSession: true,
+          bookingAttempt: true,
+          transcript: true
+        }
+      });
+  if (!callSession && !fallbackInteraction) {
+    throw new AppError("Release evidence contact was not found.", 404, "RELEASE_EVIDENCE_NOT_FOUND");
+  }
+
+  const debug = buildAIInteractionCallDebugForAdminPayload(
+    fallbackInteraction ?? callSession!.aiInteractions[0] ?? { id: "missing", bookingAttempt: null },
+    callSession
+  );
+  const appointmentRecords = (debug.bookingAttempts ?? [])
+    .map((attempt: any) => ({
+      bookingAttemptId: attempt.id,
+      appointmentId: attempt.appointmentId ?? attempt.appointment?.id ?? null,
+      status: attempt.status,
+      appointmentStatus: attempt.appointment?.status ?? null,
+      createdAt: attempt.createdAt,
+      releaseIdentity: recordFromUnknown(attempt.normalizedRequest).releaseIdentity ?? null
+    }))
+    .filter((item: { appointmentId: string | null }) => Boolean(item.appointmentId));
+  const redactedDebug = redactReleaseEvidenceValue(debug);
+  return {
+    contactId: trimmedContactId,
+    exportedAt: new Date().toISOString(),
+    found: true,
+    releaseIdentities: collectReleaseIdentitiesFromDebug(debug),
+    appointmentRecords,
+    activeTestAppointmentCount: appointmentRecords.filter(
+      (item: { appointmentStatus: string | null }) => item.appointmentStatus && item.appointmentStatus !== AppointmentStatus.CANCELED
+    ).length,
+    debug: redactedDebug
   };
 };
 

@@ -321,7 +321,9 @@
   "parentSlotTypeSignature": null,
   "valueSelectionSetting": {
     "resolutionStrategy": "TOP_RESOLUTION",
-    "advancedRecognitionSetting": null,
+    "advancedRecognitionSetting": {
+      "audioRecognitionStrategy": "UseSlotValuesAsCustomVocabulary"
+    },
     "regexFilter": null
   }
 }

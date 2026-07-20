@@ -26,6 +26,11 @@
       "displayAs": "Full Set"
     },
     {
+      "phrase": "Fullset",
+      "weight": 3,
+      "displayAs": "Fullset"
+    },
+    {
       "phrase": "Kelly",
       "weight": 3,
       "displayAs": "Kelly"
@@ -34,6 +39,16 @@
       "phrase": "Kevin",
       "weight": 2,
       "displayAs": "Kevin"
+    },
+    {
+      "phrase": "Nail full set",
+      "weight": 3,
+      "displayAs": "Nail full set"
+    },
+    {
+      "phrase": "No preference",
+      "weight": 3,
+      "displayAs": "No preference"
     },
     {
       "phrase": "Trang",
