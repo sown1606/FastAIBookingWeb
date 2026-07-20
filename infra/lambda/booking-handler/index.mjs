@@ -4910,6 +4910,9 @@ function buildCustomerNamePrompt(event, options = {}) {
   const summary = buildKnownBookingPromptSummary(event, {
     forPhrase: options.already
   });
+  if (options.forceClarification) {
+    return "Sorry, I didn't catch your name. What is your first name?";
+  }
   if (options.spell && !options.already) {
     return "Sorry, could you spell your first name, one letter at a time?";
   }
@@ -8057,6 +8060,7 @@ async function handleLexEvent(event, analysis = {}) {
       if (previousNameAttempts >= 2 && !hasTrustedCustomerName(event)) {
         return await continueWithTemporaryCustomerName(event, intentName, analysis);
       }
+      const repeatsKnownBookingField = currentTurnRepeatsKnownBookingField(event);
       const response = buildElicitSlotResponse(
         event,
         "customerName",
@@ -8064,8 +8068,8 @@ async function handleLexEvent(event, analysis = {}) {
           ignoredNoiseFields: JSON.stringify(analysis.ignoredNoiseFields)
         },
         buildCustomerNamePrompt(event, {
-          already: currentTurnRepeatsKnownBookingField(event),
-          retry: previousNameAttempts >= 1
+          already: repeatsKnownBookingField,
+          forceClarification: !repeatsKnownBookingField
         })
       );
       await postInternalAppointment(

@@ -6022,7 +6022,7 @@ test("DialogCodeHook customerName noise does not persist sorry", async () => {
   ]);
   assert.equal(
     response.messages[0].content,
-    "I have your Full Set tomorrow at 3 PM. May I have your name, please?"
+    "Sorry, I didn't catch your name. What is your first name?"
   );
 });
 
@@ -6097,7 +6097,6 @@ test("DialogCodeHook customerName small talk asks first name and preserves trust
           CustomerEndpointAddress: "+84798171999",
           AmazonConnectContactId: "connect-customer-name-small-talk",
           lastAskedSlot: "customerName",
-          askedSlotsCount: "1",
           serviceName: "Full Set",
           confirmedServiceName: "Full Set",
           requestedDate,
@@ -6144,7 +6143,6 @@ test("DialogCodeHook customerName small talk asks first name and preserves trust
           CustomerEndpointAddress: "+84798171999",
           AmazonConnectContactId: "connect-customer-name-yeah-noise",
           lastAskedSlot: "customerName",
-          askedSlotsCount: "1",
           serviceName: "Full Set",
           confirmedServiceName: "Full Set",
           requestedDate,

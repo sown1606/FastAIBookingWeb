@@ -7278,6 +7278,10 @@ const pickNormalizedAppointmentDebug = (
   ignoredNoiseFields: readStringAttribute(normalized.attributes, ["ignoredNoiseFields"])
 });
 
+const hasIgnoredCustomerNameNoise = (attributes?: Record<string, unknown>): boolean =>
+  parseSessionAttributeKeysToClear(readStringAttribute(attributes, ["ignoredNoiseFields"]))
+    .includes("customerName");
+
 const shouldTransferToHuman = (input: {
   intentName?: string;
   transcriptText?: string;
@@ -8035,6 +8039,7 @@ const buildLexMessage = (input: {
   invalidStaffDtmfSelection?: boolean;
   unmatchedStaffPreference?: boolean;
   repeatedKnownFieldWhileAskingName?: boolean;
+  rejectedCustomerName?: boolean;
   partialBookingFragment?: boolean;
   hasCurrentTurnTranscript?: boolean;
 }): string => {
@@ -8117,6 +8122,8 @@ const buildLexMessage = (input: {
       return speak(
         input.repeatedKnownFieldWhileAskingName && summary
           ? `I already have ${escapeSsml(summary)}. <break time="300ms"/> What name should I put on the appointment?`
+          : input.rejectedCustomerName
+          ? "Sorry, I didn't catch your name. What is your first name?"
           : (input.attemptCount ?? 1) >= 3
           ? "Could you spell your first name, one letter at a time?"
           : isRetry
@@ -8653,6 +8660,7 @@ export const createAmazonConnectAIRecoverableFailure = async (
       knownFields: normalized,
       salonTimezone: salon.timezone,
       attemptCount: elicitDecision.attemptCount,
+      rejectedCustomerName: hasIgnoredCustomerNameNoise(normalized.attributes),
       servicePromptText: servicePromptSessionAttributes.serviceDtmfPromptText
     });
     dialogAction = {
@@ -9046,6 +9054,10 @@ export const createAmazonConnectAIAppointment = async (
   const nameCorrectionText = normalized.currentTurnTranscript ?? normalized.transcriptText;
   const explicitCustomerNameCorrection = extractExplicitCustomerNameCorrection(nameCorrectionText);
   const rejectedRecognizedCustomerName = rejectsRecognizedCustomerName(nameCorrectionText);
+  const customerNameTurnReceivedNoise =
+    readStringAttribute(normalized.attributes, ["lastAskedSlot"]) === "customerName" &&
+    readStringAttribute(normalized.attributes, ["activeDtmfMenu"]) !== "staff" &&
+    isInvalidCustomerNameNoise(nameCorrectionText);
   const explicitCustomerName = explicitCustomerNameCorrection ??
     (normalized.transcriptText
       ? extractCustomerNameFromText(normalized.transcriptText)
@@ -9065,11 +9077,17 @@ export const createAmazonConnectAIAppointment = async (
   if (normalized.customerName) {
     normalized.customerName = collapseSpokenNameSpelling(normalized.customerName);
   }
+  const currentTurnCustomerNameCandidate = explicitCustomerName || bareCustomerName;
+  let rejectedCurrentTurnCustomerName = false;
   if (normalized.customerName && !isAcceptableCustomerName(normalized.customerName)) {
+    rejectedCurrentTurnCustomerName = Boolean(currentTurnCustomerNameCandidate);
     normalized.customerName = undefined;
   }
+  if (!normalized.customerName && !currentTurnCustomerNameCandidate && customerNameTurnReceivedNoise) {
+    rejectedCurrentTurnCustomerName = true;
+  }
   const trustedCustomerNameBeforeLookup = normalized.customerName;
-  const currentTurnAcceptedCustomerName = explicitCustomerName || bareCustomerName;
+  const currentTurnAcceptedCustomerName = currentTurnCustomerNameCandidate;
   if (currentTurnAcceptedCustomerName && normalized.customerName) {
     customerNameSourceOverride = "current_turn_explicit";
     customerNameNeedsReview = false;
@@ -12225,6 +12243,8 @@ export const createAmazonConnectAIAppointment = async (
       knownCallerAcknowledgementName: shouldAcknowledgeKnownCaller
         ? recognizedCustomerNameForSession
         : undefined,
+      rejectedCustomerName:
+        rejectedCurrentTurnCustomerName || hasIgnoredCustomerNameNoise(normalized.attributes),
       unsupportedServiceRequest: unsupportedServiceRequest
         ? {
             ...unsupportedServiceRequest,

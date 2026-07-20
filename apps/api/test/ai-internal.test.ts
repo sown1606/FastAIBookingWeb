@@ -2900,7 +2900,6 @@ test("customerName turn rejects with Kevin noise and accepts clear call-me phras
       transcript: "I'm doing well thank you",
       attributes: {
         lastAskedSlot: "customerName",
-        askedSlotsCount: "1",
         serviceName: "Full Set",
         requestedDate,
         requestedTime: "3 PM",
@@ -2934,7 +2933,6 @@ test("customerName turn rejects with Kevin noise and accepts clear call-me phras
       transcript: "yeah",
       attributes: {
         lastAskedSlot: "customerName",
-        askedSlotsCount: "1",
         serviceName: "Full Set",
         requestedDate,
         requestedTime: "3 PM",
