@@ -9304,6 +9304,38 @@ async function handleLexEvent(event, analysis = {}) {
         return buildBackendFailureEscalationResponse(event, result);
       }
       const data = extractResultPayload(result);
+      const resultSessionAttributes = data.lexResponse?.sessionAttributes || {};
+      if (data.outcome !== "HUMAN_ESCALATION" || resultSessionAttributes.transferToQueue !== "true") {
+        const forcedEscalationAttributes = buildForceHumanEscalationAttributes(transferDecision.reason, {
+          bookingOutcome: "HUMAN_ESCALATION",
+          conversationState: "TRANSFER",
+          conversationOutcome: "CALL_CENTER_ESCALATION",
+          conversationComplete: "false",
+          backendEscalationOutcome: data.outcome || "UNKNOWN",
+          backendEscalationForcedTransfer: "true",
+          backendEscalationTransferToQueue: resultSessionAttributes.transferToQueue || "missing"
+        });
+        return buildLexResponse(
+          event,
+          OPERATOR_TRANSFER_PROMPT,
+          "Fulfilled",
+          {
+            ...buildSessionAttributesFromResult(data),
+            ...forcedEscalationAttributes
+          },
+          {
+            ...(data.lexResponse || {}),
+            dialogAction: {
+              type: "Close"
+            },
+            messageContentType: "PlainText",
+            sessionAttributes: {
+              ...resultSessionAttributes,
+              ...forcedEscalationAttributes
+            }
+          }
+        );
+      }
       return buildLexResponse(
         event,
         data.lexResponse?.message || OPERATOR_TRANSFER_PROMPT,

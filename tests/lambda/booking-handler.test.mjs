@@ -8964,6 +8964,56 @@ test("press 0 from staff prompt escalates to operator", async () => {
   assert.equal(response.sessionState.sessionAttributes.escalationReason, "customer_pressed_zero");
 });
 
+test("press 0 forces operator transfer when backend returns a non-transfer recovery", async () => {
+  const handler = await loadHandler();
+  installFetchMock(() =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "MISSING_INFO",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "InProgress",
+          message: "I'm sorry, I couldn't save the appointment just yet. Please repeat that detail so I can keep the booking moving.",
+          messageContentType: "PlainText",
+          sessionAttributes: {
+            transferToQueue: "false",
+            forceHumanEscalation: "false",
+            escalationReason: "customer_pressed_zero"
+          }
+        }
+      })
+    )
+  );
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "0",
+      inputMode: "DTMF",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          ...baseEvent().sessionState.sessionAttributes,
+          lastAskedSlot: "staffPreference",
+          ...dynamicStaffAttributes()
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          slots: {}
+        }
+      }
+    })
+  );
+
+  assert.equal(response.sessionState.dialogAction.type, "Close");
+  assert.equal(response.messages[0].content, "Let me check for an available operator.");
+  assert.equal(response.sessionState.sessionAttributes.transferToQueue, "true");
+  assert.equal(response.sessionState.sessionAttributes.forceHumanEscalation, "true");
+  assert.equal(response.sessionState.sessionAttributes.escalationReason, "customer_pressed_zero");
+  assert.equal(response.sessionState.sessionAttributes.backendEscalationOutcome, "MISSING_INFO");
+  assert.equal(response.sessionState.sessionAttributes.backendEscalationForcedTransfer, "true");
+});
+
 test("DialogCodeHook invalid staff DTMF repeats the dynamic staff list once", async () => {
   const handler = await loadHandler();
   globalThis.fetch = async () => {
