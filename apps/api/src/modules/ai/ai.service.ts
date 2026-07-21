@@ -675,8 +675,8 @@ const CUSTOMER_NAME_SMALL_TALK_PATTERNS = [
 const SERVICE_DTMF_PROMPT =
   "Hi, I can help book your appointment. Tell me the service, day, time, and staff. You can press 0 for a person.";
 const SERVICE_DTMF_OPTIONS_PROMPT =
-  "I can list the services once. Please say the service name, or press 0 for a person.";
-const SERVICE_FIRST_RETRY_PROMPT = "Sure. Which service would you like?";
+  "Sorry, I didn't catch the service. Did you say Pedicure or Manicure?";
+const SERVICE_FIRST_RETRY_PROMPT = "What service would you like?";
 const STAFF_DTMF_PROMPT =
   "Which staff would you like, Trang, Amy, Kelly, or first available?";
 
@@ -7722,7 +7722,7 @@ const buildServiceDtmfPromptText = (services: ServiceMenuCandidate[]): string =>
     ([digit, serviceName]) => `Press ${digit} for ${serviceName}`
   );
   return optionPhrases.length
-    ? `I can list the services once. ${optionPhrases.join(", ")}, or 0 for a person.`
+    ? `Available services: ${optionPhrases.join(", ")}, or 0 for a person.`
     : SERVICE_DTMF_OPTIONS_PROMPT;
 };
 

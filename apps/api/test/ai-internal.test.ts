@@ -1805,7 +1805,7 @@ test("live distorted Full Set transcripts do not silently commit service", async
         date: undefined,
         time: undefined,
         staff: undefined,
-        prompt: /Which service would you like/i
+        prompt: /(?:What|Which) service would you like/i
       }
     ],
     [
@@ -1815,7 +1815,7 @@ test("live distorted Full Set transcripts do not silently commit service", async
         date: undefined,
         time: undefined,
         staff: undefined,
-        prompt: /Which service would you like/i
+        prompt: /(?:What|Which) service would you like/i
       }
     ],
     [
@@ -1825,7 +1825,7 @@ test("live distorted Full Set transcripts do not silently commit service", async
         date: undefined,
         time: undefined,
         staff: undefined,
-        prompt: /Which service would you like/i
+        prompt: /(?:What|Which) service would you like/i
       }
     ],
     [
@@ -1835,7 +1835,7 @@ test("live distorted Full Set transcripts do not silently commit service", async
         date: undefined,
         time: undefined,
         staff: undefined,
-        prompt: /Which service would you like/i
+        prompt: /(?:What|Which) service would you like/i
       }
     ],
     [
@@ -1845,7 +1845,7 @@ test("live distorted Full Set transcripts do not silently commit service", async
         date: distortedDate,
         time: undefined,
         staff: undefined,
-        prompt: /Which service would you like/i
+        prompt: /(?:What|Which) service would you like/i
       }
     ],
     [
@@ -1855,7 +1855,7 @@ test("live distorted Full Set transcripts do not silently commit service", async
         date: distortedDate,
         time: undefined,
         staff: "Amy",
-        prompt: /Which service would you like/i
+        prompt: /(?:What|Which) service would you like/i
       }
     ],
     [
@@ -1905,7 +1905,7 @@ test("live distorted Full Set transcripts do not silently commit service", async
         date: DateTime.now().setZone("America/New_York").toFormat("yyyy-MM-dd"),
         time: undefined,
         staff: undefined,
-        prompt: /Which service would you like/i
+        prompt: /(?:What|Which) service would you like/i
       }
     ]
   ] as const) {
@@ -2815,7 +2815,7 @@ test("partial booking fragment asks for service without greeting again", async (
 
   assert.equal(result.response.status, 200);
   assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
-  assert.match(result.body.data.lexResponse.message, /Sure\. Which service would you like\?/i);
+  assert.match(result.body.data.lexResponse.message, /What service would you like\?/i);
   assert.doesNotMatch(result.body.data.lexResponse.message, /Welcome back/i);
   assert.doesNotMatch(result.body.data.lexResponse.message, /Sorry, I/i);
   assert.doesNotMatch(result.body.data.lexResponse.message, /list the services/i);

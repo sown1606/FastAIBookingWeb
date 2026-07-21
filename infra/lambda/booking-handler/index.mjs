@@ -296,9 +296,9 @@ const OPERATOR_BUSY_PROMPT = "All of our operators are currently busy. Please ca
 const SERVICE_DTMF_PROMPT =
   "Hi, I can help book your appointment. Tell me the service, day, time, and staff. You can press 0 for a person.";
 const SERVICE_KEYPAD_PROMPT =
-  "Sure. Which service would you like?";
+  "What service would you like?";
 const SERVICE_DTMF_SHORT_PROMPT =
-  "I can list the services once. Please say the service name, or press 0 for a person.";
+  "Sorry, I didn't catch the service. Did you say Pedicure or Manicure?";
 const STAFF_DTMF_PROMPT =
   "Which staff would you like, Trang, Amy, Kelly, or first available?";
 const STAFF_DTMF_SHORT_PROMPT =
@@ -1517,7 +1517,7 @@ function isOperatorZeroValue(value) {
 
 function getScopedDtmfDigit(event, expectedSlot) {
   const previous = event.sessionState?.sessionAttributes || {};
-  if (!isGenuineDtmfInput(event)) {
+  if (!isTrustedDtmfInput(event)) {
     return "";
   }
   const lastAskedSlot = previous.lastAskedSlot;
@@ -1943,7 +1943,7 @@ function getActiveDtmfOptions(sessionAttributes = {}, activeDtmfMenu = sessionAt
 }
 
 function readCurrentTurnDigit(event) {
-  if (!isGenuineDtmfInput(event)) {
+  if (!isTrustedDtmfInput(event)) {
     return "";
   }
   const currentDigit = readDtmfDigit(getCurrentTurnTranscript(event));
@@ -1963,7 +1963,8 @@ function getCurrentTurnDtmfDiagnostics(event) {
   const previous = event.sessionState?.sessionAttributes || {};
   const inputMode = getInputMode(event);
   const inputModeSource = getInputModeSource(event);
-  const genuineDtmf = isGenuineDtmfInput(event);
+  const inputOrigin = classifyInputOrigin(event);
+  const trustedDtmf = inputOrigin.trustedKeypad;
   const transcriptCandidateRecords = [
     { source: "inputTranscript", value: event.inputTranscript }
   ];
@@ -2017,7 +2018,7 @@ function getCurrentTurnDtmfDiagnostics(event) {
   let spokenDigitSource = "none";
   const sequenceValues = [];
   for (const candidate of candidates) {
-    const digit = genuineDtmf ? readDtmfDigit(candidate.value) : "";
+    const digit = trustedDtmf ? readDtmfDigit(candidate.value) : "";
     if (!digitsExtractedSingle && digit && /^[0-9]$/.test(digit)) {
       digitsExtractedSingle = digit;
       readSource = candidate.source.includes("sessionAttributes")
@@ -2047,6 +2048,9 @@ function getCurrentTurnDtmfDiagnostics(event) {
     rawInputTranscript,
     inputMode,
     inputModeSource,
+    inputOrigin: inputOrigin.origin,
+    inputOriginEvidence: inputOrigin.evidence,
+    trustedKeypadInput: inputOrigin.trustedKeypad,
     genuineDtmfDigit: digitsExtractedSingle,
     spokenDigitCandidate,
     spokenDigitSource,
@@ -2068,7 +2072,7 @@ function getCurrentTurnDtmfDiagnostics(event) {
     lastAskedSlotBefore: previous.lastAskedSlot || "",
     dtmfAccepted: Boolean(digitsExtractedSingle),
     dtmfRejectedReason:
-      !genuineDtmf && spokenDigitCandidate
+      !trustedDtmf && spokenDigitCandidate
         ? "input_mode_not_dtmf"
         : ""
   };
@@ -2087,6 +2091,9 @@ function buildDtmfRouting(event) {
     digit,
     inputMode: diagnostics.inputMode,
     inputModeSource: diagnostics.inputModeSource,
+    inputOrigin: diagnostics.inputOrigin,
+    inputOriginEvidence: diagnostics.inputOriginEvidence,
+    trustedKeypadInput: diagnostics.trustedKeypadInput,
     genuineDtmfDigit: diagnostics.genuineDtmfDigit || "",
     spokenDigitCandidate: diagnostics.spokenDigitCandidate || "",
     spokenMenuSelectionProposed: false,
@@ -5787,13 +5794,13 @@ function getNoInputPrompt(slotName, noInputCount, event) {
     return "Sorry, I didn't catch your name. What is your first name?";
   }
   if (slotName === "serviceName" && noInputCount <= 1) {
-    return "Are you still there? Please tell me how I can help.";
+    return "Are you still there? What service would you like?";
   }
   if (noInputCount <= 1) {
     return getElicitPrompt(event, slotName, 1);
   }
   if (slotName === "serviceName") {
-    return "You can say book an appointment, or press 0 for a person.";
+    return "I'm still here. You can say the service name, or press zero for a person.";
   }
   return getElicitPrompt(event, slotName, 2);
 }
@@ -5940,12 +5947,18 @@ function shouldRequestDynamicServiceMenu(event) {
   ]
     .filter(Boolean)
     .join(" ");
+  const callerAskedForMenu = isUnsupportedServiceRequestPhrase(text) || isServiceMenuRequestPhrase(text);
+  const hasPriorServiceTurn =
+    parseAttemptCount(previous.turnSequence) > 0 ||
+    parseAttemptCount(previous.serviceRecognitionFailureCount) > 0 ||
+    parseAttemptCount(previous.serviceClarificationAttempts) > 0 ||
+    previous.serviceFallbackOffered === "true";
   return (
-    isUnsupportedServiceRequestPhrase(text) ||
-    isServiceMenuRequestPhrase(text) ||
-    previous.lastAskedSlot === "serviceName" ||
-    previous.activeDtmfMenu === "service" ||
-    (Boolean(String(text || "").trim()) &&
+    callerAskedForMenu ||
+    (hasPriorServiceTurn && previous.lastAskedSlot === "serviceName") ||
+    (hasPriorServiceTurn && previous.activeDtmfMenu === "service") ||
+    (hasPriorServiceTurn &&
+      Boolean(String(text || "").trim()) &&
       !currentTurnRecognizedService(event) &&
       isBookingLikeUtterance(text))
   );
@@ -7221,6 +7234,66 @@ function isGenuineDtmfInput(event) {
   return getInputMode(event) === "DTMF" && getInputModeSource(event) !== "default_speech";
 }
 
+function hasAmazonConnectKeypadTextEvidence(event) {
+  const attributes = event?.sessionState?.sessionAttributes || {};
+  const activeMenu = attributes.activeDtmfMenu === "service" || attributes.activeDtmfMenu === "staff";
+  const hasConnectIdentity = Boolean(
+    attributes.provider === "AMAZON_CONNECT" ||
+      attributes.AmazonConnectContactId ||
+      attributes.ContactId ||
+      attributes.InitialContactId ||
+      attributes.connectFlowSourceVersion
+  );
+  const hasTelephonyEndpoint = Boolean(
+    attributes.SystemEndpointAddress ||
+      attributes.CalledNumber ||
+      attributes.calledNumber ||
+      attributes.CustomerEndpointAddress ||
+      attributes.CallerId
+  );
+  return activeMenu && hasConnectIdentity && hasTelephonyEndpoint;
+}
+
+function classifyInputOrigin(event) {
+  const mode = getInputMode(event);
+  const source = getInputModeSource(event);
+  const transcript = getCurrentTurnTranscript(event);
+  if (mode === "DTMF" && source !== "default_speech") {
+    return {
+      origin: "DTMF",
+      trustedKeypad: true,
+      evidence: [`${source}=DTMF`]
+    };
+  }
+  if (mode === "Speech") {
+    return {
+      origin: "SPEECH",
+      trustedKeypad: false,
+      evidence: [`${source}=Speech`]
+    };
+  }
+  if (mode === "Text") {
+    const verifiedConnectText =
+      isBareDigitUtterance(transcript) && hasAmazonConnectKeypadTextEvidence(event);
+    return {
+      origin: verifiedConnectText ? "CONNECT_VERIFIED_DTMF_TEXT" : "TEXT_TEST",
+      trustedKeypad: verifiedConnectText,
+      evidence: verifiedConnectText
+        ? [`${source}=Text`, "active_dtmf_menu", "amazon_connect_session_attributes"]
+        : [`${source}=Text`]
+    };
+  }
+  return {
+    origin: "UNKNOWN",
+    trustedKeypad: false,
+    evidence: [`${source}=unknown`]
+  };
+}
+
+function isTrustedDtmfInput(event) {
+  return classifyInputOrigin(event).trustedKeypad;
+}
+
 function numberFromLexMetric(value) {
   if (typeof value === "number" && Number.isFinite(value)) {
     return value;
@@ -8202,6 +8275,7 @@ function logStructuredLexTurn(event, response, analysis = {}) {
     sessionAttributesAfter: redactLogObject(sessionAttributesAfter),
     lambdaResponseFingerprint: fingerprintLexResponse(response),
     playbackEvidenceStage: "LAMBDA_RESPONSE_ONLY",
+    responseEvidenceStage: "RETURNED_TO_LEX",
     promptPlaybackConfirmed: false,
     lexResponseSchemaValid: lexResponseDiagnostics.valid,
     lexResponseSchemaErrors: lexResponseDiagnostics.errors,
@@ -9670,7 +9744,7 @@ async function handleLexEvent(event, analysis = {}) {
           return await buildDynamicServiceElicitResponse(event, intentName);
         }
         const response = buildElicitSlotResponse(event, slotToElicit);
-        if (analysis.dtmfRouting?.accepted && isGenuineDtmfInput(event)) {
+        if (analysis.dtmfRouting?.accepted && isTrustedDtmfInput(event)) {
           await postInternalAppointment(buildInternalPayload(event, intentName), {
             operationName: "booking_turn_logging",
             waitPrompt: WAIT_PROMPTS.availability_lookup,
@@ -9920,6 +9994,7 @@ export const handler = async (event) => {
     responseAttributes.VOICE_API_VARIANT = responseAttributes.VOICE_API_VARIANT || VOICE_API_VARIANT || "";
     responseAttributes.lambdaResponseFingerprint = fingerprintLexResponse(response);
     responseAttributes.playbackEvidenceStage = "LAMBDA_RESPONSE_ONLY";
+    responseAttributes.responseEvidenceStage = "RETURNED_TO_LEX";
     responseAttributes.promptPlaybackConfirmed = "false";
     responseAttributes.lexResponseSchemaValid = String(lexResponseDiagnostics.valid);
     responseAttributes.lexResponseMessageContentType = lexResponseDiagnostics.messageContentType;
