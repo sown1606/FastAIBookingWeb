@@ -14,7 +14,7 @@ const lexRoots = ["v7", "v8", "v10"].map((version) => ({
 const connectRoot = path.join(repoRoot, "infra/aws/connect/contact-flows");
 const CANONICAL_SERVICE_PROMPT =
   "Hi, I can help book your appointment. Tell me the service, day, time, and staff. You can press 0 for a person.";
-const FIRST_SERVICE_RETRY_PROMPT = "What service would you like?";
+const FIRST_SERVICE_RETRY_PROMPT = "Which service would you like to book?";
 const SERVICE_MENU_PROMPT =
   "Sorry, I didn't catch the service. Did you say Pedicure or Manicure?";
 let importCounter = 0;
@@ -944,7 +944,10 @@ test("Connect AI reception has one reachable greeting and no outer service promp
     const action = actionsById.get(id);
     const next = actionsById.get(action?.Transitions?.NextAction);
     const text = action?.Parameters?.Text || "";
-    const asksQuestion = /\?|what service|which service|are you still there|tell me the appointment/i.test(text);
+    const isAllowedNoInputRecovery = text === "Are you still there? How can I help?";
+    const asksQuestion =
+      !isAllowedNoInputRecovery &&
+      /\?|what service|which service|are you still there|tell me the appointment/i.test(text);
     assert.ok(
       !(action?.Type === "MessageParticipant" && asksQuestion && next?.Type === "ConnectParticipantWithLexBot"),
       `${id} asks outside an input-collecting Lex turn`
@@ -1271,7 +1274,7 @@ test("Connect AI reception dynamic Lex prompts have a reachable literal fallback
     );
   }
   const fallbackLex = actionsById.get("continuation-fallback-lex");
-  assert.equal(fallbackLex?.Parameters?.Text, "Are you still there? Please tell me how I can help.");
+  assert.equal(fallbackLex?.Parameters?.Text, "Are you still there? How can I help?");
 });
 
 test("Connect source contract documents required production env keys without local .env", () => {
@@ -3339,7 +3342,7 @@ test("DialogCodeHook missing service with retained date and time asks service be
   assert.equal(response.sessionState.sessionAttributes.serviceName, undefined);
   assert.equal(response.sessionState.sessionAttributes.requestedDate, usEasternDate(1));
   assert.equal(response.sessionState.sessionAttributes.requestedTime, "2 PM");
-  assert.equal(response.messages[0].content, "I have tomorrow at 2 PM. What service would you like?");
+  assert.equal(response.messages[0].content, "I have tomorrow at 2 PM. Which service would you like to book?");
   assert.doesNotMatch(response.messages[0].content, /I have your/i);
   assert.doesNotMatch(response.messages[0].content, /May I have your name/i);
 });
@@ -3383,7 +3386,7 @@ test("DialogCodeHook service turn does not mutate customerName from unrelated I'
   assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName");
   assert.equal(response.sessionState.sessionAttributes.customerName, "Lee");
   assert.notEqual(response.sessionState.sessionAttributes.customerName, "following");
-  assert.match(response.messages[0].content, /What service would you like/i);
+  assert.match(response.messages[0].content, /Which service would you like to book/i);
 });
 
 test("DialogCodeHook adds compact service runtime hints only for service elicitation", async () => {
@@ -4163,7 +4166,7 @@ test("DialogCodeHook real no input asks an audible help question before any serv
   assert.equal(response.sessionState.sessionAttributes.noInputCount, "1");
   assert.equal(response.sessionState.sessionAttributes.awaitingNoInputHumanConfirmation, "false");
   assert.equal(response.sessionState.sessionAttributes.customerPhone, "+17325956266");
-  assert.equal(response.messages[0].content, "Are you still there? Please tell me how I can help.");
+  assert.equal(response.messages[0].content, "Are you still there? How can I help?");
   assert.doesNotMatch(response.messages[0].content, /1 for Pedicure/i);
   assert.doesNotMatch(response.messages[0].content, /2 for Manicure/i);
   assert.doesNotMatch(response.messages[0].content, /3 for Gel Manicure/i);
@@ -4171,7 +4174,7 @@ test("DialogCodeHook real no input asks an audible help question before any serv
   assert.doesNotMatch(response.messages[0].content, /5 for Dip Powder/i);
 });
 
-test("DialogCodeHook second no input uses shorter prompt without transfer", async () => {
+test("DialogCodeHook second no input uses exact still-there prompt without transfer", async () => {
   const handler = await loadHandler();
   globalThis.fetch = async () => {
     throw new Error("fetch should not be called for second no-input DialogCodeHook");
@@ -4204,7 +4207,7 @@ test("DialogCodeHook second no input uses shorter prompt without transfer", asyn
   assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName");
   assert.equal(response.sessionState.sessionAttributes.noInputCount, "2");
   assert.equal(response.sessionState.sessionAttributes.transferToQueue, undefined);
-  assert.equal(response.messages[0].content, "I'm still here. You can say book an appointment, or press zero for a person.");
+  assert.equal(response.messages[0].content, "Are you still there? How can I help?");
   assert.doesNotMatch(response.messages[0].content, /1 for Pedicure/i);
   assert.doesNotMatch(response.messages[0].content, /5 for Dip Powder/i);
   assert.doesNotMatch(response.messages[0].content, /You can also press 1 for Pedicure/i);
@@ -4242,7 +4245,7 @@ test("DialogCodeHook first service no input asks if caller is still there", asyn
   assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
   assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName");
   assert.equal(response.sessionState.sessionAttributes.noInputCount, "1");
-  assert.equal(response.messages[0].content, "Are you still there? Please tell me how I can help.");
+  assert.equal(response.messages[0].content, "Are you still there? How can I help?");
   assert.notEqual(response.sessionState.dialogAction.type, "Close");
 });
 
@@ -4285,7 +4288,7 @@ test("DialogCodeHook generic booking request asks one short service question", a
 
   assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
   assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName");
-  assert.equal(response.messages[0].content, "What service would you like?");
+  assert.equal(response.messages[0].content, "Which service would you like to book?");
   assert.ok(response.messages[0].content.trim());
   assert.doesNotMatch(response.messages[0].content, /^Sure\b/i);
   assert.doesNotMatch(response.messages[0].content, /Press 1 for Pedicure/i);
@@ -4335,7 +4338,7 @@ test("DialogCodeHook general services request does not accept ungrounded Pedicur
   assert.equal(response.sessionState.sessionAttributes.confirmedServiceName, undefined);
   assert.match(response.sessionState.sessionAttributes.requestedDate, /^\d{4}-\d{2}-\d{2}$/);
   assert.equal(response.sessionState.sessionAttributes.requestedTime, "3 PM");
-  assert.match(response.messages[0].content, /What service would you like\?/i);
+  assert.match(response.messages[0].content, /Which service would you like to book\?/i);
   assert.doesNotMatch(response.messages[0].content, /Pedicure/i);
 });
 
@@ -4407,7 +4410,7 @@ test("DialogCodeHook runtime services slot does not send ungrounded Pedicure to 
   assert.equal(response.sessionState.sessionAttributes.confirmedServiceName, undefined);
   assert.match(response.sessionState.sessionAttributes.requestedDate, /^\d{4}-\d{2}-\d{2}$/);
   assert.equal(response.sessionState.sessionAttributes.requestedTime, "3 PM");
-  assert.match(response.messages[0].content, /What service would you like\?/i);
+  assert.match(response.messages[0].content, /Which service would you like to book\?/i);
   assert.doesNotMatch(response.messages[0].content, /Got it, Pedicure|confirm: Pedicure/i);
 });
 
@@ -4447,7 +4450,7 @@ test("DialogCodeHook no input while staff is missing repeats trusted booking sta
   assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
   assert.equal(response.sessionState.dialogAction.slotToElicit, "staffPreference");
   assert.equal(response.sessionState.sessionAttributes.noInputCount, "1");
-  assert.match(response.messages[0].content, /I'm still here\. I have Full Set today at 3 PM\. Which staff would you like, or say first available\?/i);
+  assert.equal(response.messages[0].content, "Are you still there? How can I help?");
   assert.doesNotMatch(response.messages[0].content, /Press 1 for Trang/i);
   assert.notEqual(response.sessionState.sessionAttributes.conversationComplete, "true");
 });
@@ -5772,10 +5775,10 @@ test("DialogCodeHook sanitized real 11:01 Text keypad fixture selects Pedicure o
   assert.notEqual(attrs.transferToQueue, "true");
 });
 
-test("DialogCodeHook Text digit without trusted Connect evidence asks confirmation instead of committing service", async () => {
+test("DialogCodeHook Text digit without trusted Connect evidence does not commit service", async () => {
   const handler = await loadHandler();
   globalThis.fetch = async () => {
-    throw new Error("fetch should not be called for untrusted Text keypad clarification");
+    throw new Error("fetch should not be called for untrusted Text keypad input");
   };
 
   const response = await handler(
@@ -5811,24 +5814,45 @@ test("DialogCodeHook Text digit without trusted Connect evidence asks confirmati
   assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName");
   assert.equal(attrs.serviceName, undefined);
   assert.equal(attrs.confirmedServiceName, undefined);
-  assert.equal(attrs.proposedServiceName, "Manicure");
-  assert.equal(attrs.awaitingServiceConfirmation, "true");
-  assert.equal(attrs.dtmfAccepted, "false");
-  assert.equal(attrs.dtmfRejectedReason, "speech_digit_requires_confirmation");
-  assert.match(response.messages[0].content, /Did you choose option two, Manicure\? Please say yes, or say the service name\./i);
+  assert.equal(attrs.proposedServiceName, undefined);
+  assert.equal(attrs.awaitingServiceConfirmation, undefined);
+  assert.notEqual(attrs.dtmfAccepted, "true");
+  assert.match(response.messages[0].content, /Which service would you like to book\?/i);
 });
 
-test("DialogCodeHook spoken service menu digits ask confirmation instead of committing Manicure", async () => {
+test("DialogCodeHook spoken service menu digits commit the selected service", async () => {
   const handler = await loadHandler();
-  globalThis.fetch = async () => {
-    throw new Error("fetch should not be called for spoken service menu digit clarification");
-  };
+  const fetchCalls = installFetchMock((_url, _options, body) =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "MISSING_INFO",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "InProgress",
+          message: "May I have your name, please?",
+          messageContentType: "PlainText",
+          dialogAction: {
+            type: "ElicitSlot",
+            slotToElicit: "customerName"
+          },
+          sessionAttributes: {
+            serviceName: body.serviceName,
+            confirmedServiceName: body.serviceName,
+            requestedDate: body.requestedDate,
+            requestedTime: body.requestedTime,
+            staffPreference: body.staffPreference,
+            confirmedStaffName: body.staffPreference
+          }
+        },
+        missingFields: ["customerName"]
+      })
+    )
+  );
 
   for (const [phrase, inputMode] of [
     ["two", "Speech"],
     ["uh two", "Speech"],
-    ["option two", "Speech"],
-    ["2", undefined]
+    ["option two", "Speech"]
   ]) {
     const response = await handler(
       baseEvent({
@@ -5869,24 +5893,89 @@ test("DialogCodeHook spoken service menu digits ask confirmation instead of comm
     );
 
     const attrs = response.sessionState.sessionAttributes;
-    assert.equal(response.sessionState.dialogAction.type, "ElicitSlot", phrase);
-    assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName", phrase);
-    assert.equal(attrs.serviceName, undefined, phrase);
-    assert.equal(attrs.confirmedServiceName, undefined, phrase);
-    assert.equal(attrs.proposedServiceName, "Manicure", phrase);
-    assert.equal(attrs.awaitingServiceConfirmation, "true", phrase);
-    assert.equal(attrs.spokenMenuSelectionProposed, "true", phrase);
-    assert.equal(attrs.dtmfAccepted, "false", phrase);
-    assert.equal(attrs.dtmfRejectedReason, "speech_digit_requires_confirmation", phrase);
-    assert.match(response.messages[0].content, /Did you choose option two, Manicure\? Please say yes, or say the service name\./i, phrase);
+    assert.notEqual(response.sessionState.dialogAction.slotToElicit, "serviceName", phrase);
+    assert.equal(attrs.serviceName, "Manicure", phrase);
+    assert.equal(attrs.confirmedServiceName, "Manicure", phrase);
+    assert.notEqual(attrs.proposedServiceName, "Manicure", phrase);
+    assert.notEqual(attrs.awaitingServiceConfirmation, "true", phrase);
   }
+  assert.equal(fetchCalls.length, 0);
 });
 
-test("DialogCodeHook pending spoken option can change from two to four", async () => {
+test("DialogCodeHook out-of-range spoken service menu digit returns exact invalid choice", async () => {
   const handler = await loadHandler();
   globalThis.fetch = async () => {
-    throw new Error("fetch should not be called for pending spoken option update");
+    throw new Error("fetch should not be called for invalid spoken service menu digit");
   };
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "eight",
+      inputMode: "Speech",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: "connect-service-spoken-eight-invalid",
+          lastAskedSlot: "serviceName",
+          activeDtmfMenu: "service",
+          activeDtmfOptionsJson: JSON.stringify({
+            "0": "__operator__",
+            "1": "Pedicure",
+            "2": "Manicure",
+            "3": "Gel Manicure",
+            "4": "Full Set",
+            "5": "Dip Powder",
+            "6": "Nail Art",
+            "7": "Gel Polish"
+          })
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          slots: {}
+        }
+      }
+    })
+  );
+
+  assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName");
+  assert.equal(response.messages[0].content, "Invalid choice. Please select a valid number from the options provided.");
+  assert.equal(response.sessionState.sessionAttributes.serviceName, undefined);
+  assert.equal(response.sessionState.sessionAttributes.invalidServiceDtmfSelection, "8");
+});
+
+test("DialogCodeHook spoken option can change a previous pending option to four", async () => {
+  const handler = await loadHandler();
+  const fetchCalls = installFetchMock((_url, _options, body) =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "MISSING_INFO",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "InProgress",
+          message: "May I have your name, please?",
+          messageContentType: "PlainText",
+          dialogAction: {
+            type: "ElicitSlot",
+            slotToElicit: "customerName"
+          },
+          sessionAttributes: {
+            serviceName: body.serviceName,
+            confirmedServiceName: body.serviceName,
+            requestedDate: body.requestedDate,
+            requestedTime: body.requestedTime,
+            staffPreference: body.staffPreference,
+            confirmedStaffName: body.staffPreference
+          }
+        },
+        missingFields: ["customerName"]
+      })
+    )
+  );
 
   const response = await handler(
     baseEvent({
@@ -5930,15 +6019,13 @@ test("DialogCodeHook pending spoken option can change from two to four", async (
   );
 
   const attrs = response.sessionState.sessionAttributes;
-  assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
-  assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName");
-  assert.equal(attrs.serviceName, undefined);
-  assert.equal(attrs.confirmedServiceName, undefined);
-  assert.equal(attrs.proposedServiceName, "Full Set");
-  assert.equal(attrs.spokenDigitCandidate, "4");
-  assert.equal(attrs.awaitingServiceConfirmation, "true");
-  assert.match(response.messages[0].content, /Did you choose option four, Full Set\? Please say yes, or say the service name\./i);
-  assert.doesNotMatch(response.messages[0].content, /option two, Manicure/i);
+  assert.notEqual(response.sessionState.dialogAction.slotToElicit, "serviceName");
+  assert.equal(attrs.serviceName, "Full Set");
+  assert.equal(attrs.confirmedServiceName, "Full Set");
+  assert.notEqual(attrs.proposedServiceName, "Manicure");
+  assert.notEqual(attrs.awaitingServiceConfirmation, "true");
+  assert.doesNotMatch(response.messages?.[0]?.content || "", /option two, Manicure/i);
+  assert.equal(fetchCalls.length, 0);
 });
 
 test("DialogCodeHook two PM speech never routes through the service DTMF menu", async () => {
@@ -6302,7 +6389,7 @@ test("FallbackIntent 3 PM continues booking with confirmed Full Set", async () =
   assert.doesNotMatch(response.messages?.[0]?.content || "", /service/i);
 });
 
-test("DialogCodeHook spoken number four asks to confirm Full Set when service menu is active", async () => {
+test("DialogCodeHook spoken number four selects Full Set when service menu is active", async () => {
   const handler = await loadHandler();
   globalThis.fetch = async () => {
     throw new Error("fetch should not be called for local spoken DTMF recovery");
@@ -6338,15 +6425,11 @@ test("DialogCodeHook spoken number four asks to confirm Full Set when service me
     })
   );
 
-  assert.equal(response.sessionState.sessionAttributes.serviceName, undefined);
-  assert.equal(response.sessionState.sessionAttributes.confirmedServiceName, undefined);
-  assert.equal(response.sessionState.sessionAttributes.proposedServiceName, "Full Set");
-  assert.equal(response.sessionState.sessionAttributes.awaitingServiceConfirmation, "true");
-  assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName");
-  assert.match(
-    response.messages[0].content,
-    /Did you choose option four, Full Set\? Please say yes, or say the service name\./i
-  );
+  assert.equal(response.sessionState.sessionAttributes.serviceName, "Full Set");
+  assert.equal(response.sessionState.sessionAttributes.confirmedServiceName, "Full Set");
+  assert.notEqual(response.sessionState.sessionAttributes.proposedServiceName, "Full Set");
+  assert.notEqual(response.sessionState.sessionAttributes.awaitingServiceConfirmation, "true");
+  assert.notEqual(response.sessionState.dialogAction.slotToElicit, "serviceName");
 });
 
 test("DialogCodeHook initial DTMF 4 does not map service without active service menu", async () => {
@@ -9700,7 +9783,7 @@ test("press 0 forces operator transfer when backend returns a non-transfer recov
   assert.equal(response.sessionState.sessionAttributes.backendEscalationForcedTransfer, "true");
 });
 
-test("DialogCodeHook invalid staff DTMF repeats the dynamic staff list once", async () => {
+test("DialogCodeHook invalid staff DTMF returns exact invalid choice", async () => {
   const handler = await loadHandler();
   globalThis.fetch = async () => {
     throw new Error("fetch should not be called for invalid staff DTMF");
@@ -9736,8 +9819,7 @@ test("DialogCodeHook invalid staff DTMF repeats the dynamic staff list once", as
 
   assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
   assert.equal(response.sessionState.dialogAction.slotToElicit, "staffPreference");
-  assert.match(response.messages[0].content, /I didn't find that option/i);
-  assert.match(response.messages[0].content, /press 1 for Trang/i);
+  assert.equal(response.messages[0].content, "Invalid choice. Please select a valid number from the options provided.");
   assert.equal(response.sessionState.sessionAttributes.invalidStaffDtmfSelection, "9");
 });
 
@@ -11171,7 +11253,7 @@ test("DialogCodeHook restart after rejected booking clears stale frame", async (
       const attrs = response.sessionState.sessionAttributes;
       assert.equal(response.sessionState.dialogAction.type, "ElicitSlot", phrase);
       assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName", phrase);
-      assert.match(response.messages[0].content, /Sure, let's start a new appointment/i, phrase);
+      assert.match(response.messages[0].content, /Let's start a new appointment\. Which service would you like to book\?/i, phrase);
       assert.equal(attrs.serviceName, undefined, phrase);
       assert.equal(attrs.requestedDate, undefined, phrase);
       assert.equal(attrs.requestedTime, undefined, phrase);
@@ -11900,6 +11982,75 @@ test("DialogCodeHook no to past-time proposal keeps trusted slots and asks futur
   assert.equal(attrs.serviceName, "Pedicure");
   assert.equal(attrs.staffPreference, "Amy");
   assert.equal(attrs.pastTimeProposalConfirmed, "false");
+});
+
+test("DialogCodeHook explicit new valid time after past-time proposal overrides the old warning", async () => {
+  const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
+  const fetchCalls = installFetchMock((_url, _options, body) =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "MISSING_INFO",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "InProgress",
+          message: "Which staff would you like?",
+          messageContentType: "PlainText",
+          dialogAction: {
+            type: "ElicitSlot",
+            slotToElicit: "staffPreference"
+          },
+          sessionAttributes: {
+            serviceName: body.serviceName,
+            requestedDate: body.requestedDate,
+            requestedTime: body.requestedTime,
+            customerName: body.customerName,
+            customerPhone: body.customerPhone
+          }
+        },
+        missingFields: ["staffPreference"]
+      })
+    )
+  );
+
+  const response = await withFixedTestNow("2026-07-20T13:14:00-04:00", () =>
+    handler(
+      baseEvent({
+        invocationSource: "DialogCodeHook",
+        inputTranscript: "No, 2 PM today",
+        inputMode: "Speech",
+        sessionState: {
+          ...baseEvent().sessionState,
+          sessionAttributes: {
+            salonId: "salon-explicit",
+            CalledNumber: "+18483487681",
+            CustomerEndpointAddress: "+84798171999",
+            AmazonConnectContactId: "connect-past-same-day-corrected-time",
+            customerName: "Lee",
+            customerPhone: "+84798171999",
+            serviceName: "Pedicure",
+            confirmedServiceName: "Pedicure",
+            requestedTime: "9 AM",
+            awaitingPastTimeTomorrowConfirmation: "true",
+            proposedRequestedDate: "2026-07-21",
+            proposedRequestedTime: "9 AM"
+          },
+          intent: {
+            ...baseEvent().sessionState.intent,
+            state: "InProgress",
+            confirmationState: "None",
+            slots: {}
+          }
+        }
+      })
+    )
+  );
+
+  assert.equal(fetchCalls.length, 1);
+  assert.equal(fetchCalls[0].body.requestedDate, "2026-07-20");
+  assert.equal(fetchCalls[0].body.requestedTime, "2 PM");
+  assert.doesNotMatch(response.messages[0].content, /9 AM today is earlier|Would you like 9 AM tomorrow/i);
+  assert.equal(response.sessionState.sessionAttributes.requestedDate, "2026-07-20");
+  assert.equal(response.sessionState.sessionAttributes.requestedTime, "2 PM");
 });
 
 test("DialogCodeHook future same-day time is not rejected as past", async () => {

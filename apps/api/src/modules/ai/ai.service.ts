@@ -676,9 +676,10 @@ const SERVICE_DTMF_PROMPT =
   "Hi, I can help book your appointment. Tell me the service, day, time, and staff. You can press 0 for a person.";
 const SERVICE_DTMF_OPTIONS_PROMPT =
   "Sorry, I didn't catch the service. Did you say Pedicure or Manicure?";
-const SERVICE_FIRST_RETRY_PROMPT = "What service would you like?";
+const SERVICE_FIRST_RETRY_PROMPT = "Which service would you like to book?";
 const STAFF_DTMF_PROMPT =
   "Which staff would you like, Trang, Amy, Kelly, or first available?";
+const INVALID_MENU_CHOICE_PROMPT = "Invalid choice. Please select a valid number from the options provided.";
 
 const normalizeForMatch = (value?: string | null): string => {
   return (value ?? "")
@@ -7280,6 +7281,25 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
         ? "attributes.inputMode"
         : "unknown";
   const genuineDtmfInput = inputMode?.toLowerCase() === "dtmf";
+  const speechInput = inputMode?.toLowerCase() === "speech";
+  const spokenDigitCandidate = speechInput
+    ? [
+        transcriptText,
+        asTrimmedString(input.serviceName),
+        asTrimmedString(input.service),
+        asTrimmedString(input.staffPreference)
+      ]
+        .map((value) => readSpokenDigitCandidate(value))
+        .find((value): value is string => Boolean(value))
+    : undefined;
+  const serviceSpokenMenuSelection =
+    serviceDtmfScoped && spokenDigitCandidate
+      ? readServiceDtmfOptions(attributes)[spokenDigitCandidate]
+      : undefined;
+  const staffSpokenMenuSelection =
+    staffDtmfScoped && spokenDigitCandidate
+      ? readStaffDtmfOptions(attributes)[spokenDigitCandidate]
+      : undefined;
   const serviceDtmfSelection =
     readScopedDtmfSelection(
       serviceDtmfScoped,
@@ -7291,7 +7311,10 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
         readBookingFieldAttribute(attributes, "serviceName")
       ],
       readServiceDtmfOptions(attributes)
-    );
+    ) ??
+    (serviceSpokenMenuSelection && serviceSpokenMenuSelection !== "__operator__"
+      ? serviceSpokenMenuSelection
+      : undefined);
   const staffDtmfSelection =
     readScopedDtmfSelection(
       staffDtmfScoped,
@@ -7302,7 +7325,23 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
         readBookingFieldAttribute(attributes, "staffPreference")
       ],
       readStaffDtmfOptions(attributes)
-    );
+    ) ??
+    (staffSpokenMenuSelection && staffSpokenMenuSelection !== "__operator__"
+      ? staffSpokenMenuSelection
+      : undefined);
+  const serviceDtmfDigit =
+    serviceDtmfScoped && genuineDtmfInput
+      ? [
+          transcriptText,
+          asTrimmedString(input.serviceName),
+          asTrimmedString(input.service),
+          readBookingFieldAttribute(attributes, "serviceName")
+        ]
+          .map((value) => readDtmfDigit(value))
+          .find((value): value is string => Boolean(value))
+      : serviceDtmfScoped && spokenDigitCandidate
+        ? spokenDigitCandidate
+        : undefined;
   const staffDtmfDigit =
     staffDtmfScoped && genuineDtmfInput
       ? [
@@ -7312,17 +7351,9 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
         ]
           .map((value) => readDtmfDigit(value))
           .find((value): value is string => Boolean(value))
-      : undefined;
-  const spokenDigitCandidate = !genuineDtmfInput
-    ? [
-        transcriptText,
-        asTrimmedString(input.serviceName),
-        asTrimmedString(input.service),
-        asTrimmedString(input.staffPreference)
-      ]
-        .map((value) => readSpokenDigitCandidate(value))
-        .find((value): value is string => Boolean(value))
-    : undefined;
+      : staffDtmfScoped && spokenDigitCandidate
+        ? spokenDigitCandidate
+        : undefined;
   if (spokenDigitCandidate && (serviceDtmfScoped || staffDtmfScoped)) {
     const proposedSpokenSelection = serviceDtmfScoped
       ? readServiceDtmfOptions(attributes)[spokenDigitCandidate]
@@ -7330,22 +7361,37 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
     attributes.inputMode = inputMode ?? "Speech";
     attributes.inputModeSource = inputModeSource;
     attributes.spokenDigitCandidate = spokenDigitCandidate;
-    attributes.spokenMenuSelectionProposed = "true";
-    attributes.dtmfAccepted = "false";
-    attributes.dtmfRejectedReason = "input_mode_not_dtmf";
     if (proposedSpokenSelection && proposedSpokenSelection !== "__operator__") {
+      attributes.spokenMenuSelectionAccepted = "true";
+      attributes.spokenMenuSelectionProposed = "false";
+      attributes.dtmfAccepted = "true";
+      attributes.dtmfRejectedReason = "";
       if (serviceDtmfScoped) {
-        attributes.proposedServiceName = proposedSpokenSelection;
-        attributes.serviceRecognitionSource = "speech_menu_digit_proposal";
+        attributes.serviceRecognitionSource = "speech_menu_digit";
         attributes.serviceRecognitionConfidence = "";
         attributes.asrConfidenceSource = "unknown";
-        attributes.ambiguityReason = "spoken_digit_not_genuine_dtmf";
-        attributes.clarificationReason = "spoken_service_menu_digit_requires_confirmation";
       } else {
-        attributes.proposedStaffPreference = proposedSpokenSelection;
-        attributes.staffClarificationReason = "spoken_staff_menu_digit_requires_confirmation";
+        attributes.staffRecognitionSource = "speech_menu_digit";
       }
+    } else {
+      attributes.spokenMenuSelectionAccepted = "false";
+      attributes.spokenMenuSelectionProposed = "false";
+      attributes.invalidMenuChoice = spokenDigitCandidate;
+      attributes.dtmfAccepted = "false";
+      attributes.dtmfRejectedReason = "digit_not_in_active_menu";
     }
+  }
+  if (serviceDtmfSelection) {
+    attributes.awaitingServiceConfirmation = "false";
+    attributes.proposedServiceName = "";
+    attributes.spokenMenuSelectionProposed = "false";
+    attributes.serviceDtmfConflictWithInitialUtterance = "";
+    attributes.clarificationReason = "";
+  }
+  if (staffDtmfSelection) {
+    attributes.proposedStaffPreference = "";
+    attributes.staffClarificationReason = "";
+    attributes.spokenMenuSelectionProposed = "false";
   }
   const staffDtmfStaffId =
     staffDtmfDigit && staffDtmfSelection
@@ -7520,6 +7566,11 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
     customerName,
     customerPhone,
     serviceName,
+    serviceDtmfDigit,
+    invalidServiceDtmfSelection:
+      Boolean(serviceDtmfDigit) &&
+      !serviceDtmfSelection &&
+      Boolean(Object.keys(readServiceDtmfOptions(attributes)).length),
     requestedDate,
     requestedTime,
     staffPreference:
@@ -8474,6 +8525,7 @@ const buildLexMessage = (input: {
     staffPreference?: string;
   };
   attemptCount?: number;
+  invalidServiceDtmfSelection?: boolean;
   invalidStaffDtmfSelection?: boolean;
   unmatchedStaffPreference?: boolean;
   repeatedKnownFieldWhileAskingName?: boolean;
@@ -8523,7 +8575,7 @@ const buildLexMessage = (input: {
       ? `Welcome back, ${escapeSsml(input.knownCallerAcknowledgementName)}. `
       : "";
     const intro = input.invalidStaffDtmfSelection
-      ? "I didn't find that option. Please choose from the list."
+      ? INVALID_MENU_CHOICE_PROMPT
       : input.unmatchedStaffPreference
         ? "I didn't find that technician."
         : isRetry
@@ -8538,10 +8590,11 @@ const buildLexMessage = (input: {
       const currentTurnPrefix = input.currentTurnAcknowledgement
         ? `${escapeSsml(input.currentTurnAcknowledgement)} `
         : "";
+      if (input.invalidStaffDtmfSelection) {
+        return speak(INVALID_MENU_CHOICE_PROMPT);
+      }
       return speak(
-        input.invalidStaffDtmfSelection
-          ? `${knownCallerIntro}${intro} <break time="300ms"/> ${prompt}`
-          : input.unmatchedStaffPreference
+        input.unmatchedStaffPreference
             ? `${knownCallerIntro}${intro} <break time="300ms"/> ${prompt}`
             : `${knownCallerIntro}${currentTurnPrefix}${prompt}`
       );
@@ -8582,6 +8635,9 @@ const buildLexMessage = (input: {
       );
     }
     if (input.missingFields?.includes("serviceName")) {
+      if (input.invalidServiceDtmfSelection) {
+        return speak(INVALID_MENU_CHOICE_PROMPT);
+      }
       if (input.unsupportedServiceRequest) {
         const prompt = input.servicePromptText ?? SERVICE_DTMF_OPTIONS_PROMPT;
         const suggestion = input.unsupportedServiceRequest.suggestedServiceName;
@@ -8595,7 +8651,7 @@ const buildLexMessage = (input: {
         return speak(SERVICE_FIRST_RETRY_PROMPT);
       }
       if (input.serviceSlotConversationalNoise) {
-        return speak("I'm here. What service would you like?");
+        return speak("I'm here. Which service would you like to book?");
       }
       const firstName = input.knownFields?.customerName?.split(/\s+/)[0];
       const servicePrompt = isRetry || input.collectingServiceName
@@ -9867,7 +9923,35 @@ export const createAmazonConnectAIAppointment = async (
     readStringAttribute(normalized.attributes, ["awaitingPastTimeTomorrowConfirmation"]) === "true";
   const proposedPastTimeDate = readStringAttribute(normalized.attributes, ["proposedRequestedDate"]);
   const proposedPastTimeTime = readStringAttribute(normalized.attributes, ["proposedRequestedTime"]);
+  const currentTurnPastTimeCorrectionDate =
+    awaitingPastTimeTomorrowConfirmation && currentTurnExplicitDate
+      ? currentTurnExplicitDate
+      : undefined;
+  const currentTurnPastTimeCorrectionTime =
+    awaitingPastTimeTomorrowConfirmation && currentTurnExplicitTime
+      ? currentTurnExplicitTime
+      : undefined;
   if (
+    awaitingPastTimeTomorrowConfirmation &&
+    (currentTurnPastTimeCorrectionDate || currentTurnPastTimeCorrectionTime)
+  ) {
+    if (currentTurnPastTimeCorrectionDate) {
+      normalized.requestedDate = currentTurnPastTimeCorrectionDate;
+    }
+    if (currentTurnPastTimeCorrectionTime) {
+      normalized.requestedTime = currentTurnPastTimeCorrectionTime;
+    }
+    normalized.attributes.awaitingPastTimeTomorrowConfirmation = "false";
+    normalized.attributes.proposedRequestedDate = "";
+    normalized.attributes.proposedRequestedTime = "";
+    normalized.attributes.dateTimeValidationReason = "";
+    normalized.attributes.temporalRejectionReason = "";
+    normalized.attributes.pastTimeProposalConfirmed = "false";
+    normalized.attributes.pastTimeProposalRejectedThisTurn = "";
+    normalized.attributes.pastTimeProposalCorrectedThisTurn = "true";
+    normalized.attributes.awaitingFinalBookingConfirmation = "false";
+    normalized.attributes.bookingConfirmationAsked = "false";
+  } else if (
     awaitingPastTimeTomorrowConfirmation &&
     isAffirmative(normalized.currentTurnTranscript) &&
     proposedPastTimeDate &&
@@ -12818,7 +12902,7 @@ export const createAmazonConnectAIAppointment = async (
       elicitDecision.slotToElicit === "serviceName" &&
       !currentTurnHasBookingDetails(normalized);
     const message = freshRestartNeedsService
-      ? speak("Sure, let's start a new appointment. What service would you like?")
+      ? speak("Let's start a new appointment. Which service would you like to book?")
       : serviceConfirmationPrompt ?? staffConfirmationPrompt ?? pastTimeProposalRejectedPrompt ?? timeConfirmationPrompt ?? buildLexMessage({
 	      outcome: "MISSING_INFO",
       missingFields: elicitDecision.promptMissingFields,
@@ -12848,6 +12932,7 @@ export const createAmazonConnectAIAppointment = async (
       partialBookingFragment: isPartialBookingFragment(
         normalized.currentTurnTranscript ?? normalized.transcriptText
       ),
+      invalidServiceDtmfSelection: normalized.invalidServiceDtmfSelection,
       hasCurrentTurnTranscript: Boolean(normalized.currentTurnTranscript?.trim()),
       currentTurnAcknowledgement,
       serviceSlotConversationalNoise:

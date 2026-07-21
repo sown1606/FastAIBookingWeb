@@ -167,7 +167,7 @@
             {
               "message": {
                 "plainTextMessage": {
-                  "value": "I'm still here. What service would you like?"
+                  "value": "Are you still there? How can I help?"
                 }
               }
             }
@@ -196,7 +196,7 @@
             {
               "message": {
                 "plainTextMessage": {
-                  "value": "One moment while I check that. What service would you like?"
+                  "value": "One moment while I check that. Which service would you like to book?"
                 }
               }
             }

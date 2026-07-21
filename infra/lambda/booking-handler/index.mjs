@@ -296,7 +296,7 @@ const OPERATOR_BUSY_PROMPT = "All of our operators are currently busy. Please ca
 const SERVICE_DTMF_PROMPT =
   "Hi, I can help book your appointment. Tell me the service, day, time, and staff. You can press 0 for a person.";
 const SERVICE_KEYPAD_PROMPT =
-  "What service would you like?";
+  "Which service would you like to book?";
 const SERVICE_DTMF_SHORT_PROMPT =
   "Sorry, I didn't catch the service. Did you say Pedicure or Manicure?";
 const STAFF_DTMF_PROMPT =
@@ -305,6 +305,8 @@ const STAFF_DTMF_SHORT_PROMPT =
   "For staff, press 1 for Trang, 2 for Amy, 3 for Kelly, 4 for first available, or 0 for an operator.";
 const NO_INPUT_HUMAN_CONFIRM_PROMPT =
   "Are you still there? Would you like me to connect you to a real person? You can press 0 for an operator.";
+const NO_INPUT_RECOVERY_PROMPT = "Are you still there? How can I help?";
+const INVALID_MENU_CHOICE_PROMPT = "Invalid choice. Please select a valid number from the options provided.";
 const FAST_WAIT_PROMPT = "Please wait. Let me check...";
 const WAIT_PROMPTS = {
   customer_lookup: FAST_WAIT_PROMPT,
@@ -2086,12 +2088,21 @@ function getCurrentTurnDtmfDiagnostics(event) {
 function buildDtmfRouting(event) {
   const previous = event.sessionState?.sessionAttributes || {};
   const diagnostics = getCurrentTurnDtmfDiagnostics(event);
-  const digit = diagnostics.digitsExtractedSingle || readCurrentTurnDigit(event);
+  const trustedDigit = diagnostics.digitsExtractedSingle || readCurrentTurnDigit(event);
   const lastAskedSlotBefore = previous.lastAskedSlot || "";
   const activeDtmfMenuBefore =
     previous.activeDtmfMenu === "service" || previous.activeDtmfMenu === "staff"
       ? previous.activeDtmfMenu
       : "";
+  const spokenMenuDigit =
+    !trustedDigit &&
+    activeDtmfMenuBefore &&
+    diagnostics.inputOrigin === "SPEECH" &&
+    diagnostics.spokenDigitCandidate &&
+    !hasCurrentTurnTimePhrase(diagnostics.rawInputTranscript, previous)
+      ? diagnostics.spokenDigitCandidate
+      : "";
+  const digit = trustedDigit || spokenMenuDigit;
   const base = {
     digit,
     inputMode: diagnostics.inputMode,
@@ -2102,6 +2113,7 @@ function buildDtmfRouting(event) {
     genuineDtmfDigit: diagnostics.genuineDtmfDigit || "",
     spokenDigitCandidate: diagnostics.spokenDigitCandidate || "",
     spokenMenuSelectionProposed: false,
+    spokenMenuSelectionAccepted: Boolean(spokenMenuDigit),
     proposedSelection: "",
     dtmfAccepted: false,
     dtmfRejectedReason: diagnostics.dtmfRejectedReason || "",
@@ -2123,18 +2135,6 @@ function buildDtmfRouting(event) {
     )
   };
   if (!digit && !diagnostics.isMultiDigitOrDigitSequence) {
-    if (diagnostics.spokenDigitCandidate && activeDtmfMenuBefore) {
-      const options = getActiveDtmfOptions(previous, activeDtmfMenuBefore);
-      return {
-        ...base,
-        route: `${activeDtmfMenuBefore}_menu`,
-        selection: "",
-        proposedSelection: options[diagnostics.spokenDigitCandidate] || "",
-        spokenMenuSelectionProposed: Boolean(options[diagnostics.spokenDigitCandidate]),
-        ignoredReason: "speech_digit_requires_confirmation",
-        nextSlot: activeDtmfMenuBefore === "service" ? "serviceName" : "staffPreference"
-      };
-    }
     return base;
   }
   if (!digit && diagnostics.isMultiDigitOrDigitSequence) {
@@ -2174,6 +2174,7 @@ function buildDtmfRouting(event) {
       return {
         ...base,
         route: `${menu}_menu`,
+        dtmfRejectedReason: "digit_not_in_active_menu",
         ignoredReason: "digit_not_in_active_menu",
         nextSlot: menu === "service" ? "serviceName" : "staffPreference"
       };
@@ -2184,6 +2185,7 @@ function buildDtmfRouting(event) {
       selection,
       accepted: true,
       dtmfAccepted: true,
+      dtmfRejectedReason: "",
       nextSlot: menu === "service" ? "requestedDate" : ""
     };
   };
@@ -3053,6 +3055,15 @@ function sanitizeLexEvent(event, analysis) {
     sessionAttributes.serviceName = serviceSelection;
     sessionAttributes.confirmedServiceName = serviceSelection;
     sessionAttributes.scopedServiceDtmfInput = "true";
+    sessionAttributes.awaitingServiceConfirmation = "false";
+    sessionAttributes.proposedServiceName = "";
+    sessionAttributes.spokenMenuSelectionProposed = "false";
+    if (analysis.dtmfRouting?.spokenMenuSelectionAccepted) {
+      sessionAttributes.spokenMenuSelectionAccepted = "true";
+      sessionAttributes.serviceRecognitionSource = "speech_menu_digit";
+    }
+    delete sessionAttributes.serviceDtmfConflictWithInitialUtterance;
+    delete sessionAttributes.clarificationReason;
   }
   if (analysis.currentTurnServiceMention && DEMO_SERVICE_NAMES.includes(analysis.currentTurnServiceMention)) {
     sessionAttributes.serviceName = analysis.currentTurnServiceMention;
@@ -3189,15 +3200,33 @@ function isStaffAnyDtmfZeroRequest(event) {
 }
 
 function buildInvalidStaffDtmfResponse(event) {
-  const previous = event.sessionState?.sessionAttributes || {};
-  const prompt = previous.staffDtmfPromptText || STAFF_DTMF_PROMPT;
   return buildElicitSlotResponse(
     event,
     "staffPreference",
     {
       invalidStaffDtmfSelection: getScopedDtmfDigit(event, "staffPreference") || "true"
     },
-    `I didn't find that option. Please choose from the list. ${prompt}`
+    INVALID_MENU_CHOICE_PROMPT
+  );
+}
+
+function buildInvalidMenuChoiceResponse(event, dtmfRouting) {
+  const slotName = dtmfRouting?.route === "staff_menu" ? "staffPreference" : "serviceName";
+  const invalidDigit = dtmfRouting?.digit || dtmfRouting?.spokenDigitCandidate || "true";
+  const extraAttributes = {
+    invalidMenuChoice: invalidDigit,
+    dtmfRouting: JSON.stringify(dtmfRouting || {})
+  };
+  if (slotName === "serviceName") {
+    extraAttributes.invalidServiceDtmfSelection = invalidDigit;
+  } else {
+    extraAttributes.invalidStaffDtmfSelection = invalidDigit;
+  }
+  return buildElicitSlotResponse(
+    event,
+    slotName,
+    extraAttributes,
+    INVALID_MENU_CHOICE_PROMPT
   );
 }
 
@@ -4800,7 +4829,7 @@ function buildFreshBookingStartResponse(event) {
   const resetKeys = getBookingFrameResetKeys();
   return buildLexResponse(
     resetEvent,
-    "<speak>Sure, let's start a new appointment. What service would you like?</speak>",
+    "<speak>Let's start a new appointment. Which service would you like to book?</speak>",
     "InProgress",
     {
       freshBookingRestart: "true",
@@ -5994,12 +6023,12 @@ function buildElicitSlotResponse(event, slotName, extraAttributes = {}, messageO
 	}
 
 function getNoInputPrompt(slotName, noInputCount, event) {
+  if (noInputCount <= 2) {
+    return NO_INPUT_RECOVERY_PROMPT;
+  }
   if (slotName === "staffPreference") {
     const summary = buildKnownBookingPromptSummary(event, { forPhrase: false });
     const prefix = summary ? `I have ${summary}. ` : "";
-    if (noInputCount <= 1) {
-      return `I'm still here. ${prefix}Which staff would you like, or say first available?`;
-    }
     return `${prefix}Which staff would you like, or say first available? You can press 0 for a person.`;
   }
   if (slotName === "customerName" && noInputCount >= 2) {
@@ -6007,12 +6036,6 @@ function getNoInputPrompt(slotName, noInputCount, event) {
   }
   if (slotName === "customerName") {
     return "Sorry, I didn't catch your name. What is your first name?";
-  }
-  if (slotName === "serviceName" && noInputCount <= 1) {
-    return "Are you still there? Please tell me how I can help.";
-  }
-  if (noInputCount <= 1) {
-    return getElicitPrompt(event, slotName, 1);
   }
   if (slotName === "serviceName") {
     return "I'm still here. You can say book an appointment, or press zero for a person.";
@@ -8852,6 +8875,17 @@ async function handleLexEvent(event, analysis = {}) {
 
     if (
       !shouldEscalate &&
+      intentName === "BookAppointmentIntent" &&
+      analysis.dtmfRouting &&
+      !analysis.dtmfRouting.accepted &&
+      ["service_menu", "staff_menu"].includes(analysis.dtmfRouting.route) &&
+      analysis.dtmfRouting.ignoredReason === "digit_not_in_active_menu"
+    ) {
+      return buildInvalidMenuChoiceResponse(event, analysis.dtmfRouting);
+    }
+
+    if (
+      !shouldEscalate &&
       (analysis.dtmfRouting?.digit || analysis.dtmfRouting?.isMultiDigitOrDigitSequence) &&
       !analysis.dtmfRouting.accepted &&
       ["wrong_slot", "no_active_menu"].includes(analysis.dtmfRouting.route) &&
@@ -8905,7 +8939,28 @@ async function handleLexEvent(event, analysis = {}) {
       intentName === "BookAppointmentIntent" &&
       sessionAttributes.awaitingPastTimeTomorrowConfirmation === "true"
     ) {
-      if (
+      const currentPastTimeCorrection = getCurrentTurnBookingDetails(event);
+      if (currentPastTimeCorrection.requestedDate || currentPastTimeCorrection.requestedTime) {
+        event = withSessionAttributes(event, {
+          ...(currentPastTimeCorrection.requestedDate
+            ? { requestedDate: currentPastTimeCorrection.requestedDate }
+            : {}),
+          ...(currentPastTimeCorrection.requestedTime
+            ? { requestedTime: currentPastTimeCorrection.requestedTime }
+            : {}),
+          awaitingPastTimeTomorrowConfirmation: "false",
+          proposedRequestedDate: "",
+          proposedRequestedTime: "",
+          dateTimeValidationReason: "",
+          temporalRejectionReason: "",
+          pastTimeProposalConfirmed: "false",
+          pastTimeProposalCorrectedThisTurn: "true",
+          lastAskedSlot: currentPastTimeCorrection.requestedTime ? "requestedTime" : "requestedDate",
+          awaitingFinalBookingConfirmation: "false",
+          bookingConfirmationAsked: "false"
+        });
+        sessionAttributes = event.sessionState?.sessionAttributes || {};
+      } else if (
         isAffirmativeUtterance(event.inputTranscript) &&
         sessionAttributes.proposedRequestedDate &&
         sessionAttributes.proposedRequestedTime

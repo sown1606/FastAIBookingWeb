@@ -77,7 +77,7 @@
             "ssmlMessage": null,
             "customPayload": null,
             "plainTextMessage": {
-              "value": "What service would you like?"
+              "value": "Which service would you like to book?"
             },
             "imageResponseCard": null
           },

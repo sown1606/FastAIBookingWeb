@@ -2815,7 +2815,7 @@ test("partial booking fragment asks for service without greeting again", async (
 
   assert.equal(result.response.status, 200);
   assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
-  assert.match(result.body.data.lexResponse.message, /What service would you like\?/i);
+  assert.match(result.body.data.lexResponse.message, /Which service would you like to book\?/i);
   assert.doesNotMatch(result.body.data.lexResponse.message, /Welcome back/i);
   assert.doesNotMatch(result.body.data.lexResponse.message, /Sorry, I/i);
   assert.doesNotMatch(result.body.data.lexResponse.message, /list the services/i);
@@ -4280,7 +4280,7 @@ test("general services request does not accept ungrounded Pedicure slot", async 
   assert.equal(attrs.serviceName, undefined);
   assert.equal(attrs.confirmedServiceName, undefined);
   assert.equal(attrs.requestedTime, "15:00");
-  assert.match(result.body.data.lexResponse.message, /What service would you like\?/i);
+  assert.match(result.body.data.lexResponse.message, /Which service would you like to book\?/i);
   assert.doesNotMatch(result.body.data.lexResponse.message, /Pedicure/i);
   assert.equal(state.appointments.length, 0);
 });
@@ -5058,12 +5058,11 @@ test("real service DTMF 2 selects Manicure from the active service menu", async 
   assert.equal(state.appointments.length, 0);
 });
 
-test("spoken service menu digits ask for service confirmation instead of committing Manicure", async () => {
+test("spoken service menu digits commit the selected service", async () => {
   for (const { phrase, inputMode } of [
     { phrase: "two", inputMode: "Speech" },
     { phrase: "uh two", inputMode: "Speech" },
-    { phrase: "option two", inputMode: "Speech" },
-    { phrase: "2", inputMode: undefined }
+    { phrase: "option two", inputMode: "Speech" }
   ]) {
     resetMockState();
     const result = await postInternalAppointment(
@@ -5100,19 +5099,16 @@ test("spoken service menu digits ask for service confirmation instead of committ
 
     const attrs = result.body.data.lexResponse.sessionAttributes;
     assert.equal(result.response.status, 200, phrase);
-    assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName", phrase);
-    assert.equal(attrs.serviceName, undefined, phrase);
-    assert.equal(attrs.confirmedServiceName, undefined, phrase);
-    assert.equal(attrs.proposedServiceName, "Manicure", phrase);
-    assert.equal(attrs.awaitingServiceConfirmation, "true", phrase);
-    assert.equal(attrs.spokenMenuSelectionProposed, "true", phrase);
-    assert.equal(attrs.dtmfAccepted, "false", phrase);
-    assert.match(result.body.data.lexResponse.message, /Did you choose option two, Manicure\? Please say yes, or say the service name\./i, phrase);
+    assertBookingConfirmationDialog(result.body.data.lexResponse.dialogAction);
+    assert.equal(attrs.serviceName, "Manicure", phrase);
+    assert.equal(attrs.confirmedServiceName, "Manicure", phrase);
+    assert.equal(attrs.proposedServiceName, undefined, phrase);
+    assert.notEqual(attrs.awaitingServiceConfirmation, "true", phrase);
     assert.equal(state.appointments.length, 0, phrase);
   }
 });
 
-test("pending spoken option can change from two to four", async () => {
+test("pending spoken option can change from two to four and commit the new service", async () => {
   const result = await postInternalAppointment(
     bookingPayload({
       serviceName: undefined,
@@ -5151,14 +5147,55 @@ test("pending spoken option can change from two to four", async () => {
 
   const attrs = result.body.data.lexResponse.sessionAttributes;
   assert.equal(result.response.status, 200);
-  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
-  assert.equal(attrs.serviceName, undefined);
-  assert.equal(attrs.confirmedServiceName, undefined);
-  assert.equal(attrs.proposedServiceName, "Full Set");
-  assert.equal(attrs.spokenDigitCandidate, "4");
-  assert.equal(attrs.awaitingServiceConfirmation, "true");
-  assert.match(result.body.data.lexResponse.message, /Did you choose option four, Full Set\? Please say yes, or say the service name\./i);
+  assertBookingConfirmationDialog(result.body.data.lexResponse.dialogAction);
+  assert.equal(attrs.serviceName, "Full Set");
+  assert.equal(attrs.confirmedServiceName, "Full Set");
+  assert.equal(attrs.proposedServiceName, undefined);
+  assert.notEqual(attrs.awaitingServiceConfirmation, "true");
   assert.doesNotMatch(result.body.data.lexResponse.message, /option two, Manicure/i);
+  assert.equal(state.appointments.length, 0);
+});
+
+test("out-of-range spoken service menu digit returns exact invalid choice", async () => {
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: undefined,
+      requestedDate: FUTURE_THURSDAY,
+      requestedTime: "5 PM",
+      staffPreference: "Amy",
+      staffId: ids.amy,
+      confirmationState: undefined,
+      transcript: "eight",
+      currentTurnTranscript: "eight",
+      inputMode: "Speech",
+      attributes: {
+        lastAskedSlot: "serviceName",
+        activeDtmfMenu: "service",
+        activeDtmfOptionsJson: JSON.stringify({
+          "1": "Pedicure",
+          "2": "Manicure",
+          "3": "Gel Manicure",
+          "4": "Full Set",
+          "5": "Dip Powder",
+          "6": "Nail Art",
+          "7": "Gel Polish",
+          "0": "__operator__"
+        }),
+        requestedDate: FUTURE_THURSDAY,
+        requestedTime: "5 PM",
+        staffPreference: "Amy",
+        staffId: ids.amy,
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266"
+      }
+    })
+  );
+
+  const attrs = result.body.data.lexResponse.sessionAttributes;
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
+  assert.equal(result.body.data.lexResponse.message, "<speak>Invalid choice. Please select a valid number from the options provided.</speak>");
+  assert.equal(attrs.serviceName, undefined);
   assert.equal(state.appointments.length, 0);
 });
 
@@ -5502,7 +5539,7 @@ test("service-slot conversational I'm phrase preserves trusted customer name", a
   assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
   assert.equal(result.body.data.lexResponse.sessionAttributes.customerName, "Lee");
   assert.notEqual(result.body.data.lexResponse.sessionAttributes.customerName, "following");
-  assert.match(result.body.data.lexResponse.message, /What service would you like/i);
+  assert.match(result.body.data.lexResponse.message, /Which service would you like to book/i);
   assert.equal(state.customers.some((customer) => customer.firstName === "following"), false);
 });
 
@@ -6346,7 +6383,7 @@ test("Any time is fine does not infer Any staff and invalid raw staff is diagnos
   assert.equal(state.bookingAttempts.at(-1)?.normalizedRequest.unrecognizedStaffUtterance, "anystop");
 });
 
-test("invalid staff DTMF repeats staff options without booking", async () => {
+test("invalid staff DTMF returns exact invalid choice without booking", async () => {
   const result = await postInternalAppointment(
     bookingPayload({
       staffPreference: undefined,
@@ -6369,8 +6406,7 @@ test("invalid staff DTMF repeats staff options without booking", async () => {
   assert.equal(result.body.data.outcome, "MISSING_INFO");
   assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitSlot");
   assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "staffPreference");
-  assert.match(result.body.data.lexResponse.message, /I didn't find that option/i);
-  assert.match(result.body.data.lexResponse.message, /Which staff would you like, Trang, Amy, Kelly, or first available/i);
+  assert.equal(result.body.data.lexResponse.message, "<speak>Invalid choice. Please select a valid number from the options provided.</speak>");
   assert.equal(state.appointments.length, 0);
 });
 
@@ -7082,7 +7118,10 @@ test("post-rejection restart choices clear stale booking frame", async () =>
     const attrs = restart.body.data.lexResponse.sessionAttributes;
     assert.equal(restart.response.status, 200);
     assert.equal(restart.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
-    assert.match(restart.body.data.lexResponse.message, /Sure, let's start a new appointment/i);
+    assert.match(
+      restart.body.data.lexResponse.message,
+      /Let's start a new appointment\. Which service would you like to book\?/i
+    );
     assert.doesNotMatch(restart.body.data.lexResponse.message, /Which detail would you like to change/i);
     assert.equal(attrs.serviceName, undefined);
     assert.equal(attrs.requestedDate, undefined);
@@ -7128,7 +7167,10 @@ test("direct ASR restart and restart-with-details discard old final-confirmation
     assert.equal(direct.body.data.lexResponse.sessionAttributes.serviceName, undefined);
     assert.equal(direct.body.data.lexResponse.sessionAttributes.requestedTime, undefined);
     assert.equal(direct.body.data.lexResponse.sessionAttributes.staffPreference, undefined);
-    assert.match(direct.body.data.lexResponse.message, /Sure, let's start a new appointment/i);
+    assert.match(
+      direct.body.data.lexResponse.message,
+      /Let's start a new appointment\. Which service would you like to book\?/i
+    );
 
     resetMockState();
     const detailed = await postInternalAppointment(
@@ -7263,7 +7305,10 @@ test("reused provider request id with distinct human turns is not treated as dup
 
   assert.equal(first.body.data.lexResponse.sessionAttributes.awaitingRejectedBookingChoice, "true");
   assert.equal(second.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
-  assert.match(second.body.data.lexResponse.message, /Sure, let's start a new appointment/i);
+  assert.match(
+    second.body.data.lexResponse.message,
+    /Let's start a new appointment\. Which service would you like to book\?/i
+  );
   assert.doesNotMatch(second.body.data.lexResponse.message, /start a new booking, change a detail, or stop/i);
   assert.equal(state.aiInteractionLogs.length, 1);
   const turnHistory = state.aiInteractionLogs[0].responsePayload.turnHistory;
@@ -7706,6 +7751,45 @@ test("no to same-day past-time proposal retains trusted slots and asks future da
     assert.equal(attrs.serviceName, "Pedicure");
     assert.equal(attrs.staffPreference, "Amy");
     assert.equal(attrs.pastTimeProposalConfirmed, "false");
+    assert.equal(state.appointments.length, 0);
+  });
+});
+
+test("explicit new valid time after past-time proposal overrides the old warning", async () => {
+  await withFixedNow("2026-07-20T13:14:00-04:00", async () => {
+    const result = await postInternalAppointment(
+      bookingPayload({
+        customerName: "Lee",
+        customerPhone: "+84798171999",
+        serviceName: undefined,
+        requestedDate: undefined,
+        requestedTime: undefined,
+        staffPreference: undefined,
+        confirmationState: undefined,
+        amazonConnectContactId: "connect-api-past-same-day-corrected-time",
+        currentTurnTranscript: "No, 2 PM today",
+        transcript: "No, 2 PM today",
+        inputMode: "Speech",
+        attributes: {
+          awaitingPastTimeTomorrowConfirmation: "true",
+          proposedRequestedDate: "2026-07-21",
+          proposedRequestedTime: "9 AM",
+          serviceName: "Pedicure",
+          confirmedServiceName: "Pedicure",
+          requestedTime: "9 AM",
+          customerName: "Lee",
+          customerPhone: "+84798171999"
+        }
+      })
+    );
+
+    const attrs = result.body.data.lexResponse.sessionAttributes;
+    assert.equal(result.response.status, 200);
+    assert.equal(attrs.requestedDate, "2026-07-20");
+    assert.equal(attrs.requestedTime, "14:00");
+    assert.equal(attrs.serviceName, "Pedicure");
+    assert.notEqual(attrs.dateTimeValidationReason, "past_requested_time");
+    assert.doesNotMatch(result.body.data.lexResponse.message, /9 AM today is earlier|Would you like 9 AM tomorrow/i);
     assert.equal(state.appointments.length, 0);
   });
 });
