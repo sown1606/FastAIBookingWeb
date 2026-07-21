@@ -4285,6 +4285,42 @@ test("general services request does not accept ungrounded Pedicure slot", async 
   assert.equal(state.appointments.length, 0);
 });
 
+test("runtime general services payload without Lex debug does not accept Pedicure", async () => {
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Pedicure",
+      requestedDate: FUTURE_THURSDAY,
+      requestedTime: "3 PM",
+      staffPreference: "Amy",
+      staffId: ids.amy,
+      confirmationState: undefined,
+      inputMode: "Text",
+      currentTurnTranscript: "I want to book a services tomorrow at 3 PM",
+      transcript: "I want to book a services tomorrow at 3 PM",
+      attributes: {
+        currentTurnTranscript: "I want to book a services tomorrow at 3 PM",
+        lastAskedSlot: "serviceName",
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266",
+        staffPreference: "Amy",
+        staffId: ids.amy
+      }
+    })
+  );
+
+  const attrs = result.body.data.lexResponse.sessionAttributes;
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
+  assert.equal(attrs.serviceName, undefined);
+  assert.equal(attrs.confirmedServiceName, undefined);
+  assert.equal(attrs.requestedDate, frozenTestNow.plus({ days: 1 }).toFormat("yyyy-MM-dd"));
+  assert.equal(attrs.requestedTime, "3 PM");
+  assert.match(result.body.data.lexResponse.message, /service/i);
+  assert.doesNotMatch(result.body.data.lexResponse.message, /Got it, Pedicure|confirm: Pedicure/i);
+  assert.equal(state.appointments.length, 0);
+});
+
 test("unsupported service requests activate service DTMF and never become staff", async () => {
   for (const phrase of ["I want haircut", "I want a facial"]) {
     resetMockState();

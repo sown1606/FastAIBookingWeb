@@ -7368,6 +7368,10 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
   const currentTurnIsDigitNoise = isDigitOnlyOrSequenceUtterance(transcriptText);
   const confirmedServiceName = readStringAttribute(attributes, ["confirmedServiceName"]);
   const inputServiceName = asTrimmedString(input.serviceName) ?? asTrimmedString(input.service);
+  const serviceCaptureContext =
+    lastAskedSlot === "serviceName" ||
+    activeDtmfMenu === "service" ||
+    /\b(?:service|services|nail service|nail services)\b/i.test(transcriptText ?? "");
   const rawServiceName =
     serviceDtmfSelection ??
     (currentTurnIsDigitNoise && confirmedServiceName ? confirmedServiceName : undefined) ??
@@ -7397,12 +7401,13 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
   if (
     serviceName &&
     inputServiceName &&
-    lexServiceSlotValue &&
     !serviceDtmfSelection &&
     !readBookingFieldAttribute(attributes, "serviceName") &&
     !readStringAttribute(attributes, ["confirmedServiceName"]) &&
+    serviceCaptureContext &&
     normalizeForMatch(inputServiceName) === normalizeForMatch(serviceCandidate) &&
-    normalizeForMatch(lexServiceSlotValue) === normalizeForMatch(inputServiceName) &&
+    (!lexServiceSlotValue ||
+      normalizeForMatch(lexServiceSlotValue) === normalizeForMatch(inputServiceName)) &&
     !serviceNameHasCurrentTurnEvidence(serviceName, transcriptText, attributes)
   ) {
     attributes.ignoredUngroundedSlots = JSON.stringify([
