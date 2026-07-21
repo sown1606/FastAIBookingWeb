@@ -1397,8 +1397,9 @@ const buildCompactTurnStateSnapshot = (turn: Record<string, unknown>) => {
     staffRecognitionFailureCount: readStateValue(diagnostics, sessionAttributes, "staffRecognitionFailureCount"),
     excludedStaffIds: readStateValue(diagnostics, sessionAttributes, "excludedStaffIds"),
     excludedStaffNames: readStateValue(diagnostics, sessionAttributes, "excludedStaffNames"),
-    awaitingFinalBookingConfirmation: readStateValue(diagnostics, sessionAttributes, "awaitingFinalBookingConfirmation"),
-    conversationState: readStateValue(diagnostics, sessionAttributes, "conversationState"),
+	    awaitingFinalBookingConfirmation: readStateValue(diagnostics, sessionAttributes, "awaitingFinalBookingConfirmation"),
+    awaitingRejectedBookingChoice: readStateValue(diagnostics, sessionAttributes, "awaitingRejectedBookingChoice"),
+	    conversationState: readStateValue(diagnostics, sessionAttributes, "conversationState"),
     conversationOutcome: readStateValue(diagnostics, sessionAttributes, "conversationOutcome"),
     conversationComplete: readStateValue(diagnostics, sessionAttributes, "conversationComplete"),
     transferToQueue: readStateValue(diagnostics, sessionAttributes, "transferToQueue"),
@@ -1448,8 +1449,12 @@ const normalizeTurnForGpt = (turn: Record<string, unknown>) => {
   };
   const item: Record<string, unknown> = {
     index: turn.index,
-    providerTurnId: diagnostics.providerTurnId ?? null,
-    lexRequestId: diagnostics.lexRequestId ?? null,
+	    providerTurnId: diagnostics.providerTurnId ?? null,
+    humanTurnId: diagnostics.humanTurnId ?? null,
+    providerRequestId: diagnostics.providerRequestId ?? null,
+	    lexRequestId: diagnostics.lexRequestId ?? null,
+    lexPhase: diagnostics.lexPhase ?? null,
+    transcriptFingerprint: diagnostics.transcriptFingerprint ?? turn.transcriptFingerprint ?? null,
     turnSequence: {
       before: diagnostics.turnSequenceBefore ?? null,
       after: diagnostics.turnSequenceAfter ?? null
@@ -1483,8 +1488,11 @@ const normalizeTurnForGpt = (turn: Record<string, unknown>) => {
       before: diagnostics.stateVersionBefore ?? diagnostics.turnSequenceBefore ?? null,
       after: diagnostics.stateVersionAfter ?? diagnostics.turnSequenceAfter ?? null
     },
-    staleOrDuplicateRejectionReason: diagnostics.staleOrDuplicateRejectionReason ?? null
-  };
+	    staleOrDuplicateRejectionReason: diagnostics.staleOrDuplicateRejectionReason ?? null,
+    duplicateDisposition: diagnostics.duplicateDisposition ?? turn.duplicateDisposition ?? null,
+    providerRequestIdReuseDetected: diagnostics.providerRequestIdReuseDetected ?? null,
+    dateDecision: diagnostics.dateDecision ?? null
+	  };
   writeRecordIfPresent(item, "slotDecisions", turn.slotDecisions);
   writeRecordIfPresent(item, "trustedSlotsBefore", turn.trustedSlotsBefore);
   writeRecordIfPresent(item, "trustedSlotsAfter", turn.trustedSlotsAfter);

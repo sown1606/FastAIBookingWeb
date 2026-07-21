@@ -77,7 +77,7 @@
             "ssmlMessage": null,
             "customPayload": null,
             "plainTextMessage": {
-              "value": "Sure. Which service would you like?"
+              "value": "What service would you like?"
             },
             "imageResponseCard": null
           },
@@ -85,7 +85,7 @@
         }
       ],
       "maxRetries": 2,
-      "allowInterrupt": false,
+      "allowInterrupt": true,
       "messageSelectionStrategy": "Random",
       "promptAttemptsSpecification": {
         "Retry2": {
@@ -109,7 +109,7 @@
               "endCharacter": "#"
             }
           },
-          "allowInterrupt": false
+          "allowInterrupt": true
         },
         "Initial": {
           "textInputSpecification": {
@@ -132,7 +132,7 @@
               "endCharacter": "#"
             }
           },
-          "allowInterrupt": false
+          "allowInterrupt": true
         },
         "Retry1": {
           "textInputSpecification": {
@@ -155,7 +155,7 @@
               "endCharacter": "#"
             }
           },
-          "allowInterrupt": false
+          "allowInterrupt": true
         }
       }
     },

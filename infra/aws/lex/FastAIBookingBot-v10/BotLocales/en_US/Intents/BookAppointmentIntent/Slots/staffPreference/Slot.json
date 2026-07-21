@@ -34,7 +34,7 @@
         }
       ],
       "maxRetries": 2,
-      "allowInterrupt": false,
+      "allowInterrupt": true,
       "messageSelectionStrategy": "Random",
       "promptAttemptsSpecification": {
         "Retry2": {
@@ -58,7 +58,7 @@
               "endCharacter": "#"
             }
           },
-          "allowInterrupt": false
+          "allowInterrupt": true
         },
         "Initial": {
           "textInputSpecification": {
@@ -81,7 +81,7 @@
               "endCharacter": "#"
             }
           },
-          "allowInterrupt": false
+          "allowInterrupt": true
         },
         "Retry1": {
           "textInputSpecification": {
@@ -104,7 +104,7 @@
               "endCharacter": "#"
             }
           },
-          "allowInterrupt": false
+          "allowInterrupt": true
         }
       }
     },

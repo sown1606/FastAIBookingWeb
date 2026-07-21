@@ -1,0 +1,44 @@
+{
+  "profile": "nailnew",
+  "region": "us-east-1",
+  "accountId": "197452633989",
+  "expectedPrincipalArn": "arn:aws:iam::197452633989:user/fastaibooking-codex-deployer",
+  "connect": {
+    "instanceId": "74f78377-766f-46b7-a745-4bc97b68a8dc",
+    "flows": {
+      "production": {
+        "id": "dcccf542-587c-426c-a644-a4c6f24da6e4",
+        "name": "FastAIBooking AI Reception",
+        "marker": "2026-07-21-thuyet-p0-greeting-service-time-hotfix"
+      },
+      "canary": {
+        "id": "70b6c12b-1a5f-4d37-aea3-943dc291acd3",
+        "name": "FastAIBooking AI Reception P0 Canary 20260717",
+        "marker": "2026-07-21-thuyet-p0-greeting-service-time-hotfix-canary"
+      }
+    }
+  },
+  "lex": {
+    "botId": "KHMIXGA2US",
+    "aliases": {
+      "production": {
+        "id": "JVIPIZDYE3",
+        "name": "prod"
+      },
+      "canary": {
+        "id": "Z4DLL5S5B2",
+        "name": "p0-voice-canary-20260717"
+      }
+    }
+  },
+  "lambda": {
+    "functions": {
+      "production": {
+        "name": "fastaibooking-booking-handler"
+      },
+      "canary": {
+        "name": "fastaibooking-booking-handler-p0-canary-20260717"
+      }
+    }
+  }
+}

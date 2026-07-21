@@ -328,12 +328,16 @@
           "speechModelPreference": "standard_default",
           "audioTimeoutProfile": "p0_balanced_endpointing_initial_v1",
           "connectRecoveryStage": "initial",
-          "connectFlowSourceVersion": "2026-07-18-p0-definitive-voice-fix",
+          "connectCurrentStage": "initial_lex",
+          "connectLastBlock": "initial-lex",
+          "connectLastErrorBranch": "none",
+          "connectTerminalReason": "active",
+          "connectFlowSourceVersion": "2026-07-21-thuyet-p0-greeting-service-time-hotfix",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedDate": "1300",
-          "x-amz-lex:allow-interrupt:BookAppointmentIntent:serviceName": "false",
+          "x-amz-lex:allow-interrupt:BookAppointmentIntent:serviceName": "true",
           "x-amz-lex:allow-interrupt:BookAppointmentIntent:requestedDate": "false",
           "x-amz-lex:allow-interrupt:BookAppointmentIntent:requestedTime": "false",
-          "x-amz-lex:allow-interrupt:BookAppointmentIntent:staffPreference": "false",
+          "x-amz-lex:allow-interrupt:BookAppointmentIntent:staffPreference": "true",
           "x-amz-lex:allow-interrupt:BookAppointmentIntent:customerName": "false",
           "x-amz-lex:allow-interrupt:BookAppointmentIntent:bookingConfirmation": "false"
         },
@@ -479,13 +483,17 @@
           "connectContinuationPromptAvailable": "$.Lex.SessionAttributes.connectContinuationPromptAvailable",
           "outerRecoveryAttempt": "true",
           "connectRecoveryStage": "$.Attributes.connectRecoveryStage",
+          "connectCurrentStage": "continuation_lex",
+          "connectLastBlock": "continuation-lex",
+          "connectLastErrorBranch": "$.Attributes.connectLastErrorBranch",
+          "connectTerminalReason": "$.Lex.SessionAttributes.connectTerminalReason",
           "connectErrorCode": "$.Attributes.connectErrorCode",
-          "connectFlowSourceVersion": "2026-07-18-p0-definitive-voice-fix",
+          "connectFlowSourceVersion": "2026-07-21-thuyet-p0-greeting-service-time-hotfix",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedDate": "1300",
-          "x-amz-lex:allow-interrupt:BookAppointmentIntent:serviceName": "false",
+          "x-amz-lex:allow-interrupt:BookAppointmentIntent:serviceName": "true",
           "x-amz-lex:allow-interrupt:BookAppointmentIntent:requestedDate": "false",
           "x-amz-lex:allow-interrupt:BookAppointmentIntent:requestedTime": "false",
-          "x-amz-lex:allow-interrupt:BookAppointmentIntent:staffPreference": "false",
+          "x-amz-lex:allow-interrupt:BookAppointmentIntent:staffPreference": "true",
           "x-amz-lex:allow-interrupt:BookAppointmentIntent:customerName": "false",
           "x-amz-lex:allow-interrupt:BookAppointmentIntent:bookingConfirmation": "false"
         },
@@ -629,13 +637,17 @@
           "connectContinuationPromptAvailable": "$.Lex.SessionAttributes.connectContinuationPromptAvailable",
           "outerRecoveryAttempt": "final",
           "connectRecoveryStage": "final_dtmf_opportunity",
+          "connectCurrentStage": "final_recovery_lex",
+          "connectLastBlock": "final-recovery-lex",
+          "connectLastErrorBranch": "$.Attributes.connectLastErrorBranch",
+          "connectTerminalReason": "$.Lex.SessionAttributes.connectTerminalReason",
           "connectErrorCode": "$.Attributes.connectErrorCode",
-          "connectFlowSourceVersion": "2026-07-18-p0-definitive-voice-fix",
+          "connectFlowSourceVersion": "2026-07-21-thuyet-p0-greeting-service-time-hotfix",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedDate": "1300",
-          "x-amz-lex:allow-interrupt:BookAppointmentIntent:serviceName": "false",
+          "x-amz-lex:allow-interrupt:BookAppointmentIntent:serviceName": "true",
           "x-amz-lex:allow-interrupt:BookAppointmentIntent:requestedDate": "false",
           "x-amz-lex:allow-interrupt:BookAppointmentIntent:requestedTime": "false",
-          "x-amz-lex:allow-interrupt:BookAppointmentIntent:staffPreference": "false",
+          "x-amz-lex:allow-interrupt:BookAppointmentIntent:staffPreference": "true",
           "x-amz-lex:allow-interrupt:BookAppointmentIntent:customerName": "false",
           "x-amz-lex:allow-interrupt:BookAppointmentIntent:bookingConfirmation": "false"
         },
@@ -740,7 +752,10 @@
           "initialContactId": "$.InitialContactId",
           "connectRecoveryStage": "initial",
           "connectLastErrorBranch": "none",
-          "connectFlowSourceVersion": "2026-07-17-p0-voice-regression-fix"
+          "connectCurrentStage": "flow_start",
+          "connectLastBlock": "set-fastaibooking-runtime-attrs",
+          "connectTerminalReason": "active",
+          "connectFlowSourceVersion": "2026-07-21-thuyet-p0-greeting-service-time-hotfix"
         },
         "TargetContact": "Current"
       },
@@ -902,8 +917,11 @@
         "Attributes": {
           "connectRecoveryStage": "initial_lex_error",
           "connectLastErrorBranch": "$.ErrorCode",
+          "connectCurrentStage": "initial_lex_error",
+          "connectLastBlock": "set-recovery-stage-initial-error",
+          "connectTerminalReason": "recoverable_integration_error",
           "connectErrorCode": "$.ErrorCode",
-          "connectFlowSourceVersion": "2026-07-17-p0-voice-regression-fix",
+          "connectFlowSourceVersion": "2026-07-21-thuyet-p0-greeting-service-time-hotfix",
           "conversationComplete": "false"
         },
         "TargetContact": "Current"
@@ -923,7 +941,7 @@
       "Type": "MessageParticipant",
       "Parameters": {
         "SkipWhenDTMFBufferEnabled": "false",
-        "Text": "Sorry, I had trouble hearing you. Please tell me what you need again, or press 0 for a person."
+      "Text": "I'm still here. I didn't catch that. Please say it again, or press 0 for a person."
       },
       "Transitions": {
         "NextAction": "check-continuation-prompt",
@@ -942,8 +960,11 @@
         "Attributes": {
           "connectRecoveryStage": "retry_lex_error",
           "connectLastErrorBranch": "$.ErrorCode",
+          "connectCurrentStage": "retry_lex_error",
+          "connectLastBlock": "set-recovery-stage-retry-error",
+          "connectTerminalReason": "recoverable_integration_error",
           "connectErrorCode": "$.ErrorCode",
-          "connectFlowSourceVersion": "2026-07-17-p0-voice-regression-fix",
+          "connectFlowSourceVersion": "2026-07-21-thuyet-p0-greeting-service-time-hotfix",
           "conversationComplete": "false"
         },
         "TargetContact": "Current"
@@ -963,7 +984,7 @@
       "Type": "MessageParticipant",
       "Parameters": {
         "SkipWhenDTMFBufferEnabled": "false",
-        "Text": "I'm still here. Please tell me the service, date, time, or staff again. You can press 0 for a person."
+      "Text": "I'm still here. I didn't catch that. Please say it again, or press 0 for a person."
       },
       "Transitions": {
         "NextAction": "41e3f239-5b57-4363-92fc-9d594579fa98",
@@ -1087,17 +1108,21 @@
           "connectContinuationPromptAvailable": "$.Lex.SessionAttributes.connectContinuationPromptAvailable",
           "outerRecoveryAttempt": "true",
           "connectRecoveryStage": "$.Attributes.connectRecoveryStage",
+          "connectCurrentStage": "continuation_fallback_lex",
+          "connectLastBlock": "continuation-fallback-lex",
+          "connectLastErrorBranch": "$.Attributes.connectLastErrorBranch",
+          "connectTerminalReason": "$.Lex.SessionAttributes.connectTerminalReason",
           "connectErrorCode": "$.Attributes.connectErrorCode",
-          "connectFlowSourceVersion": "2026-07-18-p0-definitive-voice-fix",
+          "connectFlowSourceVersion": "2026-07-21-thuyet-p0-greeting-service-time-hotfix",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedDate": "1300",
-          "x-amz-lex:allow-interrupt:BookAppointmentIntent:serviceName": "false",
+          "x-amz-lex:allow-interrupt:BookAppointmentIntent:serviceName": "true",
           "x-amz-lex:allow-interrupt:BookAppointmentIntent:requestedDate": "false",
           "x-amz-lex:allow-interrupt:BookAppointmentIntent:requestedTime": "false",
-          "x-amz-lex:allow-interrupt:BookAppointmentIntent:staffPreference": "false",
+          "x-amz-lex:allow-interrupt:BookAppointmentIntent:staffPreference": "true",
           "x-amz-lex:allow-interrupt:BookAppointmentIntent:customerName": "false",
           "x-amz-lex:allow-interrupt:BookAppointmentIntent:bookingConfirmation": "false"
         },
-        "Text": "Please continue with the appointment detail."
+        "Text": "Sorry, I didn't catch that. Could you say it again?"
       },
       "Transitions": {
         "NextAction": "check-transfer-to-queue",

@@ -1,0 +1,75 @@
+{
+  "createdAt": "2026-07-18T07:40:50Z",
+  "status": "PREDEPLOY_SNAPSHOT",
+  "awsProfile": "nailnew",
+  "region": "us-east-1",
+  "accountId": "197452633989",
+  "principalArn": "arn:aws:iam::197452633989:user/fastaibooking-codex-deployer",
+  "connect": {
+    "instanceId": "74f78377-766f-46b7-a745-4bc97b68a8dc",
+    "instanceAlias": "fastaibooking",
+    "productionFlowId": "dcccf542-587c-426c-a644-a4c6f24da6e4",
+    "productionFlowName": "FastAIBooking AI Reception",
+    "productionFlowMarker": "2026-07-17-thuyet-voice-hotfix",
+    "productionFlowNormalizedSha256": "199aa5ae084361b68be429ca8175fc20031871e6b1b496f8b116e5ca218e7347",
+    "canaryFlowId": "70b6c12b-1a5f-4d37-aea3-943dc291acd3",
+    "canaryFlowName": "FastAIBooking AI Reception P0 Canary 20260717",
+    "canaryFlowMarker": "2026-07-17-p0-voice-regression-canary",
+    "canaryFlowNormalizedSha256": "3953cc4ac9b6eb77240b85da3ffd11cf497853b48b83d42e0b6de81a0786bc4e",
+    "flowContentBackups": {
+      "production": {
+        "path": ".tmp/rollback-20260718-live/dcccf542-587c-426c-a644-a4c6f24da6e4.content.json",
+        "fileSha256": "6eb5ced71928d514ee1fcd244083c52d73816a628012bb5c233cac6c5ed24063"
+      },
+      "canary": {
+        "path": ".tmp/rollback-20260718-live/70b6c12b-1a5f-4d37-aea3-943dc291acd3.content.json",
+        "fileSha256": "83514e54930e6b39d4d8632220519ff67c0bcf763008b7ba123bfec86448b498"
+      }
+    }
+  },
+  "lex": {
+    "botId": "KHMIXGA2US",
+    "botRuntimeRoleArn": "arn:aws:iam::197452633989:role/aws-service-role/lexv2.amazonaws.com/AWSServiceRoleForLexV2Bots_3N9FIXUYTDR",
+    "productionAliasId": "JVIPIZDYE3",
+    "productionAliasName": "prod",
+    "productionAliasVersion": "41",
+    "canaryAliasId": "Z4DLL5S5B2",
+    "canaryAliasName": "p0-voice-canary-20260717",
+    "canaryAliasVersion": "42",
+    "aliasBackups": {
+      "production": {
+        "path": ".tmp/rollback-20260718-live/lex-prod-alias.json",
+        "fileSha256": "2d05cf9c0891d3c083b563f2cc5f4e29af411978be2d82f01358df86e809d4c3"
+      },
+      "canary": {
+        "path": ".tmp/rollback-20260718-live/lex-canary-alias.json",
+        "fileSha256": "0e50a651e4d1ba0f2b43e89ef3ff67eabd15be4a9be34cc466b4c36491347007"
+      }
+    }
+  },
+  "lambda": {
+    "productionFunctionName": "fastaibooking-booking-handler",
+    "productionCodeSha256": "mR66LpeLRmt4CT4LHwxpqQkdizG2ZPtT3TFuF73YWq0=",
+    "productionRevisionId": "7e58a186-3c78-4b3c-8857-180bb0c5ce61",
+    "canaryFunctionName": "fastaibooking-booking-handler-p0-canary-20260717",
+    "canaryCodeSha256": "RbTj6sA3QH5ahCOmRfefoDO4LGDqvbjd5Uu2YBqAPzw=",
+    "canaryRevisionId": "3dc23469-754a-4f0c-8059-676cec172fd8",
+    "codeBackups": {
+      "production": {
+        "path": ".tmp/rollback-20260718-live/fastaibooking-booking-handler.zip",
+        "fileSha256": "991eba2e978b466b78093e0b1f0c69a9091d8b31b664fb53dd316e17bdd85aad"
+      },
+      "canary": {
+        "path": ".tmp/rollback-20260718-live/fastaibooking-booking-handler-p0-canary-20260717.zip",
+        "fileSha256": "45b4e3eac037407e5a8423a645f79fa033b82c60eabdb8dde54bb6601a803f3c"
+      }
+    }
+  },
+  "rollbackOrder": [
+    "Update Lex production alias JVIPIZDYE3 back to version 41 if changed.",
+    "Update Lambda production code from .tmp/rollback-20260718-live/fastaibooking-booking-handler.zip if changed.",
+    "Restore Lambda production timeout, memory, architecture, and logging config from inline manifest fields if changed. Do not restore environment values from a file.",
+    "Restore production Connect flow content from .tmp/rollback-20260718-live/dcccf542-587c-426c-a644-a4c6f24da6e4.content.json if changed.",
+    "Repeat equivalent canary rollback steps for Z4DLL5S5B2, fastaibooking-booking-handler-p0-canary-20260717, and 70b6c12b-1a5f-4d37-aea3-943dc291acd3 if canary rollback is required."
+  ]
+}

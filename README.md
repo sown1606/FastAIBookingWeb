@@ -272,6 +272,18 @@ Needs manual AWS Console/setup verification:
 - Confirm the AI Reception contact flow, Human Escalation contact flow, Operator Queue, Lex `prod` alias, and Lambda env var names are current in `us-east-1` under profile `nailnew`.
 - Log an operator into Amazon Connect CCP, set status to Available, and place one live customer call.
 
+AWS voice deployment must use the guarded scripts only:
+
+```bash
+npm run aws:verify-identity
+npm run voice:deploy:canary:dry-run
+npm run voice:deploy:canary
+npm run voice:deploy:production:dry-run
+npm run voice:deploy:production
+```
+
+The guard is defined in `AGENTS.md` and `infra/aws/deployment/voice-stack.targets.json`. Never use the `default` AWS profile for Connect, Lex, Lambda, IAM, Logs, or S3 work.
+
 Needs live SMS config:
 
 - `AWS_SMS_ORIGINATION_NUMBER` is not required for AI booking tests. It is required only for live AWS SMS delivery.

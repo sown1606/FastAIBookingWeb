@@ -162,31 +162,59 @@
           }
         },
         "successConditional": null,
-        "failureResponse": null,
+        "failureResponse": {
+          "messageGroupsList": [
+            {
+              "message": {
+                "plainTextMessage": {
+                  "value": "I'm still here. What service would you like?"
+                }
+              }
+            }
+          ],
+          "allowInterrupt": true
+        },
         "failureNextStep": {
-          "sessionAttributes": null,
+          "sessionAttributes": {
+            "lastAskedSlot": "serviceName",
+            "conversationComplete": "false"
+          },
           "intent": {
-            "name": null,
+            "name": "BookAppointmentIntent",
             "slots": null
           },
           "dialogAction": {
-            "type": "EndConversation",
-            "slotToElicit": null,
+            "type": "ElicitSlot",
+            "slotToElicit": "serviceName",
             "suppressNextMessage": null,
             "intentsInScope": null
           }
         },
         "failureConditional": null,
-        "timeoutResponse": null,
+        "timeoutResponse": {
+          "messageGroupsList": [
+            {
+              "message": {
+                "plainTextMessage": {
+                  "value": "One moment while I check that. What service would you like?"
+                }
+              }
+            }
+          ],
+          "allowInterrupt": true
+        },
         "timeoutNextStep": {
-          "sessionAttributes": null,
+          "sessionAttributes": {
+            "lastAskedSlot": "serviceName",
+            "conversationComplete": "false"
+          },
           "intent": {
-            "name": null,
+            "name": "BookAppointmentIntent",
             "slots": null
           },
           "dialogAction": {
-            "type": "EndConversation",
-            "slotToElicit": null,
+            "type": "ElicitSlot",
+            "slotToElicit": "serviceName",
             "suppressNextMessage": null,
             "intentsInScope": null
           }
@@ -220,13 +248,30 @@
   },
   "fulfillmentCodeHook": {
     "postFulfillmentStatusSpecification": {
-      "failureResponse": null,
+      "failureResponse": {
+        "messageGroupsList": [
+          {
+            "message": {
+              "plainTextMessage": {
+                "value": "I'm having trouble checking that. Please say the service name again, or press 0 for a person."
+              }
+            }
+          }
+        ],
+        "allowInterrupt": true
+      },
       "failureNextStep": {
-        "sessionAttributes": null,
-        "intent": null,
+        "sessionAttributes": {
+          "lastAskedSlot": "serviceName",
+          "conversationComplete": "false"
+        },
+        "intent": {
+          "name": "BookAppointmentIntent",
+          "slots": null
+        },
         "dialogAction": {
-          "type": "EndConversation",
-          "slotToElicit": null,
+          "type": "ElicitSlot",
+          "slotToElicit": "serviceName",
           "suppressNextMessage": null,
           "intentsInScope": null
         }
@@ -242,13 +287,30 @@
           "intentsInScope": null
         }
       },
-      "timeoutResponse": null,
+      "timeoutResponse": {
+        "messageGroupsList": [
+          {
+            "message": {
+              "plainTextMessage": {
+                "value": "One moment while I check that. Please say the service name again, or press 0 for a person."
+              }
+            }
+          }
+        ],
+        "allowInterrupt": true
+      },
       "timeoutNextStep": {
-        "sessionAttributes": null,
-        "intent": null,
+        "sessionAttributes": {
+          "lastAskedSlot": "serviceName",
+          "conversationComplete": "false"
+        },
+        "intent": {
+          "name": "BookAppointmentIntent",
+          "slots": null
+        },
         "dialogAction": {
-          "type": "EndConversation",
-          "slotToElicit": null,
+          "type": "ElicitSlot",
+          "slotToElicit": "serviceName",
           "suppressNextMessage": null,
           "intentsInScope": null
         }
