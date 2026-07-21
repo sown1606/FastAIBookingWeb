@@ -2756,6 +2756,11 @@ function analyzeLexTurnSanitization(event) {
       (fieldName === "staffPreference" && dtmfRouting.accepted && dtmfRouting.route === "staff_menu");
     const currentTurnDigitOnlyOrSequence =
       dtmfDiagnostics.isBareDigitUtterance || dtmfDiagnostics.isMultiDigitOrDigitSequence;
+    const customerNameSlotOwned =
+      fieldName !== "customerName" ||
+      previous.lastAskedSlot === "customerName" ||
+      !previous.lastAskedSlot ||
+      hasExplicitCustomerNameCorrectionPhrase(currentTurnTranscript);
 
     if (
       fieldName === "requestedTime" &&
@@ -2794,6 +2799,13 @@ function analyzeLexTurnSanitization(event) {
     ) {
       delete sanitizedSlots[name];
       ignoredNoiseFields.push(fieldName);
+      changed = true;
+      continue;
+    }
+
+    if (fieldName === "customerName" && !customerNameSlotOwned && !alreadyTrusted) {
+      delete sanitizedSlots[name];
+      ignoredUngroundedSlots.push("customerName_not_slot_owned");
       changed = true;
       continue;
     }
@@ -3129,6 +3141,12 @@ function extractCustomerNameFromText(text) {
   );
   const name = collapseSpokenNameSpelling(match?.[1]);
   return isAcceptableCustomerName(name) ? name : "";
+}
+
+function hasExplicitCustomerNameCorrectionPhrase(text) {
+  return /(?:\bmy\s+name\s+is\b|\bname\s+is\b|\bthis\s+is\b|\byou\s+can\s+call\s+me\b|\bcall\s+me\b|\buse\s+\p{L}[\p{L}'-]*(?:\s+\p{L}[\p{L}'-]*){0,3}\s+for\s+(?:the\s+)?name\b)/iu.test(
+    String(text || "")
+  );
 }
 
 function extractBareCustomerNameAnswer(text) {
@@ -5088,6 +5106,115 @@ function buildKnownBookingPromptSummary(event, options = {}) {
   return pieces.join(" ").replace(/\s+/g, " ").trim();
 }
 
+function getCurrentTurnAcceptedSlotDelta(event, knownOverride = undefined) {
+  const previous = event.sessionState?.sessionAttributes || {};
+  const known = knownOverride || buildKnownBookingSessionAttributes(event);
+  const timeZone = getAttribute(event, attributeNames.timezone) || DEFAULT_SALON_TIMEZONE;
+  const transcript = getCurrentTurnTranscript(event);
+  const currentDetails = extractBookingDetailsFromText(transcript, timeZone, previous);
+  const deltas = {};
+  const previousValue = (fieldName) =>
+    getSessionAttribute(previous, slotNames[fieldName] || [fieldName]) ||
+    (fieldName === "serviceName" ? previous.confirmedServiceName : "") ||
+    (fieldName === "staffPreference" ? previous.confirmedStaffName : "");
+  const hasChangedOrNew = (fieldName, value) => {
+    const before = previousValue(fieldName);
+    return value && (!before || !valuesEquivalent(fieldName, value, before, timeZone));
+  };
+
+  const serviceName = normalizeServiceName(known.confirmedServiceName || known.serviceName);
+  const currentService = normalizeServiceName(currentDetails.serviceName || currentTurnRecognizedService(event));
+  if (
+    serviceName &&
+    currentService &&
+    valuesEquivalent("serviceName", serviceName, currentService, timeZone) &&
+    hasChangedOrNew("serviceName", serviceName)
+  ) {
+    deltas.serviceName = serviceName;
+  }
+
+  if (
+    known.requestedDate &&
+    currentDetails.requestedDate &&
+    valuesEquivalent("requestedDate", known.requestedDate, currentDetails.requestedDate, timeZone) &&
+    hasChangedOrNew("requestedDate", known.requestedDate)
+  ) {
+    deltas.requestedDate = known.requestedDate;
+  }
+  if (
+    known.requestedTime &&
+    currentDetails.requestedTime &&
+    valuesEquivalent("requestedTime", known.requestedTime, currentDetails.requestedTime, timeZone) &&
+    hasChangedOrNew("requestedTime", known.requestedTime)
+  ) {
+    deltas.requestedTime = known.requestedTime;
+  }
+
+  const currentName =
+    (hasExplicitCustomerNameCorrectionPhrase(transcript) ? currentDetails.customerName : "") ||
+    (previous.lastAskedSlot === "customerName" ? extractBareCustomerNameAnswer(transcript) : "");
+  if (
+    known.customerName &&
+    currentName &&
+    isAcceptableCustomerName(known.customerName) &&
+    valuesEquivalent("customerName", known.customerName, currentName, timeZone) &&
+    hasChangedOrNew("customerName", known.customerName)
+  ) {
+    deltas.customerName = known.customerName;
+  }
+
+  const staff = known.staffPreference || known.confirmedStaffName;
+  const currentStaff = previous.lastAskedSlot === "customerName" ? "" : extractStaffFromTranscript(transcript, known);
+  if (
+    staff &&
+    currentStaff &&
+    valuesEquivalent("staffPreference", staff, currentStaff, timeZone) &&
+    hasChangedOrNew("staffPreference", staff)
+  ) {
+    deltas.staffPreference = staff;
+  }
+  return deltas;
+}
+
+function buildCurrentTurnAcknowledgement(event, knownOverride = undefined) {
+  const known = knownOverride || buildKnownBookingSessionAttributes(event);
+  const timeZone = getAttribute(event, attributeNames.timezone) || DEFAULT_SALON_TIMEZONE;
+  const delta = getCurrentTurnAcceptedSlotDelta(event, known);
+  const date = formatDateForPrompt(delta.requestedDate, timeZone);
+  const time = formatTimeForPrompt(delta.requestedTime);
+  const serviceName = normalizeServiceName(delta.serviceName);
+  const staff = delta.staffPreference;
+  const name = delta.customerName ? String(delta.customerName).split(/\s+/)[0] : "";
+
+  if (name && !serviceName && !date && !time && !staff) {
+    return `Thanks, ${name}.`;
+  }
+  const bookingPieces = [];
+  if (serviceName) {
+    bookingPieces.push(serviceName);
+  }
+  if (date && time) {
+    bookingPieces.push(`${date} at ${time}`);
+  } else if (date) {
+    bookingPieces.push(date);
+  } else if (time) {
+    bookingPieces.push(time);
+  }
+  if (staff) {
+    bookingPieces.push(`with ${staff}`);
+  }
+  return bookingPieces.length ? `Got it, ${bookingPieces.join(" ")}.` : "";
+}
+
+function prefixPromptWithCurrentTurnAcknowledgement(event, prompt, knownOverride = undefined) {
+  const trimmedPrompt = String(prompt || "").trim();
+  if (!trimmedPrompt || /^(?:got it|thanks|i already have)\b/i.test(trimmedPrompt)) {
+    return trimmedPrompt;
+  }
+  const acknowledgement = buildCurrentTurnAcknowledgement(event, knownOverride);
+  return acknowledgement ? `${acknowledgement} ${trimmedPrompt}` : trimmedPrompt;
+}
+
 function currentTurnRepeatsKnownBookingField(event) {
   const known = buildKnownBookingSessionAttributes(event);
   const transcript = getCurrentTurnTranscript(event);
@@ -5140,7 +5267,7 @@ function buildCustomerNamePrompt(event, options = {}) {
     return `I already have ${summary}. What name should I put on the appointment?`;
   }
   if (summary) {
-    return `I have your ${summary}. May I have your name, please?`;
+    return `I have ${summary}. May I have your name, please?`;
   }
   return "I'd be happy to help. May I have your name, please?";
 }
@@ -5158,6 +5285,13 @@ function getServiceAwareElicitPrompt(event, slotName, attemptCount, knownOverrid
     if (!known.serviceName && !date && time && staff) {
       return `I caught ${time} with ${staff}. What day and service would you like?`;
     }
+    if (!known.serviceName && (date || time || staff)) {
+      const retained = [
+        date && time ? `${date} at ${time}` : date || (time ? `at ${time}` : ""),
+        staff ? `with ${staff}` : ""
+      ].filter(Boolean).join(" ");
+      return retained ? `I have ${retained}. ${prompt}` : prompt;
+    }
     return prompt;
   }
   if (slotName === "customerName") {
@@ -5173,10 +5307,14 @@ function getServiceAwareElicitPrompt(event, slotName, attemptCount, knownOverrid
   if (!serviceName || /^got it[, ]/i.test(prompt)) {
     return prompt;
   }
+  const acknowledgedPrompt = prefixPromptWithCurrentTurnAcknowledgement(event, prompt, known);
+  if (acknowledgedPrompt !== prompt) {
+    return acknowledgedPrompt;
+  }
   if (currentTurnRepeatsKnownBookingField(event)) {
     return `I already have ${serviceName}. ${prompt}`;
   }
-  return `Got it, ${serviceName}. ${prompt}`;
+  return prompt;
 }
 
 function isValidCustomerPhone(value) {
@@ -5325,8 +5463,12 @@ function buildKnownBookingSessionAttributes(event) {
   const protectedCustomerName =
     previous.recognizedCustomerName ||
     (previous.customerNameSource === "phone_lookup" ? previous.customerName : "");
+  const currentTurnOwnsCustomerName =
+    previous.lastAskedSlot === "customerName" ||
+    (!previous.lastAskedSlot && Boolean(getSlotValue(slots, slotNames.customerName))) ||
+    hasExplicitCustomerNameCorrectionPhrase(currentTurnTranscript);
   const explicitCustomerName =
-    currentRecovered.customerName ||
+    (hasExplicitCustomerNameCorrectionPhrase(currentTurnTranscript) ? currentRecovered.customerName : "") ||
     (previous.lastAskedSlot === "customerName" ? extractBareCustomerNameAnswer(event.inputTranscript) : "");
   const previousStaffPreference =
     getSessionAttribute(previous, slotNames.staffPreference) || previous.confirmedStaffName;
@@ -5410,7 +5552,9 @@ function buildKnownBookingSessionAttributes(event) {
 	    customerName:
 	      protectedCustomerName ||
 	      explicitCustomerName ||
-	      getKnownField(event, "customerName"),
+	      (currentTurnOwnsCustomerName
+	        ? getKnownField(event, "customerName")
+	        : getSessionAttribute(previous, slotNames.customerName)),
     customerPhone:
       amazonConnectCustomerPhone ||
       getKnownField(event, "customerPhone") ||
@@ -5593,15 +5737,6 @@ function getBookingSlotToElicit(event) {
   if (unresolvedServiceAnswer) {
     return "serviceName";
   }
-  const customerName = getSessionAttribute(sessionAttributes, slotNames.customerName);
-  const hasRecognizedCustomerName =
-    Boolean(sessionAttributes.recognizedCustomerName) ||
-    sessionAttributes.customerNameSource === "customer" ||
-    sessionAttributes.customerNameSource === "phone_lookup";
-  if (!customerName && !hasRecognizedCustomerName) {
-    return "customerName";
-  }
-
   const serviceName = getSessionAttribute(sessionAttributes, slotNames.serviceName);
   if (!serviceName) {
     return "serviceName";
@@ -5627,6 +5762,15 @@ function getBookingSlotToElicit(event) {
   const staffId = sessionAttributes.staffId || sessionAttributes.selectedStaffId;
   if (isInvalidStaffPreferenceNoise(staffPreference, sessionAttributes)) {
     return "staffPreference";
+  }
+
+  const customerName = getSessionAttribute(sessionAttributes, slotNames.customerName);
+  const hasRecognizedCustomerName =
+    Boolean(sessionAttributes.recognizedCustomerName) ||
+    sessionAttributes.customerNameSource === "customer" ||
+    sessionAttributes.customerNameSource === "phone_lookup";
+  if (!customerName && !hasRecognizedCustomerName) {
+    return "customerName";
   }
   if (!staffPreference && !staffId && sessionAttributes.invalidStaffPreferenceIgnored === "true") {
     return "staffPreference";
@@ -5794,13 +5938,13 @@ function getNoInputPrompt(slotName, noInputCount, event) {
     return "Sorry, I didn't catch your name. What is your first name?";
   }
   if (slotName === "serviceName" && noInputCount <= 1) {
-    return "Are you still there? What service would you like?";
+    return "Are you still there? Please tell me how I can help.";
   }
   if (noInputCount <= 1) {
     return getElicitPrompt(event, slotName, 1);
   }
   if (slotName === "serviceName") {
-    return "I'm still here. You can say the service name, or press zero for a person.";
+    return "I'm still here. You can say book an appointment, or press zero for a person.";
   }
   return getElicitPrompt(event, slotName, 2);
 }
@@ -6011,12 +6155,23 @@ async function buildDynamicStaffElicitResponse(event, intentName) {
   }
 
   const lexResponse = data.lexResponse || {};
+  const responseAttributes = buildSessionAttributesFromResult(data);
+  const responseSlotToElicit =
+    lexResponse.dialogAction?.slotToElicit || responseAttributes.slotToElicit || "";
+  const responseMessage =
+    responseSlotToElicit === "staffPreference"
+      ? prefixPromptWithCurrentTurnAcknowledgement(
+          event,
+          lexResponse.message || data.message || STAFF_DTMF_PROMPT,
+          responseAttributes
+        )
+      : lexResponse.message || data.message || STAFF_DTMF_PROMPT;
   if (lexResponse.dialogAction?.type) {
     return buildLexResponse(
       event,
-      lexResponse.message || data.message || STAFF_DTMF_PROMPT,
+      responseMessage,
       lexResponse.fulfillmentState || "InProgress",
-      buildSessionAttributesFromResult(data),
+      responseAttributes,
       lexResponse
     );
   }
@@ -6024,8 +6179,8 @@ async function buildDynamicStaffElicitResponse(event, intentName) {
   return buildElicitSlotResponse(
     event,
     "staffPreference",
-    buildSessionAttributesFromResult(data),
-    data.message || lexResponse.message || STAFF_DTMF_PROMPT
+    responseAttributes,
+    responseMessage
   );
 }
 
@@ -6789,6 +6944,14 @@ function buildInternalPayload(event, intentName, extraAttributes = {}) {
 	      aggregatedBookingTranscript: transcript,
 	      providerTurnId: getProviderTurnId(event),
 	      humanTurnId: getHumanTurnId(event),
+	      physicalSpeechTurnId: getPhysicalSpeechTurnId(event),
+	      speechSegmentId: getSpeechSegmentId(event),
+	      providerSequence:
+	        sessionAttributes.providerSequence ||
+	        `${getProviderRequestId(event) || "no-provider-request"}:${sessionAttributes.turnSequence || "0"}:${event.invocationSource || "unknown"}`,
+	      segmentStartedAt:
+	        getOptionalAttribute(event, ["providerInputStartedAt", "ProviderInputStartedAt", "segmentStartedAt"]) || "",
+	      segmentEndedAt: providerTranscriptTimestamp,
 	      providerRequestId: getProviderRequestId(event),
 	      lexRequestId: event.requestId || event.invocationId || getProviderRequestId(event) || "",
 	      lexPhase: event.invocationSource || "",
@@ -6819,6 +6982,10 @@ function buildInternalPayload(event, intentName, extraAttributes = {}) {
 	      connectBranch,
 	      stateVersionBefore: sessionAttributes.stateVersion || sessionAttributes.turnSequence || "0",
 	      turnSequence: sessionAttributes.turnSequence || "0",
+	      responseSequence: sessionAttributes.responseSequence || sessionAttributes.turnSequence || "0",
+	      staleResponseSuppressed: "false",
+	      coalescedSegmentCount: sessionAttributes.coalescedSegmentCount || "1",
+	      coalescingReason: sessionAttributes.coalescingReason || "",
 	      asrDiagnostics: JSON.stringify(getAsrDiagnostics(event)),
       asrNBestAlternatives: JSON.stringify(getAsrDiagnostics(event).nBestAlternatives),
       ...(event.lexTurnDebug ? { lexTurnDebug: event.lexTurnDebug } : {})
@@ -7388,6 +7555,30 @@ function getProviderTurnId(event) {
     event.invocationSource || "unknown",
     providerRequestId
   ].join(":");
+}
+
+function getPhysicalSpeechTurnId(event) {
+  const sessionAttributes = event.sessionState?.sessionAttributes || {};
+  const contactId =
+    getAttribute(event, attributeNames.contactId) ||
+    event.sessionId ||
+    sessionAttributes.AmazonConnectContactId ||
+    "session";
+  return [
+    "physical",
+    contactId,
+    getInputMode(event).toLowerCase() || "unknown",
+    getProviderRequestId(event) || "no-provider-request"
+  ].join(":");
+}
+
+function getSpeechSegmentId(event) {
+  const transcript = normalizeForMatch(getCurrentTurnTranscript(event) || event.inputTranscript || "");
+  const transcriptFingerprint = createHash("sha256")
+    .update(transcript || readDtmfDigit(event.inputTranscript) || "empty")
+    .digest("hex")
+    .slice(0, 24);
+  return [getPhysicalSpeechTurnId(event), transcriptFingerprint, event.invocationSource || "unknown"].join(":");
 }
 
 function getAsrDiagnostics(event) {
@@ -8220,11 +8411,33 @@ function logStructuredLexTurn(event, response, analysis = {}) {
 	      sessionAttributesAfter.AmazonConnectContactId,
 	    providerTurnId: getProviderTurnId(event),
 	    humanTurnId: getHumanTurnId(event),
+	    physicalSpeechTurnId: getPhysicalSpeechTurnId(event),
+	    speechSegmentId: getSpeechSegmentId(event),
+	    providerSequence:
+	      sessionAttributesBefore.providerSequence ||
+	      `${getProviderRequestId(event) || "no-provider-request"}:${sessionAttributesBefore.turnSequence || "0"}:${event.invocationSource || "unknown"}`,
+	    segmentStartedAt:
+	      getOptionalAttribute(event, ["providerInputStartedAt", "ProviderInputStartedAt", "segmentStartedAt"]) || "",
+	    segmentEndedAt:
+	      getOptionalAttribute(event, [
+	        "providerTranscriptTimestamp",
+	        "ProviderTranscriptTimestamp",
+	        "transcriptTimestamp",
+	        "TranscriptTimestamp",
+	        "providerInputEndedAt",
+	        "ProviderInputEndedAt"
+	      ]) || "",
 	    providerRequestId: getProviderRequestId(event),
 	    lexRequestId: event.requestId || event.invocationId || getProviderRequestId(event) || "",
 	    lexPhase: event.invocationSource || "",
 	    turnSequenceBefore: sessionAttributesBefore.turnSequence,
 	    turnSequenceAfter: sessionAttributesAfter.turnSequence,
+	    stateVersionRead: sessionAttributesBefore.stateVersion || sessionAttributesBefore.turnSequence || "0",
+	    stateVersionCommitted: sessionAttributesAfter.stateVersion || sessionAttributesAfter.turnSequence || "0",
+	    responseSequence: sessionAttributesAfter.responseSequence || sessionAttributesAfter.turnSequence || "",
+	    staleResponseSuppressed: sessionAttributesAfter.staleResponseSuppressed === "true",
+	    coalescedSegmentCount: sessionAttributesAfter.coalescedSegmentCount || "1",
+	    coalescingReason: sessionAttributesAfter.coalescingReason || "",
 	    currentTurnTranscript: analysis.currentTurnTranscript ?? getCurrentTurnTranscript(event),
     inputTranscript: event.inputTranscript || "",
     inputMode: getInputMode(event),

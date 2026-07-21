@@ -3131,7 +3131,8 @@ test("AI caller memory does not reuse names from historical booking attempts", a
   assert.equal(second.body.data.lexResponse.sessionAttributes.customerNameSource, undefined);
   assert.equal(second.body.data.missingFields.includes("customerName"), true);
   assert.equal(second.body.data.missingFields.includes("customerPhone"), false);
-  assert.match(second.body.data.lexResponse.message, /May I have your name/i);
+  assert.match(second.body.data.lexResponse.message, /What day would you like/i);
+  assert.doesNotMatch(second.body.data.lexResponse.message, /three/i);
   assert.notEqual(second.body.data.lexResponse.sessionAttributes.transferToQueue, "true");
 });
 
@@ -3146,7 +3147,8 @@ test("missing booking fields return a Lex needs-input response instead of crashi
   assert.equal(result.body.data.outcome, "MISSING_INFO");
   assert.equal(result.body.data.lexResponse.fulfillmentState, "InProgress");
   assert.equal(result.body.data.lexResponse.dialogAction.type, "ElicitSlot");
-  assert.match(result.body.data.lexResponse.message, /May I have your name/i);
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "requestedDate");
+  assert.match(result.body.data.lexResponse.message, /What day would you like/i);
 });
 
 test("Full Set phrase reaches confirmation without asking service again", async () => {
@@ -5312,6 +5314,67 @@ test("missing service prompt acknowledges retained date time and staff", async (
   assert.equal(state.appointments.length, 0);
 });
 
+test("date-time answer after known service acknowledges current date time only", async () => {
+  const result = await postInternalAppointment(
+    bookingPayload({
+      customerName: "Lee",
+      customerPhone: "+84798171999",
+      serviceName: "Pedicure",
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      transcript: "uh today two p m",
+      currentTurnTranscript: "uh today two p m",
+      attributes: {
+        lastAskedSlot: "requestedDate",
+        serviceName: "Pedicure",
+        confirmedServiceName: "Pedicure",
+        customerName: "Lee",
+        customerPhone: "+84798171999"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "staffPreference");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Pedicure");
+  assert.match(result.body.data.lexResponse.message, /Got it, today at 2 PM\. Which staff would you like/i);
+  assert.doesNotMatch(result.body.data.lexResponse.message, /Got it, Pedicure/i);
+  assert.equal(state.appointments.length, 0);
+});
+
+test("service-slot conversational I'm phrase preserves trusted customer name", async () => {
+  const result = await postInternalAppointment(
+    bookingPayload({
+      customerName: "following",
+      customerPhone: "+84798171999",
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      transcript: "I'm following",
+      currentTurnTranscript: "I'm following",
+      attributes: {
+        lastAskedSlot: "serviceName",
+        customerName: "Lee",
+        recognizedCustomerName: "Lee",
+        customerPhone: "+84798171999"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.customerName, "Lee");
+  assert.notEqual(result.body.data.lexResponse.sessionAttributes.customerName, "following");
+  assert.match(result.body.data.lexResponse.message, /What service would you like/i);
+  assert.equal(state.customers.some((customer) => customer.firstName === "following"), false);
+});
+
 test("active staff DTMF menu maps digit without polluting service or time", async () => {
   const result = await postInternalAppointment(
     bookingPayload({
@@ -5933,7 +5996,8 @@ test("missing staff asks once, then first available resolves before confirmation
   assert.equal(first.body.data.outcome, "MISSING_INFO");
   assert.equal(first.body.data.lexResponse.dialogAction.type, "ElicitSlot");
   assert.equal(first.body.data.lexResponse.dialogAction.slotToElicit, "staffPreference");
-  assert.match(first.body.data.lexResponse.message, /Got it, Pedicure\. Which staff would you like, Trang, Amy, Kelly, or first available/i);
+  assert.match(first.body.data.lexResponse.message, /Which staff would you like, Trang, Amy, Kelly, or first available/i);
+  assert.doesNotMatch(first.body.data.lexResponse.message, /Got it, Pedicure/i);
   assert.equal(first.body.data.lexResponse.sessionAttributes.activeDtmfMenu, "staff");
   assert.match(first.body.data.lexResponse.sessionAttributes.activeDtmfOptionsJson, /"4":"Any staff"/);
   assert.equal(state.appointments.length, 0);
@@ -7080,6 +7144,144 @@ test("reused provider request id with distinct human turns is not treated as dup
     turnHistory[1].turnStateDiagnostics.staleOrDuplicateRejectionReason,
     "duplicate_human_turn"
   );
+});
+
+test("same request split turn merges date time segment before service segment", async () => {
+  const contactId = "connect-split-turn-forward";
+  const sharedProviderRequestId = "lex-request-split-forward";
+  const baseAttributes = {
+    AmazonConnectContactId: contactId,
+    ContactId: contactId,
+    providerRequestId: sharedProviderRequestId,
+    lexRequestId: sharedProviderRequestId,
+    lexPhase: "DialogCodeHook",
+    turnSequence: "0",
+    stateVersion: "0"
+  };
+
+  const first = await postInternalAppointment(
+    bookingPayload({
+      customerName: undefined,
+      customerPhone: "+84798171999",
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      amazonConnectContactId: contactId,
+      currentTurnTranscript: "hi i need an appointment at uh tomorrow three pm",
+      transcript: "hi i need an appointment at uh tomorrow three pm",
+      attributes: {
+        ...baseAttributes,
+        humanTurnId: `${contactId}:human:date-time-segment`,
+        providerTurnId: `${contactId}:provider:${sharedProviderRequestId}:date-time`
+      }
+    })
+  );
+
+  const second = await postInternalAppointment(
+    bookingPayload({
+      customerName: undefined,
+      customerPhone: "+84798171999",
+      serviceName: "Pedicure",
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      amazonConnectContactId: contactId,
+      currentTurnTranscript: "pedicure",
+      transcript: "pedicure",
+      attributes: {
+        ...baseAttributes,
+        humanTurnId: `${contactId}:human:service-segment`,
+        providerTurnId: `${contactId}:provider:${sharedProviderRequestId}:service`
+      }
+    })
+  );
+
+  const attrs = second.body.data.lexResponse.sessionAttributes;
+  assert.equal(first.response.status, 200);
+  assert.equal(second.response.status, 200);
+  assert.equal(attrs.serviceName, "Pedicure");
+  assert.equal(attrs.confirmedServiceName, "Pedicure");
+  assert.equal(attrs.requestedDate, DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd"));
+  assert.ok(["3 PM", "15:00"].includes(attrs.requestedTime));
+  assert.notEqual(second.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
+  assert.equal(state.appointments.length, 0);
+  const turnHistory = state.aiInteractionLogs[0].responsePayload.turnHistory;
+  assert.equal(turnHistory.length, 2);
+  assert.equal(turnHistory[1].turnStateDiagnostics.duplicateDisposition, "provider_request_id_reused_for_distinct_human_turn");
+  assert.equal(turnHistory[1].turnStateDiagnostics.coalescingReason, "same_provider_request_id_segment_state_merge");
+  assert.equal(turnHistory[1].turnStateDiagnostics.coalescedSegmentCount, "2");
+});
+
+test("same request split turn merges service segment before date time segment", async () => {
+  const contactId = "connect-split-turn-reverse";
+  const sharedProviderRequestId = "lex-request-split-reverse";
+  const baseAttributes = {
+    AmazonConnectContactId: contactId,
+    ContactId: contactId,
+    providerRequestId: sharedProviderRequestId,
+    lexRequestId: sharedProviderRequestId,
+    lexPhase: "DialogCodeHook",
+    turnSequence: "0",
+    stateVersion: "0"
+  };
+
+  const first = await postInternalAppointment(
+    bookingPayload({
+      customerName: undefined,
+      customerPhone: "+84798171999",
+      serviceName: "Pedicure",
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      amazonConnectContactId: contactId,
+      currentTurnTranscript: "uh pedicure",
+      transcript: "uh pedicure",
+      attributes: {
+        ...baseAttributes,
+        humanTurnId: `${contactId}:human:service-segment`,
+        providerTurnId: `${contactId}:provider:${sharedProviderRequestId}:service`
+      }
+    })
+  );
+
+  const second = await postInternalAppointment(
+    bookingPayload({
+      customerName: undefined,
+      customerPhone: "+84798171999",
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      amazonConnectContactId: contactId,
+      currentTurnTranscript: "hi i need an appointment at uh tomorrow two pm",
+      transcript: "hi i need an appointment at uh tomorrow two pm",
+      attributes: {
+        ...baseAttributes,
+        humanTurnId: `${contactId}:human:date-time-segment`,
+        providerTurnId: `${contactId}:provider:${sharedProviderRequestId}:date-time`
+      }
+    })
+  );
+
+  const attrs = second.body.data.lexResponse.sessionAttributes;
+  assert.equal(first.response.status, 200);
+  assert.equal(second.response.status, 200);
+  assert.equal(attrs.serviceName, "Pedicure");
+  assert.equal(attrs.confirmedServiceName, "Pedicure");
+  assert.equal(attrs.requestedDate, DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd"));
+  assert.ok(["2 PM", "14:00"].includes(attrs.requestedTime));
+  assert.notEqual(second.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
+  assert.equal(state.appointments.length, 0);
+  const turnHistory = state.aiInteractionLogs[0].responsePayload.turnHistory;
+  assert.equal(turnHistory.length, 2);
+  assert.equal(turnHistory[1].turnStateDiagnostics.duplicateDisposition, "provider_request_id_reused_for_distinct_human_turn");
+  assert.equal(turnHistory[1].turnStateDiagnostics.coalescingReason, "same_provider_request_id_segment_state_merge");
+  assert.equal(turnHistory[1].turnStateDiagnostics.coalescedSegmentCount, "2");
 });
 
 test("final confirmation change request updates only the requested time before reconfirming", async () => {

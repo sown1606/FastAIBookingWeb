@@ -3229,6 +3229,160 @@ test("DialogCodeHook adds compact staff runtime hints only for staff elicitation
   assert.doesNotMatch(JSON.stringify(response.sessionState.runtimeHints), /Amy/);
 });
 
+test("DialogCodeHook date-time answer acknowledges date and time instead of stale service", async () => {
+  const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
+  installFetchMock((_url, _options, body) =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "MISSING_INFO",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "InProgress",
+          message: "Which staff would you like, Trang, Amy, Kelly, or first available?",
+          messageContentType: "PlainText",
+          dialogAction: {
+            type: "ElicitSlot",
+            slotToElicit: "staffPreference"
+          },
+          sessionAttributes: {
+            customerName: body.customerName,
+            customerPhone: body.customerPhone,
+            serviceName: body.serviceName,
+            confirmedServiceName: body.serviceName,
+            requestedDate: body.requestedDate,
+            requestedTime: body.requestedTime,
+            lastAskedSlot: "staffPreference",
+            ...dynamicStaffAttributes()
+          }
+        },
+        missingFields: ["staffPreference"]
+      })
+    )
+  );
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "uh today two p m",
+      inputMode: "Speech",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: "connect-incident-stale-service-ack",
+          customerName: "Lee",
+          customerPhone: "+17325956266",
+          serviceName: "Pedicure",
+          confirmedServiceName: "Pedicure",
+          lastAskedSlot: "requestedDate"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          name: "BookAppointmentIntent",
+          state: "InProgress",
+          confirmationState: "None",
+          slots: {
+            requestedDate: slot("today"),
+            requestedTime: slot("two p m")
+          }
+        }
+      }
+    })
+  );
+
+  assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "staffPreference");
+  assert.equal(response.sessionState.sessionAttributes.serviceName, "Pedicure");
+  assert.equal(response.sessionState.sessionAttributes.requestedDate, usEasternDate(0));
+  assert.equal(response.sessionState.sessionAttributes.requestedTime, "2 PM");
+  assert.match(response.messages[0].content, /Got it, today at 2 PM\. Which staff would you like/i);
+  assert.doesNotMatch(response.messages[0].content, /Got it, Pedicure/i);
+});
+
+test("DialogCodeHook missing service with retained date and time asks service before name", async () => {
+  const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
+  globalThis.fetch = async () => {
+    throw new Error("fetch should not be called before missing service is clarified");
+  };
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "i want to take a cue tomorrow at two p m",
+      inputMode: "Speech",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: "connect-incident-take-a-cue"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          name: "BookAppointmentIntent",
+          state: "InProgress",
+          confirmationState: "None",
+          slots: {}
+        }
+      }
+    })
+  );
+
+  assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName");
+  assert.equal(response.sessionState.sessionAttributes.serviceName, undefined);
+  assert.equal(response.sessionState.sessionAttributes.requestedDate, usEasternDate(1));
+  assert.equal(response.sessionState.sessionAttributes.requestedTime, "2 PM");
+  assert.equal(response.messages[0].content, "I have tomorrow at 2 PM. What service would you like?");
+  assert.doesNotMatch(response.messages[0].content, /I have your/i);
+  assert.doesNotMatch(response.messages[0].content, /May I have your name/i);
+});
+
+test("DialogCodeHook service turn does not mutate customerName from unrelated I'm phrase", async () => {
+  const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
+  globalThis.fetch = async () => {
+    throw new Error("fetch should not be called for unrelated service-slot speech");
+  };
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "I'm following",
+      inputMode: "Speech",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: "connect-incident-following",
+          customerName: "Lee",
+          customerPhone: "+17325956266",
+          lastAskedSlot: "serviceName"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          name: "BookAppointmentIntent",
+          state: "InProgress",
+          confirmationState: "None",
+          slots: {
+            customerName: slot("following")
+          }
+        }
+      }
+    })
+  );
+
+  assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName");
+  assert.equal(response.sessionState.sessionAttributes.customerName, "Lee");
+  assert.notEqual(response.sessionState.sessionAttributes.customerName, "following");
+  assert.match(response.messages[0].content, /What service would you like/i);
+});
+
 test("DialogCodeHook adds compact service runtime hints only for service elicitation", async () => {
   const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
   installFetchMock(() =>
@@ -3977,7 +4131,7 @@ test("DialogCodeHook delegates when the utterance is not an escalation", async (
   assert.equal(response.sessionState.intent.slots.customerName.value.interpretedValue, "Kiet Nguyen");
 });
 
-test("DialogCodeHook no input asks unknown caller name before service menu", async () => {
+test("DialogCodeHook real no input asks an audible help question before any service menu", async () => {
   const handler = await loadHandler();
   globalThis.fetch = async () => {
     throw new Error("fetch should not be called for no-input DialogCodeHook");
@@ -4004,12 +4158,12 @@ test("DialogCodeHook no input asks unknown caller name before service menu", asy
   );
 
   assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
-  assert.equal(response.sessionState.dialogAction.slotToElicit, "customerName");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName");
   assert.equal(response.sessionState.sessionAttributes.noInputPrompted, "true");
   assert.equal(response.sessionState.sessionAttributes.noInputCount, "1");
   assert.equal(response.sessionState.sessionAttributes.awaitingNoInputHumanConfirmation, "false");
   assert.equal(response.sessionState.sessionAttributes.customerPhone, "+17325956266");
-  assert.match(response.messages[0].content, /What is your first name/i);
+  assert.equal(response.messages[0].content, "Are you still there? Please tell me how I can help.");
   assert.doesNotMatch(response.messages[0].content, /1 for Pedicure/i);
   assert.doesNotMatch(response.messages[0].content, /2 for Manicure/i);
   assert.doesNotMatch(response.messages[0].content, /3 for Gel Manicure/i);
@@ -4050,7 +4204,7 @@ test("DialogCodeHook second no input uses shorter prompt without transfer", asyn
   assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName");
   assert.equal(response.sessionState.sessionAttributes.noInputCount, "2");
   assert.equal(response.sessionState.sessionAttributes.transferToQueue, undefined);
-  assert.equal(response.messages[0].content, "I'm still here. You can say the service name, or press zero for a person.");
+  assert.equal(response.messages[0].content, "I'm still here. You can say book an appointment, or press zero for a person.");
   assert.doesNotMatch(response.messages[0].content, /1 for Pedicure/i);
   assert.doesNotMatch(response.messages[0].content, /5 for Dip Powder/i);
   assert.doesNotMatch(response.messages[0].content, /You can also press 1 for Pedicure/i);
@@ -4088,7 +4242,7 @@ test("DialogCodeHook first service no input asks if caller is still there", asyn
   assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
   assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName");
   assert.equal(response.sessionState.sessionAttributes.noInputCount, "1");
-  assert.equal(response.messages[0].content, "Are you still there? What service would you like?");
+  assert.equal(response.messages[0].content, "Are you still there? Please tell me how I can help.");
   assert.notEqual(response.sessionState.dialogAction.type, "Close");
 });
 
@@ -4476,7 +4630,7 @@ test("DialogCodeHook voice full set resolves Full Set and asks the next missing 
   }
 });
 
-test("live-shaped FallbackIntent full set turn resumes BookAppointmentIntent and asks name first", async () => {
+test("live-shaped FallbackIntent full set turn resumes BookAppointmentIntent and asks date first", async () => {
   const handler = await loadHandler();
   globalThis.fetch = async () => {
     throw new Error("fetch should not be called for service fallback recovery");
@@ -4520,8 +4674,8 @@ test("live-shaped FallbackIntent full set turn resumes BookAppointmentIntent and
   assert.equal(response.sessionState.sessionAttributes.serviceName, "Full Set");
   assert.equal(response.sessionState.sessionAttributes.confirmedServiceName, "Full Set");
   assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
-  assert.equal(response.sessionState.dialogAction.slotToElicit, "customerName");
-  assert.equal(response.sessionState.sessionAttributes.lastAskedSlot, "customerName");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "requestedDate");
+  assert.equal(response.sessionState.sessionAttributes.lastAskedSlot, "requestedDate");
   assert.equal(response.sessionState.sessionAttributes.activeDtmfMenu, undefined);
   assert.equal(response.sessionState.sessionAttributes.transferToQueue, undefined);
   assert.equal(response.sessionState.sessionAttributes.forceHumanEscalation, undefined);
@@ -5791,11 +5945,11 @@ test("DialogCodeHook clears stale requestedTime when Full Set speech is recogniz
   );
 
   assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
-  assert.equal(response.sessionState.dialogAction.slotToElicit, "customerName");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "requestedDate");
   assert.equal(response.sessionState.sessionAttributes.serviceName, "Full Set");
   assert.equal(response.sessionState.sessionAttributes.confirmedServiceName, "Full Set");
   assert.equal(response.sessionState.sessionAttributes.requestedTime, undefined);
-  assert.equal(response.sessionState.sessionAttributes.lastAskedSlot, "customerName");
+  assert.equal(response.sessionState.sessionAttributes.lastAskedSlot, "requestedDate");
   assert.equal(response.sessionState.sessionAttributes.askedSlotsCount, "1");
   assert.equal(response.sessionState.sessionAttributes.fallbackCount, "1");
   assert.equal(response.sessionState.sessionAttributes.errorCount, "1");
@@ -5835,8 +5989,8 @@ test("DialogCodeHook Full Set then tomorrow preserves service and asks next miss
   assert.equal(response.sessionState.sessionAttributes.serviceName, "Full Set");
   assert.equal(response.sessionState.sessionAttributes.confirmedServiceName, "Full Set");
   assert.equal(response.sessionState.sessionAttributes.requestedDate, usEasternDate(1));
-  assert.equal(response.sessionState.dialogAction.slotToElicit, "customerName");
-  assert.equal(response.sessionState.sessionAttributes.lastAskedSlot, "customerName");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "requestedTime");
+  assert.equal(response.sessionState.sessionAttributes.lastAskedSlot, "requestedTime");
   assert.notEqual(response.sessionState.dialogAction.slotToElicit, "serviceName");
 });
 
@@ -5884,8 +6038,8 @@ test("DialogCodeHook Full Set then tomorrow ignores ungrounded Lex requestedTime
   assert.equal(response.sessionState.sessionAttributes.confirmedServiceName, "Full Set");
   assert.equal(response.sessionState.sessionAttributes.requestedDate, usEasternDate(1));
   assert.equal(response.sessionState.sessionAttributes.requestedTime, undefined);
-  assert.equal(response.sessionState.dialogAction.slotToElicit, "customerName");
-  assert.equal(response.sessionState.sessionAttributes.lastAskedSlot, "customerName");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "requestedTime");
+  assert.equal(response.sessionState.sessionAttributes.lastAskedSlot, "requestedTime");
   assert.notEqual(response.sessionState.dialogAction.slotToElicit, "serviceName");
   assert.deepEqual(JSON.parse(response.sessionState.sessionAttributes.ignoredUngroundedSlots), [
     "requestedTime"
@@ -6570,7 +6724,7 @@ test("Full utterance asks only for customer name with persisted slot state", asy
   assert.equal(response.sessionState.sessionAttributes.customerPhone, "+84798171999");
   assert.equal(response.sessionState.sessionAttributes.lastAskedSlot, "customerName");
   assert.equal(response.sessionState.sessionAttributes.slotToElicit, "customerName");
-  assert.match(response.messages[0].content, /I have your Full Set tomorrow at 2 PM with Trang/i);
+  assert.match(response.messages[0].content, /I have Full Set tomorrow at 2 PM with Trang/i);
   assert.doesNotMatch(response.messages[0].content, /service|Press 0|press 0/i);
 });
 
@@ -7796,7 +7950,7 @@ test("DialogCodeHook maps p t q to Pedicure in booking context and not staff", a
   );
 
   assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
-  assert.equal(response.sessionState.dialogAction.slotToElicit, "customerName");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "requestedTime");
   assert.equal(response.sessionState.sessionAttributes.serviceName, "Pedicure");
   assert.equal(response.sessionState.sessionAttributes.confirmedServiceName, "Pedicure");
   assert.equal(response.sessionState.sessionAttributes.requestedDate, usEasternDate(1));

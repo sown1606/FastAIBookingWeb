@@ -894,6 +894,16 @@ const isPartialBookingFragment = (text?: string | null): boolean => {
   return PARTIAL_BOOKING_FRAGMENTS.has(normalized);
 };
 
+const isServiceSlotConversationalNoise = (text?: string | null): boolean => {
+  const normalized = normalizeForMatch(text);
+  return Boolean(
+    normalized &&
+      (/^(?:i\s*(?:am|m)\s*)?(?:following|still here|here)$/.test(normalized) ||
+        /^(?:hello|hi|hey)(?:\s+(?:are|r)\s+you\s+there)?$/.test(normalized) ||
+        /^(?:are|r)\s+you\s+there$/.test(normalized))
+  );
+};
+
 const extractCustomerNameFromText = (text?: string): string | undefined => {
   const match = text?.match(
     /(?:my name is|name is|this is|i am|i'm|you can call me)\s+(\p{L}[\p{L}'-]*(?:\s+\p{L}[\p{L}'-]*){0,4})(?=\s*(?:[,.!?;]|$|and\s+(?:my\s+)?phone|(?:my\s+)?phone\s+(?:number\s+)?(?:is|should|to)))/iu
@@ -1298,6 +1308,11 @@ const extractExplicitCustomerNameCorrection = (value?: string | null): string | 
   const candidate = collapseSpokenNameSpelling(match?.[1]);
   return isAcceptableCustomerName(candidate) ? candidate : undefined;
 };
+
+const hasExplicitCustomerNameCorrectionPhrase = (value?: string | null): boolean =>
+  /(?:\bmy\s+name\s+is\b|\bname\s+is\b|\bthis\s+is\b|\byou\s+can\s+call\s+me\b|\bcall\s+me\b|\buse\s+\p{L}[\p{L}'-]*(?:\s+\p{L}[\p{L}'-]*){0,3}\s+for\s+(?:the\s+)?name\b)/iu.test(
+    value ?? ""
+  );
 
 const rejectsRecognizedCustomerName = (value?: string | null): boolean => {
   const normalized = normalizeForMatch(value);
@@ -3823,6 +3838,26 @@ const buildAmazonConnectTurnHistoryItem = (input: {
       readStringValue(turnDiagnostics.providerTurnId) ||
       readStringValue(responseDebug.providerTurnId) ||
       null,
+    physicalSpeechTurnId:
+      readStringValue(requestAttributes.physicalSpeechTurnId) ||
+      readStringValue(turnDiagnostics.physicalSpeechTurnId) ||
+      null,
+    speechSegmentId:
+      readStringValue(requestAttributes.speechSegmentId) ||
+      readStringValue(turnDiagnostics.speechSegmentId) ||
+      null,
+    providerSequence:
+      readStringValue(requestAttributes.providerSequence) ||
+      readStringValue(turnDiagnostics.providerSequence) ||
+      null,
+    segmentStartedAt:
+      readStringValue(requestAttributes.segmentStartedAt) ||
+      readStringValue(turnDiagnostics.segmentStartedAt) ||
+      null,
+    segmentEndedAt:
+      readStringValue(requestAttributes.segmentEndedAt) ||
+      readStringValue(turnDiagnostics.segmentEndedAt) ||
+      null,
     providerRequestId:
       readStringValue(requestAttributes.providerRequestId) ||
       readStringValue(turnDiagnostics.providerRequestId) ||
@@ -3871,7 +3906,19 @@ const buildAmazonConnectTurnHistoryItem = (input: {
     activeDtmfOptionsAfter,
     dtmfRouting: responseDebug.dtmfRouting ?? null,
     trustedSlotsBefore: responseDebug.trustedSlotsBefore ?? null,
-    trustedSlotsAfter: responseDebug.trustedSlotsAfter ?? null,
+    trustedSlotsAfter:
+      responseDebug.trustedSlotsAfter ?? {
+        customerName: sessionAttributesAfter.customerName,
+        customerPhone: sessionAttributesAfter.customerPhone,
+        serviceName: sessionAttributesAfter.serviceName,
+        confirmedServiceName: sessionAttributesAfter.confirmedServiceName,
+        requestedDate: sessionAttributesAfter.requestedDate,
+        requestedTime: sessionAttributesAfter.requestedTime,
+        staffPreference: sessionAttributesAfter.staffPreference,
+        confirmedStaffName: sessionAttributesAfter.confirmedStaffName,
+        staffId: sessionAttributesAfter.staffId,
+        selectedStaffId: sessionAttributesAfter.selectedStaffId
+      },
     sessionAttributesBefore,
     sessionAttributesAfter,
     slotsOriginalValues: responseDebug.slotsOriginalValues ?? null,
@@ -4050,6 +4097,55 @@ const findProviderRequestIdReuse = (
       readStringValue(diagnostics.lexRequestId);
     return Boolean(turnProviderRequestId === providerRequestId && turnHumanId && turnHumanId !== identity.humanTurnId);
   }) ?? null;
+};
+
+const applySameRequestSegmentState = (
+  normalized: ReturnType<typeof normalizeAmazonConnectAppointmentInput>,
+  previousSegment: unknown | null
+): void => {
+  if (!previousSegment) {
+    return;
+  }
+  const record = recordFromUnknown(previousSegment);
+  const trusted = recordFromUnknown(record.trustedSlotsAfter);
+  const fields = [
+    "customerName",
+    "customerPhone",
+    "serviceName",
+    "confirmedServiceName",
+    "requestedDate",
+    "requestedTime",
+    "staffPreference",
+    "confirmedStaffName",
+    "staffId",
+    "selectedStaffId"
+  ];
+  for (const field of fields) {
+    const value = readStringValue(trusted[field]);
+    if (!value) {
+      continue;
+    }
+    if (field === "confirmedServiceName" && !normalized.serviceName) {
+      normalized.serviceName = value;
+    } else if (field === "confirmedStaffName" && !normalized.staffPreference) {
+      normalized.staffPreference = value;
+    } else if (field === "selectedStaffId" && !normalized.staffId) {
+      normalized.staffId = value;
+    } else if (field in normalized && !readStringValue((normalized as unknown as Record<string, unknown>)[field])) {
+      (normalized as unknown as Record<string, unknown>)[field] = value;
+    }
+    if (!readStringAttribute(normalized.attributes, [field])) {
+      normalized.attributes[field] = value;
+    }
+  }
+  normalized.attributes.providerRequestIdReuseDetected = "true";
+  normalized.attributes.duplicateDisposition = "provider_request_id_reused_for_distinct_human_turn";
+  normalized.attributes.coalescedSegmentCount = String(
+    Math.max(2, Number.parseInt(readStringAttribute(normalized.attributes, ["coalescedSegmentCount"]) || "1", 10) + 1)
+  );
+  normalized.attributes.coalescingReason = "same_provider_request_id_segment_state_merge";
+  normalized.attributes.stateVersionBefore =
+    readStringValue(record.index) || readStringAttribute(normalized.attributes, ["stateVersionBefore", "stateVersion"]) || "0";
 };
 
 const KNOWN_BOOKING_SLOT_NAMES = new Set([
@@ -8025,6 +8121,79 @@ const buildKnownBookingPromptSummary = (
   return pieces.join(" ").replace(/\s+/g, " ").trim();
 };
 
+const buildCurrentTurnAcknowledgement = (input: {
+  currentTurnTranscript?: string;
+  attributes?: Record<string, unknown>;
+  knownFields: {
+    customerName?: string;
+    serviceName?: string;
+    requestedDate?: string;
+    requestedTime?: string;
+    staffPreference?: string;
+  };
+  salonTimezone?: string;
+}): string | undefined => {
+  const transcript = input.currentTurnTranscript?.trim();
+  if (!transcript) {
+    return undefined;
+  }
+  const attributes = input.attributes ?? {};
+  const lastAskedSlot = readStringAttribute(attributes, ["lastAskedSlot"]);
+  const timezone = input.salonTimezone ?? "America/New_York";
+  const normalizedTranscript = normalizeForMatch(transcript);
+  const previous = {
+    customerName: readStringAttribute(attributes, ["customerName", "recognizedCustomerName"]),
+    serviceName: readStringAttribute(attributes, ["serviceName", "confirmedServiceName"]),
+    requestedDate: normalizeRequestedDateForState(
+      readStringAttribute(attributes, ["requestedDate"]),
+      timezone
+    ),
+    requestedTime: readStringAttribute(attributes, ["requestedTime"]),
+    staffPreference: readStringAttribute(attributes, ["staffPreference", "confirmedStaffName"])
+  };
+  const currentDate = normalizeRequestedDateForState(input.knownFields.requestedDate, timezone);
+  const serviceName = getCustomerFacingServiceName(input.knownFields.serviceName);
+  const serviceAcceptedThisTurn =
+    Boolean(serviceName) &&
+    !valuesEquivalentForSlot("serviceName", previous.serviceName, serviceName) &&
+    (lastAskedSlot === "serviceName" ||
+      normalizedTranscript.includes(normalizeForMatch(serviceName)));
+  const dateAcceptedThisTurn =
+    Boolean(currentDate) &&
+    !valuesEquivalentForSlot("requestedDate", previous.requestedDate, currentDate) &&
+    (lastAskedSlot === "requestedDate" ||
+      lastAskedSlot === "preferredDateTime" ||
+      hasGroundedDatePhrase(transcript));
+  const timeAcceptedThisTurn =
+    Boolean(input.knownFields.requestedTime) &&
+    !valuesEquivalentForSlot("requestedTime", previous.requestedTime, input.knownFields.requestedTime) &&
+    (lastAskedSlot === "requestedTime" ||
+      lastAskedSlot === "preferredDateTime" ||
+      hasGroundedTimePhrase(transcript, { lastAskedSlot }));
+  const staffAcceptedThisTurn =
+    Boolean(input.knownFields.staffPreference) &&
+    !valuesEquivalentForSlot("staffPreference", previous.staffPreference, input.knownFields.staffPreference) &&
+    (lastAskedSlot === "staffPreference" ||
+      normalizedTranscript.includes(normalizeForMatch(input.knownFields.staffPreference)));
+  const nameAcceptedThisTurn =
+    Boolean(input.knownFields.customerName) &&
+    !valuesEquivalentForSlot("customerName", previous.customerName, input.knownFields.customerName) &&
+    (lastAskedSlot === "customerName" || hasExplicitCustomerNameCorrectionPhrase(transcript));
+  if (nameAcceptedThisTurn) {
+    return `Thanks, ${input.knownFields.customerName}.`;
+  }
+  const summary = buildKnownBookingPromptSummary(
+    {
+      serviceName: serviceAcceptedThisTurn ? serviceName : undefined,
+      requestedDate: dateAcceptedThisTurn ? currentDate : undefined,
+      requestedTime: timeAcceptedThisTurn ? input.knownFields.requestedTime : undefined,
+      staffPreference: staffAcceptedThisTurn ? input.knownFields.staffPreference : undefined
+    },
+    timezone
+  );
+  return summary ? `Got it, ${summary}.` : undefined;
+};
+
 const currentTurnRepeatsKnownBookingField = (
   currentTurnTranscript: string | undefined,
   knownFields: {
@@ -8259,6 +8428,8 @@ const buildLexMessage = (input: {
   rejectedCustomerName?: boolean;
   partialBookingFragment?: boolean;
   hasCurrentTurnTranscript?: boolean;
+  currentTurnAcknowledgement?: string;
+  serviceSlotConversationalNoise?: boolean;
 }): string => {
   if (input.outcome === "BOOKED") {
     const appointmentTime = input.appointmentStartTime
@@ -8312,15 +8483,15 @@ const buildLexMessage = (input: {
         (input.staffMenuAlreadySpoken
           ? "Please say a listed staff name or press one of the numbers."
           : buildStaffDtmfPromptText(input.staffOptions ?? []));
-      const serviceIntro = input.knownFields?.serviceName
-        ? `Got it, ${escapeSsml(input.knownFields.serviceName)}. `
+      const currentTurnPrefix = input.currentTurnAcknowledgement
+        ? `${escapeSsml(input.currentTurnAcknowledgement)} `
         : "";
       return speak(
         input.invalidStaffDtmfSelection
           ? `${knownCallerIntro}${intro} <break time="300ms"/> ${prompt}`
           : input.unmatchedStaffPreference
             ? `${knownCallerIntro}${intro} <break time="300ms"/> ${prompt}`
-            : `${knownCallerIntro}${serviceIntro}${prompt}`
+            : `${knownCallerIntro}${currentTurnPrefix}${prompt}`
       );
     }
     if (input.missingFields?.includes("customerName")) {
@@ -8345,8 +8516,10 @@ const buildLexMessage = (input: {
           ? "Could you spell your first name, one letter at a time?"
           : isRetry
           ? "Sorry, I didn't catch your name. What is your first name?"
+          : input.currentTurnAcknowledgement
+            ? `${escapeSsml(input.currentTurnAcknowledgement)} <break time="300ms"/> May I have your name, please?`
           : summary
-            ? `I have your ${escapeSsml(summary)}. <break time="300ms"/> May I have your name, please?`
+            ? `I have ${escapeSsml(summary)}. <break time="300ms"/> May I have your name, please?`
             : "I'd be happy to help. May I have your name, please?"
       );
     }
@@ -8369,6 +8542,9 @@ const buildLexMessage = (input: {
       if (input.partialBookingFragment) {
         return speak(SERVICE_FIRST_RETRY_PROMPT);
       }
+      if (input.serviceSlotConversationalNoise) {
+        return speak("I'm here. What service would you like?");
+      }
       const firstName = input.knownFields?.customerName?.split(/\s+/)[0];
       const servicePrompt = isRetry || input.collectingServiceName
         ? input.servicePromptText ?? SERVICE_DTMF_OPTIONS_PROMPT
@@ -8385,8 +8561,9 @@ const buildLexMessage = (input: {
         }
       );
       if (retainedDetails) {
+        const retainedDetailsForSpeech = retainedDetails.replace(/^for\s+/i, "");
         return speak(
-          `${knownCallerIntro}I have that down ${escapeSsml(retainedDetails)}. <break time="300ms"/> ${servicePrompt}`
+          `${knownCallerIntro}I have ${escapeSsml(retainedDetailsForSpeech)}. <break time="300ms"/> ${servicePrompt}`
         );
       }
       const shouldUseKnownCallerGreeting =
@@ -8402,12 +8579,15 @@ const buildLexMessage = (input: {
       );
     }
     if (input.missingFields?.includes("preferredDateTime")) {
+      const currentTurnPrefix = input.currentTurnAcknowledgement
+        ? escapeSsml(input.currentTurnAcknowledgement)
+        : intro;
       return input.knownFields?.requestedDate
         ? speak(
-            `${knownCallerIntro}${intro} <break time="300ms"/> What time? You can say 3 PM.`
+            `${knownCallerIntro}${currentTurnPrefix} <break time="300ms"/> What time? You can say 3 PM.`
           )
         : speak(
-            `${knownCallerIntro}${intro} <break time="300ms"/> What day would you like?`
+            `${knownCallerIntro}${currentTurnPrefix} <break time="300ms"/> What day would you like?`
           );
     }
     return speak(
@@ -8497,12 +8677,12 @@ const getElicitSlotForMissingFields = (
     slotToElicit = "serviceName";
   } else if (shouldKeepActiveTimeSlot) {
 	    slotToElicit = "requestedTime";
-  } else if (missingFields.has("customerName")) {
-    slotToElicit = "customerName";
   } else if (missingFields.has("serviceName")) {
     slotToElicit = "serviceName";
   } else if (missingFields.has("preferredDateTime")) {
     slotToElicit = normalized.requestedDate ? "requestedTime" : "requestedDate";
+  } else if (missingFields.has("customerName")) {
+    slotToElicit = "customerName";
   } else if (missingFields.has("staffPreference")) {
     slotToElicit = "staffPreference";
   } else if (missingFields.has("customerPhone")) {
@@ -8874,6 +9054,12 @@ export const createAmazonConnectAIRecoverableFailure = async (
     );
     promptMissingFields = elicitDecision.promptMissingFields;
     Object.assign(baseSessionAttributes, elicitDecision.sessionAttributes);
+    const currentTurnAcknowledgement = buildCurrentTurnAcknowledgement({
+      currentTurnTranscript: normalized.currentTurnTranscript ?? normalized.transcriptText,
+      attributes: normalized.attributes,
+      knownFields: normalized,
+      salonTimezone: salon.timezone
+    });
     message = buildLexMessage({
       outcome: "MISSING_INFO",
       missingFields: elicitDecision.promptMissingFields,
@@ -8881,7 +9067,12 @@ export const createAmazonConnectAIRecoverableFailure = async (
       salonTimezone: salon.timezone,
       attemptCount: elicitDecision.attemptCount,
       rejectedCustomerName: hasIgnoredCustomerNameNoise(normalized.attributes),
-      servicePromptText: servicePromptSessionAttributes.serviceDtmfPromptText
+      servicePromptText: servicePromptSessionAttributes.serviceDtmfPromptText,
+      currentTurnAcknowledgement,
+      serviceSlotConversationalNoise:
+        elicitDecision.slotToElicit === "serviceName" &&
+        readStringAttribute(normalized.attributes, ["lastAskedSlot"]) === "serviceName" &&
+        isServiceSlotConversationalNoise(normalized.currentTurnTranscript ?? normalized.transcriptText)
     });
     dialogAction = {
       type: "ElicitSlot",
@@ -9126,6 +9317,7 @@ export const createAmazonConnectAIAppointment = async (
           )
         : null;
       if (providerRequestReuse) {
+        applySameRequestSegmentState(normalized, providerRequestReuse);
         normalized.attributes.duplicateDisposition = "provider_request_id_reused_for_distinct_human_turn";
         normalized.attributes.providerRequestIdReuseDetected = "true";
       }
@@ -9274,12 +9466,24 @@ export const createAmazonConnectAIAppointment = async (
   const nameCorrectionText = normalized.currentTurnTranscript ?? normalized.transcriptText;
   const explicitCustomerNameCorrection = extractExplicitCustomerNameCorrection(nameCorrectionText);
   const rejectedRecognizedCustomerName = rejectsRecognizedCustomerName(nameCorrectionText);
+  const currentTurnOwnsCustomerName =
+    readStringAttribute(normalized.attributes, ["lastAskedSlot"]) === "customerName" ||
+    (!readStringAttribute(normalized.attributes, ["lastAskedSlot"]) && Boolean(normalized.customerName)) ||
+    hasExplicitCustomerNameCorrectionPhrase(nameCorrectionText);
+  if (!currentTurnOwnsCustomerName && normalized.customerName) {
+    const trustedNameFromAttributes = readStringAttribute(normalized.attributes, [
+      "customerName",
+      "recognizedCustomerName"
+    ]);
+    normalized.customerName = trustedNameFromAttributes || undefined;
+  }
   const customerNameTurnReceivedNoise =
     readStringAttribute(normalized.attributes, ["lastAskedSlot"]) === "customerName" &&
     readStringAttribute(normalized.attributes, ["activeDtmfMenu"]) !== "staff" &&
     isInvalidCustomerNameNoise(nameCorrectionText);
   const explicitCustomerName = explicitCustomerNameCorrection ??
-    (normalized.transcriptText
+    (normalized.transcriptText &&
+      (currentTurnOwnsCustomerName || hasExplicitCustomerNameCorrectionPhrase(normalized.transcriptText))
       ? extractCustomerNameFromText(normalized.transcriptText)
       : undefined);
   const bareCustomerName =
@@ -10412,6 +10616,11 @@ export const createAmazonConnectAIAppointment = async (
 	      ...timingDiagnostics,
       humanTurnId: input.attributes?.humanTurnId,
       providerTurnId: input.attributes?.providerTurnId,
+      physicalSpeechTurnId: input.attributes?.physicalSpeechTurnId,
+      speechSegmentId: input.attributes?.speechSegmentId,
+      providerSequence: input.attributes?.providerSequence,
+      segmentStartedAt: input.attributes?.segmentStartedAt,
+      segmentEndedAt: input.attributes?.segmentEndedAt,
       providerRequestId: input.attributes?.providerRequestId,
       lexRequestId: input.attributes?.lexRequestId,
       lexPhase: input.attributes?.lexPhase,
@@ -10420,6 +10629,13 @@ export const createAmazonConnectAIAppointment = async (
       stateVersionBefore: input.attributes?.stateVersionBefore ?? input.attributes?.stateVersion,
       stateVersionAfter:
         inferredResponseSessionAttributes.stateVersion ?? inferredResponseSessionAttributes.turnSequence,
+      stateVersionRead: input.attributes?.stateVersionBefore ?? input.attributes?.stateVersion,
+      stateVersionCommitted:
+        inferredResponseSessionAttributes.stateVersion ?? inferredResponseSessionAttributes.turnSequence,
+      responseSequence: inferredResponseSessionAttributes.responseSequence ?? inferredResponseSessionAttributes.turnSequence,
+      staleResponseSuppressed: input.attributes?.staleResponseSuppressed ?? "false",
+      coalescedSegmentCount: input.attributes?.coalescedSegmentCount ?? "1",
+      coalescingReason: input.attributes?.coalescingReason ?? "",
       internalApiInvocationCount: 1,
 	      staleOrDuplicateRejectionReason: null,
 	      duplicateDisposition:
@@ -12539,6 +12755,12 @@ export const createAmazonConnectAIAppointment = async (
       : staffProposalRejectedThisTurn
         ? buildStaffConfirmationRejectedPrompt(normalized, staffPromptOptions)
         : undefined;
+    const currentTurnAcknowledgement = buildCurrentTurnAcknowledgement({
+      currentTurnTranscript: normalized.currentTurnTranscript ?? normalized.transcriptText,
+      attributes: normalized.attributes,
+      knownFields: normalized,
+      salonTimezone: salon.timezone
+    });
     const freshRestartNeedsService =
       readStringAttribute(normalized.attributes, ["freshBookingRestart"]) === "true" &&
       elicitDecision.slotToElicit === "serviceName" &&
@@ -12575,6 +12797,11 @@ export const createAmazonConnectAIAppointment = async (
         normalized.currentTurnTranscript ?? normalized.transcriptText
       ),
       hasCurrentTurnTranscript: Boolean(normalized.currentTurnTranscript?.trim()),
+      currentTurnAcknowledgement,
+      serviceSlotConversationalNoise:
+        elicitDecision.slotToElicit === "serviceName" &&
+        readStringAttribute(normalized.attributes, ["lastAskedSlot"]) === "serviceName" &&
+        isServiceSlotConversationalNoise(normalized.currentTurnTranscript ?? normalized.transcriptText),
       repeatedKnownFieldWhileAskingName:
         elicitDecision.slotToElicit === "customerName" &&
         readStringAttribute(normalized.attributes, ["lastAskedSlot"]) === "customerName" &&
