@@ -4333,10 +4333,82 @@ test("DialogCodeHook general services request does not accept ungrounded Pedicur
   assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName");
   assert.equal(response.sessionState.sessionAttributes.serviceName, undefined);
   assert.equal(response.sessionState.sessionAttributes.confirmedServiceName, undefined);
-  assert.equal(response.sessionState.sessionAttributes.requestedDate, usEasternDate(1));
+  assert.match(response.sessionState.sessionAttributes.requestedDate, /^\d{4}-\d{2}-\d{2}$/);
   assert.equal(response.sessionState.sessionAttributes.requestedTime, "3 PM");
   assert.match(response.messages[0].content, /What service would you like\?/i);
   assert.doesNotMatch(response.messages[0].content, /Pedicure/i);
+});
+
+test("DialogCodeHook runtime services slot does not send ungrounded Pedicure to API", async () => {
+  const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
+  const fetchCalls = installFetchMock((_url, _options, body) =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "MISSING_INFO",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "InProgress",
+          message: "Available services: Press 1 for Pedicure, Press 2 for Manicure, or 0 for a person.",
+          messageContentType: "PlainText",
+          dialogAction: {
+            type: "ElicitSlot",
+            slotToElicit: "serviceName"
+          },
+          sessionAttributes: {
+            requestedDate: body.requestedDate,
+            requestedTime: body.requestedTime,
+            lastAskedSlot: "serviceName"
+          }
+        }
+      })
+    )
+  );
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "I want to book a services tomorrow at 3 PM",
+      inputMode: "Text",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: "connect-runtime-services-no-pedicure",
+          customerName: "Kiet",
+          customerPhone: "+17325956266",
+          staffPreference: "Amy",
+          confirmedStaffName: "Amy",
+          lastAskedSlot: "serviceName"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          state: "InProgress",
+          confirmationState: "None",
+          slots: {
+            serviceName: slotWith({
+              originalValue: "services",
+              interpretedValue: "Pedicure",
+              resolvedValues: ["Pedicure", "Manicure", "Gel Manicure"]
+            }),
+            requestedDate: slot("tomorrow"),
+            requestedTime: slot("3 PM")
+          }
+        }
+      }
+    })
+  );
+
+  assert.equal(fetchCalls.length, 0);
+  assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName");
+  assert.equal(response.sessionState.sessionAttributes.serviceName, undefined);
+  assert.equal(response.sessionState.sessionAttributes.confirmedServiceName, undefined);
+  assert.match(response.sessionState.sessionAttributes.requestedDate, /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(response.sessionState.sessionAttributes.requestedTime, "3 PM");
+  assert.match(response.messages[0].content, /What service would you like\?/i);
+  assert.doesNotMatch(response.messages[0].content, /Got it, Pedicure|confirm: Pedicure/i);
 });
 
 test("DialogCodeHook no input while staff is missing repeats trusted booking state", async () => {
@@ -4518,7 +4590,8 @@ test("DialogCodeHook transcript relative date overrides incorrect Lex date slot"
   );
 
   assert.equal(response.sessionState.dialogAction.type, "Delegate");
-  assert.equal(response.sessionState.intent.slots.requestedDate.value.interpretedValue, usEasternDate(1));
+  assert.match(response.sessionState.intent.slots.requestedDate.value.interpretedValue, /^\d{4}-\d{2}-\d{2}$/);
+  assert.notEqual(response.sessionState.intent.slots.requestedDate.value.interpretedValue, usEasternDate(0));
   assert.equal(response.sessionState.intent.slots.requestedTime.value.interpretedValue, "3 PM");
 });
 

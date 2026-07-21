@@ -2708,6 +2708,37 @@ function analyzeLexTurnSanitization(event) {
     }
   }
 
+  const { name: serviceSlotNameForGrounding, slot: serviceSlotForGrounding } = getSlotObject(
+    slots,
+    slotNames.serviceName
+  );
+  const interpretedServiceSlot = normalizeServiceName(getSlotInterpretedValue(serviceSlotForGrounding));
+  const previousTrustedService = normalizeServiceName(
+    previous.confirmedServiceName || getSessionAttribute(previous, slotNames.serviceName)
+  );
+  const serviceSlotMatchesTrustedPrevious =
+    previousTrustedService &&
+    valuesEquivalent("serviceName", interpretedServiceSlot, previousTrustedService, timeZone);
+  const initialUtteranceService = extractServiceFromTranscript(previous.initialBookingUtterance, previous);
+  const serviceSlotMatchesInitialUtterance =
+    initialUtteranceService &&
+    valuesEquivalent("serviceName", interpretedServiceSlot, initialUtteranceService, timeZone);
+  if (
+    serviceSlotForGrounding &&
+    interpretedServiceSlot &&
+    isRecognizedService(interpretedServiceSlot, previous) &&
+    !recognizedService &&
+    !serviceSlotMatchesTrustedPrevious &&
+    !serviceSlotMatchesInitialUtterance &&
+    !(scopedServiceDigit && scopedServiceDigit !== "0") &&
+    !serviceNameHasCurrentTurnEvidence(event, interpretedServiceSlot)
+  ) {
+    delete sanitizedSlots[serviceSlotNameForGrounding || "serviceName"];
+    ignoredUngroundedSlots.push("serviceName_unverified_lex_slot");
+    fieldsToClear.add("serviceName");
+    changed = true;
+  }
+
   if (
     previous.lastAskedSlot !== "customerName" &&
     scopedStaffDigit &&
