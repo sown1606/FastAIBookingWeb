@@ -876,6 +876,24 @@ const findConfiguredServiceNameInText = (
   return getCustomerFacingServiceName(matchedServiceName);
 };
 
+const serviceNameHasCurrentTurnEvidence = (
+  serviceName: string | undefined,
+  transcriptText: string | undefined,
+  attributes?: Record<string, unknown>
+): boolean => {
+  const customerFacingName = getCustomerFacingServiceName(serviceName);
+  if (!customerFacingName || !transcriptText?.trim()) {
+    return true;
+  }
+  return getAsrDecisionTranscripts(transcriptText, attributes).some((candidate) => {
+    const matched = findConfiguredServiceNameInText([customerFacingName], candidate.transcript);
+    return Boolean(
+      matched &&
+        normalizeForMatch(matched) === normalizeForMatch(customerFacingName)
+    );
+  });
+};
+
 const PARTIAL_BOOKING_FRAGMENTS = new Set([
   "i want to",
   "i want to book",
@@ -7140,6 +7158,15 @@ const asTrimmedString = (value?: unknown): string | undefined => {
   return trimmed && trimmed.length > 0 ? trimmed : undefined;
 };
 
+const readLexTurnDebugServiceSlotValue = (lexTurnDebug?: Record<string, unknown>): string | undefined => {
+  if (!lexTurnDebug) {
+    return undefined;
+  }
+  const originalSlots = recordFromUnknown(lexTurnDebug.slotsOriginalValues);
+  const interpretedSlots = recordFromUnknown(lexTurnDebug.slotsInterpretedValues);
+  return asTrimmedString(originalSlots.serviceName) ?? asTrimmedString(interpretedSlots.serviceName);
+};
+
 const buildApiReleaseIdentity = () => ({
   VOICE_API_RELEASE_ID: env.FASTAIBOOKING_API_RELEASE_ID ?? "",
   VOICE_API_SOURCE_SHA256: env.FASTAIBOOKING_API_SOURCE_SHA256 ?? "",
@@ -7242,6 +7269,7 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
     "serviceSuggestionName",
     "aiSuggestedServiceName"
   ]);
+  const lexServiceSlotValue = readLexTurnDebugServiceSlotValue(lexTurnDebug);
   const serviceDtmfScoped = activeDtmfMenu === "service";
   const staffDtmfScoped = activeDtmfMenu === "staff";
   const inputMode = asTrimmedString(input.inputMode) ?? readStringAttribute(attributes, ["inputMode"]);
@@ -7366,6 +7394,25 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
     (serviceCandidate && !unsafeSunsetServiceSlot && !isClearlyInvalidServiceName(serviceCandidate)
       ? getCustomerFacingServiceName(serviceCandidate)
       : undefined);
+  if (
+    serviceName &&
+    inputServiceName &&
+    lexServiceSlotValue &&
+    !serviceDtmfSelection &&
+    !readBookingFieldAttribute(attributes, "serviceName") &&
+    !readStringAttribute(attributes, ["confirmedServiceName"]) &&
+    normalizeForMatch(inputServiceName) === normalizeForMatch(serviceCandidate) &&
+    normalizeForMatch(lexServiceSlotValue) === normalizeForMatch(inputServiceName) &&
+    !serviceNameHasCurrentTurnEvidence(serviceName, transcriptText, attributes)
+  ) {
+    attributes.ignoredUngroundedSlots = JSON.stringify([
+      ...new Set([
+        ...parseStringArrayAttribute(attributes.ignoredUngroundedSlots),
+        "serviceName_unverified_lex_slot"
+      ])
+    ]);
+    serviceName = undefined;
+  }
   if (isBillingLikeServiceCollision(serviceRecognitionText)) {
     serviceName = undefined;
   }
@@ -8112,7 +8159,7 @@ const buildKnownBookingPromptSummary = (
     pieces.push(options.forPhrase ? `for ${date} at ${time}` : `${date} at ${time}`);
   } else if (date) {
     pieces.push(options.forPhrase ? `for ${date}` : date);
-  } else if (time) {
+  } else if (time && service) {
     pieces.push(`at ${time}`);
   }
   if (knownFields.staffPreference) {

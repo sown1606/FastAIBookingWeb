@@ -4240,6 +4240,51 @@ test("invalid placeholder services are cleared and preferred service menu is sta
   assert.equal(state.bookingAttempts.at(-1)?.requestedService, undefined);
 });
 
+test("general services request does not accept ungrounded Pedicure slot", async () => {
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: "Pedicure",
+      requestedDate: FUTURE_THURSDAY,
+      requestedTime: undefined,
+      staffPreference: "Amy",
+      staffId: ids.amy,
+      confirmationState: undefined,
+      currentTurnTranscript: "I want to book a services tomorrow at 3 PM",
+      transcript: "I want to book a services tomorrow at 3 PM",
+      attributes: {
+        currentTurnTranscript: "I want to book a services tomorrow at 3 PM",
+        lexTurnDebug: {
+          slotsOriginalValues: {
+            serviceName: "Pedicure",
+            requestedDate: "tomorrow",
+            requestedTime: "3 PM"
+          },
+          slotsInterpretedValues: {
+            serviceName: "Pedicure",
+            requestedDate: "tomorrow",
+            requestedTime: "3 PM"
+          }
+        },
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266",
+        staffPreference: "Amy",
+        staffId: ids.amy
+      }
+    })
+  );
+
+  const attrs = result.body.data.lexResponse.sessionAttributes;
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
+  assert.equal(attrs.serviceName, undefined);
+  assert.equal(attrs.confirmedServiceName, undefined);
+  assert.equal(attrs.requestedTime, "15:00");
+  assert.match(result.body.data.lexResponse.message, /What service would you like\?/i);
+  assert.doesNotMatch(result.body.data.lexResponse.message, /Pedicure/i);
+  assert.equal(state.appointments.length, 0);
+});
+
 test("unsupported service requests activate service DTMF and never become staff", async () => {
   for (const phrase of ["I want haircut", "I want a facial"]) {
     resetMockState();
@@ -5029,6 +5074,56 @@ test("spoken service menu digits ask for service confirmation instead of committ
     assert.match(result.body.data.lexResponse.message, /Did you choose option two, Manicure\? Please say yes, or say the service name\./i, phrase);
     assert.equal(state.appointments.length, 0, phrase);
   }
+});
+
+test("pending spoken option can change from two to four", async () => {
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: undefined,
+      requestedDate: FUTURE_THURSDAY,
+      requestedTime: "5 PM",
+      staffPreference: "Amy",
+      staffId: ids.amy,
+      confirmationState: undefined,
+      transcript: "four",
+      currentTurnTranscript: "four",
+      inputMode: "Speech",
+      attributes: {
+        lastAskedSlot: "serviceName",
+        activeDtmfMenu: "service",
+        activeDtmfOptionsJson: JSON.stringify({
+          "1": "Pedicure",
+          "2": "Manicure",
+          "3": "Gel Manicure",
+          "4": "Full Set",
+          "5": "Dip Powder",
+          "0": "__operator__"
+        }),
+        awaitingServiceConfirmation: "true",
+        proposedServiceName: "Manicure",
+        spokenMenuSelectionProposed: "true",
+        spokenDigitCandidate: "2",
+        requestedDate: FUTURE_THURSDAY,
+        requestedTime: "5 PM",
+        staffPreference: "Amy",
+        staffId: ids.amy,
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266"
+      }
+    })
+  );
+
+  const attrs = result.body.data.lexResponse.sessionAttributes;
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
+  assert.equal(attrs.serviceName, undefined);
+  assert.equal(attrs.confirmedServiceName, undefined);
+  assert.equal(attrs.proposedServiceName, "Full Set");
+  assert.equal(attrs.spokenDigitCandidate, "4");
+  assert.equal(attrs.awaitingServiceConfirmation, "true");
+  assert.match(result.body.data.lexResponse.message, /Did you choose option four, Full Set\? Please say yes, or say the service name\./i);
+  assert.doesNotMatch(result.body.data.lexResponse.message, /option two, Manicure/i);
+  assert.equal(state.appointments.length, 0);
 });
 
 test("two PM speech never routes through the service DTMF menu", async () => {
@@ -7639,6 +7734,50 @@ test("conflicting today and tomorrow asks a focused date clarification", async (
           staffId: ids.amy,
           customerName: "Lee",
           customerPhone: "+84798171999"
+        }
+      })
+    );
+
+    const attrs = result.body.data.lexResponse.sessionAttributes;
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "requestedDate");
+    assert.match(result.body.data.lexResponse.message, /Did you mean today or tomorrow\?/i);
+    assert.equal(attrs.requestedDate, undefined);
+    assert.equal(attrs.requestedTime, "11 AM");
+    assert.equal(attrs.serviceName, "Pedicure");
+    assert.equal(attrs.staffPreference, "Amy");
+    assert.equal(attrs.dateClarificationReason, "TODAY_TOMORROW_CONFLICT");
+    assert.equal(state.validationStaffIds.length, 0);
+    assert.equal(state.appointments.length, 0);
+  });
+});
+
+test("repeated today tomorrow clarification keeps date uncommitted", async () => {
+  await withFixedNow("2026-07-21T09:00:00-04:00", async () => {
+    const result = await postInternalAppointment(
+      bookingPayload({
+        customerName: "Lee",
+        customerPhone: "+84798171999",
+        serviceName: "Pedicure",
+        requestedDate: "2026-07-22",
+        requestedTime: "11 AM",
+        staffPreference: "Amy",
+        staffId: ids.amy,
+        confirmationState: undefined,
+        amazonConnectContactId: "connect-api-repeat-today-tomorrow",
+        currentTurnTranscript: "today tomorrow",
+        transcript: "today tomorrow",
+        attributes: {
+          currentTurnTranscript: "today tomorrow",
+          serviceName: "Pedicure",
+          requestedDate: "2026-07-22",
+          requestedTime: "11 AM",
+          staffPreference: "Amy",
+          staffId: ids.amy,
+          customerName: "Lee",
+          customerPhone: "+84798171999",
+          lastAskedSlot: "requestedDate",
+          dateClarificationReason: "TODAY_TOMORROW_CONFLICT"
         }
       })
     );

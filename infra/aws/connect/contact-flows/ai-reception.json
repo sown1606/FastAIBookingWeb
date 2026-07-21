@@ -941,7 +941,7 @@
       "Type": "MessageParticipant",
       "Parameters": {
         "SkipWhenDTMFBufferEnabled": "false",
-      "Text": "I'm still here. I didn't catch that. Please say it again, or press 0 for a person."
+      "Text": "Hi, I can help book your appointment. Please tell me how I can help, or press zero for a person."
       },
       "Transitions": {
         "NextAction": "check-continuation-prompt",
@@ -984,7 +984,7 @@
       "Type": "MessageParticipant",
       "Parameters": {
         "SkipWhenDTMFBufferEnabled": "false",
-      "Text": "I'm still here. I didn't catch that. Please say it again, or press 0 for a person."
+      "Text": "I'm still here. You can say book an appointment, or press zero for a person."
       },
       "Transitions": {
         "NextAction": "41e3f239-5b57-4363-92fc-9d594579fa98",
@@ -1122,7 +1122,7 @@
           "x-amz-lex:allow-interrupt:BookAppointmentIntent:customerName": "false",
           "x-amz-lex:allow-interrupt:BookAppointmentIntent:bookingConfirmation": "false"
         },
-        "Text": "Sorry, I didn't catch that. Could you say it again?"
+        "Text": "Are you still there? Please tell me how I can help."
       },
       "Transitions": {
         "NextAction": "check-transfer-to-queue",

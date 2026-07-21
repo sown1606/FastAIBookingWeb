@@ -305,17 +305,22 @@ const STAFF_DTMF_SHORT_PROMPT =
   "For staff, press 1 for Trang, 2 for Amy, 3 for Kelly, 4 for first available, or 0 for an operator.";
 const NO_INPUT_HUMAN_CONFIRM_PROMPT =
   "Are you still there? Would you like me to connect you to a real person? You can press 0 for an operator.";
+const FAST_WAIT_PROMPT = "Please wait. Let me check...";
 const WAIT_PROMPTS = {
-  customer_lookup: "Please wait a moment while I pull up your information.",
-  service_lookup: "Please wait a moment while I check our services.",
-  staff_lookup: "Please wait a moment while I check available staff.",
-  staff_dtmf_options: "Please wait a moment while I check available staff.",
-  availability_lookup: "Please give me a moment while I check availability.",
-  appointment_creation: "Please wait while I create your appointment.",
-  appointment_update: "Please wait while I look up your appointment.",
-  notification_send: "Please wait while I create your appointment.",
+  customer_lookup: FAST_WAIT_PROMPT,
+  service_lookup: FAST_WAIT_PROMPT,
+  staff_lookup: FAST_WAIT_PROMPT,
+  staff_dtmf_options: FAST_WAIT_PROMPT,
+  availability_lookup: FAST_WAIT_PROMPT,
+  appointment_creation: FAST_WAIT_PROMPT,
+  appointment_update: FAST_WAIT_PROMPT,
+  notification_send: FAST_WAIT_PROMPT,
   operator_escalation: OPERATOR_TRANSFER_PROMPT
 };
+
+function combineWaitPrompts(...prompts) {
+  return uniqueStrings(prompts).join(" ");
+}
 
 const SERVICE_ALIAS_GROUPS = {
   Pedicure: PEDICURE_ALIASES,
@@ -2539,8 +2544,38 @@ function currentTurnRecognizedService(event) {
   const slotService =
     exactSlotService ||
     normalizeServiceName(getSlotValue(slots, slotNames.serviceName, { preferOriginal: true }));
-  const candidate = normalizeServiceName(transcriptService || slotService);
+  const transcriptCandidate = normalizeServiceName(transcriptService);
+  if (DEMO_SERVICE_NAMES.includes(transcriptCandidate) || isDynamicServiceName(transcriptCandidate, previous)) {
+    return transcriptCandidate;
+  }
+  const slotCandidate = normalizeServiceName(slotService);
+  const dtmfDiagnostics = getCurrentTurnDtmfDiagnostics(event);
+  const slotHasTrustedInputOrigin =
+    dtmfDiagnostics.trustedKeypadInput ||
+    previous.scopedServiceDtmfInput === "true" ||
+    !transcript;
+  const candidate =
+    slotCandidate && (slotHasTrustedInputOrigin || serviceNameHasCurrentTurnEvidence(event, slotCandidate))
+      ? slotCandidate
+      : "";
   return DEMO_SERVICE_NAMES.includes(candidate) || isDynamicServiceName(candidate, previous) ? candidate : "";
+}
+
+function serviceNameHasCurrentTurnEvidence(event, serviceName) {
+  const previous = event.sessionState?.sessionAttributes || {};
+  const transcript = getCurrentTurnTranscript(event);
+  if (!serviceName || !transcript) {
+    return true;
+  }
+  const timeZone = getAttribute(event, attributeNames.timezone) || DEFAULT_SALON_TIMEZONE;
+  return getAsrDecisionTranscripts(event).some((candidateTranscript) =>
+    valuesEquivalent(
+      "serviceName",
+      extractServiceFromTranscript(candidateTranscript, previous),
+      serviceName,
+      timeZone
+    )
+  );
 }
 
 function analyzeLexTurnSanitization(event) {
@@ -5430,9 +5465,9 @@ function buildKnownBookingSessionAttributes(event) {
   const knownTime =
     lexKnownTime ||
     getSessionAttribute(previous, slotNames.requestedTime);
-  const rawKnownService =
-    getSlotValue(slots, slotNames.serviceName, { preferOriginal: true }) ||
-    getSessionAttribute(previous, slotNames.serviceName);
+  const rawLexKnownService = getSlotValue(slots, slotNames.serviceName, { preferOriginal: true });
+  const rawSessionKnownService = getSessionAttribute(previous, slotNames.serviceName);
+  const rawKnownService = rawLexKnownService || rawSessionKnownService;
   const serviceDtmfSelection = readScopedDtmfSelection(
     event,
     "serviceName",
@@ -5450,15 +5485,20 @@ function buildKnownBookingSessionAttributes(event) {
     ? normalizeServiceName(extractBookingDetailsFromText(initial, timeZone, previous).serviceName)
     : "";
   const normalizedKnownService = normalizeServiceName(rawKnownService);
-  const knownService =
-    normalizedKnownService && isRecognizedService(normalizedKnownService, previous)
-      ? normalizedKnownService
-      : "";
   const previousService = normalizeServiceName(
     previous.confirmedServiceName || getSessionAttribute(previous, slotNames.serviceName)
   );
   const stablePreviousService =
     previousService && isRecognizedService(previousService, previous) ? previousService : "";
+  const ungroundedNewLexService =
+    Boolean(rawLexKnownService) &&
+    !rawSessionKnownService &&
+    !stablePreviousService &&
+    !serviceNameHasCurrentTurnEvidence(event, normalizedKnownService);
+  const knownService =
+    normalizedKnownService && !ungroundedNewLexService && isRecognizedService(normalizedKnownService, previous)
+      ? normalizedKnownService
+      : "";
   const amazonConnectCustomerPhone = getAttribute(event, attributeNames.customerNumber);
   const protectedCustomerName =
     previous.recognizedCustomerName ||
@@ -9720,7 +9760,7 @@ async function handleLexEvent(event, analysis = {}) {
 	        }),
 	        {
 	          operationName: "booking_final_confirmation",
-	          waitPrompt: `${WAIT_PROMPTS.availability_lookup} ${WAIT_PROMPTS.appointment_creation}`,
+          waitPrompt: combineWaitPrompts(WAIT_PROMPTS.availability_lookup, WAIT_PROMPTS.appointment_creation),
 	          mechanism: "Lambda final confirmation DialogCodeHook"
 	        }
 	      );
@@ -10098,7 +10138,7 @@ async function handleLexEvent(event, analysis = {}) {
 
     const result = await postInternalAppointment(buildInternalPayload(event, intentName), {
       operationName: "booking_fulfillment_availability_and_creation",
-      waitPrompt: `${WAIT_PROMPTS.availability_lookup} ${WAIT_PROMPTS.appointment_creation}`,
+      waitPrompt: combineWaitPrompts(WAIT_PROMPTS.availability_lookup, WAIT_PROMPTS.appointment_creation),
       mechanism: "Lex fulfillment update"
     });
 
