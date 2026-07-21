@@ -80,6 +80,7 @@ interface CreateAmazonConnectAIAppointmentInput {
   selectedStaffId?: string;
   bookingConfirmation?: string;
   confirmationState?: string;
+  inputMode?: string;
   source?: string;
   contactId?: string;
   callSessionId?: string;
@@ -202,6 +203,19 @@ const NUMBER_WORDS: Record<string, number> = {
   ten: 10,
   eleven: 11,
   twelve: 12
+};
+
+const DIGIT_SPEECH_LABELS: Record<string, string> = {
+  "0": "zero",
+  "1": "one",
+  "2": "two",
+  "3": "three",
+  "4": "four",
+  "5": "five",
+  "6": "six",
+  "7": "seven",
+  "8": "eight",
+  "9": "nine"
 };
 
 const WEEKDAY_INDEXES: Record<string, number> = {
@@ -992,7 +1006,13 @@ const isFinalConfirmationOnlyPhrase = (value?: string | null): boolean => {
   return FINAL_CONFIRMATION_ONLY_PHRASES.has(normalizeForMatch(value));
 };
 
+const isBillingLikeServiceCollision = (value?: string | null): boolean =>
+  /\bpay\s+the\s+bill\b/.test(normalizeForMatch(value));
+
 const hasStaticServiceAliasInText = (value?: string | null): boolean => {
+  if (isBillingLikeServiceCollision(value)) {
+    return false;
+  }
   const compactText = compactForMatch(value);
   if (!compactText) {
     return false;
@@ -1099,26 +1119,35 @@ const classifyFinalBookingConfirmation = (
 
 const readDtmfDigit = (value?: string | null): string | undefined => {
   const trimmed = (value ?? "").trim();
-  if (/^(?:zero|press zero|pressed zero)$/i.test(trimmed)) {
-    return "0";
-  }
-  const normalized = normalizeForMatch(trimmed);
-  const spokenDigitMatch = normalized.match(
-    /^(?:(?:number|option|press|pressed)\s+)?(one|two|three|tree|tri|four|five|six|seven|eight|nine)$/
-  );
-  if (spokenDigitMatch?.[1]) {
-    return String(NUMBER_WORDS[spokenDigitMatch[1]] ?? "");
-  }
   const match = trimmed.match(/^(?:dtmf\s*)?([0-9]{1,2})#?$/i);
   return match?.[1];
 };
 
+const readSpokenDigitCandidate = (value?: string | null): string | undefined => {
+  const trimmed = (value ?? "").trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  if (/^[0-9]$/.test(trimmed)) {
+    return trimmed;
+  }
+  const normalized = normalizeForMatch(trimmed);
+  if (normalized === "zero" || /^(?:press|pressed|hit|dial)\s+zero$/.test(normalized)) {
+    return "0";
+  }
+  const spokenDigitMatch = normalized.match(
+    /^(?:(?:uh|um|er|ah)\s+)?(?:(?:number|option|press|pressed|hit|dial)\s+)?(one|two|three|tree|tri|four|five|six|seven|eight|nine)$/
+  );
+  return spokenDigitMatch?.[1] ? String(NUMBER_WORDS[spokenDigitMatch[1]] ?? "") : undefined;
+};
+
 const readScopedDtmfSelection = (
   isScoped: boolean,
+  isGenuineDtmf: boolean,
   values: Array<string | undefined>,
   options: Record<string, string>
 ): string | undefined => {
-  if (!isScoped) {
+  if (!isScoped || !isGenuineDtmf) {
     return undefined;
   }
   for (const value of values) {
@@ -2198,6 +2227,113 @@ const buildWeekdayDateConflictMessage = (
       ? `Did you mean ${escapeSsml(conflict.explicitChoiceLabel ?? conflict.explicitDateLabel)}, or ${escapeSsml(conflict.intendedChoiceLabel ?? conflict.intendedDateLabel)}?`
       : `${escapeSsml(conflict.explicitMonthDay)} is ${escapeSsml(conflict.actualWeekday)}. Did you mean ${escapeSsml(conflict.explicitDateLabel)}, or ${escapeSsml(conflict.intendedDateLabel)}?`
   );
+
+const getCurrentTurnTemporalConflict = (
+  value: string | undefined,
+  timezone: string
+): {
+  message: string;
+  reasonCode:
+    | "TODAY_TOMORROW_CONFLICT"
+    | "TODAY_EXPLICIT_DATE_CONFLICT"
+    | "TOMORROW_EXPLICIT_DATE_CONFLICT"
+    | "MULTIPLE_TIME_CONFLICT";
+  diagnostic: Record<string, unknown>;
+} | null => {
+  const normalized = normalizeForMatch(value);
+  if (!normalized) {
+    return null;
+  }
+  const now = getReferenceDateTime(timezone);
+  const today = now.toFormat("yyyy-MM-dd");
+  const tomorrow = now.plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  const hasToday = /\btoday\b|\btonight\b|\bthis\s+(?:morning|afternoon|evening)\b/.test(normalized);
+  const hasTomorrow = /\btomorrow\b/.test(normalized);
+  const makeDiagnostic = (
+    reason: string,
+    candidates: unknown[],
+    explicitDateCandidate?: string
+  ) =>
+    buildDateDecisionDiagnostic({
+      rawTranscript: value,
+      timezone,
+      selectedDate: null,
+      decisionReason: reason,
+      clarificationReason: reason,
+      candidates,
+      explicitDateCandidate
+    });
+  if (hasToday && hasTomorrow) {
+    return {
+      message: speak("Did you mean today or tomorrow?"),
+      reasonCode: "TODAY_TOMORROW_CONFLICT",
+      diagnostic: makeDiagnostic("today_tomorrow_conflict", [
+        { source: "today", date: today, label: "today" },
+        { source: "tomorrow", date: tomorrow, label: "tomorrow" }
+      ])
+    };
+  }
+  const explicitDate = parseMonthDayDateText(value ?? "", timezone) ?? parseIsoDateOnlyText(value ?? "", timezone);
+  if (explicitDate?.isValid) {
+    const explicit = explicitDate.toFormat("yyyy-MM-dd");
+    if (hasToday && explicit !== today) {
+      return {
+        message: speak(`Did you mean today or ${escapeSsml(formatConflictDate(explicitDate))}?`),
+        reasonCode: "TODAY_EXPLICIT_DATE_CONFLICT",
+        diagnostic: makeDiagnostic(
+          "today_explicit_date_conflict",
+          [
+            { source: "today", date: today, label: "today" },
+            { source: "explicit", date: explicit, label: formatConflictDate(explicitDate) }
+          ],
+          explicit
+        )
+      };
+    }
+    if (hasTomorrow && explicit !== tomorrow) {
+      return {
+        message: speak(`Did you mean tomorrow or ${escapeSsml(formatConflictDate(explicitDate))}?`),
+        reasonCode: "TOMORROW_EXPLICIT_DATE_CONFLICT",
+        diagnostic: makeDiagnostic(
+          "tomorrow_explicit_date_conflict",
+          [
+            { source: "tomorrow", date: tomorrow, label: "tomorrow" },
+            { source: "explicit", date: explicit, label: formatConflictDate(explicitDate) }
+          ],
+          explicit
+        )
+      };
+    }
+  }
+  const timeMatches = Array.from(
+    normalized.matchAll(
+      new RegExp(`\\b(?:at\\s+)?((?:${SPOKEN_HOUR_PATTERN}|\\d{1,2})(?::\\d{2})?)\\s*(am|pm|a\\s*m|p\\s*m)\\b`, "g")
+    )
+  );
+  const normalizedTimes = Array.from(
+    new Set(
+      timeMatches
+        .map((match) => {
+          const parsed = parseLocalTimeText(`${match[1]} ${match[2]}`);
+          return parsed && !parsed.ambiguous
+            ? `${String(parsed.hour).padStart(2, "0")}:${String(parsed.minute).padStart(2, "0")}`
+            : undefined;
+        })
+        .filter((item): item is string => Boolean(item))
+    )
+  );
+  if (normalizedTimes.length > 1) {
+    return {
+      message: speak("Which time did you mean?"),
+      reasonCode: "MULTIPLE_TIME_CONFLICT",
+      diagnostic: makeDiagnostic(
+        "multiple_time_conflict",
+        normalizedTimes.map((time) => ({ source: "time", time, label: time }))
+      )
+    };
+  }
+  return null;
+};
 
 const parseLocalDateText = (value: string, timezone: string): DateTime | null => {
   const cleaned = normalizeForMatch(value);
@@ -4645,6 +4781,9 @@ const findServiceMentionInText = async (
   salonId: string,
   text?: string
 ): Promise<ServiceMatch | null> => {
+  if (isBillingLikeServiceCollision(text)) {
+    return null;
+  }
   const normalizedText = compactForMatch(text);
   if (!normalizedText) {
     return null;
@@ -6273,8 +6412,39 @@ const isRequestedStartTimeInPast = (
   now = getReferenceDateTime(timezone)
 ): boolean => DateTime.fromJSDate(startTime, { zone: "utc" }).setZone(timezone) < now;
 
-const buildPastRequestedTimeMessage = (): string =>
-  speak("That time has already passed. What future date and time would you like?");
+const buildPastRequestedTimeDecision = (startTime: Date, timezone: string) => {
+  const salonNow = getReferenceDateTime(timezone);
+  const requestedLocal = DateTime.fromJSDate(startTime, { zone: "utc" }).setZone(timezone);
+  const sameDay = requestedLocal.hasSame(salonNow, "day");
+  const proposedTomorrow = salonNow.plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  const requestedLocalTime = formatLocalTimeForSpeech(startTime, timezone);
+  return {
+    sameDay,
+    proposedRequestedDate: sameDay ? proposedTomorrow : undefined,
+    proposedRequestedTime: requestedLocalTime,
+    diagnostic: {
+      salonTimezone: timezone,
+      salonNowIso: salonNow.toUTC().toISO(),
+      salonNowLocal: salonNow.toISO(),
+      requestedLocalDate: requestedLocal.toFormat("yyyy-MM-dd"),
+      requestedLocalTime,
+      requestedLocalDateTime: requestedLocal.toISO(),
+      requestedUtcDateTime: requestedLocal.toUTC().toISO(),
+      comparisonTimestamp: salonNow.toUTC().toISO(),
+      temporalComparison: requestedLocal < salonNow ? "requested_before_salon_now" : "requested_not_in_past",
+      temporalRejectionReason: sameDay ? "past_same_day_time" : "past_requested_date",
+      proposedRequestedDate: sameDay ? proposedTomorrow : null,
+      proposedRequestedTime: requestedLocalTime
+    }
+  };
+};
+
+const buildPastRequestedTimeMessage = (decision: ReturnType<typeof buildPastRequestedTimeDecision>): string =>
+  decision.sameDay
+    ? speak(
+        `${escapeSsml(decision.proposedRequestedTime)} today is earlier than the current time at the salon. Would you like ${escapeSsml(decision.proposedRequestedTime)} tomorrow?`
+      )
+    : speak("That date is earlier than today at the salon. What future day would you like?");
 
 const salonSelect = {
   id: true,
@@ -6978,9 +7148,18 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
   ]);
   const serviceDtmfScoped = activeDtmfMenu === "service";
   const staffDtmfScoped = activeDtmfMenu === "staff";
+  const inputMode = asTrimmedString(input.inputMode) ?? readStringAttribute(attributes, ["inputMode"]);
+  const inputModeSource =
+    asTrimmedString(input.inputMode)
+      ? "payload.inputMode"
+      : readStringAttribute(attributes, ["inputMode"])
+        ? "attributes.inputMode"
+        : "unknown";
+  const genuineDtmfInput = inputMode?.toLowerCase() === "dtmf";
   const serviceDtmfSelection =
     readScopedDtmfSelection(
       serviceDtmfScoped,
+      genuineDtmfInput,
       [
         transcriptText,
         asTrimmedString(input.serviceName),
@@ -6992,6 +7171,7 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
   const staffDtmfSelection =
     readScopedDtmfSelection(
       staffDtmfScoped,
+      genuineDtmfInput,
       [
         transcriptText,
         asTrimmedString(input.staffPreference),
@@ -7000,7 +7180,7 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
       readStaffDtmfOptions(attributes)
     );
   const staffDtmfDigit =
-    staffDtmfScoped
+    staffDtmfScoped && genuineDtmfInput
       ? [
           transcriptText,
           asTrimmedString(input.staffPreference),
@@ -7009,6 +7189,40 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
           .map((value) => readDtmfDigit(value))
           .find((value): value is string => Boolean(value))
       : undefined;
+  const spokenDigitCandidate = !genuineDtmfInput
+    ? [
+        transcriptText,
+        asTrimmedString(input.serviceName),
+        asTrimmedString(input.service),
+        asTrimmedString(input.staffPreference)
+      ]
+        .map((value) => readSpokenDigitCandidate(value))
+        .find((value): value is string => Boolean(value))
+    : undefined;
+  if (spokenDigitCandidate && (serviceDtmfScoped || staffDtmfScoped)) {
+    const proposedSpokenSelection = serviceDtmfScoped
+      ? readServiceDtmfOptions(attributes)[spokenDigitCandidate]
+      : readStaffDtmfOptions(attributes)[spokenDigitCandidate];
+    attributes.inputMode = inputMode ?? "Speech";
+    attributes.inputModeSource = inputModeSource;
+    attributes.spokenDigitCandidate = spokenDigitCandidate;
+    attributes.spokenMenuSelectionProposed = "true";
+    attributes.dtmfAccepted = "false";
+    attributes.dtmfRejectedReason = "input_mode_not_dtmf";
+    if (proposedSpokenSelection && proposedSpokenSelection !== "__operator__") {
+      if (serviceDtmfScoped) {
+        attributes.proposedServiceName = proposedSpokenSelection;
+        attributes.serviceRecognitionSource = "speech_menu_digit_proposal";
+        attributes.serviceRecognitionConfidence = "";
+        attributes.asrConfidenceSource = "unknown";
+        attributes.ambiguityReason = "spoken_digit_not_genuine_dtmf";
+        attributes.clarificationReason = "spoken_service_menu_digit_requires_confirmation";
+      } else {
+        attributes.proposedStaffPreference = proposedSpokenSelection;
+        attributes.staffClarificationReason = "spoken_staff_menu_digit_requires_confirmation";
+      }
+    }
+  }
   const staffDtmfStaffId =
     staffDtmfDigit && staffDtmfSelection
       ? readStaffDtmfStaffIds(attributes)[staffDtmfDigit]
@@ -7056,6 +7270,9 @@ const normalizeAmazonConnectAppointmentInput = (input: CreateAmazonConnectAIAppo
     (serviceCandidate && !unsafeSunsetServiceSlot && !isClearlyInvalidServiceName(serviceCandidate)
       ? getCustomerFacingServiceName(serviceCandidate)
       : undefined);
+  if (isBillingLikeServiceCollision(serviceRecognitionText)) {
+    serviceName = undefined;
+  }
   const initialBookingUtterance = readStringAttribute(attributes, ["initialBookingUtterance"]);
   const initialFullSetService =
     serviceDtmfSelection && initialBookingUtterance
@@ -8586,6 +8803,9 @@ export const createAmazonConnectAIRecoverableFailure = async (
     getCustomerFacingServiceName(
       readStringAttribute(activeNormalizedRequest, ["serviceName", "suggestedServiceName"])
     );
+  if (isBillingLikeServiceCollision(normalized.currentTurnTranscript ?? normalized.transcriptText)) {
+    normalized.serviceName = undefined;
+  }
   normalized.staffPreference ??=
     asTrimmedString(activeBookingAttempt?.requestedStaff ?? undefined) ??
     readStringAttribute(activeNormalizedRequest, ["staffPreference", "staffName"]);
@@ -9223,11 +9443,22 @@ export const createAmazonConnectAIAppointment = async (
   let currentTurnDateClarification:
     | {
         message: string;
-        reasonCode: "WEEKDAY_DATE_CONFLICT" | "BARE_SAME_DAY_WEEKDAY_AMBIGUOUS" | "RELATIVE_EXPLICIT_CONFLICT";
+        reasonCode:
+          | "WEEKDAY_DATE_CONFLICT"
+          | "BARE_SAME_DAY_WEEKDAY_AMBIGUOUS"
+          | "RELATIVE_EXPLICIT_CONFLICT"
+          | "TODAY_TOMORROW_CONFLICT"
+          | "TODAY_EXPLICIT_DATE_CONFLICT"
+          | "TOMORROW_EXPLICIT_DATE_CONFLICT"
+          | "MULTIPLE_TIME_CONFLICT";
         diagnostic: Record<string, unknown>;
       }
     | null = null;
-  if (currentTurnWeekdayDateConflict) {
+  const currentTurnTemporalConflict = getCurrentTurnTemporalConflict(currentTurnDateText, salon.timezone);
+  if (currentTurnTemporalConflict) {
+    currentTurnDateClarification = currentTurnTemporalConflict;
+    normalized.requestedDate = undefined;
+  } else if (currentTurnWeekdayDateConflict) {
     currentTurnDateClarification = {
       message: buildWeekdayDateConflictMessage(currentTurnWeekdayDateConflict),
       reasonCode:
@@ -9374,6 +9605,39 @@ export const createAmazonConnectAIAppointment = async (
     normalized.attributes.proposedStaffPreference = "";
     normalized.attributes.bookingFrameRepairConfirmed = "false";
     normalized.attributes.bookingFrameRepairRejected = "true";
+  }
+
+  const awaitingPastTimeTomorrowConfirmation =
+    readStringAttribute(normalized.attributes, ["awaitingPastTimeTomorrowConfirmation"]) === "true";
+  const proposedPastTimeDate = readStringAttribute(normalized.attributes, ["proposedRequestedDate"]);
+  const proposedPastTimeTime = readStringAttribute(normalized.attributes, ["proposedRequestedTime"]);
+  if (
+    awaitingPastTimeTomorrowConfirmation &&
+    isAffirmative(normalized.currentTurnTranscript) &&
+    proposedPastTimeDate &&
+    proposedPastTimeTime
+  ) {
+    normalized.requestedDate = proposedPastTimeDate;
+    normalized.requestedTime = proposedPastTimeTime;
+    normalized.attributes.awaitingPastTimeTomorrowConfirmation = "false";
+    normalized.attributes.proposedRequestedDate = "";
+    normalized.attributes.proposedRequestedTime = "";
+    normalized.attributes.dateTimeValidationReason = "";
+    normalized.attributes.temporalRejectionReason = "";
+    normalized.attributes.pastTimeProposalConfirmed = "true";
+    normalized.attributes.pastTimeProposalRejectedThisTurn = "";
+    normalized.attributes.awaitingFinalBookingConfirmation = "false";
+    normalized.attributes.bookingConfirmationAsked = "false";
+  } else if (awaitingPastTimeTomorrowConfirmation && isNegative(normalized.currentTurnTranscript)) {
+    normalized.requestedDate = undefined;
+    normalized.requestedTime = proposedPastTimeTime ?? normalized.requestedTime;
+    normalized.attributes.awaitingPastTimeTomorrowConfirmation = "false";
+    normalized.attributes.proposedRequestedDate = "";
+    normalized.attributes.proposedRequestedTime = proposedPastTimeTime ?? "";
+    normalized.attributes.pastTimeProposalConfirmed = "false";
+    normalized.attributes.pastTimeProposalRejectedThisTurn = "true";
+    normalized.attributes.awaitingFinalBookingConfirmation = "false";
+    normalized.attributes.bookingConfirmationAsked = "false";
   }
 
   const awaitingServiceConfirmation =
@@ -9775,6 +10039,10 @@ export const createAmazonConnectAIAppointment = async (
       (!shouldAutoAcceptServiceMatch(serviceMatch, normalized.serviceName) &&
         !isAffirmative(normalized.serviceName)))
   ) {
+    normalized.serviceName = undefined;
+    serviceMatch = null;
+  }
+  if (isBillingLikeServiceCollision(normalized.currentTurnTranscript ?? normalized.transcriptText)) {
     normalized.serviceName = undefined;
     serviceMatch = null;
   }
@@ -11336,11 +11604,16 @@ export const createAmazonConnectAIAppointment = async (
         | "WEEKDAY_DATE_CONFLICT"
         | "RELATIVE_EXPLICIT_CONFLICT"
         | "BARE_SAME_DAY_WEEKDAY_AMBIGUOUS"
+        | "TODAY_TOMORROW_CONFLICT"
+        | "TODAY_EXPLICIT_DATE_CONFLICT"
+        | "TOMORROW_EXPLICIT_DATE_CONFLICT"
+        | "MULTIPLE_TIME_CONFLICT"
         | "PAST_REQUESTED_TIME";
     clearTime: boolean;
     requestedStartTime?: Date | null;
     responsePayload?: Record<string, unknown>;
     normalizedRequest?: Record<string, unknown>;
+    pastTimeDecision?: ReturnType<typeof buildPastRequestedTimeDecision>;
   }) => {
     const rejectedDate = normalized.requestedDate;
     const rejectedTime = normalized.requestedTime;
@@ -11362,13 +11635,33 @@ export const createAmazonConnectAIAppointment = async (
     });
     const lexSessionAttributes = buildKnownSessionAttributes({
       requestedDate: undefined,
-      requestedTime: inputForRejection.clearTime ? undefined : normalized.requestedTime,
+      requestedTime:
+        inputForRejection.reasonCode === "PAST_REQUESTED_TIME"
+          ? rejectedTime
+          : inputForRejection.clearTime
+            ? undefined
+            : normalized.requestedTime,
 	      dateClarificationReason: inputForRejection.reasonCode,
-	      availabilityReasonCode: inputForRejection.reasonCode,
+	      availabilityReasonCode:
+          inputForRejection.reasonCode === "PAST_REQUESTED_TIME" ? undefined : inputForRejection.reasonCode,
+        dateTimeValidationReason:
+          inputForRejection.reasonCode === "PAST_REQUESTED_TIME" ? "past_requested_time" : undefined,
+        temporalRejectionReason:
+          inputForRejection.pastTimeDecision?.diagnostic.temporalRejectionReason,
+        awaitingPastTimeTomorrowConfirmation:
+          inputForRejection.pastTimeDecision?.sameDay ? "true" : undefined,
+        proposedRequestedDate: inputForRejection.pastTimeDecision?.proposedRequestedDate,
+        proposedRequestedTime: inputForRejection.pastTimeDecision?.proposedRequestedTime,
+        rejectedRequestedDate:
+          inputForRejection.reasonCode === "PAST_REQUESTED_TIME" ? rejectedDate : undefined,
+        rejectedRequestedTime:
+          inputForRejection.reasonCode === "PAST_REQUESTED_TIME" ? rejectedTime : undefined,
         dateDecisionDiagnostic:
-          typeof inputForRejection.responsePayload?.dateDecisionDiagnostic === "object"
-            ? JSON.stringify(inputForRejection.responsePayload.dateDecisionDiagnostic)
-            : undefined,
+          inputForRejection.pastTimeDecision?.diagnostic
+            ? JSON.stringify(inputForRejection.pastTimeDecision.diagnostic)
+            : typeof inputForRejection.responsePayload?.dateDecisionDiagnostic === "object"
+              ? JSON.stringify(inputForRejection.responsePayload.dateDecisionDiagnostic)
+              : undefined,
 	      aiAlternativeSlots: "[]",
       awaitingAlternativeSelection: "false",
       awaitingFinalBookingConfirmation: "false",
@@ -11388,6 +11681,13 @@ export const createAmazonConnectAIAppointment = async (
         requestedTime: rejectedTime,
         reasonCode: inputForRejection.reasonCode,
         timezone: salon.timezone,
+        ...(inputForRejection.pastTimeDecision
+          ? {
+              dateDecisionDiagnostic: inputForRejection.pastTimeDecision.diagnostic,
+              proposedRequestedDate: inputForRejection.pastTimeDecision.proposedRequestedDate,
+              proposedRequestedTime: inputForRejection.pastTimeDecision.proposedRequestedTime
+            }
+          : {}),
         ...(inputForRejection.requestedStartTime
           ? { startTimeIso: inputForRejection.requestedStartTime.toISOString() }
           : {}),
@@ -11479,12 +11779,20 @@ export const createAmazonConnectAIAppointment = async (
   }
 
   if (requestedStartTime && isRequestedStartTimeInPast(requestedStartTime, salon.timezone)) {
+    const pastTimeDecision = buildPastRequestedTimeDecision(requestedStartTime, salon.timezone);
     return await returnRejectedDateTime({
-      message: buildPastRequestedTimeMessage(),
+      message: buildPastRequestedTimeMessage(pastTimeDecision),
       failureReason: "Requested appointment time has already passed.",
       reasonCode: "PAST_REQUESTED_TIME",
-      clearTime: true,
-      requestedStartTime
+      clearTime: false,
+      requestedStartTime,
+      pastTimeDecision,
+      responsePayload: {
+        dateDecisionDiagnostic: pastTimeDecision.diagnostic
+      },
+      normalizedRequest: {
+        dateDecisionDiagnostic: pastTimeDecision.diagnostic
+      }
     });
   }
 
@@ -12039,7 +12347,7 @@ export const createAmazonConnectAIAppointment = async (
       proposedServiceClarification ??
       (readStringAttribute(normalized.attributes, ["proposedServiceName"])
         ? {
-            proposedServiceName: "Full Set" as const,
+            proposedServiceName: readStringAttribute(normalized.attributes, ["proposedServiceName"])!,
             reason:
               readStringAttribute(normalized.attributes, ["serviceClarificationReason"]) ||
               readStringAttribute(normalized.attributes, ["clarificationReason"]) ||
@@ -12209,9 +12517,19 @@ export const createAmazonConnectAIAppointment = async (
       readStringAttribute(normalized.attributes, ["proposedRequestedTime"])
         ? speak(`Did you mean ${escapeSsml(readStringAttribute(normalized.attributes, ["proposedRequestedTime"])!)}?`)
         : undefined;
+    const pastTimeProposalRejectedPrompt =
+      readStringAttribute(normalized.attributes, ["pastTimeProposalRejectedThisTurn"]) === "true"
+        ? speak("What future day would you like?")
+        : undefined;
     const serviceConfirmationPrompt = serviceDtmfConflictProposal
       ? speak(
           `I heard ${escapeSsml(serviceDtmfConflictProposal.proposedServiceName)} from the keypad. Is ${escapeSsml(serviceDtmfConflictProposal.proposedServiceName)} the service you want?`
+        )
+      : readStringAttribute(normalized.attributes, ["spokenMenuSelectionProposed"]) === "true" &&
+        readStringAttribute(normalized.attributes, ["proposedServiceName"]) &&
+        readStringAttribute(normalized.attributes, ["spokenDigitCandidate"])
+      ? speak(
+          `Did you choose option ${escapeSsml(DIGIT_SPEECH_LABELS[readStringAttribute(normalized.attributes, ["spokenDigitCandidate"])!] ?? readStringAttribute(normalized.attributes, ["spokenDigitCandidate"])!)}, ${escapeSsml(readStringAttribute(normalized.attributes, ["proposedServiceName"])!)}? Please say yes, or say the service name.`
         )
       : proposedServiceClarification
       ? buildProposedServicePrompt(normalized, salon.timezone)
@@ -12225,9 +12543,9 @@ export const createAmazonConnectAIAppointment = async (
       readStringAttribute(normalized.attributes, ["freshBookingRestart"]) === "true" &&
       elicitDecision.slotToElicit === "serviceName" &&
       !currentTurnHasBookingDetails(normalized);
-	    const message = freshRestartNeedsService
+    const message = freshRestartNeedsService
       ? speak("Sure, let's start a new appointment. What service would you like?")
-      : serviceConfirmationPrompt ?? staffConfirmationPrompt ?? timeConfirmationPrompt ?? buildLexMessage({
+      : serviceConfirmationPrompt ?? staffConfirmationPrompt ?? pastTimeProposalRejectedPrompt ?? timeConfirmationPrompt ?? buildLexMessage({
 	      outcome: "MISSING_INFO",
       missingFields: elicitDecision.promptMissingFields,
       staffOptions: staffPromptOptions,
@@ -12332,6 +12650,45 @@ export const createAmazonConnectAIAppointment = async (
             matchedTranscript: proposedServiceClarification.matchedTranscript
           })
         }
+      : readStringAttribute(normalized.attributes, ["spokenMenuSelectionProposed"]) === "true" &&
+        readStringAttribute(normalized.attributes, ["proposedServiceName"])
+      ? {
+          awaitingServiceConfirmation: "true",
+          proposedServiceName: readStringAttribute(normalized.attributes, ["proposedServiceName"]),
+          spokenMenuSelectionProposed: "true",
+          spokenDigitCandidate: readStringAttribute(normalized.attributes, ["spokenDigitCandidate"]),
+          dtmfAccepted: "false",
+          dtmfRejectedReason:
+            readStringAttribute(normalized.attributes, ["dtmfRejectedReason"]) ||
+            "input_mode_not_dtmf",
+          serviceRecognitionSource: "speech_menu_digit_proposal",
+          serviceRecognitionConfidence: "",
+          asrConfidenceSource: "unknown",
+          ambiguityReason: "spoken_digit_not_genuine_dtmf",
+          clarificationReason: "spoken_service_menu_digit_requires_confirmation",
+          voiceSlotDecisions: withVoiceSlotDecision(
+            normalized.attributes,
+            buildVoiceSlotDecision({
+              slot: "serviceName",
+              action: "propose",
+              canonicalValue: readStringAttribute(normalized.attributes, ["proposedServiceName"])!,
+              reason: "spoken_service_menu_digit_requires_confirmation",
+              confidenceBand: "medium",
+              evidence: [`spoken option ${readStringAttribute(normalized.attributes, ["spokenDigitCandidate"]) || ""}`],
+              source: "contextual_repair",
+              activeSlot: activeVoiceSlot,
+              negated: false,
+              requiresConfirmation: true,
+              alternativesUsed: false
+            })
+          ),
+          proposedSlotMutation: JSON.stringify({
+            slotName: "serviceName",
+            proposedValue: readStringAttribute(normalized.attributes, ["proposedServiceName"]),
+            accepted: false,
+            reason: "spoken_service_menu_digit_requires_confirmation"
+          })
+        }
       : {};
     const proposedStaffAttributes = proposedFirstAvailableStaff
       ? {
@@ -12420,6 +12777,8 @@ export const createAmazonConnectAIAppointment = async (
       ...staffPromptAttributes,
       awaitingTimeConfirmation: readStringAttribute(normalized.attributes, ["awaitingTimeConfirmation"]),
       proposedRequestedTime: readStringAttribute(normalized.attributes, ["proposedRequestedTime"]),
+      pastTimeProposalConfirmed: readStringAttribute(normalized.attributes, ["pastTimeProposalConfirmed"]),
+      pastTimeProposalRejectedThisTurn: readStringAttribute(normalized.attributes, ["pastTimeProposalRejectedThisTurn"]),
       timeRecognitionDiagnostics: readStringAttribute(normalized.attributes, ["timeRecognitionDiagnostics"])
     });
     const aiInteraction = await createInteraction({

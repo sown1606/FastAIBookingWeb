@@ -898,10 +898,6 @@ function getObservedSunsetFullSetAsrRaw(value) {
   return /\bsun\s+set\b/.test(normalized) ? "sun set" : /\bsunset\b/.test(normalized) ? "sunset" : "";
 }
 
-function isPayTheBillPedicureAsr(value) {
-  return /\bpay\s+the\s+bill\b/.test(normalizeForMatch(value));
-}
-
 function hasExactConfiguredServiceName(value, sessionAttributes = {}) {
   const normalized = normalizeForMatch(value);
   return Boolean(
@@ -975,9 +971,6 @@ function currentTurnServiceMention(event) {
   if (isServiceCollectionContext(event)) {
     if (getScopedServiceAliasCorrectionRaw(event)) {
       return "Full Set";
-    }
-    if (isPayTheBillPedicureAsr(transcript)) {
-      return "Pedicure";
     }
   }
   const transcriptService = extractServiceFromTranscript(transcript, previous);
@@ -1427,16 +1420,27 @@ function hasExplicitStaffPhrase(text, sessionAttributes = {}) {
 
 function readDtmfDigit(value) {
   const trimmed = String(value || "").trim();
-  if (/^(?:zero|press zero|pressed zero)$/i.test(trimmed)) {
-    return "0";
+  const match = trimmed.match(/^(?:dtmf\s*)?([0-9]{1,2})#?$/i);
+  return match?.[1] || "";
+}
+
+function readSpokenDigitCandidate(value) {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) {
+    return "";
+  }
+  if (/^[0-9]$/.test(trimmed)) {
+    return trimmed;
   }
   const normalized = normalizeForMatch(trimmed);
-  const spokenDigitMatch = normalized.match(/^(?:(?:number|option|press|pressed)\s+)?(one|two|three|tree|tri|four|five|six|seven|eight|nine)$/);
+  if (normalized === "zero" || /^(?:press|pressed|hit|dial)\s+zero$/.test(normalized)) {
+    return "0";
+  }
+  const spokenDigitMatch = normalized.match(/^(?:(?:uh|um|er|ah)\s+)?(?:(?:number|option|press|pressed|hit|dial)\s+)?(one|two|three|tree|tri|four|five|six|seven|eight|nine)$/);
   if (spokenDigitMatch) {
     return String(NUMBER_WORDS[spokenDigitMatch[1]] || "");
   }
-  const match = trimmed.match(/^(?:dtmf\s*)?([0-9]{1,2})#?$/i);
-  return match?.[1] || "";
+  return "";
 }
 
 function getTranscriptCandidateValues(event) {
@@ -1513,6 +1517,9 @@ function isOperatorZeroValue(value) {
 
 function getScopedDtmfDigit(event, expectedSlot) {
   const previous = event.sessionState?.sessionAttributes || {};
+  if (!isGenuineDtmfInput(event)) {
+    return "";
+  }
   const lastAskedSlot = previous.lastAskedSlot;
   const activeDtmfMenu = previous.activeDtmfMenu;
   if (expectedSlot === "serviceName" && activeDtmfMenu !== "service") {
@@ -1936,6 +1943,9 @@ function getActiveDtmfOptions(sessionAttributes = {}, activeDtmfMenu = sessionAt
 }
 
 function readCurrentTurnDigit(event) {
+  if (!isGenuineDtmfInput(event)) {
+    return "";
+  }
   const currentDigit = readDtmfDigit(getCurrentTurnTranscript(event));
   if (currentDigit && /^[0-9]$/.test(currentDigit)) {
     return currentDigit;
@@ -1951,6 +1961,9 @@ function readCurrentTurnDigit(event) {
 
 function getCurrentTurnDtmfDiagnostics(event) {
   const previous = event.sessionState?.sessionAttributes || {};
+  const inputMode = getInputMode(event);
+  const inputModeSource = getInputModeSource(event);
+  const genuineDtmf = isGenuineDtmfInput(event);
   const transcriptCandidateRecords = [
     { source: "inputTranscript", value: event.inputTranscript }
   ];
@@ -2000,9 +2013,11 @@ function getCurrentTurnDtmfDiagnostics(event) {
 
   let digitsExtractedSingle = "";
   let readSource = "none";
+  let spokenDigitCandidate = "";
+  let spokenDigitSource = "none";
   const sequenceValues = [];
   for (const candidate of candidates) {
-    const digit = readDtmfDigit(candidate.value);
+    const digit = genuineDtmf ? readDtmfDigit(candidate.value) : "";
     if (!digitsExtractedSingle && digit && /^[0-9]$/.test(digit)) {
       digitsExtractedSingle = digit;
       readSource = candidate.source.includes("sessionAttributes")
@@ -2010,6 +2025,11 @@ function getCurrentTurnDtmfDiagnostics(event) {
         : candidate.source === "inputTranscript"
           ? "inputTranscript"
           : "transcription";
+    }
+    const spokenDigit = readSpokenDigitCandidate(candidate.value);
+    if (!spokenDigitCandidate && spokenDigit && /^[0-9]$/.test(spokenDigit)) {
+      spokenDigitCandidate = spokenDigit;
+      spokenDigitSource = candidate.source;
     }
     const sequence = digitSequenceFromUtterance(candidate.value);
     if (sequence.length) {
@@ -2025,7 +2045,11 @@ function getCurrentTurnDtmfDiagnostics(event) {
 
   return {
     rawInputTranscript,
-    inputMode: getInputMode(event),
+    inputMode,
+    inputModeSource,
+    genuineDtmfDigit: digitsExtractedSingle,
+    spokenDigitCandidate,
+    spokenDigitSource,
     transcriptCandidates: transcriptCandidateRecords
       .map((candidate) => candidate.value)
       .filter((value) => value !== undefined && value !== null && String(value).trim() !== "")
@@ -2041,7 +2065,12 @@ function getCurrentTurnDtmfDiagnostics(event) {
     isMultiDigitOrDigitSequence: isMultiDigitOrDigitSequenceUtterance(rawInputTranscript),
     readSource,
     activeDtmfMenuBefore: previous.activeDtmfMenu || "",
-    lastAskedSlotBefore: previous.lastAskedSlot || ""
+    lastAskedSlotBefore: previous.lastAskedSlot || "",
+    dtmfAccepted: Boolean(digitsExtractedSingle),
+    dtmfRejectedReason:
+      !genuineDtmf && spokenDigitCandidate
+        ? "input_mode_not_dtmf"
+        : ""
   };
 }
 
@@ -2056,6 +2085,14 @@ function buildDtmfRouting(event) {
       : "";
   const base = {
     digit,
+    inputMode: diagnostics.inputMode,
+    inputModeSource: diagnostics.inputModeSource,
+    genuineDtmfDigit: diagnostics.genuineDtmfDigit || "",
+    spokenDigitCandidate: diagnostics.spokenDigitCandidate || "",
+    spokenMenuSelectionProposed: false,
+    proposedSelection: "",
+    dtmfAccepted: false,
+    dtmfRejectedReason: diagnostics.dtmfRejectedReason || "",
     lastAskedSlotBefore,
     activeDtmfMenuBefore,
     route: "",
@@ -2074,6 +2111,18 @@ function buildDtmfRouting(event) {
     )
   };
   if (!digit && !diagnostics.isMultiDigitOrDigitSequence) {
+    if (diagnostics.spokenDigitCandidate && activeDtmfMenuBefore) {
+      const options = getActiveDtmfOptions(previous, activeDtmfMenuBefore);
+      return {
+        ...base,
+        route: `${activeDtmfMenuBefore}_menu`,
+        selection: "",
+        proposedSelection: options[diagnostics.spokenDigitCandidate] || "",
+        spokenMenuSelectionProposed: Boolean(options[diagnostics.spokenDigitCandidate]),
+        ignoredReason: "speech_digit_requires_confirmation",
+        nextSlot: activeDtmfMenuBefore === "service" ? "serviceName" : "staffPreference"
+      };
+    }
     return base;
   }
   if (!digit && diagnostics.isMultiDigitOrDigitSequence) {
@@ -2101,6 +2150,7 @@ function buildDtmfRouting(event) {
       route: "operator_transfer",
       selection: "operator",
       accepted: true,
+      dtmfAccepted: true,
       nextSlot: "operator"
     };
   }
@@ -2121,6 +2171,7 @@ function buildDtmfRouting(event) {
       route: `${menu}_menu`,
       selection,
       accepted: true,
+      dtmfAccepted: true,
       nextSlot: menu === "service" ? "requestedDate" : ""
     };
   };
@@ -3151,6 +3202,32 @@ function getZonedClockMinutes(timeZone, date = getReferenceDate()) {
   return Number.isFinite(hour) && Number.isFinite(minute) ? hour * 60 + minute : null;
 }
 
+function getZonedDateTimeParts(timeZone, date = getReferenceDate()) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23"
+  }).formatToParts(date);
+  const values = Object.fromEntries(
+    parts
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value])
+  );
+  return {
+    year: Number(values.year),
+    month: Number(values.month),
+    day: Number(values.day),
+    hour: Number(values.hour),
+    minute: Number(values.minute),
+    second: Number(values.second)
+  };
+}
+
 function formatDateParts(parts) {
   return [
     String(parts.year).padStart(4, "0"),
@@ -3166,6 +3243,41 @@ function addDaysToDateParts(parts, days) {
     month: date.getUTCMonth() + 1,
     day: date.getUTCDate()
   };
+}
+
+function formatLocalDateTime(date, minutes) {
+  const hour = Math.floor(minutes / 60);
+  const minute = minutes % 60;
+  return `${date}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00`;
+}
+
+function zonedLocalDateTimeToUtcIso(dateText, minutes, timeZone) {
+  const parts = parseIsoDateParts(dateText);
+  if (!parts) {
+    return "";
+  }
+  const targetUtcLike = Date.UTC(
+    parts.year,
+    parts.month - 1,
+    parts.day,
+    Math.floor(minutes / 60),
+    minutes % 60,
+    0
+  );
+  let guess = targetUtcLike;
+  for (let index = 0; index < 3; index += 1) {
+    const zoned = getZonedDateTimeParts(timeZone, new Date(guess));
+    const zonedUtcLike = Date.UTC(
+      zoned.year,
+      zoned.month - 1,
+      zoned.day,
+      zoned.hour,
+      zoned.minute,
+      zoned.second || 0
+    );
+    guess -= zonedUtcLike - targetUtcLike;
+  }
+  return new Date(guess).toISOString();
 }
 
 function parseMonthDayDateParts(value, timeZone = DEFAULT_SALON_TIMEZONE) {
@@ -3383,6 +3495,69 @@ function buildWeekdayDateConflictPrompt(conflict) {
     return `Did you mean ${conflict.explicitChoiceLabel || conflict.explicitDateLabel}, or ${conflict.intendedChoiceLabel || conflict.intendedDateLabel}?`;
   }
   return `${conflict.explicitMonthDay} is ${conflict.actualWeekday}. Did you mean ${conflict.explicitDateLabel}, or ${conflict.intendedDateLabel}?`;
+}
+
+function getCurrentTurnTemporalConflict(value, timeZone = DEFAULT_SALON_TIMEZONE) {
+  const normalized = normalizeForMatch(value);
+  if (!normalized) {
+    return null;
+  }
+  const hasToday = /\btoday\b|\btonight\b|\bthis\s+(?:morning|afternoon|evening)\b/.test(normalized);
+  const hasTomorrow = /\btomorrow\b/.test(normalized);
+  const todayDate = formatDateParts(getZonedDateParts(timeZone));
+  const tomorrowDate = formatDateParts(addDaysToDateParts(getZonedDateParts(timeZone), 1));
+  if (hasToday && hasTomorrow) {
+    return {
+      conflictReason: "today_tomorrow_conflict",
+      prompt: "Did you mean today or tomorrow?",
+      candidates: [
+        { source: "today", date: todayDate, label: "today" },
+        { source: "tomorrow", date: tomorrowDate, label: "tomorrow" }
+      ]
+    };
+  }
+  const explicitParts = parseMonthDayDateParts(value, timeZone) || parseIsoDateParts(value);
+  if (explicitParts) {
+    const explicitDate = formatDateParts(explicitParts);
+    if (hasToday && explicitDate !== todayDate) {
+      return {
+        conflictReason: "today_explicit_date_conflict",
+        prompt: `Did you mean today or ${formatClarificationDate(explicitParts)}?`,
+        candidates: [
+          { source: "today", date: todayDate, label: "today" },
+          { source: "explicit", date: explicitDate, label: formatClarificationDate(explicitParts) }
+        ]
+      };
+    }
+    if (hasTomorrow && explicitDate !== tomorrowDate) {
+      return {
+        conflictReason: "tomorrow_explicit_date_conflict",
+        prompt: `Did you mean tomorrow or ${formatClarificationDate(explicitParts)}?`,
+        candidates: [
+          { source: "tomorrow", date: tomorrowDate, label: "tomorrow" },
+          { source: "explicit", date: explicitDate, label: formatClarificationDate(explicitParts) }
+        ]
+      };
+    }
+  }
+  const timeMatches = Array.from(
+    normalized.matchAll(
+      new RegExp(`\\b(?:at\\s+)?((?:${SPOKEN_HOUR_PATTERN}|\\d{1,2})(?::\\d{2})?)\\s*(am|pm|a\\s*m|p\\s*m)\\b`, "g")
+    )
+  );
+  const normalizedTimes = new Set(
+    timeMatches
+      .map((match) => normalizeTimePhrase(`${match[1]} ${match[2]}`, "", { lastAskedSlot: "requestedTime" }))
+      .filter(Boolean)
+  );
+  if (normalizedTimes.size > 1) {
+    return {
+      conflictReason: "multiple_time_conflict",
+      prompt: "Which time did you mean?",
+      candidates: [...normalizedTimes].map((time) => ({ source: "time", time, label: time }))
+    };
+  }
+  return null;
 }
 
 function getZonedWeekdayIndex(timeZone, date = getReferenceDate()) {
@@ -4785,33 +4960,65 @@ function getPastRequestedDateTimeDecision(event, knownAttributes = undefined) {
     return null;
   }
 
-  const today = formatDateParts(getZonedDateParts(timeZone));
+  const referenceDate = getReferenceDate();
+  const todayParts = getZonedDateParts(timeZone, referenceDate);
+  const today = formatDateParts(todayParts);
   if (requestedDate > today) {
     return null;
   }
-  const nowMinutes = getZonedClockMinutes(timeZone);
+  const nowMinutes = getZonedClockMinutes(timeZone, referenceDate);
   if (requestedDate < today || (nowMinutes !== null && requestedMinutes <= nowMinutes)) {
+    const tomorrowDate = formatDateParts(addDaysToDateParts(todayParts, 1));
+    const salonNowParts = getZonedDateTimeParts(timeZone, referenceDate);
+    const requestedLocalDateTime = formatLocalDateTime(requestedDate, requestedMinutes);
     return {
       requestedDate,
       requestedTime: formatMinutesForPrompt(requestedMinutes),
-      timeZone
+      requestedMinutes,
+      timeZone,
+      sameDay: requestedDate === today,
+      proposedRequestedDate: requestedDate === today ? tomorrowDate : "",
+      proposedRequestedTime: formatMinutesForPrompt(requestedMinutes),
+      diagnostic: {
+        salonTimezone: timeZone,
+        salonNowIso: referenceDate.toISOString(),
+        salonNowLocal: `${formatDateParts(salonNowParts)}T${String(salonNowParts.hour).padStart(2, "0")}:${String(salonNowParts.minute).padStart(2, "0")}:${String(salonNowParts.second || 0).padStart(2, "0")}`,
+        requestedLocalDate: requestedDate,
+        requestedLocalTime: formatMinutesForPrompt(requestedMinutes),
+        requestedLocalDateTime,
+        requestedUtcDateTime: zonedLocalDateTimeToUtcIso(requestedDate, requestedMinutes, timeZone),
+        comparisonTimestamp: referenceDate.toISOString(),
+        temporalComparison: requestedDate < today ? "requested_date_before_salon_today" : "requested_time_not_after_salon_now",
+        temporalRejectionReason: requestedDate < today ? "past_requested_date" : "past_same_day_time",
+        proposedRequestedDate: requestedDate === today ? tomorrowDate : null,
+        proposedRequestedTime: formatMinutesForPrompt(requestedMinutes)
+      }
     };
   }
   return null;
 }
 
 function buildPastRequestedDateTimeResponse(event, decision = null) {
+  const sameDay = Boolean(decision?.sameDay);
+  const prompt = sameDay && decision?.requestedTime
+    ? `${decision.requestedTime} today is earlier than the current time at the salon. Would you like ${decision.requestedTime} tomorrow?`
+    : "That date is earlier than today at the salon. What future day would you like?";
   const response = buildElicitSlotResponse(
     event,
     "requestedDate",
     {
       dateTimeValidationReason: "past_requested_time",
+      temporalRejectionReason: decision?.diagnostic?.temporalRejectionReason || "past_requested_time",
+      dateDecisionDiagnostic: decision?.diagnostic ? JSON.stringify(decision.diagnostic) : undefined,
+      awaitingPastTimeTomorrowConfirmation: sameDay ? "true" : "false",
+      proposedRequestedDate: sameDay ? decision.proposedRequestedDate : undefined,
+      proposedRequestedTime: sameDay ? decision.proposedRequestedTime : undefined,
       awaitingFinalBookingConfirmation: "false",
       bookingConfirmationAsked: "false",
       forceHumanEscalation: "false",
       transferToQueue: "false"
     },
-    "That time has already passed. What future date and time would you like?"
+    prompt
   );
   const attrs = response.sessionState?.sessionAttributes || {};
   for (const key of [
@@ -4820,30 +5027,29 @@ function buildPastRequestedDateTimeResponse(event, decision = null) {
     "preferredDate",
     "PreferredDate",
     "trustedRequestedDate",
-    "requestedTime",
-    "RequestedTime",
-    "preferredTime",
-    "PreferredTime",
-    "trustedRequestedTime",
-    "awaitingTimeConfirmation",
-    "proposedRequestedTime"
+    "awaitingTimeConfirmation"
   ]) {
     delete attrs[key];
   }
   attrs.dateTimeValidationReason = "past_requested_time";
+  attrs.temporalRejectionReason = decision?.diagnostic?.temporalRejectionReason || "past_requested_time";
   if (decision?.requestedDate) {
     attrs.rejectedRequestedDate = decision.requestedDate;
   }
   if (decision?.requestedTime) {
     attrs.rejectedRequestedTime = decision.requestedTime;
+    attrs.requestedTime = decision.requestedTime;
+    attrs.proposedRequestedTime = decision.requestedTime;
+  }
+  if (sameDay && decision?.proposedRequestedDate) {
+    attrs.awaitingPastTimeTomorrowConfirmation = "true";
+    attrs.proposedRequestedDate = decision.proposedRequestedDate;
+  }
+  if (decision?.diagnostic) {
+    attrs.dateDecisionDiagnostic = JSON.stringify(decision.diagnostic);
   }
   const slots = response.sessionState?.intent?.slots || {};
   for (const key of ["requestedDate", "RequestedDate", "preferredDate", "PreferredDate"]) {
-    if (Object.prototype.hasOwnProperty.call(slots, key)) {
-      slots[key] = null;
-    }
-  }
-  for (const key of ["requestedTime", "RequestedTime", "preferredTime", "PreferredTime"]) {
     if (Object.prototype.hasOwnProperty.call(slots, key)) {
       slots[key] = null;
     }
@@ -5581,13 +5787,13 @@ function getNoInputPrompt(slotName, noInputCount, event) {
     return "Sorry, I didn't catch your name. What is your first name?";
   }
   if (slotName === "serviceName" && noInputCount <= 1) {
-    return SERVICE_KEYPAD_PROMPT;
+    return "Are you still there? Please tell me how I can help.";
   }
   if (noInputCount <= 1) {
     return getElicitPrompt(event, slotName, 1);
   }
   if (slotName === "serviceName") {
-    return SERVICE_DTMF_SHORT_PROMPT;
+    return "You can say book an appointment, or press 0 for a person.";
   }
   return getElicitPrompt(event, slotName, 2);
 }
@@ -6556,6 +6762,7 @@ function buildInternalPayload(event, intentName, extraAttributes = {}) {
     transcript,
     currentTurnTranscript,
     aggregatedBookingTranscript: transcript,
+    inputMode: getInputMode(event),
     source: "amazon_connect_ai",
     amazonConnectContactId,
     callSessionId: sessionAttributes.callSessionId,
@@ -6572,6 +6779,8 @@ function buildInternalPayload(event, intentName, extraAttributes = {}) {
 	      providerRequestId: getProviderRequestId(event),
 	      lexRequestId: event.requestId || event.invocationId || getProviderRequestId(event) || "",
 	      lexPhase: event.invocationSource || "",
+	      inputMode: getInputMode(event),
+	      inputModeSource: getInputModeSource(event),
 	      transcriptFingerprint: createHash("sha256")
 	        .update(normalizeForMatch(currentTurnTranscript))
 	        .digest("hex")
@@ -6973,7 +7182,43 @@ function fingerprintLexResponse(response) {
 }
 
 function getInputMode(event) {
-  return event.inputMode || (readDtmfDigit(event.inputTranscript) ? "DTMF" : "Speech");
+  const raw =
+    event?.inputMode ||
+    event?.requestAttributes?.inputMode ||
+    event?.requestAttributes?.InputMode ||
+    event?.requestAttributes?.["x-amz-lex:input-mode"] ||
+    "";
+  const normalized = String(raw || "").trim().toLowerCase();
+  if (normalized === "dtmf") {
+    return "DTMF";
+  }
+  if (normalized === "text") {
+    return "Text";
+  }
+  if (normalized === "speech") {
+    return "Speech";
+  }
+  return "Speech";
+}
+
+function getInputModeSource(event) {
+  if (event?.inputMode) {
+    return "event.inputMode";
+  }
+  if (event?.requestAttributes?.inputMode) {
+    return "requestAttributes.inputMode";
+  }
+  if (event?.requestAttributes?.InputMode) {
+    return "requestAttributes.InputMode";
+  }
+  if (event?.requestAttributes?.["x-amz-lex:input-mode"]) {
+    return "requestAttributes.x-amz-lex:input-mode";
+  }
+  return "default_speech";
+}
+
+function isGenuineDtmfInput(event) {
+  return getInputMode(event) === "DTMF" && getInputModeSource(event) !== "default_speech";
 }
 
 function numberFromLexMetric(value) {
@@ -7991,6 +8236,85 @@ function buildWrongSlotDtmfPrompt(event, slotName) {
   return getElicitPrompt(event, slotName || getBookingSlotToElicit(event) || "requestedDate", 1);
 }
 
+function spokenDigitPromptLabel(digit) {
+  return {
+    "0": "zero",
+    "1": "one",
+    "2": "two",
+    "3": "three",
+    "4": "four",
+    "5": "five",
+    "6": "six",
+    "7": "seven",
+    "8": "eight",
+    "9": "nine"
+  }[String(digit)] || String(digit);
+}
+
+function buildSpokenMenuSelectionClarificationResponse(event, dtmfRouting) {
+  if (!dtmfRouting?.spokenMenuSelectionProposed || !dtmfRouting.proposedSelection) {
+    return null;
+  }
+  if (dtmfRouting.route === "service_menu") {
+    return buildElicitSlotResponse(
+      event,
+      "serviceName",
+      {
+        awaitingServiceConfirmation: "true",
+        proposedServiceName: dtmfRouting.proposedSelection,
+        spokenMenuSelectionProposed: "true",
+        spokenDigitCandidate: dtmfRouting.spokenDigitCandidate || "",
+        dtmfAccepted: "false",
+        dtmfRejectedReason: "speech_digit_requires_confirmation",
+        serviceRecognitionSource: "speech_menu_digit_proposal",
+        serviceRecognitionConfidence: "",
+        asrConfidenceSource: "unknown",
+        ambiguityReason: "spoken_digit_not_genuine_dtmf",
+        clarificationReason: "spoken_service_menu_digit_requires_confirmation",
+        forceHumanEscalation: "false",
+        transferToQueue: "false",
+        voiceSlotDecisions: JSON.stringify([
+          buildProposedVoiceSlotDecision(
+            "serviceName",
+            dtmfRouting.proposedSelection,
+            "spoken_service_menu_digit_requires_confirmation",
+            `spoken option ${dtmfRouting.spokenDigitCandidate || ""}`,
+            false,
+            "medium",
+            getActiveVoiceSlot(event.sessionState?.sessionAttributes || {})
+          )
+        ]),
+        proposedSlotMutation: JSON.stringify({
+          slotName: "serviceName",
+          proposedValue: dtmfRouting.proposedSelection,
+          accepted: false,
+          reason: "spoken_service_menu_digit_requires_confirmation"
+        })
+      },
+      `Did you choose option ${spokenDigitPromptLabel(dtmfRouting.spokenDigitCandidate)}, ${dtmfRouting.proposedSelection}? Please say yes, or say the service name.`
+    );
+  }
+  if (dtmfRouting.route === "staff_menu") {
+    return buildElicitSlotResponse(
+      event,
+      "staffPreference",
+      {
+        awaitingStaffConfirmation: "true",
+        proposedStaffPreference: dtmfRouting.proposedSelection,
+        spokenMenuSelectionProposed: "true",
+        spokenDigitCandidate: dtmfRouting.spokenDigitCandidate || "",
+        dtmfAccepted: "false",
+        dtmfRejectedReason: "speech_digit_requires_confirmation",
+        staffClarificationReason: "spoken_staff_menu_digit_requires_confirmation",
+        forceHumanEscalation: "false",
+        transferToQueue: "false"
+      },
+      `Did you choose option ${spokenDigitPromptLabel(dtmfRouting.spokenDigitCandidate)}, ${dtmfRouting.proposedSelection}? Please say yes, or say the staff name.`
+    );
+  }
+  return null;
+}
+
 async function handleLexEvent(event, analysis = {}) {
   try {
     const rawIntentName = event.sessionState?.intent?.name || "";
@@ -8159,6 +8483,17 @@ async function handleLexEvent(event, analysis = {}) {
 
     if (
       !shouldEscalate &&
+      intentName === "BookAppointmentIntent" &&
+      analysis.dtmfRouting?.spokenMenuSelectionProposed
+    ) {
+      const spokenMenuResponse = buildSpokenMenuSelectionClarificationResponse(event, analysis.dtmfRouting);
+      if (spokenMenuResponse) {
+        return spokenMenuResponse;
+      }
+    }
+
+    if (
+      !shouldEscalate &&
       (analysis.dtmfRouting?.digit || analysis.dtmfRouting?.isMultiDigitOrDigitSequence) &&
       !analysis.dtmfRouting.accepted &&
       ["wrong_slot", "no_active_menu"].includes(analysis.dtmfRouting.route) &&
@@ -8203,6 +8538,60 @@ async function handleLexEvent(event, analysis = {}) {
             timeRecognitionConfirmed: "false"
           },
           "No problem. What time would you like?"
+        );
+      }
+    }
+
+    if (
+      !shouldEscalate &&
+      intentName === "BookAppointmentIntent" &&
+      sessionAttributes.awaitingPastTimeTomorrowConfirmation === "true"
+    ) {
+      if (
+        isAffirmativeUtterance(event.inputTranscript) &&
+        sessionAttributes.proposedRequestedDate &&
+        sessionAttributes.proposedRequestedTime
+      ) {
+        event = withSessionAttributes(event, {
+          requestedDate: sessionAttributes.proposedRequestedDate,
+          requestedTime: sessionAttributes.proposedRequestedTime,
+          awaitingPastTimeTomorrowConfirmation: "false",
+          proposedRequestedDate: "",
+          proposedRequestedTime: "",
+          dateTimeValidationReason: "",
+          temporalRejectionReason: "",
+          pastTimeProposalConfirmed: "true",
+          lastAskedSlot: "requestedDate",
+          awaitingFinalBookingConfirmation: "false",
+          bookingConfirmationAsked: "false"
+        });
+      } else if (isNegativeUtterance(event.inputTranscript)) {
+        return buildElicitSlotResponse(
+          event,
+          "requestedDate",
+          {
+            requestedTime: sessionAttributes.proposedRequestedTime || sessionAttributes.rejectedRequestedTime,
+            awaitingPastTimeTomorrowConfirmation: "false",
+            proposedRequestedDate: "",
+            proposedRequestedTime: sessionAttributes.proposedRequestedTime || sessionAttributes.rejectedRequestedTime || "",
+            pastTimeProposalConfirmed: "false",
+            forceHumanEscalation: "false",
+            transferToQueue: "false"
+          },
+          "What future day would you like?"
+        );
+      } else {
+        return buildElicitSlotResponse(
+          event,
+          "requestedDate",
+          {
+            awaitingPastTimeTomorrowConfirmation: "true",
+            proposedRequestedDate: sessionAttributes.proposedRequestedDate,
+            proposedRequestedTime: sessionAttributes.proposedRequestedTime,
+            forceHumanEscalation: "false",
+            transferToQueue: "false"
+          },
+          `Would you like ${sessionAttributes.proposedRequestedTime} tomorrow? Please say yes or no.`
         );
       }
     }
@@ -8461,6 +8850,34 @@ async function handleLexEvent(event, analysis = {}) {
 	      !shouldEscalate && intentName === "BookAppointmentIntent"
 	        ? findWeekdayDateConflict(getCurrentTurnTranscript(event), timeZone)
 	        : null;
+    const temporalConflict =
+      !shouldEscalate && intentName === "BookAppointmentIntent"
+        ? getCurrentTurnTemporalConflict(getCurrentTurnTranscript(event), timeZone)
+        : null;
+    if (temporalConflict) {
+      return buildElicitSlotResponse(
+        event,
+        "requestedDate",
+        {
+          requestedDate: undefined,
+          dateClarificationReason: temporalConflict.conflictReason,
+          dateDecisionDiagnostic: JSON.stringify({
+            rawTranscript: getCurrentTurnTranscript(event),
+            salonTimezone: timeZone,
+            referenceLocalDate: formatDateParts(getZonedDateParts(timeZone)),
+            selectedDate: null,
+            decisionReason: temporalConflict.conflictReason,
+            clarificationReason: temporalConflict.conflictReason,
+            candidates: temporalConflict.candidates
+          }),
+          awaitingFinalBookingConfirmation: "false",
+          bookingConfirmationAsked: "false",
+          forceHumanEscalation: "false",
+          transferToQueue: "false"
+        },
+        temporalConflict.prompt
+      );
+    }
 	    if (weekdayDateConflict) {
       return buildElicitSlotResponse(
         event,
@@ -9253,9 +9670,7 @@ async function handleLexEvent(event, analysis = {}) {
           return await buildDynamicServiceElicitResponse(event, intentName);
         }
         const response = buildElicitSlotResponse(event, slotToElicit);
-        const rawDtmfTurn =
-          event.inputMode === "DTMF" || /^\s*\d\s*$/.test(String(event.inputTranscript || ""));
-        if (analysis.dtmfRouting?.accepted && rawDtmfTurn) {
+        if (analysis.dtmfRouting?.accepted && isGenuineDtmfInput(event)) {
           await postInternalAppointment(buildInternalPayload(event, intentName), {
             operationName: "booking_turn_logging",
             waitPrompt: WAIT_PROMPTS.availability_lookup,

@@ -29,6 +29,9 @@ const REQUIRED_CUSTOM_VOCABULARY = [
   "Full Set",
   "Fullset",
   "Nail full set",
+  "Pedicure",
+  "Manicure",
+  "Gel Manicure",
   "Any staff",
   "Any staff is fine",
   "First available",
@@ -146,6 +149,50 @@ const sha256Buffer = (buffer, encoding = "hex") =>
 const sha256File = (filePath, encoding = "hex") => sha256Buffer(fs.readFileSync(filePath), encoding);
 
 const sha256Json = (value) => sha256Buffer(Buffer.from(JSON.stringify(value)), "hex");
+
+const CONNECT_FLOW_HASH_ATTRIBUTE_KEYS = new Set([
+  "connectFlowNormalizedHash",
+  "VOICE_CONNECT_FLOW_NORMALIZED_HASH"
+]);
+
+const withoutConnectFlowHashAttributes = (value) => {
+  if (Array.isArray(value)) {
+    return value.map((entry) => withoutConnectFlowHashAttributes(entry));
+  }
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => !CONNECT_FLOW_HASH_ATTRIBUTE_KEYS.has(key))
+      .map(([key, entry]) => [key, withoutConnectFlowHashAttributes(entry)])
+  );
+};
+
+export const connectFlowNormalizedSha256 = (content) =>
+  sha256Json(withoutConnectFlowHashAttributes(content));
+
+const setConnectFlowHashAttributes = (content, normalizedHash) => {
+  const walk = (value) => {
+    if (!value || typeof value !== "object") {
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach(walk);
+      return;
+    }
+    if (value.LexSessionAttributes && typeof value.LexSessionAttributes === "object") {
+      value.LexSessionAttributes.connectFlowNormalizedHash = normalizedHash;
+      value.LexSessionAttributes.VOICE_CONNECT_FLOW_NORMALIZED_HASH = normalizedHash;
+    }
+    if (value.Attributes && typeof value.Attributes === "object") {
+      value.Attributes.connectFlowNormalizedHash = normalizedHash;
+      value.Attributes.VOICE_CONNECT_FLOW_NORMALIZED_HASH = normalizedHash;
+    }
+    Object.values(value).forEach(walk);
+  };
+  walk(content);
+};
 
 const safeAliasName = (value) =>
   String(value)
@@ -1094,6 +1141,8 @@ export function generateConnectFlowContent(sourceContent, options) {
     attrs.VOICE_VARIANT = variant;
     attrs.VOICE_CONNECT_FLOW_ID = flowId || targetConfig(targets, target).flow.id;
     attrs.VOICE_CONNECT_MARKER = marker;
+    attrs.connectFlowNormalizedHash = "";
+    attrs.VOICE_CONNECT_FLOW_NORMALIZED_HASH = "";
     attrs.VOICE_LEX_ALIAS_ID = lexAliasId || aliasArn.split("/").pop();
     attrs.VOICE_LEX_ALIAS_ARN = aliasArn;
     attrs.VOICE_LEX_BOT_VERSION = lexBotVersion || "";
@@ -1133,6 +1182,7 @@ export function generateConnectFlowContent(sourceContent, options) {
     }
   };
   walk(content);
+  setConnectFlowHashAttributes(content, connectFlowNormalizedSha256(content));
   return content;
 }
 
@@ -1190,6 +1240,8 @@ export function validateConnectFlow(content, { aliasArn, marker }) {
       "VOICE_VARIANT",
       "VOICE_CONNECT_FLOW_ID",
       "VOICE_CONNECT_MARKER",
+      "connectFlowNormalizedHash",
+      "VOICE_CONNECT_FLOW_NORMALIZED_HASH",
       "VOICE_LEX_ALIAS_ID",
       "VOICE_LEX_ALIAS_ARN",
       "VOICE_LEX_BOT_VERSION",
@@ -1260,7 +1312,7 @@ function generateConnectArtifact({
     marker,
     aliasArn,
     aliasName,
-    normalizedSha256: sha256Json(content),
+    normalizedSha256: connectFlowNormalizedSha256(content),
     lexBlocks: (content.Actions ?? []).filter((action) => action.Type === "ConnectParticipantWithLexBot").length
   };
   writeReleaseFile(releaseId, "connect-artifact.json", artifact);
@@ -1741,7 +1793,7 @@ function captureTargetSnapshot(targets, target, outputName) {
       flowId: flow.id,
       name: flow.name,
       marker: findConnectMarker(flowContent),
-      normalizedSha256: sha256Json(flowContent),
+      normalizedSha256: connectFlowNormalizedSha256(flowContent),
       status: connectFlow.ContactFlow.Status,
       state: connectFlow.ContactFlow.State,
       content: flowContent
@@ -2471,7 +2523,7 @@ function readbackConnectFlow(targets, flowId) {
     status: live.ContactFlow.Status,
     state: live.ContactFlow.State,
     marker: findConnectMarker(content),
-    normalizedSha256: sha256Json(content),
+    normalizedSha256: connectFlowNormalizedSha256(content),
     aliasArns: Array.from(
       new Set(
         reachableActions(content)

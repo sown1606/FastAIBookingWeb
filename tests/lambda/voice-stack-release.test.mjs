@@ -9,6 +9,7 @@ import {
   assertReadbackMatchesManifest,
   buildReleasePlan,
   buildRollbackPlan,
+  connectFlowNormalizedSha256,
   computeApiSourceHash,
   computeSourceHash,
   contactMatchesRelease,
@@ -214,6 +215,16 @@ test("voice release dynamic marker is injected into every reachable Lex path", (
   });
 
   assert.deepEqual(validateConnectFlow(generated, { aliasArn, marker }), []);
+  const generatedHash = connectFlowNormalizedSha256(generated);
+  for (const action of generated.Actions) {
+    const attrs = action.Parameters?.LexSessionAttributes ?? action.Parameters?.Attributes;
+    if (!attrs?.connectFlowSourceVersion) {
+      continue;
+    }
+    assert.equal(attrs.connectFlowSourceVersion, marker);
+    assert.equal(attrs.connectFlowNormalizedHash, generatedHash);
+    assert.equal(attrs.VOICE_CONNECT_FLOW_NORMALIZED_HASH, generatedHash);
+  }
 });
 
 test("voice release Lambda ZIP has index.mjs at root with matching hash", () => {

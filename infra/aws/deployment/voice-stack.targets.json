@@ -9,12 +9,12 @@
       "production": {
         "id": "dcccf542-587c-426c-a644-a4c6f24da6e4",
         "name": "FastAIBooking AI Reception",
-        "marker": "2026-07-20-voice-never-silent-clarification-hotfix"
+        "marker": "2026-07-21-thuyet-p0-greeting-service-time-hotfix"
       },
       "canary": {
         "id": "70b6c12b-1a5f-4d37-aea3-943dc291acd3",
         "name": "FastAIBooking AI Reception P0 Canary 20260717",
-        "marker": "2026-07-20-voice-never-silent-clarification-hotfix-canary"
+        "marker": "2026-07-21-thuyet-p0-greeting-service-time-hotfix-canary"
       }
     }
   },

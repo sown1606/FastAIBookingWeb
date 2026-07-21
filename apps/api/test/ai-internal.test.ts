@@ -4378,6 +4378,7 @@ test("first unresolved service attempt provides stable numbered menu and DTMF 1 
       staffPreference: undefined,
       confirmationState: undefined,
       transcript: "1",
+      inputMode: "DTMF",
       attributes: firstAttrs
     })
   );
@@ -4910,6 +4911,7 @@ test("service DTMF applies only to serviceName before staff prompt", async () =>
       staffPreference: undefined,
       confirmationState: undefined,
       transcript: "1",
+      inputMode: "DTMF",
       attributes: {
         lastAskedSlot: "serviceName",
         activeDtmfMenu: "service",
@@ -4933,6 +4935,140 @@ test("service DTMF applies only to serviceName before staff prompt", async () =>
   assert.equal(state.appointments.length, 0);
 });
 
+test("real service DTMF 2 selects Manicure from the active service menu", async () => {
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: undefined,
+      requestedDate: FUTURE_THURSDAY,
+      requestedTime: "5 PM",
+      staffPreference: "Amy",
+      staffId: ids.amy,
+      confirmationState: undefined,
+      transcript: "2",
+      inputMode: "DTMF",
+      attributes: {
+        lastAskedSlot: "serviceName",
+        activeDtmfMenu: "service",
+        activeDtmfOptionsJson: JSON.stringify({
+          "1": "Pedicure",
+          "2": "Manicure",
+          "3": "Gel Manicure",
+          "4": "Full Set",
+          "5": "Dip Powder",
+          "0": "__operator__"
+        }),
+        requestedDate: FUTURE_THURSDAY,
+        requestedTime: "5 PM",
+        staffPreference: "Amy",
+        staffId: ids.amy,
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266"
+      }
+    })
+  );
+
+  const attrs = result.body.data.lexResponse.sessionAttributes;
+  assert.equal(result.response.status, 200);
+  assert.equal(attrs.serviceName, "Manicure");
+  assert.equal(attrs.confirmedServiceName, "Manicure");
+  assert.equal(attrs.staffPreference, "Amy");
+  assert.equal(state.appointments.length, 0);
+});
+
+test("spoken service menu digits ask for service confirmation instead of committing Manicure", async () => {
+  for (const { phrase, inputMode } of [
+    { phrase: "two", inputMode: "Speech" },
+    { phrase: "uh two", inputMode: "Speech" },
+    { phrase: "option two", inputMode: "Speech" },
+    { phrase: "2", inputMode: undefined }
+  ]) {
+    resetMockState();
+    const result = await postInternalAppointment(
+      bookingPayload({
+        serviceName: undefined,
+        requestedDate: FUTURE_THURSDAY,
+        requestedTime: "5 PM",
+        staffPreference: "Amy",
+        staffId: ids.amy,
+        confirmationState: undefined,
+        transcript: phrase,
+        currentTurnTranscript: phrase,
+        ...(inputMode ? { inputMode } : {}),
+        attributes: {
+          lastAskedSlot: "serviceName",
+          activeDtmfMenu: "service",
+          activeDtmfOptionsJson: JSON.stringify({
+            "1": "Pedicure",
+            "2": "Manicure",
+            "3": "Gel Manicure",
+            "4": "Full Set",
+            "5": "Dip Powder",
+            "0": "__operator__"
+          }),
+          requestedDate: FUTURE_THURSDAY,
+          requestedTime: "5 PM",
+          staffPreference: "Amy",
+          staffId: ids.amy,
+          customerName: "Kiet Nguyen",
+          customerPhone: "+17325956266"
+        }
+      })
+    );
+
+    const attrs = result.body.data.lexResponse.sessionAttributes;
+    assert.equal(result.response.status, 200, phrase);
+    assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName", phrase);
+    assert.equal(attrs.serviceName, undefined, phrase);
+    assert.equal(attrs.confirmedServiceName, undefined, phrase);
+    assert.equal(attrs.proposedServiceName, "Manicure", phrase);
+    assert.equal(attrs.awaitingServiceConfirmation, "true", phrase);
+    assert.equal(attrs.spokenMenuSelectionProposed, "true", phrase);
+    assert.equal(attrs.dtmfAccepted, "false", phrase);
+    assert.match(result.body.data.lexResponse.message, /Did you choose option two, Manicure\? Please say yes, or say the service name\./i, phrase);
+    assert.equal(state.appointments.length, 0, phrase);
+  }
+});
+
+test("two PM speech never routes through the service DTMF menu", async () => {
+  const result = await postInternalAppointment(
+    bookingPayload({
+      serviceName: undefined,
+      requestedDate: FUTURE_THURSDAY,
+      requestedTime: undefined,
+      staffPreference: "Amy",
+      staffId: ids.amy,
+      confirmationState: undefined,
+      transcript: "two P.M.",
+      currentTurnTranscript: "two P.M.",
+      inputMode: "Speech",
+      attributes: {
+        lastAskedSlot: "serviceName",
+        activeDtmfMenu: "service",
+        activeDtmfOptionsJson: JSON.stringify({
+          "1": "Pedicure",
+          "2": "Manicure",
+          "3": "Gel Manicure",
+          "4": "Full Set",
+          "5": "Dip Powder",
+          "0": "__operator__"
+        }),
+        requestedDate: FUTURE_THURSDAY,
+        staffPreference: "Amy",
+        staffId: ids.amy,
+        customerName: "Kiet Nguyen",
+        customerPhone: "+17325956266"
+      }
+    })
+  );
+
+  const attrs = result.body.data.lexResponse.sessionAttributes;
+  assert.equal(result.response.status, 200);
+  assert.notEqual(attrs.serviceName, "Manicure");
+  assert.notEqual(attrs.confirmedServiceName, "Manicure");
+  assert.notEqual(attrs.spokenMenuSelectionProposed, "true");
+  assert.equal(state.appointments.length, 0);
+});
+
 test("service DTMF 4 maps to Full Set", async () => {
   const result = await postInternalAppointment(
     bookingPayload({
@@ -4940,6 +5076,7 @@ test("service DTMF 4 maps to Full Set", async () => {
       staffPreference: "Trang",
       confirmationState: undefined,
       transcript: "4",
+      inputMode: "DTMF",
       attributes: {
         lastAskedSlot: "serviceName",
         activeDtmfMenu: "service",
@@ -5020,7 +5157,7 @@ test("observed fun facts ASR asks Full Set confirmation only in booking context"
   assert.equal(state.appointments.length, 0);
 });
 
-test("observed pay the bill phrase resolves Pedicure, future date, 2 PM, and exact Any staff", async () => {
+test("billing-like pay the bill phrase does not resolve Pedicure", async () => {
   const result = await postInternalAppointment(
     bookingPayload({
       serviceName: undefined,
@@ -5040,12 +5177,11 @@ test("observed pay the bill phrase resolves Pedicure, future date, 2 PM, and exa
 
   assert.equal(result.response.status, 200);
   assert.equal(result.body.data.outcome, "MISSING_INFO");
-  assertBookingConfirmationDialog(result.body.data.lexResponse.dialogAction);
-  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Pedicure");
-  assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedServiceName, "Pedicure");
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, undefined);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedServiceName, undefined);
   assert.equal(result.body.data.lexResponse.sessionAttributes.requestedDate, FUTURE_THURSDAY);
-  assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
-  assert.match(result.body.data.lexResponse.message, /Pedicure/i);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Any staff");
   assert.match(result.body.data.lexResponse.message, /2 PM/i);
   assert.equal(state.appointments.length, 0);
 });
@@ -5123,6 +5259,7 @@ test("active service DTMF menu maps 4 to Full Set before stale lastAskedSlot", a
       staffPreference: undefined,
       confirmationState: undefined,
       transcript: "4",
+      inputMode: "DTMF",
       attributes: {
         lastAskedSlot: "requestedDate",
         activeDtmfMenu: "service",
@@ -5181,6 +5318,7 @@ test("active staff DTMF menu maps digit without polluting service or time", asyn
       staffPreference: undefined,
       confirmationState: undefined,
       transcript: "2",
+      inputMode: "DTMF",
       attributes: {
         lastAskedSlot: "requestedDate",
         activeDtmfMenu: "staff",
@@ -5531,6 +5669,7 @@ test("after service DTMF 4, name and date turns keep Full Set", async () => {
       staffPreference: undefined,
       confirmationState: undefined,
       transcript: "4",
+      inputMode: "DTMF",
       attributes: {
         lastAskedSlot: "serviceName",
         activeDtmfMenu: "service",
@@ -5616,6 +5755,7 @@ test("dropped initial Full Set turn prevents bare service DTMF 5 from silently b
       confirmationState: undefined,
       transcript: "5",
       currentTurnTranscript: "5",
+      inputMode: "DTMF",
       amazonConnectContactId: "3988268e-c6c3-4fdc-a273-d460b157fa7d",
       attributes: {
         initialBookingUtterance: "Full Set",
@@ -5657,6 +5797,7 @@ test("staff DTMF applies only to staffPreference and reaches confirmation", asyn
       staffPreference: undefined,
       confirmationState: undefined,
       transcript: "1",
+      inputMode: "DTMF",
       attributes: {
         lastAskedSlot: "staffPreference",
         activeDtmfMenu: "staff",
@@ -5689,6 +5830,7 @@ test("staff DTMF 3 maps to Kelly and does not ask staff again", async () => {
       staffPreference: undefined,
       confirmationState: undefined,
       transcript: "3",
+      inputMode: "DTMF",
       attributes: {
         lastAskedSlot: "staffPreference",
         activeDtmfMenu: "staff",
@@ -5717,6 +5859,7 @@ test("staff DTMF 4 maps to any staff and resolves before confirmation", async ()
       staffPreference: undefined,
       confirmationState: undefined,
       transcript: "4",
+      inputMode: "DTMF",
       attributes: {
         lastAskedSlot: "staffPreference",
         activeDtmfMenu: "staff",
@@ -5745,6 +5888,7 @@ test("staff DTMF uses session staffId mapping instead of name-only matching", as
       staffPreference: undefined,
       confirmationState: undefined,
       transcript: "2",
+      inputMode: "DTMF",
       attributes: {
         lastAskedSlot: "staffPreference",
         activeDtmfMenu: "staff",
@@ -6013,6 +6157,7 @@ test("invalid staff DTMF repeats staff options without booking", async () => {
       staffPreference: undefined,
       confirmationState: undefined,
       transcript: "9",
+      inputMode: "DTMF",
       attributes: {
         lastAskedSlot: "staffPreference",
         activeDtmfMenu: "staff",
@@ -6112,6 +6257,7 @@ test("staff DTMF mapping stays stable across failed speech retries", async () =>
       staffPreference: undefined,
       confirmationState: undefined,
       amazonConnectContactId: "connect-staff-menu-stability",
+      inputMode: "DTMF",
       currentTurnTranscript: trangDigit,
       transcript: trangDigit,
       attributes: third.body.data.lexResponse.sessionAttributes
@@ -7082,14 +7228,231 @@ test("past requested appointment is rejected before availability or create", asy
   assert.equal(result.response.status, 200);
   assert.equal(result.body.data.outcome, "MISSING_INFO");
   assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "requestedDate");
-  assert.match(result.body.data.lexResponse.message, /That time has already passed/i);
+  assert.match(result.body.data.lexResponse.message, /That date is earlier than today at the salon/i);
+  assert.doesNotMatch(result.body.data.lexResponse.message, /passed|paid|already booked/i);
   assert.equal(attrs.serviceName, "Full Set");
   assert.equal(attrs.staffPreference, "Amy");
   assert.equal(attrs.requestedDate, undefined);
-  assert.equal(attrs.requestedTime, undefined);
+  assert.equal(attrs.requestedTime, "3 PM");
   assert.equal(attrs.dateClarificationReason, "PAST_REQUESTED_TIME");
+  assert.equal(attrs.temporalRejectionReason, "past_requested_date");
   assert.equal(state.validationStaffIds.length, 0);
   assert.equal(state.appointments.length, 0);
+});
+
+test("same-day past requested time uses salon timezone and proposes tomorrow", async () => {
+  await withFixedNow("2026-07-20T21:14:00-04:00", async () => {
+    const result = await postInternalAppointment(
+      bookingPayload({
+        customerName: "Lee",
+        customerPhone: "+84798171999",
+        serviceName: "Pedicure",
+        requestedDate: "2026-07-20",
+        requestedTime: "3 PM",
+        staffPreference: "Amy",
+        staffId: ids.amy,
+        confirmationState: "Confirmed",
+        amazonConnectContactId: "connect-api-past-same-day-3pm",
+        currentTurnTranscript: "I want to book an appointment today at 3 PM",
+        transcript: "I want to book an appointment today at 3 PM",
+        attributes: {
+          serviceName: "Pedicure",
+          requestedDate: "2026-07-20",
+          requestedTime: "3 PM",
+          staffPreference: "Amy",
+          staffId: ids.amy,
+          customerName: "Lee",
+          customerPhone: "+84798171999"
+        }
+      })
+    );
+
+    const attrs = result.body.data.lexResponse.sessionAttributes;
+    const diagnostic = JSON.parse(attrs.dateDecisionDiagnostic);
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.data.outcome, "MISSING_INFO");
+    assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "requestedDate");
+    assert.match(result.body.data.lexResponse.message, /3 PM today is earlier than the current time at the salon\. Would you like 3 PM tomorrow\?/i);
+    assert.doesNotMatch(result.body.data.lexResponse.message, /passed|paid|already booked/i);
+    assert.equal(attrs.requestedDate, undefined);
+    assert.equal(attrs.requestedTime, "3 PM");
+    assert.equal(attrs.awaitingPastTimeTomorrowConfirmation, "true");
+    assert.equal(attrs.proposedRequestedDate, "2026-07-21");
+    assert.equal(attrs.proposedRequestedTime, "3 PM");
+    assert.equal(attrs.serviceName, "Pedicure");
+    assert.equal(attrs.staffPreference, "Amy");
+    assert.equal(diagnostic.salonTimezone, "America/New_York");
+    assert.equal(diagnostic.salonNowIso, "2026-07-21T01:14:00.000Z");
+    assert.equal(diagnostic.requestedLocalDate, "2026-07-20");
+    assert.equal(diagnostic.requestedLocalTime, "3 PM");
+    assert.equal(diagnostic.requestedUtcDateTime, "2026-07-20T19:00:00.000Z");
+    assert.equal(diagnostic.temporalRejectionReason, "past_same_day_time");
+    assert.equal(state.validationStaffIds.length, 0);
+    assert.equal(state.appointments.length, 0);
+  });
+});
+
+test("yes to same-day past-time proposal changes only requested date", async () => {
+  await withFixedNow("2026-07-20T21:14:00-04:00", async () => {
+    const result = await postInternalAppointment(
+      bookingPayload({
+        customerName: "Lee",
+        customerPhone: "+84798171999",
+        serviceName: undefined,
+        requestedDate: undefined,
+        requestedTime: undefined,
+        staffPreference: "Amy",
+        staffId: ids.amy,
+        confirmationState: undefined,
+        amazonConnectContactId: "connect-api-past-same-day-yes",
+        currentTurnTranscript: "yes",
+        transcript: "yes",
+        inputMode: "Speech",
+        attributes: {
+          awaitingPastTimeTomorrowConfirmation: "true",
+          proposedRequestedDate: "2026-07-21",
+          proposedRequestedTime: "3 PM",
+          serviceName: "Pedicure",
+          confirmedServiceName: "Pedicure",
+          requestedTime: "3 PM",
+          staffPreference: "Amy",
+          staffId: ids.amy,
+          customerName: "Lee",
+          customerPhone: "+84798171999"
+        }
+      })
+    );
+
+    const attrs = result.body.data.lexResponse.sessionAttributes;
+    assert.equal(result.response.status, 200);
+    assert.equal(attrs.requestedDate, "2026-07-21");
+    assert.equal(attrs.requestedTime, "3 PM");
+    assert.equal(attrs.serviceName, "Pedicure");
+    assert.equal(attrs.staffPreference, "Amy");
+    assert.equal(state.appointments.length, 0);
+  });
+});
+
+test("no to same-day past-time proposal retains trusted slots and asks future day", async () => {
+  await withFixedNow("2026-07-20T21:14:00-04:00", async () => {
+    const result = await postInternalAppointment(
+      bookingPayload({
+        customerName: "Lee",
+        customerPhone: "+84798171999",
+        serviceName: undefined,
+        requestedDate: undefined,
+        requestedTime: undefined,
+        staffPreference: "Amy",
+        staffId: ids.amy,
+        confirmationState: undefined,
+        amazonConnectContactId: "connect-api-past-same-day-no",
+        currentTurnTranscript: "no",
+        transcript: "no",
+        inputMode: "Speech",
+        attributes: {
+          awaitingPastTimeTomorrowConfirmation: "true",
+          proposedRequestedDate: "2026-07-21",
+          proposedRequestedTime: "3 PM",
+          serviceName: "Pedicure",
+          confirmedServiceName: "Pedicure",
+          requestedTime: "3 PM",
+          staffPreference: "Amy",
+          staffId: ids.amy,
+          customerName: "Lee",
+          customerPhone: "+84798171999"
+        }
+      })
+    );
+
+    const attrs = result.body.data.lexResponse.sessionAttributes;
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "requestedDate");
+    assert.match(result.body.data.lexResponse.message, /What future day would you like\?/i);
+    assert.equal(attrs.requestedDate, undefined);
+    assert.equal(attrs.requestedTime, "3 PM");
+    assert.equal(attrs.serviceName, "Pedicure");
+    assert.equal(attrs.staffPreference, "Amy");
+    assert.equal(attrs.pastTimeProposalConfirmed, "false");
+    assert.equal(state.appointments.length, 0);
+  });
+});
+
+test("future same-day requested time is not rejected as past", async () => {
+  await withFixedNow("2026-07-20T13:14:00-04:00", async () => {
+    const result = await postInternalAppointment(
+      bookingPayload({
+        customerName: "Lee",
+        customerPhone: "+84798171999",
+        serviceName: "Pedicure",
+        requestedDate: "2026-07-20",
+        requestedTime: "3 PM",
+        staffPreference: "Amy",
+        staffId: ids.amy,
+        confirmationState: undefined,
+        amazonConnectContactId: "connect-api-future-same-day-3pm",
+        currentTurnTranscript: "I want to book an appointment today at 3 PM",
+        transcript: "I want to book an appointment today at 3 PM",
+        attributes: {
+          serviceName: "Pedicure",
+          requestedDate: "2026-07-20",
+          requestedTime: "3 PM",
+          staffPreference: "Amy",
+          staffId: ids.amy,
+          customerName: "Lee",
+          customerPhone: "+84798171999"
+        }
+      })
+    );
+
+    const attrs = result.body.data.lexResponse.sessionAttributes;
+    assert.equal(result.response.status, 200);
+    assertBookingConfirmationDialog(result.body.data.lexResponse.dialogAction);
+    assert.equal(attrs.requestedDate, "2026-07-20");
+    assert.equal(attrs.requestedTime, "3 PM");
+    assert.notEqual(attrs.dateTimeValidationReason, "past_requested_time");
+    assert.equal(state.appointments.length, 0);
+  });
+});
+
+test("conflicting today and tomorrow asks a focused date clarification", async () => {
+  await withFixedNow("2026-07-20T21:14:00-04:00", async () => {
+    const result = await postInternalAppointment(
+      bookingPayload({
+        customerName: "Lee",
+        customerPhone: "+84798171999",
+        serviceName: "Pedicure",
+        requestedDate: "2026-07-21",
+        requestedTime: "11 AM",
+        staffPreference: "Amy",
+        staffId: ids.amy,
+        confirmationState: undefined,
+        amazonConnectContactId: "connect-api-tomorrow-today-eleven",
+        currentTurnTranscript: "tomorrow today at eleven AM",
+        transcript: "tomorrow today at eleven AM",
+        attributes: {
+          currentTurnTranscript: "tomorrow today at eleven AM",
+          serviceName: "Pedicure",
+          requestedTime: "11 AM",
+          staffPreference: "Amy",
+          staffId: ids.amy,
+          customerName: "Lee",
+          customerPhone: "+84798171999"
+        }
+      })
+    );
+
+    const attrs = result.body.data.lexResponse.sessionAttributes;
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "requestedDate");
+    assert.match(result.body.data.lexResponse.message, /Did you mean today or tomorrow\?/i);
+    assert.equal(attrs.requestedDate, undefined);
+    assert.equal(attrs.requestedTime, "11 AM");
+    assert.equal(attrs.serviceName, "Pedicure");
+    assert.equal(attrs.staffPreference, "Amy");
+    assert.equal(attrs.dateClarificationReason, "TODAY_TOMORROW_CONFLICT");
+    assert.equal(state.validationStaffIds.length, 0);
+    assert.equal(state.appointments.length, 0);
+  });
 });
 
 test("weekday and explicit calendar date conflict is clarified before availability", async () => {
@@ -10440,7 +10803,8 @@ test("DTMF zero uses the same pending operator route without booking pollution",
       staffPreference: "speak person",
       staffId: ids.amy,
       currentTurnTranscript: "0",
-      transcript: "0"
+      transcript: "0",
+      inputMode: "DTMF"
     })
   );
 

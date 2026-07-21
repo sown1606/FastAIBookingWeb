@@ -51,6 +51,21 @@
       "displayAs": "No preference"
     },
     {
+      "phrase": "Pedicure",
+      "weight": 3,
+      "displayAs": "Pedicure"
+    },
+    {
+      "phrase": "Manicure",
+      "weight": 3,
+      "displayAs": "Manicure"
+    },
+    {
+      "phrase": "Gel Manicure",
+      "weight": 3,
+      "displayAs": "Gel Manicure"
+    },
+    {
       "phrase": "Trang",
       "weight": 3,
       "displayAs": "Trang"
