@@ -1342,6 +1342,7 @@ export function buildReleasePlan({ target, dryRun = false, acceptedManifest = nu
           "lex:create-bot-version",
           "lex:create-or-update-bot-alias",
           "lambda:add-permission",
+          "connect:associate-lex-bot-alias",
           "connect:update-contact-flow-content"
         ]
       : [
@@ -1355,6 +1356,7 @@ export function buildReleasePlan({ target, dryRun = false, acceptedManifest = nu
           "lambda:create-or-update-alias",
           "lex:create-or-update-bot-alias",
           "lambda:add-permission",
+          "connect:associate-lex-bot-alias",
           "connect:update-contact-flow-content"
         ];
   return {
@@ -2330,6 +2332,35 @@ function addLexLambdaPermission({ targets, lambdaFunctionName, lambdaAliasName, 
   }
 }
 
+function associateLexAliasWithConnect({ targets, lexAliasArnValue }) {
+  const listed = awsJson(targets, "connect", "list-bots", [
+    "--instance-id",
+    targets.connect.instanceId,
+    "--lex-version",
+    "V2",
+    "--max-results",
+    "100"
+  ], {
+    requiredAction: "connect:ListBots"
+  });
+  const alreadyAssociated = (listed.LexBots || []).some(
+    (entry) => entry?.LexV2Bot?.AliasArn === lexAliasArnValue
+  );
+  if (alreadyAssociated) {
+    return { associated: true, alreadyAssociated: true, aliasArn: lexAliasArnValue };
+  }
+  awsJson(targets, "connect", "associate-bot", [
+    "--instance-id",
+    targets.connect.instanceId,
+    "--lex-v2-bot",
+    `AliasArn=${lexAliasArnValue}`
+  ], {
+    resourceArn: `arn:aws:connect:${targets.region}:${targets.accountId}:instance/${targets.connect.instanceId}`,
+    requiredAction: "connect:AssociateBot"
+  });
+  return { associated: true, alreadyAssociated: false, aliasArn: lexAliasArnValue };
+}
+
 function applyLexDraftAndPublish({ targets, releaseId, lambdaRelease, sourceHash }) {
   const lexSource = validateLexSource();
   waitForLexLocale(targets, "DRAFT");
@@ -2406,6 +2437,10 @@ function applyLexDraftAndPublish({ targets, releaseId, lambdaRelease, sourceHash
     lambdaAliasName: lambdaRelease.aliasName,
     lexAliasArnValue: alias.aliasArn
   });
+  const connectAssociation = associateLexAliasWithConnect({
+    targets,
+    lexAliasArnValue: alias.aliasArn
+  });
   const serviceSlotTypeId = slotTypes.find((slotType) => slotType.name === "NailServiceType")?.id;
   const staffSlotTypeId = slotTypes.find((slotType) => slotType.name === "StaffPreferenceType")?.id;
   if (!serviceSlotTypeId || !staffSlotTypeId) {
@@ -2460,7 +2495,8 @@ function applyLexDraftAndPublish({ targets, releaseId, lambdaRelease, sourceHash
       valueSelectionSetting: pick(readbackStaffSlot, "valueSelectionSetting", "ValueSelectionSetting")
     },
     customVocabularyReadbackPhrases: readbackVocabulary.map((item) => item.phrase),
-    alias
+    alias,
+    connectAssociation
   };
   writeReleaseFile(releaseId, "lex-artifact.json", lexArtifact);
   updateManifest(releaseId, { lex: lexArtifact });
@@ -3413,6 +3449,15 @@ function promoteProduction({ releaseId, dryRun = false }) {
     lambdaAliasName: productionLambda.aliasName,
     lexAliasArnValue: prodAlias.aliasArn
   });
+  const prodConnectAssociation = associateLexAliasWithConnect({
+    targets,
+    lexAliasArnValue: prodAlias.aliasArn
+  });
+  operationLog.push({
+    operation: "connect:associate-lex-bot-alias",
+    completedAt: new Date().toISOString(),
+    alreadyAssociated: prodConnectAssociation.alreadyAssociated
+  });
   const { artifact: connectArtifact } = updateConnectFlow({
     targets,
     releaseId,
@@ -3483,6 +3528,7 @@ function promoteProduction({ releaseId, dryRun = false }) {
     apiProductionReadback,
     lambda: productionLambda,
     lexAlias: prodAlias,
+    connectAssociation: prodConnectAssociation,
     connect: connectArtifact
   };
   writeReleaseFile(releaseId, "production-promotion.json", promotion);

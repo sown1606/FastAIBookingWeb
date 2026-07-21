@@ -149,6 +149,11 @@ test("voice release dry-run plan has zero writes but canary plan covers Lambda L
   assert.ok(plan.plannedWrites.some((item) => item.startsWith("lambda:")));
   assert.ok(plan.plannedWrites.some((item) => item.startsWith("lex:")));
   assert.ok(plan.plannedWrites.some((item) => item.startsWith("connect:")));
+  assert.ok(plan.plannedWrites.includes("connect:associate-lex-bot-alias"));
+  assert.ok(
+    plan.plannedWrites.indexOf("connect:associate-lex-bot-alias") <
+      plan.plannedWrites.indexOf("connect:update-contact-flow-content")
+  );
 });
 
 test("voice release production plan reuses accepted hashes instead of rebuilding", () => {
@@ -166,6 +171,11 @@ test("voice release production plan reuses accepted hashes instead of rebuilding
   assert.ok(plan.plannedWrites.includes("lambda:update-function-code"));
   assert.ok(plan.plannedWrites.includes("lambda:publish-version"));
   assert.ok(plan.plannedWrites.includes("api:switch-production-upstream"));
+  assert.ok(plan.plannedWrites.includes("connect:associate-lex-bot-alias"));
+  assert.ok(
+    plan.plannedWrites.indexOf("connect:associate-lex-bot-alias") <
+      plan.plannedWrites.indexOf("connect:update-contact-flow-content")
+  );
 });
 
 test("voice release rollback plan restores exact prior flow content and alias when required", () => {
