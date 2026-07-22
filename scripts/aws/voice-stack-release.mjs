@@ -2601,15 +2601,32 @@ function createOrUpdateLexAlias({ targets, releaseId, target, botVersion, lambda
       requiredAction: "lex:UpdateBotAlias"
     });
   } else {
-    alias = awsJson(targets, "lexv2-models", "create-bot-alias", [
-      "--bot-id",
-      targets.lex.botId,
-      "--bot-alias-name",
-      aliasName,
-      ...commonArgs
-    ], {
-      requiredAction: "lex:CreateBotAlias"
-    });
+    try {
+      alias = awsJson(targets, "lexv2-models", "create-bot-alias", [
+        "--bot-id",
+        targets.lex.botId,
+        "--bot-alias-name",
+        aliasName,
+        ...commonArgs
+      ], {
+        requiredAction: "lex:CreateBotAlias"
+      });
+    } catch (error) {
+      if (!(error instanceof AwsOperationError) || error.details.code !== "ServiceQuotaExceededException" || !clone) {
+        throw error;
+      }
+      alias = awsJson(targets, "lexv2-models", "update-bot-alias", [
+        "--bot-id",
+        targets.lex.botId,
+        "--bot-alias-id",
+        cloneAliasId,
+        "--bot-alias-name",
+        lexAliasNameFrom(clone),
+        ...commonArgs
+      ], {
+        requiredAction: "lex:UpdateBotAlias"
+      });
+    }
   }
   const readyAlias = waitForLexAliasAvailable(targets, lexAliasIdFrom(alias));
   return {
@@ -3780,7 +3797,15 @@ function writeEmergencyAuthorization(releaseId, authorization) {
   const file = path.join(releaseDirFor(releaseId), EMERGENCY_AUTHORIZATION_FILE);
   const body = `${JSON.stringify(authorization, null, 2)}\n`;
   if (fs.existsSync(file)) {
-    throw new ReleaseError("Emergency authorization audit file already exists", { file });
+    const existing = readJson(file);
+    if (
+      existing.releaseId !== authorization.releaseId ||
+      existing.acknowledgedSourceCommit !== authorization.acknowledgedSourceCommit ||
+      existing.reason !== authorization.reason
+    ) {
+      throw new ReleaseError("Existing immutable emergency authorization does not match this request", { file });
+    }
+    return file;
   }
   const descriptor = fs.openSync(file, "wx", 0o444);
   try {
@@ -3922,7 +3947,7 @@ function promoteProduction({
     target: "production",
     botVersion: acceptedLex.botVersion,
     lambdaArn: productionLambda.aliasArn,
-    cloneAliasId: targets.lex.aliases.production.id
+    cloneAliasId: lexAliasIdFrom(beforeProduction.lexAlias)
   });
   operationLog.push({ operation: "lex:update-production-alias", completedAt: new Date().toISOString() });
   addLexLambdaPermission({

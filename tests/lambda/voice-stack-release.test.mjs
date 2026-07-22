@@ -248,6 +248,13 @@ test("voice release rollback snapshots the Lex alias actually referenced by the 
   assert.equal(lexAliasIdFromConnectFlow({ StartAction: "end", Actions: [] }, "CONFIGURED"), "CONFIGURED");
 });
 
+test("voice release production promotion reuses the snapshotted active Lex alias only when alias quota is exhausted", () => {
+  const script = readFileSync(path.join(repoRoot, "scripts/aws/voice-stack-release.mjs"), "utf8");
+  assert.match(script, /error\.details\.code !== "ServiceQuotaExceededException" \|\| !clone/);
+  assert.match(script, /cloneAliasId: lexAliasIdFrom\(beforeProduction\.lexAlias\)/);
+  assert.match(script, /"--bot-alias-id",\s*cloneAliasId,\s*"--bot-alias-name",\s*lexAliasNameFrom\(clone\)/);
+});
+
 test("voice release dynamic marker is injected into every reachable Lex path", () => {
   const sourceFlow = JSON.parse(
     readFileSync(path.join(repoRoot, "infra/aws/connect/contact-flows/ai-reception.json"), "utf8")
