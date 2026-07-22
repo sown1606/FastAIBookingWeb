@@ -127,6 +127,20 @@ test("voice release source hash includes Lex intent source", () => {
   }
 });
 
+test("voice release deploy syncs Lex intent source before build", () => {
+  const script = readFileSync(path.join(repoRoot, "scripts/aws/voice-stack-release.mjs"), "utf8");
+
+  assert.match(script, /function syncLexIntents/);
+  assert.match(script, /lexv2-models", "update-intent"/);
+  assert.match(script, /validateIntentReadback/);
+  assert.match(script, /const intents = syncLexIntents\(targets, releaseId\);/);
+  assert.ok(
+    script.indexOf("const intents = syncLexIntents(targets, releaseId);") <
+      script.indexOf("\"lexv2-models\", \"build-bot-locale\""),
+    "intent source must be applied before building the Lex locale"
+  );
+});
+
 test("voice release acceptance rejects stale and missing fingerprints", () => {
   const manifest = {
     connect: { canary: { marker: "v49-human-asr-unit-canary" } },

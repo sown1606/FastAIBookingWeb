@@ -2198,6 +2198,219 @@ function syncCustomVocabulary(targets, releaseId) {
   return { creates: creates.length, updates: updates.length, deletes: deletes.length };
 }
 
+function listLexIntentSummaries(targets) {
+  const summaries = [];
+  let nextToken = "";
+  do {
+    const args = [
+      "--bot-id",
+      targets.lex.botId,
+      "--bot-version",
+      "DRAFT",
+      "--locale-id",
+      "en_US",
+      "--max-results",
+      "100"
+    ];
+    if (nextToken) {
+      args.push("--next-token", nextToken);
+    }
+    const data = awsJson(targets, "lexv2-models", "list-intents", args);
+    summaries.push(...(data.intentSummaries ?? []));
+    nextToken = data.nextToken || "";
+  } while (nextToken);
+  return summaries;
+}
+
+function listLexSlotsForIntent(targets, intentId) {
+  const slots = [];
+  let nextToken = "";
+  do {
+    const args = [
+      "--bot-id",
+      targets.lex.botId,
+      "--bot-version",
+      "DRAFT",
+      "--locale-id",
+      "en_US",
+      "--intent-id",
+      intentId,
+      "--max-results",
+      "100"
+    ];
+    if (nextToken) {
+      args.push("--next-token", nextToken);
+    }
+    const data = awsJson(targets, "lexv2-models", "list-slots", args);
+    slots.push(...(data.slotSummaries ?? []));
+    nextToken = data.nextToken || "";
+  } while (nextToken);
+  return slots;
+}
+
+function normalizeLexUpdateValue(value) {
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => normalizeLexUpdateValue(entry))
+      .filter((entry) => entry !== undefined);
+  }
+  if (!value || typeof value !== "object") {
+    return value === null ? undefined : value;
+  }
+  const normalized = {};
+  for (const [rawKey, rawEntry] of Object.entries(value)) {
+    const entry = normalizeLexUpdateValue(rawEntry);
+    if (entry === undefined) {
+      continue;
+    }
+    const key =
+      rawKey === "isActive" ? "active" :
+      rawKey === "messageGroupsList" ? "messageGroups" :
+      rawKey;
+    normalized[key] = entry;
+  }
+  return normalized;
+}
+
+function normalizedIntentSlotPriorities(targets, intentId, sourcePriorities = []) {
+  if (!sourcePriorities.length) {
+    return [];
+  }
+  const liveSlots = listLexSlotsForIntent(targets, intentId);
+  const slotsByName = new Map(liveSlots.map((slot) => [slot.slotName, slot.slotId]));
+  return sourcePriorities.map((entry) => {
+    const slotId = entry.slotId || slotsByName.get(entry.slotName);
+    if (!slotId) {
+      throw new ReleaseError("Unable to map Lex intent slot priority to live slot ID", {
+        intentId,
+        slotName: entry.slotName || "",
+        priority: entry.priority
+      });
+    }
+    return {
+      priority: entry.priority,
+      slotId
+    };
+  });
+}
+
+function extractLexResponseText(response) {
+  return (response?.messageGroups || response?.messageGroupsList || [])
+    .map((group) => {
+      const message = group?.message || {};
+      return (
+        message?.plainTextMessage?.value ||
+        message?.ssmlMessage?.value ||
+        message?.customPayload?.value ||
+        ""
+      ).trim();
+    })
+    .filter(Boolean)
+    .join(" ");
+}
+
+function validateIntentReadback({ source, readback }) {
+  const failures = [];
+  const sourceUtterances = (source.sampleUtterances || []).map((entry) => entry.utterance).filter(Boolean);
+  const readbackUtterances = new Set((readback.sampleUtterances || []).map((entry) => entry.utterance));
+  for (const utterance of sourceUtterances) {
+    if (!readbackUtterances.has(utterance)) {
+      failures.push(`missing sample utterance: ${utterance}`);
+    }
+  }
+  const sourceClosingText = extractLexResponseText(source.intentClosingSetting?.closingResponse);
+  if (sourceClosingText) {
+    const readbackClosingText = extractLexResponseText(readback.intentClosingSetting?.closingResponse);
+    if (readbackClosingText !== sourceClosingText) {
+      failures.push(`closing response mismatch: expected ${sourceClosingText}, got ${readbackClosingText || "(empty)"}`);
+    }
+  }
+  if (failures.length) {
+    throw new ReleaseError("Lex intent readback mismatch after update", {
+      intentName: source.name,
+      failures
+    });
+  }
+}
+
+function syncLexIntents(targets, releaseId) {
+  const intentRoot = path.join(LOCALE_ROOT, "Intents");
+  const liveIntents = listLexIntentSummaries(targets);
+  const liveByName = new Map(liveIntents.map((intent) => [intent.intentName, intent]));
+  const updated = [];
+  for (const name of fs.readdirSync(intentRoot)) {
+    const intentPath = path.join(intentRoot, name, "Intent.json");
+    if (!fs.existsSync(intentPath)) {
+      continue;
+    }
+    const source = readJson(intentPath);
+    const liveIntent = liveByName.get(source.name);
+    const intentId = liveIntent?.intentId || source.identifier;
+    if (!intentId) {
+      throw new ReleaseError("Lex source intent is missing a live intent ID", { intentName: source.name });
+    }
+    const input = {
+      intentId,
+      intentName: source.name,
+      botId: targets.lex.botId,
+      botVersion: "DRAFT",
+      localeId: "en_US"
+    };
+    for (const [sourceKey, targetKey] of [
+      ["description", "description"],
+      ["parentIntentSignature", "parentIntentSignature"],
+      ["sampleUtterances", "sampleUtterances"],
+      ["dialogCodeHook", "dialogCodeHook"],
+      ["fulfillmentCodeHook", "fulfillmentCodeHook"],
+      ["intentConfirmationSetting", "intentConfirmationSetting"],
+      ["intentClosingSetting", "intentClosingSetting"],
+      ["initialResponseSetting", "initialResponseSetting"],
+      ["inputContexts", "inputContexts"],
+      ["outputContexts", "outputContexts"],
+      ["kendraConfiguration", "kendraConfiguration"],
+      ["qnAIntentConfiguration", "qnAIntentConfiguration"],
+      ["bedrockAgentIntentConfiguration", "bedrockAgentIntentConfiguration"],
+      ["qInConnectIntentConfiguration", "qInConnectIntentConfiguration"]
+    ]) {
+      const value = normalizeLexUpdateValue(source[sourceKey]);
+      if (value !== undefined) {
+        input[targetKey] = value;
+      }
+    }
+    const slotPriorities = normalizedIntentSlotPriorities(targets, intentId, source.slotPriorities || []);
+    if (slotPriorities.length) {
+      input.slotPriorities = slotPriorities;
+    }
+    const inputPath = path.join(releaseDirFor(releaseId), `lex-${source.name}-intent-update.json`);
+    writeJson(inputPath, input);
+    awsJson(targets, "lexv2-models", "update-intent", [
+      "--cli-input-json",
+      `file://${inputPath}`
+    ], {
+      resourceArn: `arn:aws:lex:${targets.region}:${targets.accountId}:bot/${targets.lex.botId}`,
+      requiredAction: "lex:UpdateIntent"
+    });
+    const readback = awsJson(targets, "lexv2-models", "describe-intent", [
+      "--bot-id",
+      targets.lex.botId,
+      "--bot-version",
+      "DRAFT",
+      "--locale-id",
+      "en_US",
+      "--intent-id",
+      intentId
+    ]);
+    validateIntentReadback({ source, readback });
+    updated.push({
+      name: source.name,
+      id: intentId,
+      sampleUtteranceCount: source.sampleUtterances?.length || 0,
+      hasClosingResponse: Boolean(extractLexResponseText(source.intentClosingSetting?.closingResponse))
+    });
+  }
+  return updated;
+}
+
 function cloneConversationLogs(sourceAlias) {
   return pick(sourceAlias, "conversationLogSettings", "ConversationLogSettings") || undefined;
 }
@@ -2387,6 +2600,7 @@ function applyLexDraftAndPublish({ targets, releaseId, lambdaRelease, sourceHash
   }
   const slotTypes = syncLexSlotTypes(targets, releaseId);
   const vocabularySync = syncCustomVocabulary(targets, releaseId);
+  const intents = syncLexIntents(targets, releaseId);
   awsJson(targets, "lexv2-models", "build-bot-locale", [
     "--bot-id",
     targets.lex.botId,
@@ -2490,6 +2704,7 @@ function applyLexDraftAndPublish({ targets, releaseId, lambdaRelease, sourceHash
     speechModelPreferenceReadback,
     speechDetectionSensitivity: speechDetectionSensitivityReadback,
     slotTypes,
+    intents,
     vocabularySync,
     serviceSlotReadback: {
       id: pick(readbackServiceSlot, "slotTypeId", "SlotTypeId"),
