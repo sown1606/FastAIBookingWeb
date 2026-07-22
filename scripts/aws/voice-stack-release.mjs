@@ -1225,6 +1225,14 @@ export function reachableActions(content) {
   return Array.from(reachable).map((id) => actionsById.get(id)).filter(Boolean);
 }
 
+export function lexAliasIdFromConnectFlow(content, fallbackAliasId = "") {
+  const aliasArn = reachableActions(content)
+    .filter((action) => action.Type === "ConnectParticipantWithLexBot")
+    .map((action) => action.Parameters?.LexV2Bot?.AliasArn)
+    .find(Boolean);
+  return aliasArn?.split("/").at(-1) || fallbackAliasId;
+}
+
 export function validateConnectFlow(content, { aliasArn, marker }) {
   const failures = [];
   const reachable = reachableActions(content);
@@ -1860,11 +1868,12 @@ function captureTargetSnapshot(targets, target, outputName) {
     flow.id
   ]);
   const flowContent = JSON.parse(connectFlow.ContactFlow.Content);
+  const activeLexAliasId = lexAliasIdFromConnectFlow(flowContent, alias.id);
   const lexAlias = awsJson(targets, "lexv2-models", "describe-bot-alias", [
     "--bot-id",
     targets.lex.botId,
     "--bot-alias-id",
-    alias.id
+    activeLexAliasId
   ]);
   const lambdaArn = lexAliasLocaleSettingsFrom(lexAlias)?.en_US?.codeHookSpecification?.lambdaCodeHook?.lambdaARN || "";
   const lambdaQualifier = lambdaArn.split(":").length > 7 ? lambdaArn.split(":").at(-1) : "";

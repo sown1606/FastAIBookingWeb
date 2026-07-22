@@ -16,6 +16,7 @@ import {
   createReleaseId,
   evaluateReleaseCase,
   generateConnectFlowContent,
+  lexAliasIdFromConnectFlow,
   normalizeAcceptanceManifest,
   packageLambdaArtifact,
   validateConnectFlow,
@@ -231,6 +232,20 @@ test("voice release rollback plan restores exact prior flow content and alias wh
   assert.deepEqual(plan.exactContent, snapshot.connect.content);
   assert.ok(plan.writes.includes("connect:update-contact-flow-content"));
   assert.ok(plan.writes.includes("lex:update-bot-alias"));
+});
+
+test("voice release rollback snapshots the Lex alias actually referenced by the live Connect flow", () => {
+  const content = {
+    StartAction: "lex",
+    Actions: [{
+      Identifier: "lex",
+      Type: "ConnectParticipantWithLexBot",
+      Parameters: { LexV2Bot: { AliasArn: "arn:aws:lex:us-east-1:197452633989:bot-alias/KHMIXGA2US/ACTIVE123" } },
+      Transitions: {}
+    }]
+  };
+  assert.equal(lexAliasIdFromConnectFlow(content, "CONFIGURED"), "ACTIVE123");
+  assert.equal(lexAliasIdFromConnectFlow({ StartAction: "end", Actions: [] }, "CONFIGURED"), "CONFIGURED");
 });
 
 test("voice release dynamic marker is injected into every reachable Lex path", () => {
