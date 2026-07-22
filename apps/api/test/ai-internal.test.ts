@@ -2952,6 +2952,35 @@ test("customerName turn rejects with Kevin noise and accepts clear call-me phras
   assert.equal(state.customers.some((customer) => customer.firstName === "yeah"), false);
   assert.notEqual(state.bookingAttempts.at(-1)?.customerName, "yeah");
 
+  const clippedNoise = await postInternalAppointment(
+    bookingPayload({
+      customerName: undefined,
+      customerPhone: "+18483481234",
+      serviceName: "Full Set",
+      requestedDate,
+      requestedTime: "3 PM",
+      staffPreference: "Trang",
+      confirmationState: undefined,
+      currentTurnTranscript: "it's",
+      transcript: "it's",
+      attributes: {
+        lastAskedSlot: "customerName",
+        serviceName: "Full Set",
+        requestedDate,
+        requestedTime: "3 PM",
+        staffPreference: "Trang",
+        customerPhone: "+18483481234"
+      }
+    })
+  );
+
+  assert.equal(clippedNoise.response.status, 200);
+  assert.equal(clippedNoise.body.data.lexResponse.dialogAction.slotToElicit, "customerName");
+  assert.equal(clippedNoise.body.data.lexResponse.sessionAttributes.customerName, undefined);
+  assert.match(clippedNoise.body.data.lexResponse.message, /What is your first name/i);
+  assert.equal(state.customers.some((customer) => customer.firstName === "it's"), false);
+  assert.notEqual(state.bookingAttempts.at(-1)?.customerName, "it's");
+
   const clearName = await postInternalAppointment(
     bookingPayload({
       customerName: undefined,
@@ -2977,6 +3006,38 @@ test("customerName turn rejects with Kevin noise and accepts clear call-me phras
   assert.equal(clearName.response.status, 200);
   assertBookingConfirmationDialog(clearName.body.data.lexResponse.dialogAction);
   assert.equal(clearName.body.data.lexResponse.sessionAttributes.customerName, "Lee");
+  assert.equal(state.appointments.length, 0);
+});
+
+test("embedded I'm Kiet introduction is accepted without swallowing booking details", async () => {
+  const requestedDate = DateTime.now().setZone("America/New_York").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  const transcript = "Hi, I'm Kiet. I want a Full Set with Trang tomorrow at 3 PM.";
+
+  const result = await postInternalAppointment(
+    bookingPayload({
+      customerName: undefined,
+      customerPhone: "+18483481235",
+      serviceName: "Full Set",
+      requestedDate,
+      requestedTime: "3 PM",
+      staffPreference: "Trang",
+      confirmationState: undefined,
+      currentTurnTranscript: transcript,
+      transcript,
+      attributes: {
+        customerPhone: "+18483481235"
+      }
+    })
+  );
+
+  assert.equal(result.response.status, 200);
+  assertBookingConfirmationDialog(result.body.data.lexResponse.dialogAction);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.customerName, "Kiet");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.serviceName, "Full Set");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.requestedDate, requestedDate);
+  assert.equal(result.body.data.lexResponse.sessionAttributes.requestedTime, "3 PM");
+  assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
+  assert.doesNotMatch(result.body.data.lexResponse.sessionAttributes.customerName ?? "", /want|appointment|full set/i);
   assert.equal(state.appointments.length, 0);
 });
 

@@ -7139,6 +7139,174 @@ test("DialogCodeHook customerName small talk asks first name and preserves trust
   assert.equal(fetchCalls.length, 2);
   assert.equal(fetchCalls[1].body.customerName, undefined);
   assert.equal(fetchCalls[1].body.attributes.customerName, undefined);
+
+  const clippedNoise = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "it's",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+84798171999",
+          AmazonConnectContactId: "connect-customer-name-its-noise",
+          lastAskedSlot: "customerName",
+          serviceName: "Full Set",
+          confirmedServiceName: "Full Set",
+          requestedDate,
+          requestedTime: "3 PM",
+          staffPreference: "Trang",
+          customerPhone: "7325956266"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          slots: {
+            customerName: slot("it's")
+          }
+        }
+      }
+    })
+  );
+
+  assert.equal(clippedNoise.sessionState.dialogAction.type, "ElicitSlot");
+  assert.equal(clippedNoise.sessionState.dialogAction.slotToElicit, "customerName");
+  assert.equal(clippedNoise.sessionState.sessionAttributes.customerName, undefined);
+  assert.equal(clippedNoise.sessionState.sessionAttributes.serviceName, "Full Set");
+  assert.equal(clippedNoise.sessionState.sessionAttributes.requestedDate, requestedDate);
+  assert.equal(clippedNoise.sessionState.sessionAttributes.requestedTime, "3 PM");
+  assert.equal(clippedNoise.sessionState.sessionAttributes.staffPreference, "Trang");
+  assert.equal(clippedNoise.messages[0].content, "Sorry, I didn't catch your name. What is your first name?");
+  assert.equal(fetchCalls.length, 3);
+  assert.equal(fetchCalls[2].body.customerName, undefined);
+  assert.equal(fetchCalls[2].body.attributes.customerName, undefined);
+});
+
+test("DialogCodeHook one-shot Kiet booking keeps explicit name and current slots", async () => {
+  const handler = await loadHandler();
+  const fetchCalls = installFetchMock((_url, _options, body) =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "MISSING_INFO",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "InProgress",
+          message: "Kiet, just to confirm: Full Set tomorrow at 3 PM with Trang. Is that correct?",
+          messageContentType: "PlainText",
+          dialogAction: {
+            type: "ElicitSlot",
+            slotToElicit: "bookingConfirmation"
+          },
+          sessionAttributes: {
+            customerName: body.customerName,
+            customerPhone: body.customerPhone,
+            serviceName: body.serviceName,
+            requestedDate: body.requestedDate,
+            requestedTime: body.requestedTime,
+            staffPreference: body.staffPreference,
+            awaitingFinalBookingConfirmation: "true",
+            conversationComplete: "false"
+          }
+        }
+      })
+    )
+  );
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "Hi, I'm Kiet. I want a Full Set with Trang tomorrow at 3 PM.",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: "connect-kiet-one-shot-full-set"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          state: "InProgress",
+          confirmationState: "None",
+          slots: {}
+        }
+      }
+    })
+  );
+
+  assert.equal(fetchCalls.length, 1);
+  assert.equal(fetchCalls[0].body.customerName, "Kiet");
+  assert.equal(fetchCalls[0].body.serviceName, "Full Set");
+  assert.equal(fetchCalls[0].body.requestedDate, usEasternDate(1));
+  assert.equal(fetchCalls[0].body.requestedTime, "3 PM");
+  assert.equal(fetchCalls[0].body.staffPreference, "Trang");
+  assert.equal(response.sessionState.sessionAttributes.customerName, "Kiet");
+  assert.equal(response.sessionState.sessionAttributes.serviceName, "Full Set");
+  assert.equal(response.sessionState.sessionAttributes.requestedDate, usEasternDate(1));
+  assert.equal(response.sessionState.sessionAttributes.requestedTime, "3 PM");
+  assert.equal(response.sessionState.sessionAttributes.staffPreference, "Trang");
+  assert.doesNotMatch(response.sessionState.sessionAttributes.customerName, /want|appointment|full set/i);
+});
+
+test("DialogCodeHook one-shot any staff except Trang preserves exclusion before API completion", async () => {
+  const handler = await loadHandler();
+  installFetchMock((_url, _options, body) =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "MISSING_INFO",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "InProgress",
+          message: "May I have your name, please?",
+          messageContentType: "PlainText",
+          dialogAction: {
+            type: "ElicitSlot",
+            slotToElicit: "customerName"
+          },
+          sessionAttributes: {
+            serviceName: body.serviceName,
+            requestedDate: body.requestedDate,
+            requestedTime: body.requestedTime,
+            staffPreference: body.staffPreference,
+            excludedStaffNames: body.attributes.excludedStaffNames,
+            excludedStaffIds: body.attributes.excludedStaffIds,
+            conversationComplete: "false"
+          }
+        }
+      })
+    )
+  );
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "Full Set tomorrow at 2 PM, any staff except Trang.",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: "connect-any-staff-except-trang"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          state: "InProgress",
+          confirmationState: "None",
+          slots: {}
+        }
+      }
+    })
+  );
+
+  assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "customerName");
+  assert.equal(response.sessionState.sessionAttributes.serviceName, "Full Set");
+  assert.equal(response.sessionState.sessionAttributes.requestedDate, usEasternDate(1));
+  assert.equal(response.sessionState.sessionAttributes.requestedTime, "2 PM");
+  assert.equal(response.sessionState.sessionAttributes.staffPreference, "Any staff");
+  assert.match(response.sessionState.sessionAttributes.excludedStaffNames, /trang/i);
+  assert.doesNotMatch(response.messages[0].content, /with Trang/i);
 });
 
 test("Full utterance asks only for customer name with persisted slot state", async () => {

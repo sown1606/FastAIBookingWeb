@@ -614,6 +614,10 @@ const CUSTOMER_NAME_NOISE = new Set([
   "i m good",
   "im good",
   "i am good",
+  "it s",
+  "its",
+  "still here",
+  "following",
   "doing well",
   "i m doing well",
   "im doing well",
@@ -669,6 +673,8 @@ const CUSTOMER_NAME_NOISE = new Set([
 ]);
 const CUSTOMER_NAME_SMALL_TALK_PATTERNS = [
   /^(?:i\s*(?:am|'m|m)\s*)?(?:doing\s+well|good|fine|okay|ok)(?:\s+thank\s+you|\s+thanks)?$/,
+  /^(?:i\s*(?:am|'m|m)\s*)?(?:still\s+here|here)$/,
+  /^(?:it\s+s|its)$/,
   /^(?:thank\s+you|thanks|yes|yeah|yep|okay|ok|hello|hi)$/,
   /^(?:how\s+are\s+you|how\s+you\s+doing|how\s+is\s+it\s+going)$/
 ];
@@ -923,12 +929,106 @@ const isServiceSlotConversationalNoise = (text?: string | null): boolean => {
   );
 };
 
-const extractCustomerNameFromText = (text?: string): string | undefined => {
-  const match = text?.match(
-    /(?:my name is|name is|this is|i am|i'm|you can call me)\s+(\p{L}[\p{L}'-]*(?:\s+\p{L}[\p{L}'-]*){0,4})(?=\s*(?:[,.!?;]|$|and\s+(?:my\s+)?phone|(?:my\s+)?phone\s+(?:number\s+)?(?:is|should|to)))/iu
+const CUSTOMER_NAME_CAPTURE_STOP_WORDS = new Set([
+  "i",
+  "we",
+  "you",
+  "doing",
+  "well",
+  "good",
+  "fine",
+  "okay",
+  "ok",
+  "thank",
+  "thanks",
+  "following",
+  "still",
+  "here",
+  "want",
+  "need",
+  "book",
+  "booking",
+  "appointment",
+  "service",
+  "services",
+  "pedicure",
+  "manicure",
+  "full",
+  "set",
+  "gel",
+  "dip",
+  "powder",
+  "with",
+  "except",
+  "tomorrow",
+  "today",
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday",
+  "morning",
+  "afternoon",
+  "evening",
+  "night",
+  "at",
+  "on",
+  "for",
+  "phone",
+  "number",
+  "and",
+  "please"
+]);
+
+const readCustomerNameCandidateTokens = (text?: string | null): string[] => {
+  const raw = text ?? "";
+  const introPattern =
+    /(?:^|[\s,.;!?])(?:my\s+name\s+is|name\s+is|this\s+is|i\s+am|i'm|im|you\s+can\s+call\s+me|call\s+me)\s+/giu;
+  const candidates: string[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = introPattern.exec(raw)) !== null) {
+    const afterIntro = raw.slice(introPattern.lastIndex);
+    const phrase = afterIntro.split(/[,.!?;]/, 1)[0] || afterIntro;
+    const tokens: string[] = [];
+    for (const token of phrase.split(/\s+/).filter(Boolean)) {
+      const cleaned = token.replace(/^[^\p{L}'-]+|[^\p{L}'-]+$/gu, "");
+      const normalized = normalizeForMatch(cleaned);
+      if (
+        !cleaned ||
+        !/^\p{L}[\p{L}'-]*$/u.test(cleaned) ||
+        CUSTOMER_NAME_CAPTURE_STOP_WORDS.has(normalized)
+      ) {
+        break;
+      }
+      tokens.push(cleaned);
+      if (tokens.length >= 4) {
+        break;
+      }
+    }
+    if (tokens.length) {
+      candidates.push(tokens.join(" "));
+    }
+  }
+
+  const useForNameMatch = raw.match(
+    /\buse\s+(\p{L}[\p{L}'-]*(?:\s+\p{L}[\p{L}'-]*){0,3})\s+for\s+(?:the\s+)?name\b/iu
   );
-  const name = collapseSpokenNameSpelling(match?.[1]);
-  return isAcceptableCustomerName(name) ? name : undefined;
+  if (useForNameMatch?.[1]) {
+    candidates.unshift(useForNameMatch[1]);
+  }
+  return candidates;
+};
+
+const extractCustomerNameFromText = (text?: string): string | undefined => {
+  for (const candidateText of readCustomerNameCandidateTokens(text)) {
+    const name = collapseSpokenNameSpelling(candidateText);
+    if (isAcceptableCustomerName(name)) {
+      return name;
+    }
+  }
+  return undefined;
 };
 
 const extractCustomerPhoneFromText = (text?: string): string | undefined => {
@@ -1328,10 +1428,13 @@ const extractExplicitCustomerNameCorrection = (value?: string | null): string | 
   return isAcceptableCustomerName(candidate) ? candidate : undefined;
 };
 
-const hasExplicitCustomerNameCorrectionPhrase = (value?: string | null): boolean =>
-  /(?:\bmy\s+name\s+is\b|\bname\s+is\b|\bthis\s+is\b|\byou\s+can\s+call\s+me\b|\bcall\s+me\b|\buse\s+\p{L}[\p{L}'-]*(?:\s+\p{L}[\p{L}'-]*){0,3}\s+for\s+(?:the\s+)?name\b)/iu.test(
-    value ?? ""
-  );
+const hasExplicitCustomerNameCorrectionPhrase = (value?: string | null): boolean => {
+  const raw = value ?? "";
+  return Boolean(extractCustomerNameFromText(raw)) ||
+    /(?:\bmy\s+name\s+is\b|\bname\s+is\b|\bthis\s+is\b|\byou\s+can\s+call\s+me\b|\bcall\s+me\b|\buse\s+\p{L}[\p{L}'-]*(?:\s+\p{L}[\p{L}'-]*){0,3}\s+for\s+(?:the\s+)?name\b)/iu.test(
+      raw
+    );
+};
 
 const rejectsRecognizedCustomerName = (value?: string | null): boolean => {
   const normalized = normalizeForMatch(value);

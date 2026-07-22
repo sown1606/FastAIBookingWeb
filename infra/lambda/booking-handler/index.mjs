@@ -181,6 +181,10 @@ const CUSTOMER_NAME_NOISE = new Set([
   "i m good",
   "im good",
   "i am good",
+  "it s",
+  "its",
+  "still here",
+  "following",
   "doing well",
   "i m doing well",
   "im doing well",
@@ -236,6 +240,8 @@ const CUSTOMER_NAME_NOISE = new Set([
 ]);
 const CUSTOMER_NAME_SMALL_TALK_PATTERNS = [
   /^(?:i\s*(?:am|'m|m)\s*)?(?:doing\s+well|good|fine|okay|ok)(?:\s+thank\s+you|\s+thanks)?$/,
+  /^(?:i\s*(?:am|'m|m)\s*)?(?:still\s+here|here)$/,
+  /^(?:it\s+s|its)$/,
   /^(?:thank\s+you|thanks|yes|yeah|yep|okay|ok|hello|hi)$/,
   /^(?:how\s+are\s+you|how\s+you\s+doing|how\s+is\s+it\s+going)$/
 ];
@@ -1018,7 +1024,7 @@ function staffAliasMatchesInText(normalizedText, alias) {
 
 function isNegatedStaffAlias(normalizedText, matchIndex) {
   const before = normalizedText.slice(0, matchIndex).trim();
-  return /\bnot(?:\s+(?:the|that|this|one|staff|technician|tech))?$/.test(before);
+  return /\b(?:not|except|but\s+not|don\s+t\s+want|dont\s+want|do\s+not\s+want)(?:\s+(?:the|that|this|one|staff|technician|tech))?$/.test(before);
 }
 
 function hasExplicitStaffContextCue(normalizedText, sessionAttributes = {}) {
@@ -1380,6 +1386,71 @@ function collectStaffAliasMatches(normalizedText, sessionAttributes = {}) {
   }
 
   return matches.sort((left, right) => left.index - right.index);
+}
+
+function textHasGovernedStaffExclusion(normalizedText, alias) {
+  const aliasPattern = escapeRegExp(normalizeForMatch(alias));
+  if (!normalizedText || !aliasPattern) {
+    return false;
+  }
+  return (
+    new RegExp(`\\b(?:but\\s+not|except|not)\\s+(?:the\\s+)?(?:(?:staff|technician|tech)\\s+)?${aliasPattern}\\b`).test(normalizedText) ||
+    new RegExp(`\\b(?:don\\s+t|dont|do\\s+not)\\s+want\\s+(?:the\\s+)?(?:(?:staff|technician|tech)\\s+)?${aliasPattern}\\b`).test(normalizedText) ||
+    new RegExp(`\\bno\\s+i\\s+(?:don\\s+t|dont|do\\s+not)\\s+want\\s+(?:the\\s+)?(?:(?:staff|technician|tech)\\s+)?${aliasPattern}\\b`).test(normalizedText) ||
+    new RegExp(`\\bonly\\s+staff(?:\\s+but)?\\s+not\\s+${aliasPattern}\\b`).test(normalizedText) ||
+    new RegExp(`\\b${aliasPattern}\\b\\s+is\\s+not\\s+(?:ok|okay|fine)\\b`).test(normalizedText)
+  );
+}
+
+function getKnownStaffCandidates(sessionAttributes = {}) {
+  const candidates = [];
+  const addCandidate = (staffName, staffId = "") => {
+    const normalized = normalizeForMatch(staffName);
+    if (!normalized || normalized === "any staff") {
+      return;
+    }
+    if (candidates.some((candidate) => normalizeForMatch(candidate.staffName) === normalized)) {
+      return;
+    }
+    candidates.push({ staffName, staffId });
+  };
+  const staffIds = getStaffDtmfStaffIds(sessionAttributes);
+  for (const [digit, staffName] of Object.entries(getStaffDtmfOptions(sessionAttributes))) {
+    addCandidate(staffName, staffIds[digit] || "");
+  }
+  for (const staffName of Object.keys(STAFF_ALIAS_GROUPS)) {
+    addCandidate(staffName);
+  }
+  return candidates;
+}
+
+function extractStaffExclusionsFromTranscript(text, sessionAttributes = {}) {
+  const normalizedText = normalizeForMatch(text);
+  if (!normalizedText) {
+    return {
+      ids: [],
+      names: []
+    };
+  }
+  const ids = new Set();
+  const names = new Set();
+  for (const candidate of getKnownStaffCandidates(sessionAttributes)) {
+    const aliases = [
+      candidate.staffName,
+      String(candidate.staffName).split(/\s+/)[0],
+      ...(STAFF_ALIAS_GROUPS[candidate.staffName] || [])
+    ];
+    if (aliases.some((alias) => textHasGovernedStaffExclusion(normalizedText, alias))) {
+      if (candidate.staffId) {
+        ids.add(candidate.staffId);
+      }
+      names.add(normalizeForMatch(candidate.staffName));
+    }
+  }
+  return {
+    ids: Array.from(ids),
+    names: Array.from(names)
+  };
 }
 
 function extractStaffFromTranscript(text, sessionAttributes = {}) {
@@ -2616,6 +2687,9 @@ function analyzeLexTurnSanitization(event) {
   const currentTurnStaffMention = customerNameTurnOwnsTranscript || finalConfirmationOnlyPhrase
     ? ""
     : extractStaffFromTranscript(currentTurnTranscript, previous);
+  const currentTurnStaffExclusions = customerNameTurnOwnsTranscript || finalConfirmationOnlyPhrase
+    ? { ids: [], names: [] }
+    : extractStaffExclusionsFromTranscript(currentTurnTranscript, previous);
   const currentTurnHasExplicitStaffPhrase = customerNameTurnOwnsTranscript || finalConfirmationOnlyPhrase
     ? false
     : hasExplicitStaffPhrase(currentTurnTranscript, previous);
@@ -2956,6 +3030,10 @@ function analyzeLexTurnSanitization(event) {
     changed = true;
   }
 
+  if (currentTurnStaffExclusions.ids.length || currentTurnStaffExclusions.names.length) {
+    changed = true;
+  }
+
   const { name: customerNameSlotName, slot: customerNameSlot } = getSlotObject(slots, slotNames.customerName);
   if (
     customerNameSlot &&
@@ -3011,6 +3089,7 @@ function analyzeLexTurnSanitization(event) {
     ignoredUngroundedSlots: Array.from(new Set(ignoredUngroundedSlots)),
     ignoredNoiseFields: Array.from(new Set(ignoredNoiseFields)),
     currentTurnStaffMention,
+    currentTurnStaffExclusions,
     currentTurnHasExplicitStaffPhrase,
     currentTurnServiceMention: recognizedService || "",
     serviceAliasCorrectionRaw,
@@ -3082,6 +3161,51 @@ function sanitizeLexEvent(event, analysis) {
   }
   if (analysis.serviceAliasCorrectionRaw) {
     sessionAttributes.serviceAliasCorrectionRaw = analysis.serviceAliasCorrectionRaw;
+  }
+  if (analysis.currentTurnStaffExclusions?.ids?.length || analysis.currentTurnStaffExclusions?.names?.length) {
+    const excludedIds = new Set(parseStringListAttribute(sessionAttributes.excludedStaffIds));
+    const excludedNames = new Set(
+      parseStringListAttribute(sessionAttributes.excludedStaffNames).map((name) => normalizeForMatch(name))
+    );
+    for (const id of analysis.currentTurnStaffExclusions.ids || []) {
+      excludedIds.add(id);
+    }
+    for (const name of analysis.currentTurnStaffExclusions.names || []) {
+      const normalizedName = normalizeForMatch(name);
+      if (normalizedName) {
+        excludedNames.add(normalizedName);
+      }
+    }
+    if (excludedIds.size) {
+      sessionAttributes.excludedStaffIds = JSON.stringify(Array.from(excludedIds));
+    }
+    if (excludedNames.size) {
+      sessionAttributes.excludedStaffNames = JSON.stringify(Array.from(excludedNames));
+    }
+    const selectedIds = [
+      sessionAttributes.staffId,
+      sessionAttributes.selectedStaffId,
+      sessionAttributes.confirmedStaffId
+    ]
+      .map((value) => String(value || "").trim())
+      .filter(Boolean);
+    const selectedNames = [
+      sessionAttributes.staffPreference,
+      sessionAttributes.confirmedStaffName
+    ]
+      .map((value) => normalizeForMatch(value))
+      .filter(Boolean)
+      .filter((value) => value !== "any staff");
+    if (
+      selectedIds.some((id) => excludedIds.has(id)) ||
+      selectedNames.some((name) => excludedNames.has(name))
+    ) {
+      delete sessionAttributes.staffPreference;
+      delete sessionAttributes.confirmedStaffName;
+      delete sessionAttributes.staffId;
+      delete sessionAttributes.selectedStaffId;
+      delete sessionAttributes.confirmedStaffId;
+    }
   }
   if (analysis.dtmfRouting?.accepted && analysis.dtmfRouting.route === "staff_menu") {
     sessionAttributes.staffPreference = analysis.dtmfRouting.selection;
@@ -3230,18 +3354,114 @@ function buildInvalidMenuChoiceResponse(event, dtmfRouting) {
   );
 }
 
-function extractCustomerNameFromText(text) {
-  const match = String(text || "").match(
-    /(?:my name is|name is|this is|i am|i'm|you can call me)\s+(\p{L}[\p{L}'-]*(?:\s+\p{L}[\p{L}'-]*){0,4})(?=\s*(?:[,.!?;]|$|and\s+(?:my\s+)?phone|(?:my\s+)?phone\s+(?:number\s+)?(?:is|should|to)))/iu
+const CUSTOMER_NAME_CAPTURE_STOP_WORDS = new Set([
+  "i",
+  "we",
+  "you",
+  "doing",
+  "well",
+  "good",
+  "fine",
+  "okay",
+  "ok",
+  "thank",
+  "thanks",
+  "following",
+  "still",
+  "here",
+  "want",
+  "need",
+  "book",
+  "booking",
+  "appointment",
+  "service",
+  "services",
+  "pedicure",
+  "manicure",
+  "full",
+  "set",
+  "gel",
+  "dip",
+  "powder",
+  "with",
+  "except",
+  "tomorrow",
+  "today",
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday",
+  "morning",
+  "afternoon",
+  "evening",
+  "night",
+  "at",
+  "on",
+  "for",
+  "phone",
+  "number",
+  "and",
+  "please"
+]);
+
+function readCustomerNameCandidateTokens(text) {
+  const raw = String(text || "");
+  const introPattern =
+    /(?:^|[\s,.;!?])(?:my\s+name\s+is|name\s+is|this\s+is|i\s+am|i'm|im|you\s+can\s+call\s+me|call\s+me)\s+/giu;
+  const candidates = [];
+  let match;
+  while ((match = introPattern.exec(raw)) !== null) {
+    const afterIntro = raw.slice(introPattern.lastIndex);
+    const phrase = afterIntro.split(/[,.!?;]/, 1)[0] || afterIntro;
+    const tokens = [];
+    for (const token of phrase.split(/\s+/).filter(Boolean)) {
+      const cleaned = token.replace(/^[^\p{L}'-]+|[^\p{L}'-]+$/gu, "");
+      const normalized = normalizeForMatch(cleaned);
+      if (
+        !cleaned ||
+        !/^\p{L}[\p{L}'-]*$/u.test(cleaned) ||
+        CUSTOMER_NAME_CAPTURE_STOP_WORDS.has(normalized)
+      ) {
+        break;
+      }
+      tokens.push(cleaned);
+      if (tokens.length >= 4) {
+        break;
+      }
+    }
+    if (tokens.length) {
+      candidates.push(tokens.join(" "));
+    }
+  }
+
+  const useForNameMatch = raw.match(
+    /\buse\s+(\p{L}[\p{L}'-]*(?:\s+\p{L}[\p{L}'-]*){0,3})\s+for\s+(?:the\s+)?name\b/iu
   );
-  const name = collapseSpokenNameSpelling(match?.[1]);
-  return isAcceptableCustomerName(name) ? name : "";
+  if (useForNameMatch?.[1]) {
+    candidates.unshift(useForNameMatch[1]);
+  }
+  return candidates;
+}
+
+function extractCustomerNameFromText(text) {
+  for (const candidateText of readCustomerNameCandidateTokens(text)) {
+    const name = collapseSpokenNameSpelling(candidateText);
+    if (isAcceptableCustomerName(name)) {
+      return name;
+    }
+  }
+  return "";
 }
 
 function hasExplicitCustomerNameCorrectionPhrase(text) {
-  return /(?:\bmy\s+name\s+is\b|\bname\s+is\b|\bthis\s+is\b|\byou\s+can\s+call\s+me\b|\bcall\s+me\b|\buse\s+\p{L}[\p{L}'-]*(?:\s+\p{L}[\p{L}'-]*){0,3}\s+for\s+(?:the\s+)?name\b)/iu.test(
-    String(text || "")
-  );
+  const raw = String(text || "");
+  return Boolean(extractCustomerNameFromText(raw)) ||
+    /(?:\bmy\s+name\s+is\b|\bname\s+is\b|\bthis\s+is\b|\byou\s+can\s+call\s+me\b|\bcall\s+me\b|\buse\s+\p{L}[\p{L}'-]*(?:\s+\p{L}[\p{L}'-]*){0,3}\s+for\s+(?:the\s+)?name\b)/iu.test(
+      raw
+    );
 }
 
 function extractBareCustomerNameAnswer(text) {
