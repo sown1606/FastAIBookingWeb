@@ -19,6 +19,7 @@ import {
   normalizeAcceptanceManifest,
   packageLambdaArtifact,
   validateConnectFlow,
+  validateEmergencyPromotionAuthorization,
   validatePromotionGate
 } from "../../scripts/aws/voice-stack-release.mjs";
 
@@ -63,6 +64,7 @@ const passingManifest = () => ({
   schemaVersion: "fastaibooking.voice-release.v2",
   releaseId: "voice-unit",
   sourceHash: "source-hash",
+  sourceCommit: "2a223eb2d996bf162df518bdfe7f00f701fcb34b",
   canaryDeploy: {
     status: "CANARY_READY_FOR_HUMAN_PSTN",
     api: {
@@ -539,6 +541,77 @@ test("voice release gate fails closed for missing mandatory evidence", () => {
   assert.ok(gate.failures.includes("metric_missing:lambdaProcessingMs"));
   assert.ok(gate.failures.includes("observability_missing"));
   assert.ok(gate.failures.includes("cleanup_evidence_missing"));
+});
+
+const missingPstnManifest = () => {
+  const manifest = passingManifest();
+  manifest.canaryAcceptance = { cases: [] };
+  return manifest;
+};
+
+const emergencyAuthorization = (manifest, overrides = {}) =>
+  validateEmergencyPromotionAuthorization({
+    manifest,
+    acknowledgedReleaseId: manifest.releaseId,
+    acknowledgedSourceCommit: manifest.sourceCommit,
+    authorizationReason: "Owner-authorized audited emergency production promotion",
+    identityValid: true,
+    artifactsValid: true,
+    canaryReadbackValid: true,
+    sourceValidationPassed: true,
+    rollbackSnapshotComplete: true,
+    ...overrides
+  });
+
+test("voice release normal promotion gate remains blocked when PSTN evidence is missing", () => {
+  const gate = validatePromotionGate(missingPstnManifest());
+  assert.equal(gate.ok, false);
+  assert.ok(gate.failures.includes("tester_diversity_missing"));
+  assert.ok(gate.failures.includes("metric_missing:callerTurnToPromptMs"));
+});
+
+test("voice release emergency promotion requires every explicit acknowledgment", () => {
+  const manifest = missingPstnManifest();
+  assert.equal(emergencyAuthorization(manifest).ok, true);
+  assert.ok(emergencyAuthorization(manifest, { acknowledgedReleaseId: "" }).failures.includes("release_acknowledgment_mismatch"));
+  assert.ok(emergencyAuthorization(manifest, { acknowledgedSourceCommit: "" }).failures.includes("source_commit_acknowledgment_mismatch"));
+  assert.ok(emergencyAuthorization(manifest, { authorizationReason: "" }).failures.includes("authorization_reason_missing"));
+  assert.ok(emergencyAuthorization(manifest, { acknowledgedReleaseId: "wrong-release" }).failures.includes("release_acknowledgment_mismatch"));
+  assert.ok(emergencyAuthorization(manifest, { acknowledgedSourceCommit: "0".repeat(40) }).failures.includes("source_commit_acknowledgment_mismatch"));
+});
+
+test("voice release emergency authorization cannot bypass identity artifact readback source or snapshot failures", () => {
+  const manifest = missingPstnManifest();
+  assert.ok(emergencyAuthorization(manifest, { identityValid: false }).failures.includes("aws_identity_invalid"));
+  assert.ok(emergencyAuthorization(manifest, { artifactsValid: false }).failures.includes("accepted_artifact_mismatch"));
+  assert.ok(emergencyAuthorization(manifest, { canaryReadbackValid: false }).failures.includes("canary_readback_mismatch"));
+  assert.ok(emergencyAuthorization(manifest, { sourceValidationPassed: false }).failures.includes("source_validation_failed"));
+  assert.ok(emergencyAuthorization(manifest, { rollbackSnapshotComplete: false }).failures.includes("rollback_snapshot_incomplete"));
+});
+
+test("voice release emergency authorization cannot bypass measured safety failures", () => {
+  for (const [metricName, failure] of [
+    ["wrongServiceAutoCommitCount", "wrong_service_auto_commit"],
+    ["wrongStaffAutoCommitCount", "wrong_staff_auto_commit"],
+    ["appointmentBeforeFinalConfirmationCount", "appointment_before_confirmation"],
+    ["silentTurnCount", "silent_turn"],
+    ["autoTransferWithoutRequestCount", "unauthorized_auto_transfer"],
+    ["duplicateAppointmentCount", "duplicate_appointment"]
+  ]) {
+    const manifest = passingManifest();
+    manifest.canaryAcceptance.cases[0].metrics[metricName] = metric(1);
+    const authorization = emergencyAuthorization(manifest);
+    assert.equal(authorization.ok, false, metricName);
+    assert.ok(authorization.failures.includes(failure), metricName);
+  }
+});
+
+test("voice release emergency authorization proceeds only when failures are missing PSTN evidence", () => {
+  const authorization = emergencyAuthorization(missingPstnManifest());
+  assert.equal(authorization.ok, true);
+  assert.deepEqual(authorization.hardGateFailures, []);
+  assert.ok(authorization.bypassedFailures.includes("observability_missing"));
+  assert.ok(authorization.bypassedFailures.includes("cleanup_evidence_missing"));
 });
 
 test("voice release gate rejects duplicate contacts, duplicate round cases, one tester, and incomplete rounds", () => {

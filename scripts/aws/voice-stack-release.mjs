@@ -25,6 +25,7 @@ const RELEASES_ROOT = path.join(ROOT, "diagnostics/releases");
 const RELEASE_SCHEMA_VERSION = "fastaibooking.voice-release.v2";
 const OLD_PRODUCTION_MARKER = "2026-07-17-thuyet-voice-hotfix";
 const OLD_PRODUCTION_LEX_VERSION = "41";
+const EMERGENCY_AUTHORIZATION_FILE = "emergency-production-authorization.json";
 const REQUIRED_CUSTOM_VOCABULARY = [
   "Full Set",
   "Fullset",
@@ -577,6 +578,9 @@ function verifyIdentity(targets) {
 }
 
 function awsJson(targets, service, operation, args = [], details = {}) {
+  if (/^(update-|create-|publish-|add-|associate-|build-|batch-)/.test(operation)) {
+    verifyIdentity(targets);
+  }
   const fullArgs = [
     service,
     operation,
@@ -1595,6 +1599,78 @@ export function validatePromotionGate(manifest) {
   };
 }
 
+const missingOnlyEmergencyFailures = (gate) => {
+  const normalized = gate.normalized;
+  const missingCountFailures = new Map([
+    ["service_capture_below_threshold", normalized.serviceCaptureRate],
+    ["staff_capture_below_threshold", normalized.staffCaptureRate],
+    ["wrong_service_auto_commit", normalized.wrongServiceAutoCommitCount],
+    ["wrong_staff_auto_commit", normalized.wrongStaffAutoCommitCount],
+    ["appointment_before_confirmation", normalized.appointmentBeforeFinalConfirmationCount],
+    ["duplicate_appointment", normalized.duplicateAppointmentCount],
+    ["silent_turn", normalized.silentTurnCount],
+    ["grounded_field_loss", normalized.groundedFieldLossCount],
+    ["unauthorized_auto_transfer", normalized.autoTransferWithoutRequestCount],
+    ["repeated_long_menu", normalized.repeatedLongMenuCount],
+    ["unclean_test_appointments", normalized.activeTestAppointmentCount]
+  ]);
+  const unconditionalMissingEvidence = new Set([
+    "observability_missing",
+    "tester_diversity_missing",
+    "round_incomplete",
+    "safety_cases_missing",
+    "cleanup_evidence_missing",
+    "metric_missing:callerTurnToPromptMs"
+  ]);
+  return gate.failures.filter((failure) =>
+    unconditionalMissingEvidence.has(failure) ||
+    failure.startsWith("metric_missing:") ||
+    (missingCountFailures.has(failure) && missingCountFailures.get(failure) === null)
+  );
+};
+
+export function validateEmergencyPromotionAuthorization({
+  manifest,
+  acknowledgedReleaseId,
+  acknowledgedSourceCommit,
+  authorizationReason,
+  identityValid,
+  artifactsValid,
+  canaryReadbackValid,
+  sourceValidationPassed,
+  rollbackSnapshotComplete = true
+}) {
+  const gate = validatePromotionGate(manifest);
+  const bypassedFailures = missingOnlyEmergencyFailures(gate);
+  const hardGateFailures = gate.failures.filter((failure) => !bypassedFailures.includes(failure));
+  const failures = [];
+  if (acknowledgedReleaseId !== manifest.releaseId) failures.push("release_acknowledgment_mismatch");
+  if (!/^[0-9a-f]{40}$/.test(String(acknowledgedSourceCommit || "")) || acknowledgedSourceCommit !== manifest.sourceCommit) {
+    failures.push("source_commit_acknowledgment_mismatch");
+  }
+  if (!String(authorizationReason || "").trim()) failures.push("authorization_reason_missing");
+  if (!identityValid) failures.push("aws_identity_invalid");
+  if (!artifactsValid) failures.push("accepted_artifact_mismatch");
+  if (!canaryReadbackValid) failures.push("canary_readback_mismatch");
+  if (!sourceValidationPassed) failures.push("source_validation_failed");
+  if (!rollbackSnapshotComplete) failures.push("rollback_snapshot_incomplete");
+  failures.push(...hardGateFailures);
+  return {
+    ok: failures.length === 0,
+    failures: Array.from(new Set(failures)),
+    originalGateFailures: gate.failures,
+    bypassedFailures,
+    hardGateFailures,
+    hardGatesPassed: [
+      "aws_identity",
+      "accepted_artifacts",
+      "canary_readback",
+      "source_validation",
+      "rollback_snapshot"
+    ].filter((name) => !failures.some((failure) => failure.startsWith(name.replaceAll("_", " "))))
+  };
+}
+
 export function buildRollbackPlan(snapshot) {
   if (!snapshot?.connect?.flowId || !snapshot.connect.normalizedSha256 || !snapshot.connect.content) {
     throw new ReleaseError("Rollback snapshot is missing Connect flow content or hash");
@@ -1790,10 +1866,22 @@ function captureTargetSnapshot(targets, target, outputName) {
     "--bot-alias-id",
     alias.id
   ]);
-  const lambdaConfig = awsJson(targets, "lambda", "get-function-configuration", [
+  const lambdaArn = lexAliasLocaleSettingsFrom(lexAlias)?.en_US?.codeHookSpecification?.lambdaCodeHook?.lambdaARN || "";
+  const lambdaQualifier = lambdaArn.split(":").length > 7 ? lambdaArn.split(":").at(-1) : "";
+  const lambdaConfigArgs = [
     "--function-name",
     lambdaFn.name
-  ]);
+  ];
+  if (lambdaQualifier) lambdaConfigArgs.push("--qualifier", lambdaQualifier);
+  const lambdaConfig = awsJson(targets, "lambda", "get-function-configuration", lambdaConfigArgs);
+  const lambdaAlias = lambdaQualifier
+    ? awsJson(targets, "lambda", "get-alias", [
+        "--function-name",
+        lambdaFn.name,
+        "--name",
+        lambdaQualifier
+      ])
+    : null;
   const snapshot = {
     target,
     capturedAt: new Date().toISOString(),
@@ -1807,7 +1895,10 @@ function captureTargetSnapshot(targets, target, outputName) {
       content: flowContent
     },
     lexAlias,
-    lambda: sanitizeLambdaConfig(lambdaConfig)
+    lambda: {
+      ...sanitizeLambdaConfig(lambdaConfig),
+      ...(lambdaAlias || {})
+    }
   };
   writeReleaseFile(outputName.releaseId, outputName.file, snapshot);
   return snapshot;
@@ -2826,7 +2917,7 @@ function readbackCanary({ targets, releaseId, apiRelease, lambdaRelease, lexArti
       functionName: lambdaRelease.functionName,
       aliasName: lambdaRelease.aliasName,
       aliasArn: lambdaRelease.aliasArn,
-      version: lambdaRelease.publishedVersion,
+      version: lambdaConfig.Version,
       codeSha256Base64: lambdaConfig.CodeSha256,
       lastModified: lambdaConfig.LastModified
     },
@@ -2836,6 +2927,7 @@ function readbackCanary({ targets, releaseId, apiRelease, lambdaRelease, lexArti
       aliasName: lexAliasNameFrom(alias),
       aliasArn: lexArtifact.alias.aliasArn,
       botVersion: lexAliasBotVersionFrom(alias),
+      status: pick(alias, "botAliasStatus", "BotAliasStatus"),
       localeBuildStatus: lexLocaleStatus(locale),
       speechModelPreference: lexArtifact.speechModelPreference,
       speechModelPreferenceReadback: lexArtifact.speechModelPreferenceReadback,
@@ -3587,7 +3679,117 @@ function summarizeRelease({ releaseId }) {
   return summary;
 }
 
-function promoteProduction({ releaseId, dryRun = false }) {
+function assertAcceptedArtifacts(manifest) {
+  const failures = [];
+  if (!manifest.lambda?.path || !fs.existsSync(manifest.lambda.path)) {
+    failures.push("lambda_zip_missing");
+  } else {
+    if (sha256File(manifest.lambda.path) !== manifest.lambda.sha256) failures.push("lambda_zip_sha256_mismatch");
+    if (sha256File(manifest.lambda.path, "base64") !== manifest.lambda.codeSha256Base64) failures.push("lambda_code_sha256_mismatch");
+  }
+  const connectPath = manifest.connect?.canary?.path;
+  if (!connectPath || !fs.existsSync(connectPath)) {
+    failures.push("connect_artifact_missing");
+  } else if (connectFlowNormalizedSha256(readJson(connectPath)) !== manifest.connect.canary.normalizedSha256) {
+    failures.push("connect_artifact_sha256_mismatch");
+  }
+  if (!manifest.api?.imageTag || !manifest.api?.canaryReadback?.imageId) failures.push("api_artifact_identity_missing");
+  if (!manifest.lex?.botVersion || !manifest.lex?.alias?.aliasId) failures.push("lex_artifact_identity_missing");
+  if (computeSourceHash() !== manifest.sourceHash || computeApiSourceHash() !== manifest.api?.apiSourceHash) {
+    failures.push("source_hash_mismatch");
+  }
+  const originCheck = run("git", ["merge-base", "--is-ancestor", manifest.sourceCommit || "", "origin/main"]);
+  if (originCheck.status !== 0) failures.push("source_commit_not_on_origin_main");
+  if (failures.length) throw new ReleaseError("Accepted runtime artifacts failed validation", { failures });
+  return {
+    apiImageTag: manifest.api.imageTag,
+    apiImageId: manifest.api.canaryReadback.imageId,
+    lambdaZipSha256: manifest.lambda.sha256,
+    lambdaCodeSha256Base64: manifest.lambda.codeSha256Base64,
+    lexBotVersion: manifest.lex.botVersion,
+    lexAliasId: manifest.lex.alias.aliasId,
+    connectNormalizedSha256: manifest.connect.canary.normalizedSha256,
+    connectMarker: manifest.connect.canary.marker
+  };
+}
+
+function sourceValidationPassed(releaseId) {
+  const file = path.join(releaseDirFor(releaseId), "source-validation.json");
+  if (!fs.existsSync(file)) return false;
+  const validation = readJson(file);
+  return validation.status === "passed" && validation.results?.length >= SOURCE_GATE_COMMANDS.length &&
+    validation.results.every((result) => result.status === "passed" && result.exitCode === 0);
+}
+
+function rereadAcceptedCanary(targets, releaseId, manifest) {
+  const liveApi = readbackApiContainer({
+    releaseId,
+    variant: "canary",
+    serviceName: "api-voice-canary",
+    containerName: "fastaibooking-api-voice-canary",
+    baseUrl: "docker://fastaibooking-api-voice-canary",
+    imageTag: manifest.api.imageTag
+  });
+  const apiFailures = [];
+  if (liveApi.imageId !== manifest.api.canaryReadback.imageId) apiFailures.push("api_image_id_mismatch");
+  if (liveApi.runtimeReleaseId !== releaseId) apiFailures.push("api_release_id_mismatch");
+  if (liveApi.runtimeSourceSha256 !== manifest.sourceHash) apiFailures.push("api_source_hash_mismatch");
+  if (liveApi.runtimeVariant !== "canary") apiFailures.push("api_variant_mismatch");
+  if (liveApi.health !== "healthy" || liveApi.healthReadback?.status !== "ok") apiFailures.push("api_health_failed");
+  if (apiFailures.length) throw new ReleaseError("Canary API identity changed", { failures: apiFailures, liveApi });
+  const readback = readbackCanary({
+    targets,
+    releaseId,
+    apiRelease: { ...manifest.api, canaryReadback: liveApi },
+    lambdaRelease: manifest.lambda,
+    lexArtifact: manifest.lex,
+    connectArtifact: manifest.connect.canary
+  });
+  const failures = [];
+  if (readback.lambda.codeSha256Base64 !== manifest.lambda.codeSha256Base64) failures.push("lambda_code_sha_mismatch");
+  if (String(readback.lambda.version) !== String(manifest.lambda.publishedVersion)) failures.push("lambda_version_mismatch");
+  if (readback.lex.aliasId !== manifest.lex.alias.aliasId) failures.push("lex_alias_mismatch");
+  if (String(readback.lex.botVersion) !== String(manifest.lex.botVersion)) failures.push("lex_version_mismatch");
+  if (readback.lex.status && readback.lex.status !== "Available") failures.push("lex_alias_unavailable");
+  if (readback.lex.lambdaArn !== manifest.lex.alias.lambdaArn) failures.push("lex_lambda_hook_mismatch");
+  if (readback.connect.normalizedSha256 !== manifest.connect.canary.normalizedSha256) failures.push("connect_hash_mismatch");
+  if (readback.connect.marker !== manifest.connect.canary.marker) failures.push("connect_marker_mismatch");
+  if (!readback.connect.aliasArns.includes(manifest.lex.alias.aliasArn)) failures.push("connect_lex_alias_mismatch");
+  if (failures.length) throw new ReleaseError("Canary readback no longer matches accepted manifest", { failures, readback });
+  return readback;
+}
+
+function rollbackSnapshotComplete(snapshot, apiSnapshot) {
+  return Boolean(
+    snapshot?.connect?.flowId && snapshot.connect.normalizedSha256 && snapshot.connect.content &&
+    snapshot?.lexAlias && snapshot?.lambda?.AliasArn && snapshot.lambda.FunctionVersion &&
+    apiSnapshot?.configuredImage && apiSnapshot?.containerImageId
+  );
+}
+
+function writeEmergencyAuthorization(releaseId, authorization) {
+  const file = path.join(releaseDirFor(releaseId), EMERGENCY_AUTHORIZATION_FILE);
+  const body = `${JSON.stringify(authorization, null, 2)}\n`;
+  if (fs.existsSync(file)) {
+    throw new ReleaseError("Emergency authorization audit file already exists", { file });
+  }
+  const descriptor = fs.openSync(file, "wx", 0o444);
+  try {
+    fs.writeFileSync(descriptor, body);
+  } finally {
+    fs.closeSync(descriptor);
+  }
+  return file;
+}
+
+function promoteProduction({
+  releaseId,
+  dryRun = false,
+  authorizedEmergencyPromote = false,
+  acknowledgedReleaseId = "",
+  acknowledgedSourceCommit = "",
+  authorizationReason = ""
+}) {
   const targets = readTargets();
   verifyIdentity(targets);
   const manifest = loadExistingManifest(releaseId);
@@ -3595,8 +3797,26 @@ function promoteProduction({ releaseId, dryRun = false }) {
     throw new ReleaseError(`Missing release manifest for ${releaseId}`);
   }
   const gate = validatePromotionGate(manifest);
-  if (!gate.ok) {
+  if (!gate.ok && !authorizedEmergencyPromote) {
     throw new ReleaseError("Promotion gate failed", { failures: gate.failures });
+  }
+  const acceptedArtifactIdentities = assertAcceptedArtifacts(manifest);
+  rereadAcceptedCanary(targets, releaseId, manifest);
+  const emergencyBase = authorizedEmergencyPromote
+    ? validateEmergencyPromotionAuthorization({
+        manifest,
+        acknowledgedReleaseId,
+        acknowledgedSourceCommit,
+        authorizationReason,
+        identityValid: true,
+        artifactsValid: true,
+        canaryReadbackValid: true,
+        sourceValidationPassed: sourceValidationPassed(releaseId),
+        rollbackSnapshotComplete: true
+      })
+    : null;
+  if (emergencyBase && !emergencyBase.ok) {
+    throw new ReleaseError("Emergency promotion authorization failed", { failures: emergencyBase.failures });
   }
   const plan = buildReleasePlan({ target: "production", dryRun, acceptedManifest: manifest });
   if (dryRun) {
@@ -3620,6 +3840,35 @@ function promoteProduction({ releaseId, dryRun = false }) {
   verifyIdentity(targets);
   const beforeProduction = captureTargetSnapshot(targets, "production", { releaseId, file: "before-production.json" });
   const beforeApi = snapshotApiProduction(releaseId);
+  const snapshotComplete = rollbackSnapshotComplete(beforeProduction, beforeApi);
+  if (!snapshotComplete) {
+    throw new ReleaseError("Production rollback snapshot is incomplete");
+  }
+  if (authorizedEmergencyPromote) {
+    const finalAuthorization = validateEmergencyPromotionAuthorization({
+      manifest,
+      acknowledgedReleaseId,
+      acknowledgedSourceCommit,
+      authorizationReason,
+      identityValid: true,
+      artifactsValid: true,
+      canaryReadbackValid: true,
+      sourceValidationPassed: sourceValidationPassed(releaseId),
+      rollbackSnapshotComplete: snapshotComplete
+    });
+    if (!finalAuthorization.ok) throw new ReleaseError("Emergency promotion authorization failed", { failures: finalAuthorization.failures });
+    writeEmergencyAuthorization(releaseId, {
+      releaseId,
+      acknowledgedSourceCommit,
+      reason: authorizationReason.trim(),
+      authorizedAt: new Date().toISOString(),
+      currentGitHead: run("git", ["rev-parse", "HEAD"]).stdout.trim(),
+      originalGateFailures: finalAuthorization.originalGateFailures,
+      bypassedMissingEvidenceFailures: finalAuthorization.bypassedFailures,
+      hardGatesPassed: ["aws_identity", "canary_ready", "accepted_artifacts", "canary_readbacks", "source_validation", "rollback_snapshot"],
+      acceptedArtifactIdentities
+    });
+  }
   const operationLog = [];
   const acceptedLambda = manifest.lambda;
   const acceptedLex = manifest.lex;
@@ -3628,6 +3877,9 @@ function promoteProduction({ releaseId, dryRun = false }) {
       path: acceptedLambda?.path
     });
   }
+  let productionWritesStarted = false;
+  try {
+  productionWritesStarted = true;
   const apiNextReadback = deployProductionApiNext({
     releaseId,
     sourceHash: manifest.sourceHash,
@@ -3693,29 +3945,14 @@ function promoteProduction({ releaseId, dryRun = false }) {
     }
   });
   operationLog.push({ operation: "connect:update-production-flow", completedAt: new Date().toISOString() });
-  const connect = readbackConnectFlow(targets, targets.connect.flows.production.id);
-  const productionReadback = {
+  const productionReadback = readbackProductionBindings({
+    targets,
     releaseId,
-    status: "PROMOTED_PENDING_POST_PSTN",
-    api: apiProductionReadback,
-    lambda: {
-      functionName: productionLambda.functionName,
-      aliasName: productionLambda.aliasName,
-      aliasArn: productionLambda.aliasArn,
-      version: productionLambda.publishedVersion,
-      codeSha256Base64: productionLambda.codeSha256Base64
-    },
-    lex: {
-      botId: targets.lex.botId,
-      aliasId: prodAlias.aliasId,
-      aliasName: prodAlias.aliasName,
-      aliasArn: prodAlias.aliasArn,
-      botVersion: prodAlias.botVersion,
-      status: prodAlias.status,
-      lambdaArn: prodAlias.lambdaArn
-    },
-    connect
-  };
+    manifest: {
+      ...manifest,
+      productionPromotion: { lambda: productionLambda, lexAlias: prodAlias }
+    }
+  });
   assertReadbackMatchesManifest(
     productionReadback,
     {
@@ -3733,6 +3970,24 @@ function promoteProduction({ releaseId, dryRun = false }) {
       }
     }
   );
+  const productionFailures = [];
+  if (productionReadback.api?.runtimeReleaseId !== releaseId) productionFailures.push("api_release_id_mismatch");
+  if (productionReadback.api?.runtimeSourceSha256 !== manifest.sourceHash) productionFailures.push("api_source_hash_mismatch");
+  if (productionReadback.api?.runtimeVariant !== "production") productionFailures.push("api_variant_mismatch");
+  if (productionReadback.api?.health !== "healthy" || productionReadback.api?.healthReadback?.status !== "ok") productionFailures.push("api_health_failed");
+  if (productionReadback.lambda?.codeSha256Base64 !== manifest.lambda.codeSha256Base64) productionFailures.push("lambda_code_sha_mismatch");
+  if (String(productionReadback.lambda?.version) !== String(productionLambda.publishedVersion)) productionFailures.push("lambda_version_mismatch");
+  if (productionReadback.lambda?.environment?.VOICE_RELEASE_ID !== releaseId) productionFailures.push("lambda_release_id_mismatch");
+  if (productionReadback.lambda?.environment?.VOICE_VARIANT !== "production") productionFailures.push("lambda_variant_mismatch");
+  if (String(productionReadback.lex?.botVersion) !== String(acceptedLex.botVersion)) productionFailures.push("lex_version_mismatch");
+  if (productionReadback.lex?.status !== "Available") productionFailures.push("lex_alias_unavailable");
+  if (productionReadback.lex?.lambdaArn !== productionLambda.aliasArn) productionFailures.push("lex_lambda_hook_mismatch");
+  if (productionReadback.connect?.normalizedSha256 !== connectArtifact.normalizedSha256) productionFailures.push("connect_hash_mismatch");
+  if (productionReadback.connect?.marker !== connectArtifact.marker) productionFailures.push("connect_marker_mismatch");
+  if (!productionReadback.connect?.aliasArns?.includes(prodAlias.aliasArn)) productionFailures.push("connect_lex_alias_mismatch");
+  if (productionFailures.length) {
+    throw new ReleaseError("Independent production readback failed", { failures: productionFailures, productionReadback });
+  }
   const promotion = {
     releaseId,
     status: "PROMOTED_PENDING_POST_PSTN",
@@ -3772,7 +4027,33 @@ function promoteProduction({ releaseId, dryRun = false }) {
     }
   });
   writeFinalReport({ releaseId, status: "PROMOTED_PENDING_POST_PSTN" });
-  console.log(JSON.stringify({ releaseId, status: "PROMOTED_PENDING_POST_PSTN", connect }, null, 2));
+  console.log(JSON.stringify({ releaseId, status: "PROMOTED_PENDING_POST_PSTN", productionReadback }, null, 2));
+  } catch (error) {
+    if (productionWritesStarted) {
+      try {
+        const rollbackResult = rollbackRelease({ releaseId });
+        if (rollbackResult.status !== "ROLLED_BACK_VERIFIED") {
+          throw new ReleaseError("Production promotion failed and rollback verification failed", {
+            promotionFailure: error.message,
+            rollbackResult
+          });
+        }
+        throw new ReleaseError("Production promotion readback failed; rollback verified", {
+          rolledBack: true,
+          promotionFailure: error.message,
+          promotionFailureDetails: error.details || {},
+          rollbackResult
+        });
+      } catch (rollbackError) {
+        if (rollbackError instanceof ReleaseError && rollbackError.details?.rolledBack) throw rollbackError;
+        throw new ReleaseError("Production promotion failed and rollback failed", {
+          promotionFailure: error.message,
+          rollbackFailure: rollbackError.message
+        });
+      }
+    }
+    throw error;
+  }
 }
 
 function readbackProductionBindings({ targets, releaseId, manifest }) {
@@ -3959,7 +4240,17 @@ function rollbackRelease({ releaseId, snapshotPath }) {
         ], {
           requiredAction: "lambda:UpdateAlias"
         });
-        restored.push("lambda");
+        const restoredAlias = awsJson(targets, "lambda", "get-alias", [
+          "--function-name", functionName, "--name", aliasName
+        ]);
+        const restoredConfig = awsJson(targets, "lambda", "get-function-configuration", [
+          "--function-name", functionName, "--qualifier", snapshot.lambda.FunctionVersion
+        ]);
+        if (restoredAlias.FunctionVersion !== snapshot.lambda.FunctionVersion || restoredConfig.CodeSha256 !== snapshot.lambda.CodeSha256) {
+          failures.push("lambda_rollback_readback_mismatch");
+        } else {
+          restored.push("lambda");
+        }
       }
     } catch (error) {
       failures.push(`lambda_rollback_failed:${error.message}`);
@@ -3988,8 +4279,15 @@ function rollbackRelease({ releaseId, snapshotPath }) {
         ], {
           requiredAction: "lex:UpdateBotAlias"
         });
-        waitForLexAliasAvailable(targets, aliasId);
-        restored.push("lex");
+        const restoredAlias = waitForLexAliasAvailable(targets, aliasId);
+        if (
+          String(lexAliasBotVersionFrom(restoredAlias)) !== String(botVersion) ||
+          JSON.stringify(lexAliasLocaleSettingsFrom(restoredAlias)) !== JSON.stringify(localeSettings)
+        ) {
+          failures.push("lex_rollback_readback_mismatch");
+        } else {
+          restored.push("lex");
+        }
       }
     } catch (error) {
       failures.push(`lex_rollback_failed:${error.message}`);
@@ -4029,6 +4327,7 @@ function rollbackRelease({ releaseId, snapshotPath }) {
   updateManifest(releaseId, { status: result.status, rollback: result });
   writeFinalReport({ releaseId, status: result.status });
   console.log(JSON.stringify(result, null, 2));
+  return result;
 }
 
 function inspectLive({ target }) {
@@ -4068,6 +4367,10 @@ function parseArgs(argv) {
     manifest: "",
     snapshot: "",
     evidence: "",
+    authorizedEmergencyPromote: false,
+    acknowledgedReleaseId: "",
+    acknowledgedSourceCommit: "",
+    authorizationReason: "",
     rest: []
   };
   const args = [...argv];
@@ -4081,6 +4384,10 @@ function parseArgs(argv) {
     else if (arg === "--release") parsed.releaseId = args.shift() || "";
     else if (arg === "--manifest") parsed.manifest = args.shift() || "";
     else if (arg === "--snapshot") parsed.snapshot = args.shift() || "";
+    else if (arg === "--authorized-emergency-promote") parsed.authorizedEmergencyPromote = true;
+    else if (arg === "--ack-release") parsed.acknowledgedReleaseId = args.shift() || "";
+    else if (arg === "--ack-source-commit") parsed.acknowledgedSourceCommit = args.shift() || "";
+    else if (arg === "--authorization-reason") parsed.authorizationReason = args.shift() || "";
     else if (arg === "--evidence") {
       parsed.evidence = args.shift() || "";
       parsed.rest.push("--evidence", parsed.evidence);
@@ -4117,7 +4424,7 @@ function usage() {
   scripts/aws/deploy-voice-stack.sh record-canary-case --release <release-id> --contact-id <id> --case-id C01 --round-id round-1 --tester-id <id>
   scripts/aws/deploy-voice-stack.sh record-canary-case --release <release-id> --evidence <json>
   scripts/aws/deploy-voice-stack.sh summarize --release <release-id>
-  scripts/aws/deploy-voice-stack.sh promote-production --release <release-id> [--dry-run]
+  scripts/aws/deploy-voice-stack.sh promote-production --release <release-id> [--dry-run] [--authorized-emergency-promote --ack-release <release-id> --ack-source-commit <full-sha> --authorization-reason <text>]
   scripts/aws/deploy-voice-stack.sh verify --release <release-id> --contact-id <id> --case-id C01 --round-id post-1 --tester-id <id>
   scripts/aws/deploy-voice-stack.sh verify --release <release-id> --evidence <json>
   scripts/aws/deploy-voice-stack.sh rollback --release <release-id> [--snapshot <path>]`);
@@ -4186,7 +4493,14 @@ async function main() {
     }
     if (args.command === "promote-production") {
       if (!args.releaseId) throw new ReleaseError("promote-production requires --release");
-      promoteProduction({ releaseId: args.releaseId, dryRun: args.dryRun });
+      promoteProduction({
+        releaseId: args.releaseId,
+        dryRun: args.dryRun,
+        authorizedEmergencyPromote: args.authorizedEmergencyPromote,
+        acknowledgedReleaseId: args.acknowledgedReleaseId,
+        acknowledgedSourceCommit: args.acknowledgedSourceCommit,
+        authorizationReason: args.authorizationReason
+      });
       return;
     }
     if (args.command === "rollback") {
@@ -4216,7 +4530,9 @@ async function main() {
       const sourceGateBlocked =
         error instanceof ReleaseError && /Source gate failed/i.test(error.message);
       const status =
-        (error instanceof AwsOperationError && details.permissionError) || error instanceof ExternalPermissionError
+        details.rolledBack
+          ? "ROLLED_BACK_AFTER_VERIFIED_FAILURE"
+          : (error instanceof AwsOperationError && details.permissionError) || error instanceof ExternalPermissionError
           ? "BLOCKED_BY_REAL_EXTERNAL_PERMISSION_ERROR"
           : sourceGateBlocked
             ? "BLOCKED_BY_FAILED_SOURCE_GATE"
