@@ -1338,6 +1338,7 @@ export function buildReleasePlan({ target, dryRun = false, acceptedManifest = nu
           "lambda:publish-version",
           "lambda:create-or-update-alias",
           "lex:update-bot-locale",
+          "lex:update-intent",
           "lex:create-slot-type",
           "lex:update-slot-type",
           "lex:batch-create-custom-vocabulary-item",

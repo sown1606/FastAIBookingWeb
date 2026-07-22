@@ -180,7 +180,11 @@ test("voice release dry-run plan has zero writes but canary plan covers Lambda L
   assert.ok(plan.plannedWrites.some((item) => item.startsWith("lambda:")));
   assert.ok(plan.plannedWrites.some((item) => item.startsWith("lex:")));
   assert.ok(plan.plannedWrites.some((item) => item.startsWith("connect:")));
+  assert.ok(plan.plannedWrites.includes("lex:update-intent"));
   assert.ok(plan.plannedWrites.includes("connect:associate-lex-bot-alias"));
+  assert.ok(
+    plan.plannedWrites.indexOf("lex:update-intent") < plan.plannedWrites.indexOf("lex:build-bot-locale")
+  );
   assert.ok(
     plan.plannedWrites.indexOf("connect:associate-lex-bot-alias") <
       plan.plannedWrites.indexOf("connect:update-contact-flow-content")
