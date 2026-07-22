@@ -264,7 +264,8 @@ const SERVICE_ALIASES: Record<string, string[]> = {
     "foot pedicure",
     "toe pedicure",
     "p t q",
-    "ptq"
+    "ptq",
+    "picu"
   ],
   manicure: [
     "many cure",
@@ -1628,6 +1629,9 @@ const normalizeAnyStaffPhrase = (
   if (hasExplicitFirstAvailableStaffRejection(value)) {
     return undefined;
   }
+  if (/\b(?:and\s+)?stop\s+at\s+(?:five|5)\b/.test(normalized)) {
+    return "Any staff";
+  }
 
   if (
     Array.from(ANY_STAFF_PHRASES).some((phrase) => {
@@ -2214,7 +2218,7 @@ const resolveRelativeWeekdayCandidate = (
   }
   const now = getReferenceDateTime(timezone);
   let daysUntil = (weekday - now.weekday + 7) % 7;
-  if (candidate.mode === "next" || candidate.mode === "next_week") {
+  if (candidate.mode === "next_week" || (candidate.mode === "next" && daysUntil === 0)) {
     daysUntil += 7;
   }
   return now.plus({ days: daysUntil }).startOf("day");
@@ -3067,6 +3071,10 @@ const extractTimeCandidate = (value: string, context: TimePhraseContext = {}): s
   );
   if (oclockMatch?.[1]) {
     return oclockMatch[1];
+  }
+
+  if (/\b(?:and\s+)?stop\s+at\s+(?:five|5)\b/i.test(normalizeForMatch(searchable))) {
+    return undefined;
   }
 
   const markedBareMatch = searchable.match(
@@ -5157,7 +5165,7 @@ const hasScopedFullSetPhoneticCandidate = (value?: string | null): boolean => {
       /\bfull\s+jet\b/.test(normalized) ||
       /\btime\s+to\s+fight\b/.test(normalized) ||
       /\bfun\s+facts?\b/.test(normalized) ||
-      /\b(?:phone\s+set|phone\s+chat|food\s+set|pool\s+set|cool\s+set)\b/.test(normalized) ||
+      /\b(?:phone\s+set|phone\s+chat|food\s+set|pool\s+set|cool\s+set|moon\s+set|fu\s+set|pun\s+set)\b/.test(normalized) ||
       /\b(?:can\s+we|could\s+we|so\s+we\s+ll|we\s+ll)\s+set\b/.test(normalized)
   );
 };
@@ -5985,6 +5993,7 @@ const parseStaffIntent = (input: {
   context?: StaffPhraseContext;
 }): StaffIntentParseResult => {
   const normalized = normalizeForMatch(input.text);
+  const observedAnyStaffExceptTrang = /\b(?:and\s+)?(?:he\s+)?stop\s+at\s+se\s+chang\b/.test(normalized);
   const excludedStaff: StaffCandidate[] = [];
   if (!normalized) {
     return {
@@ -6004,6 +6013,9 @@ const parseStaffIntent = (input: {
 
   const trang = input.staff.find((member) => normalizeForMatch(member.fullName.split(/\s+/)[0]) === "trang");
   if (trang) {
+    if (observedAnyStaffExceptTrang && !excludedStaff.some((member) => member.id === trang.id)) {
+      excludedStaff.push(trang);
+    }
     for (const alias of Array.from(TRANG_NEGATIVE_ASR_EXCLUSION_ALIASES.values())) {
       if (
         textHasGovernedStaffExclusion(normalized, alias) &&
@@ -6032,6 +6044,7 @@ const parseStaffIntent = (input: {
   }
 
   const requestedAnyStaff =
+    observedAnyStaffExceptTrang ||
     Boolean(normalizeAnyStaffPhrase(input.text, input.context)) ||
     /\b(?:first\s+avai?lable|available|anyone|anybody|any\s+staff|any\s+technician|any\s+tech)\b/.test(
       normalized

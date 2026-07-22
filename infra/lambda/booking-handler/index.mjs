@@ -146,7 +146,8 @@ const PEDICURE_ALIASES = [
   "foot pedicure",
   "toe pedicure",
   "p t q",
-  "ptq"
+  "ptq",
+  "picu"
 ];
 
 const DEMO_SERVICE_NAMES = [
@@ -1078,6 +1079,9 @@ function normalizeAnyStaffPhrase(text, context = {}) {
   if (hasExplicitFirstAvailableStaffRejection(text)) {
     return "";
   }
+  if (/\b(?:and\s+)?stop\s+at\s+(?:five|5)\b/.test(normalized)) {
+    return "Any staff";
+  }
 
   const strongAlias = ANY_STAFF_ALIASES.find((alias) => {
     const normalizedAlias = normalizeForMatch(alias);
@@ -1447,6 +1451,15 @@ function extractStaffExclusionsFromTranscript(text, sessionAttributes = {}) {
       names.add(normalizeForMatch(candidate.staffName));
     }
   }
+  if (/\b(?:and\s+)?(?:he\s+)?stop\s+at\s+se\s+chang\b/.test(normalizedText)) {
+    const trang = getKnownStaffCandidates(sessionAttributes).find(
+      (candidate) => normalizeForMatch(candidate.staffName) === "trang"
+    );
+    if (trang?.staffId) {
+      ids.add(trang.staffId);
+    }
+    names.add("trang");
+  }
   return {
     ids: Array.from(ids),
     names: Array.from(names)
@@ -1458,7 +1471,10 @@ function extractStaffFromTranscript(text, sessionAttributes = {}) {
   if (!normalizedText) {
     return "";
   }
-  if (normalizeAnyStaffPhrase(text, sessionAttributes)) {
+  if (
+    /\b(?:and\s+)?(?:he\s+)?stop\s+at\s+se\s+chang\b/.test(normalizedText) ||
+    normalizeAnyStaffPhrase(text, sessionAttributes)
+  ) {
     return "Any staff";
   }
   const scopedCandidate = normalizeScopedStaffCandidatePhrase(text, sessionAttributes);
@@ -3723,7 +3739,7 @@ function resolveRelativeWeekdayCandidate(candidate, timeZone = DEFAULT_SALON_TIM
     return "";
   }
   let daysUntil = (targetWeekday - currentWeekday + 7) % 7;
-  if (candidate.mode === "next" || candidate.mode === "next_week") {
+  if (candidate.mode === "next_week" || (candidate.mode === "next" && daysUntil === 0)) {
     daysUntil += 7;
   }
   return formatDateParts(addDaysToDateParts(todayParts, daysUntil));
@@ -4117,6 +4133,10 @@ function extractTimeCandidate(value, context = {}) {
   );
   if (oclockMatch?.[1]) {
     return oclockMatch[1];
+  }
+
+  if (/\b(?:and\s+)?stop\s+at\s+(?:five|5)\b/i.test(normalizeForMatch(searchable))) {
+    return "";
   }
 
   const markedBareMatch = searchable.match(
@@ -7522,6 +7542,14 @@ function commitDialogState(response, options = {}) {
       sessionAttributes[field] = String(value);
     }
   }
+  if (
+    sessionAttributes.serviceName &&
+    sessionAttributes.proposedServiceName &&
+    normalizeForMatch(sessionAttributes.serviceName) === normalizeForMatch(sessionAttributes.proposedServiceName)
+  ) {
+    sessionAttributes.awaitingServiceConfirmation = "false";
+    sessionAttributes.proposedServiceName = "";
+  }
 
   if (options.activeDtmfMenu !== undefined) {
     if (options.activeDtmfMenu) {
@@ -8072,7 +8100,7 @@ function hasScopedFullSetPhoneticCandidate(text) {
       /\bfull\s+jet\b/.test(normalized) ||
       /\btime\s+to\s+fight\b/.test(normalized) ||
       /\bfun\s+facts?\b/.test(normalized) ||
-      /\b(?:phone\s+set|phone\s+chat|food\s+set|pool\s+set|cool\s+set)\b/.test(normalized) ||
+      /\b(?:phone\s+set|phone\s+chat|food\s+set|pool\s+set|cool\s+set|moon\s+set|fu\s+set|pun\s+set)\b/.test(normalized) ||
       /\b(?:can\s+we|could\s+we|so\s+we\s+ll|we\s+ll)\s+set\b/.test(normalized)
   );
 }

@@ -347,7 +347,7 @@
           "x-amz-lex:allow-interrupt:BookAppointmentIntent:customerName": "false",
           "x-amz-lex:allow-interrupt:BookAppointmentIntent:bookingConfirmation": "false"
         },
-        "Text": "Hi, I can help book your appointment. Tell me the service, day, time, and staff. You can press 0 for a person."
+        "Text": "Hi, how can I help you today?"
       },
       "Identifier": "3b2877ca-bc16-4019-a8e6-04200c0ded06",
       "Type": "ConnectParticipantWithLexBot",

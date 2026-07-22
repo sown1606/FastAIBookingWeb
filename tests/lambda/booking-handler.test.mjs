@@ -14,6 +14,7 @@ const lexRoots = ["v7", "v8", "v10"].map((version) => ({
 const connectRoot = path.join(repoRoot, "infra/aws/connect/contact-flows");
 const CANONICAL_SERVICE_PROMPT =
   "Hi, I can help book your appointment. Tell me the service, day, time, and staff. You can press 0 for a person.";
+const INITIAL_GREETING = "Hi, how can I help you today?";
 const FIRST_SERVICE_RETRY_PROMPT = "Which service would you like to book?";
 const SERVICE_MENU_PROMPT =
   "Sorry, I didn't catch the service. Did you say Pedicure or Manicure?";
@@ -989,7 +990,7 @@ test("Connect AI reception has one reachable greeting and no outer service promp
   const { actionsById, reachable } = collectReachableActions(aiReceptionFlow);
   const reachableGreetingActions = [...reachable]
     .map((id) => actionsById.get(id))
-    .filter((action) => action?.Parameters?.Text === CANONICAL_SERVICE_PROMPT);
+    .filter((action) => action?.Parameters?.Text === INITIAL_GREETING);
   const flowLogging = actionsById.get("enable-flow-logging");
 
   assert.equal(aiReceptionFlow.StartAction, "enable-flow-logging");
@@ -1014,7 +1015,7 @@ test("Connect AI reception has one reachable greeting and no outer service promp
   const primary = actionsById.get("3b2877ca-bc16-4019-a8e6-04200c0ded06");
   const recovery = actionsById.get("6fbf4310-c8c6-44a8-a8f5-1d7830974c4d");
   const finalRecovery = actionsById.get("41e3f239-5b57-4363-92fc-9d594579fa98");
-  assert.equal(primary.Parameters.Text, CANONICAL_SERVICE_PROMPT);
+  assert.equal(primary.Parameters.Text, INITIAL_GREETING);
   assert.doesNotMatch(primary.Parameters.Text, /press 1 for Pedicure/i);
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:allow-interrupt:*:*"], undefined);
   assert.equal(
@@ -1393,7 +1394,7 @@ test("booking prompts are speech-first and service menu is not the greeting", ()
   assert.ok(lambdaSource.includes(SERVICE_MENU_PROMPT));
   assert.ok(apiSource.includes(CANONICAL_SERVICE_PROMPT));
   assert.ok(apiSource.includes(SERVICE_MENU_PROMPT));
-  assert.equal(livePathGreeting.Parameters.Text, CANONICAL_SERVICE_PROMPT);
+  assert.equal(livePathGreeting.Parameters.Text, INITIAL_GREETING);
   assert.equal(
     lexSlot.valueElicitationSetting.promptSpecification.messageGroupsList[0].message.plainTextMessage.value,
     FIRST_SERVICE_RETRY_PROMPT
@@ -2423,6 +2424,77 @@ test("DialogCodeHook proposes Full Set for truncated set tails only in service b
   }
 });
 
+test("DialogCodeHook accepts yes fullset after observed moon-set clarification", async () => {
+  const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
+  let allowFetch = false;
+  const fetchCalls = installFetchMock((_url, _options, body) => {
+    if (!allowFetch) {
+      throw new Error("fetch should not be called before Full Set confirmation");
+    }
+    return jsonResponse(
+      successfulBackendPayload({
+        outcome: "MISSING_INFO",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "InProgress",
+          message: "May I have your name, please?",
+          messageContentType: "PlainText",
+          dialogAction: { type: "ElicitSlot", slotToElicit: "customerName" },
+          sessionAttributes: {
+            serviceName: body.serviceName,
+            requestedDate: body.requestedDate,
+            requestedTime: body.requestedTime,
+            staffPreference: body.staffPreference,
+            conversationComplete: "false"
+          }
+        },
+        missingFields: ["customerName"]
+      })
+    );
+  });
+
+  const first = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "moon set tomorrow at 3 PM with Kevin",
+      sessionId: "connect-moon-set-confirmation",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: "connect-moon-set-confirmation"
+        },
+        intent: { ...baseEvent().sessionState.intent, slots: {} }
+      }
+    })
+  );
+
+  assert.equal(fetchCalls.length, 0);
+  assert.equal(first.sessionState.sessionAttributes.proposedServiceName, "Full Set");
+  assert.match(first.messages[0].content, /Did you say Full Set/i);
+
+  allowFetch = true;
+  const second = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "yes fullset",
+      sessionId: "connect-moon-set-confirmation",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: first.sessionState.sessionAttributes,
+        intent: { ...baseEvent().sessionState.intent, slots: {} }
+      }
+    })
+  );
+
+  assert.equal(fetchCalls.at(-1).body.serviceName, "Full Set");
+  assert.equal(second.sessionState.sessionAttributes.serviceName, "Full Set");
+  assert.notEqual(second.sessionState.sessionAttributes.awaitingServiceConfirmation, "true");
+  assert.doesNotMatch(second.messages[0].content, /Did you say Full Set/i);
+});
+
 test("DialogCodeHook rejects unrelated truncated set phrases", async () => {
   for (const phrase of [
     "set the alarm tomorrow",
@@ -3424,6 +3496,49 @@ test("DialogCodeHook missing service with retained date and time asks service be
   assert.equal(response.messages[0].content, "I have tomorrow at 2 PM. Which service would you like to book?");
   assert.doesNotMatch(response.messages[0].content, /I have your/i);
   assert.doesNotMatch(response.messages[0].content, /May I have your name/i);
+});
+
+test("DialogCodeHook appointment-only tomorrow phrases retain the day and ask for service", async () => {
+  for (const [index, phrase] of [
+    "I like to make appointment tomorrow.",
+    "I want appointment tomorrow."
+  ].entries()) {
+    const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
+    globalThis.fetch = async () => {
+      throw new Error(`fetch should not be called before service is collected for ${phrase}`);
+    };
+
+    const response = await handler(
+      baseEvent({
+        invocationSource: "DialogCodeHook",
+        inputTranscript: phrase,
+        sessionId: `connect-appointment-tomorrow-${index}`,
+        sessionState: {
+          ...baseEvent().sessionState,
+          sessionAttributes: {
+            salonId: "salon-explicit",
+            CalledNumber: "+18483487681",
+            CustomerEndpointAddress: "+17325956266",
+            AmazonConnectContactId: `connect-appointment-tomorrow-${index}`
+          },
+          intent: {
+            ...baseEvent().sessionState.intent,
+            name: "BookAppointmentIntent",
+            state: "InProgress",
+            confirmationState: "None",
+            slots: {}
+          }
+        }
+      })
+    );
+
+    assert.equal(response.sessionState.dialogAction.type, "ElicitSlot", phrase);
+    assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName", phrase);
+    assert.equal(response.sessionState.sessionAttributes.requestedDate, usEasternDate(1), phrase);
+    assert.equal(response.sessionState.sessionAttributes.serviceName, undefined, phrase);
+    assert.equal(response.messages[0].content, "I have tomorrow. Which service would you like to book?", phrase);
+    assert.doesNotMatch(response.messages[0].content, /Are you still there/i, phrase);
+  }
 });
 
 test("DialogCodeHook 1100 AM ASR retains time while asking for missing service", async () => {
@@ -5418,6 +5533,63 @@ test("DialogCodeHook forwards compact ASR alternatives for verified Pedicure ASR
   assert.equal(JSON.parse(response.sessionState.sessionAttributes.serviceDtmfOptions)["1"], "Pedicure");
 });
 
+test("DialogCodeHook repairs observed picu and does not treat stop-at-five staff ASR as time", async () => {
+  const handler = await loadHandler();
+  const fetchCalls = installFetchMock((_url, _options, body) =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "MISSING_INFO",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "InProgress",
+          message: "What time would you prefer?",
+          messageContentType: "PlainText",
+          dialogAction: { type: "ElicitSlot", slotToElicit: "requestedTime" },
+          sessionAttributes: {
+            serviceName: body.serviceName,
+            requestedDate: body.requestedDate,
+            staffPreference: body.staffPreference,
+            conversationComplete: "false"
+          }
+        },
+        missingFields: ["requestedTime"]
+      })
+    )
+  );
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "book me a picu tomorrow afternoon and stop at 5",
+      sessionId: "connect-observed-picu-stop-at-five",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: "connect-observed-picu-stop-at-five",
+          customerName: "Kiet Nguyen",
+          customerPhone: "+17325956266"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          state: "InProgress",
+          confirmationState: "None",
+          slots: {}
+        }
+      }
+    })
+  );
+
+  assert.equal(fetchCalls.length, 0);
+  assert.equal(response.sessionState.sessionAttributes.serviceName, "Pedicure");
+  assert.equal(response.sessionState.sessionAttributes.requestedDate, usEasternDate(1));
+  assert.equal(response.sessionState.sessionAttributes.requestedTime, undefined);
+  assert.equal(response.sessionState.sessionAttributes.staffPreference, "Any staff");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "requestedTime");
+});
+
 test("DialogCodeHook does not synthesize ASR confidence from NLU confidence", async () => {
   const handler = await loadHandler();
   const fetchCalls = installFetchMock(() =>
@@ -6806,7 +6978,18 @@ test("DialogCodeHook phone set alone does not resolve to Full Set", async () => 
 });
 
 test("DialogCodeHook proposes Full Set for active service-slot phonetic corpus", async () => {
-  for (const phrase of ["food set", "phone set", "pool set", "cool set", "full jet", "fun fact", "who's that"]) {
+  for (const phrase of [
+    "food set",
+    "phone set",
+    "pool set",
+    "cool set",
+    "moon set",
+    "fu set",
+    "pun set",
+    "full jet",
+    "fun fact",
+    "who's that"
+  ]) {
     const handler = await loadHandler();
     globalThis.fetch = async () => {
       throw new Error(`fetch should not be called before ${phrase} service clarification`);
@@ -7307,6 +7490,63 @@ test("DialogCodeHook one-shot any staff except Trang preserves exclusion before 
   assert.equal(response.sessionState.sessionAttributes.staffPreference, "Any staff");
   assert.match(response.sessionState.sessionAttributes.excludedStaffNames, /trang/i);
   assert.doesNotMatch(response.messages[0].content, /with Trang/i);
+});
+
+test("DialogCodeHook repairs observed any-staff-except-Trang ASR tail", async () => {
+  const handler = await loadHandler();
+  const fetchCalls = installFetchMock((_url, _options, body) =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "MISSING_INFO",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "InProgress",
+          message: "May I have your name, please?",
+          messageContentType: "PlainText",
+          dialogAction: { type: "ElicitSlot", slotToElicit: "customerName" },
+          sessionAttributes: {
+            serviceName: body.serviceName,
+            requestedDate: body.requestedDate,
+            requestedTime: body.requestedTime,
+            staffPreference: body.staffPreference,
+            excludedStaffNames: body.attributes.excludedStaffNames,
+            excludedStaffIds: body.attributes.excludedStaffIds,
+            conversationComplete: "false"
+          }
+        },
+        missingFields: ["customerName"]
+      })
+    )
+  );
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "Full Set tomorrow at 2 PM and he stop at se chang",
+      sessionId: "connect-observed-any-staff-except-trang",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: "connect-observed-any-staff-except-trang"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          state: "InProgress",
+          confirmationState: "None",
+          slots: {}
+        }
+      }
+    })
+  );
+
+  assert.ok(fetchCalls.length >= 1);
+  assert.equal(fetchCalls.at(-1).body.staffPreference, "Any staff");
+  assert.match(fetchCalls.at(-1).body.attributes.excludedStaffNames, /trang/i);
+  assert.equal(response.sessionState.sessionAttributes.staffPreference, "Any staff");
+  assert.match(response.sessionState.sessionAttributes.excludedStaffNames, /trang/i);
 });
 
 test("Full utterance asks only for customer name with persisted slot state", async () => {
@@ -11439,6 +11679,59 @@ test("DialogCodeHook resolves next-week Monday variants using salon-local July 2
     assert.equal(fetchCalls.length, fetchCountBefore + 1);
     assert.equal(fetchCalls.at(-1).body.requestedDate, "2026-07-20");
     assert.equal(thisMonday.sessionState.sessionAttributes.requestedDate, "2026-07-20");
+  }));
+
+test("DialogCodeHook resolves next Monday to the nearest upcoming Monday", async () =>
+  withFixedTestNow("2026-07-22T08:31:00-04:00", async () => {
+    const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
+    const fetchCalls = installFetchMock((_url, _options, body) =>
+      jsonResponse(
+        successfulBackendPayload({
+          outcome: "MISSING_INFO",
+          appointment: null,
+          lexResponse: {
+            fulfillmentState: "InProgress",
+            message: "Please confirm the appointment.",
+            messageContentType: "PlainText",
+            dialogAction: { type: "ElicitSlot", slotToElicit: "bookingConfirmation" },
+            sessionAttributes: {
+              ...(body.attributes || {}),
+              requestedDate: body.requestedDate,
+              conversationComplete: "false"
+            }
+          }
+        })
+      )
+    );
+
+    const response = await handler(
+      baseEvent({
+        invocationSource: "DialogCodeHook",
+        inputTranscript: "I need a Manicure next Monday at 10 AM with Amy.",
+        sessionId: "connect-next-monday-july-22",
+        sessionState: {
+          ...baseEvent().sessionState,
+          sessionAttributes: {
+            salonId: "salon-explicit",
+            CalledNumber: "+18483487681",
+            CustomerEndpointAddress: "+84798171999",
+            AmazonConnectContactId: "connect-next-monday-july-22",
+            customerName: "Lee",
+            customerPhone: "+84798171999"
+          },
+          intent: {
+            ...baseEvent().sessionState.intent,
+            state: "InProgress",
+            confirmationState: "None",
+            slots: {}
+          }
+        }
+      })
+    );
+
+    assert.equal(fetchCalls.length, 1);
+    assert.equal(fetchCalls[0].body.requestedDate, "2026-07-27");
+    assert.equal(response.sessionState.sessionAttributes.requestedDate, "2026-07-27");
   }));
 
 test("DialogCodeHook asks clarification for bare Monday and next-week Monday July 20 conflict", async () =>
