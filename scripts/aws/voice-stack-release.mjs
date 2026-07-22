@@ -61,6 +61,11 @@ const SOURCE_HASH_FILES = [
   "infra/aws/connect/contact-flows/ai-reception.json",
   "infra/aws/lex/FastAIBookingBot-v10/BotLocales/en_US/BotLocale.json",
   "infra/aws/lex/FastAIBookingBot-v10/BotLocales/en_US/CustomVocabulary.json",
+  "infra/aws/lex/FastAIBookingBot-v10/BotLocales/en_US/Intents/BookAppointmentIntent/Intent.json",
+  "infra/aws/lex/FastAIBookingBot-v10/BotLocales/en_US/Intents/CancelAppointmentIntent/Intent.json",
+  "infra/aws/lex/FastAIBookingBot-v10/BotLocales/en_US/Intents/FallbackIntent/Intent.json",
+  "infra/aws/lex/FastAIBookingBot-v10/BotLocales/en_US/Intents/HumanEscalationIntent/Intent.json",
+  "infra/aws/lex/FastAIBookingBot-v10/BotLocales/en_US/Intents/RescheduleAppointmentIntent/Intent.json",
   "infra/aws/lex/FastAIBookingBot-v10/BotLocales/en_US/SlotTypes/NailServiceType/SlotType.json",
   "infra/aws/lex/FastAIBookingBot-v10/BotLocales/en_US/SlotTypes/StaffPreferenceType/SlotType.json"
 ];

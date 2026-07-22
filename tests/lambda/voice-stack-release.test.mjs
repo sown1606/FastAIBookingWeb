@@ -110,6 +110,23 @@ test("voice release IDs are neutral v2 IDs", () => {
   );
 });
 
+test("voice release source hash includes Lex intent source", () => {
+  const script = readFileSync(path.join(repoRoot, "scripts/aws/voice-stack-release.mjs"), "utf8");
+  for (const intentName of [
+    "BookAppointmentIntent",
+    "CancelAppointmentIntent",
+    "FallbackIntent",
+    "HumanEscalationIntent",
+    "RescheduleAppointmentIntent"
+  ]) {
+    assert.match(
+      script,
+      new RegExp(`infra/aws/lex/FastAIBookingBot-v10/BotLocales/en_US/Intents/${intentName}/Intent\\.json`),
+      `${intentName} must affect VOICE_SOURCE_SHA256`
+    );
+  }
+});
+
 test("voice release acceptance rejects stale and missing fingerprints", () => {
   const manifest = {
     connect: { canary: { marker: "v49-human-asr-unit-canary" } },
