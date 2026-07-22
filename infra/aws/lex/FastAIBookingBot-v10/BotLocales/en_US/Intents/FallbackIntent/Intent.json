@@ -6,7 +6,38 @@
   "parentIntentSignature": "AMAZON.FallbackIntent",
   "sampleUtterances": null,
   "intentConfirmationSetting": null,
-  "intentClosingSetting": null,
+  "intentClosingSetting": {
+    "isActive": true,
+    "nextStep": {
+      "sessionAttributes": {
+        "conversationComplete": "false",
+        "connectContinuationPrompt": "Are you still there? How can I help?",
+        "connectContinuationPromptAvailable": "true"
+      },
+      "intent": {
+        "name": null,
+        "slots": null
+      },
+      "dialogAction": {
+        "type": "ElicitIntent",
+        "slotToElicit": null,
+        "suppressNextMessage": null,
+        "intentsInScope": null
+      }
+    },
+    "closingResponse": {
+      "messageGroupsList": [
+        {
+          "message": {
+            "plainTextMessage": {
+              "value": "Are you still there? How can I help?"
+            }
+          }
+        }
+      ],
+      "allowInterrupt": true
+    }
+  },
   "initialResponseSetting": {
     "conditional": null,
     "codeHook": {

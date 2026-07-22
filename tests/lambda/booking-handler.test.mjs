@@ -783,6 +783,7 @@ test("Lex v10 fallback intent recovers audibly instead of silently ending", () =
   assertFallbackRecovery("fallback success", hook?.successResponse, hook?.successNextStep);
   assertFallbackRecovery("fallback failure", hook?.failureResponse, hook?.failureNextStep);
   assertFallbackRecovery("fallback timeout", hook?.timeoutResponse, hook?.timeoutNextStep);
+  assertFallbackRecovery("fallback close", intent.intentClosingSetting?.closingResponse, intent.intentClosingSetting?.nextStep);
 });
 
 test("Connect human escalation flow transfers without duplicate wait prompt", () => {
