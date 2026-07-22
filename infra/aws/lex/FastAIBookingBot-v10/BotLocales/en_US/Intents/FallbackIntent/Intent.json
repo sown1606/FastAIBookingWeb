@@ -1,1 +1,130 @@
-{"name":"FallbackIntent","identifier":"FALLBCKINT","displayName":null,"description":"Default intent when no other intent matches","parentIntentSignature":"AMAZON.FallbackIntent","sampleUtterances":null,"intentConfirmationSetting":null,"intentClosingSetting":null,"initialResponseSetting":{"conditional":null,"codeHook":{"isActive":true,"enableCodeHookInvocation":true,"invocationLabel":null,"postCodeHookSpecification":{"failureResponse":null,"failureNextStep":{"sessionAttributes":null,"intent":null,"dialogAction":{"type":"EndConversation","slotToElicit":null,"suppressNextMessage":null,"intentsInScope":null}},"failureConditional":null,"successResponse":null,"successNextStep":{"sessionAttributes":null,"intent":null,"dialogAction":{"type":"EndConversation","slotToElicit":null,"suppressNextMessage":null,"intentsInScope":null}},"successConditional":null,"timeoutResponse":null,"timeoutNextStep":{"sessionAttributes":null,"intent":null,"dialogAction":{"type":"EndConversation","slotToElicit":null,"suppressNextMessage":null,"intentsInScope":null}},"timeoutConditional":null}},"nextStep":{"sessionAttributes":null,"intent":null,"dialogAction":{"type":"InvokeDialogCodeHook","slotToElicit":null,"suppressNextMessage":null,"intentsInScope":null}},"initialResponse":null},"inputContexts":null,"outputContexts":null,"kendraConfiguration":null,"qnAIntentConfiguration":null,"bedrockAgentIntentConfiguration":null,"qInConnectIntentConfiguration":null,"dialogCodeHook":null,"fulfillmentCodeHook":null,"slotPriorities":[]}
+{
+  "name": "FallbackIntent",
+  "identifier": "FALLBCKINT",
+  "displayName": null,
+  "description": "Default intent when no other intent matches",
+  "parentIntentSignature": "AMAZON.FallbackIntent",
+  "sampleUtterances": null,
+  "intentConfirmationSetting": null,
+  "intentClosingSetting": null,
+  "initialResponseSetting": {
+    "conditional": null,
+    "codeHook": {
+      "isActive": true,
+      "enableCodeHookInvocation": true,
+      "invocationLabel": null,
+      "postCodeHookSpecification": {
+        "failureResponse": {
+          "messageGroupsList": [
+            {
+              "message": {
+                "plainTextMessage": {
+                  "value": "Are you still there? How can I help?"
+                }
+              }
+            }
+          ],
+          "allowInterrupt": true
+        },
+        "failureNextStep": {
+          "sessionAttributes": {
+            "conversationComplete": "false",
+            "connectContinuationPrompt": "Are you still there? How can I help?",
+            "connectContinuationPromptAvailable": "true"
+          },
+          "intent": {
+            "name": null,
+            "slots": null
+          },
+          "dialogAction": {
+            "type": "ElicitIntent",
+            "slotToElicit": null,
+            "suppressNextMessage": null,
+            "intentsInScope": null
+          }
+        },
+        "failureConditional": null,
+        "successResponse": {
+          "messageGroupsList": [
+            {
+              "message": {
+                "plainTextMessage": {
+                  "value": "Are you still there? How can I help?"
+                }
+              }
+            }
+          ],
+          "allowInterrupt": true
+        },
+        "successNextStep": {
+          "sessionAttributes": {
+            "conversationComplete": "false",
+            "connectContinuationPrompt": "Are you still there? How can I help?",
+            "connectContinuationPromptAvailable": "true"
+          },
+          "intent": {
+            "name": null,
+            "slots": null
+          },
+          "dialogAction": {
+            "type": "ElicitIntent",
+            "slotToElicit": null,
+            "suppressNextMessage": null,
+            "intentsInScope": null
+          }
+        },
+        "successConditional": null,
+        "timeoutResponse": {
+          "messageGroupsList": [
+            {
+              "message": {
+                "plainTextMessage": {
+                  "value": "Are you still there? How can I help?"
+                }
+              }
+            }
+          ],
+          "allowInterrupt": true
+        },
+        "timeoutNextStep": {
+          "sessionAttributes": {
+            "conversationComplete": "false",
+            "connectContinuationPrompt": "Are you still there? How can I help?",
+            "connectContinuationPromptAvailable": "true"
+          },
+          "intent": {
+            "name": null,
+            "slots": null
+          },
+          "dialogAction": {
+            "type": "ElicitIntent",
+            "slotToElicit": null,
+            "suppressNextMessage": null,
+            "intentsInScope": null
+          }
+        },
+        "timeoutConditional": null
+      }
+    },
+    "nextStep": {
+      "sessionAttributes": null,
+      "intent": null,
+      "dialogAction": {
+        "type": "InvokeDialogCodeHook",
+        "slotToElicit": null,
+        "suppressNextMessage": null,
+        "intentsInScope": null
+      }
+    },
+    "initialResponse": null
+  },
+  "inputContexts": null,
+  "outputContexts": null,
+  "kendraConfiguration": null,
+  "qnAIntentConfiguration": null,
+  "bedrockAgentIntentConfiguration": null,
+  "qInConnectIntentConfiguration": null,
+  "dialogCodeHook": null,
+  "fulfillmentCodeHook": null,
+  "slotPriorities": []
+}

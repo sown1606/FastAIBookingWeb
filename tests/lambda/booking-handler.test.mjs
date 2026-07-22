@@ -747,6 +747,44 @@ test("Lex v10 booking code hook failures recover audibly instead of ending the c
   assertRecoverable("fulfillment timeout", fulfillmentHook?.timeoutResponse, fulfillmentHook?.timeoutNextStep);
 });
 
+test("Lex v10 fallback intent recovers audibly instead of silently ending", () => {
+  const intent = JSON.parse(
+    readFileSync(
+      path.join(
+        repoRoot,
+        "infra/aws/lex/FastAIBookingBot-v10/BotLocales/en_US/Intents/FallbackIntent/Intent.json"
+      ),
+      "utf8"
+    )
+  );
+  const readablePrompt = (response) =>
+    response?.messageGroupsList
+      ?.map((group) => (
+        group?.message?.plainTextMessage?.value ||
+        group?.message?.ssmlMessage?.value ||
+        ""
+      ).trim())
+      .filter(Boolean)
+      .join(" ");
+  const assertFallbackRecovery = (label, response, nextStep) => {
+    assert.equal(readablePrompt(response), "Are you still there? How can I help?", `${label} prompt`);
+    assert.equal(response?.allowInterrupt, true, `${label} allows interruption`);
+    assert.equal(nextStep?.sessionAttributes?.conversationComplete, "false", `${label} keeps the call active`);
+    assert.equal(
+      nextStep?.sessionAttributes?.connectContinuationPromptAvailable,
+      "true",
+      `${label} exposes a Connect continuation prompt`
+    );
+    assert.equal(nextStep?.dialogAction?.type, "ElicitIntent", `${label} collects the next caller intent`);
+    assert.notEqual(nextStep?.dialogAction?.type, "EndConversation", `${label} must not end silently`);
+  };
+
+  const hook = intent.initialResponseSetting?.codeHook?.postCodeHookSpecification;
+  assertFallbackRecovery("fallback success", hook?.successResponse, hook?.successNextStep);
+  assertFallbackRecovery("fallback failure", hook?.failureResponse, hook?.failureNextStep);
+  assertFallbackRecovery("fallback timeout", hook?.timeoutResponse, hook?.timeoutNextStep);
+});
+
 test("Connect human escalation flow transfers without duplicate wait prompt", () => {
   const humanEscalationFlow = JSON.parse(
     readFileSync(path.join(connectRoot, "human-escalation.json"), "utf8")
