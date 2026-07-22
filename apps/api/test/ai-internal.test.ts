@@ -5482,6 +5482,81 @@ test("missing service prompt acknowledges retained date time and staff", async (
   assert.equal(state.appointments.length, 0);
 });
 
+test("missing service with 1100 AM ASR retains time and asks service before name", async () => {
+  const expectedDate = frozenTestNow.plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  const result = await postInternalAppointment(
+    bookingPayload({
+      customerName: undefined,
+      customerPhone: undefined,
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      currentTurnTranscript: "i want to you tomorrow at 1100 am",
+      transcript: "i want to you tomorrow at 1100 am",
+      attributes: {
+        currentTurnTranscript: "i want to you tomorrow at 1100 am",
+        slotsOriginalValues: {
+          requestedTime: "am"
+        },
+        slotsInterpretedValues: {
+          requestedTime: "AM"
+        }
+      }
+    })
+  );
+
+  const attrs = result.body.data.lexResponse.sessionAttributes;
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "serviceName");
+  assert.equal(attrs.serviceName, undefined);
+  assert.equal(attrs.requestedDate, expectedDate);
+  assert.equal(attrs.requestedTime, "11:00");
+  assert.match(result.body.data.lexResponse.message, /I have tomorrow at 11 AM/i);
+  assert.match(result.body.data.lexResponse.message, /Which service would you like to book\?/i);
+  assert.doesNotMatch(result.body.data.lexResponse.message, /May I have your name/i);
+  assert.equal(state.appointments.length, 0);
+});
+
+test("Pedicure tomorrow at 1100 AM ASR retains service date and time", async () => {
+  const expectedDate = frozenTestNow.plus({ days: 1 }).toFormat("yyyy-MM-dd");
+  const result = await postInternalAppointment(
+    bookingPayload({
+      customerName: undefined,
+      customerPhone: undefined,
+      serviceName: undefined,
+      requestedDate: undefined,
+      requestedTime: undefined,
+      staffPreference: undefined,
+      confirmationState: undefined,
+      currentTurnTranscript: "I want a Pedicure tomorrow at 1100 am",
+      transcript: "I want a Pedicure tomorrow at 1100 am",
+      attributes: {
+        currentTurnTranscript: "I want a Pedicure tomorrow at 1100 am",
+        slotsOriginalValues: {
+          requestedTime: "am"
+        },
+        slotsInterpretedValues: {
+          requestedTime: "AM"
+        }
+      }
+    })
+  );
+
+  const attrs = result.body.data.lexResponse.sessionAttributes;
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.outcome, "MISSING_INFO");
+  assert.equal(attrs.serviceName, "Pedicure");
+  assert.equal(attrs.confirmedServiceName, "Pedicure");
+  assert.equal(attrs.requestedDate, expectedDate);
+  assert.equal(attrs.requestedTime, "11:00");
+  assert.equal(result.body.data.lexResponse.dialogAction.slotToElicit, "customerName");
+  assert.doesNotMatch(result.body.data.lexResponse.message, /What time/i);
+  assert.equal(state.appointments.length, 0);
+});
+
 test("date-time answer after known service acknowledges current date time only", async () => {
   const result = await postInternalAppointment(
     bookingPayload({

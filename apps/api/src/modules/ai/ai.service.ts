@@ -2444,6 +2444,16 @@ const readSpokenMinuteValue = (value: string): number | null => {
 
 const normalizeHourMinuteTimeExpression = (value?: string | null): string => {
   const source = (value ?? "")
+    .replace(/\b(\d{3,4})\s*([ap])\s*\.?\s*m\.?\b/gi, (match, digits: string, periodLetter: string) => {
+      const hourText = digits.length === 3 ? digits.slice(0, 1) : digits.slice(0, 2);
+      const minuteText = digits.slice(-2);
+      const hour = Number(hourText);
+      const minute = Number(minuteText);
+      if (hour < 1 || hour > 12 || minute > 59) {
+        return match;
+      }
+      return `${hour}:${minuteText} ${periodLetter.toUpperCase()}M`;
+    })
     .replace(/\b([ap])\s*\.?\s*m\.?\b/gi, "$1m")
     .replace(/\ba\.?m\.?\b/gi, "am")
     .replace(/\bp\.?m\.?\b/gi, "pm");

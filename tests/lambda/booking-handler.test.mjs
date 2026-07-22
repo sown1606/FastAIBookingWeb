@@ -3347,6 +3347,93 @@ test("DialogCodeHook missing service with retained date and time asks service be
   assert.doesNotMatch(response.messages[0].content, /May I have your name/i);
 });
 
+test("DialogCodeHook 1100 AM ASR retains time while asking for missing service", async () => {
+  const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
+  globalThis.fetch = async () => {
+    throw new Error("fetch should not be called before missing service is clarified");
+  };
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "i want to you tomorrow at 1100 am",
+      inputMode: "Speech",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: "connect-incident-1100-missing-service"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          name: "BookAppointmentIntent",
+          state: "InProgress",
+          confirmationState: "None",
+          slots: {
+            requestedTime: slotWith({
+              originalValue: "am",
+              interpretedValue: "AM",
+              resolvedValues: ["AM"]
+            })
+          }
+        }
+      }
+    })
+  );
+
+  assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName");
+  assert.equal(response.sessionState.sessionAttributes.serviceName, undefined);
+  assert.equal(response.sessionState.sessionAttributes.requestedDate, usEasternDate(1));
+  assert.equal(response.sessionState.sessionAttributes.requestedTime, "11 AM");
+  assert.equal(response.messages[0].content, "I have tomorrow at 11 AM. Which service would you like to book?");
+});
+
+test("DialogCodeHook Pedicure tomorrow at 1100 AM retains service date and time", async () => {
+  const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
+  globalThis.fetch = async () => {
+    throw new Error("fetch should not be called before local missing-name prompt");
+  };
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "I want a Pedicure tomorrow at 1100 am",
+      inputMode: "Speech",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          AmazonConnectContactId: "connect-incident-pedicure-1100"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          name: "BookAppointmentIntent",
+          state: "InProgress",
+          confirmationState: "None",
+          slots: {
+            requestedTime: slotWith({
+              originalValue: "am",
+              interpretedValue: "AM",
+              resolvedValues: ["AM"]
+            })
+          }
+        }
+      }
+    })
+  );
+
+  assert.equal(response.sessionState.sessionAttributes.serviceName, "Pedicure");
+  assert.equal(response.sessionState.sessionAttributes.confirmedServiceName, "Pedicure");
+  assert.equal(response.sessionState.sessionAttributes.requestedDate, usEasternDate(1));
+  assert.equal(response.sessionState.sessionAttributes.requestedTime, "11 AM");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "customerName");
+  assert.doesNotMatch(response.messages[0].content, /What time/i);
+});
+
 test("DialogCodeHook service turn does not mutate customerName from unrelated I'm phrase", async () => {
   const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
   globalThis.fetch = async () => {
@@ -4293,6 +4380,44 @@ test("DialogCodeHook generic booking request asks one short service question", a
   assert.doesNotMatch(response.messages[0].content, /^Sure\b/i);
   assert.doesNotMatch(response.messages[0].content, /Press 1 for Pedicure/i);
   assert.equal(response.sessionState.sessionAttributes.conversationComplete, "false");
+});
+
+test("DialogCodeHook first generic service question skips known-caller lookup", async () => {
+  const handler = await loadHandler();
+  globalThis.fetch = async () => {
+    throw new Error("customer lookup should not run before a generic service question");
+  };
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "Hi I want to book an appointment",
+      inputMode: "Speech",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          provider: "AMAZON_CONNECT",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: "connect-generic-booking-fast",
+          ContactId: "connect-generic-booking-fast",
+          customerPhone: "+17325956266"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          state: "InProgress",
+          confirmationState: "None",
+          slots: {}
+        }
+      }
+    })
+  );
+
+  assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName");
+  assert.equal(response.messages[0].content, "Which service would you like to book?");
+  assert.equal(response.sessionState.sessionAttributes.knownCallerLookupAttempted, undefined);
 });
 
 test("DialogCodeHook general services request does not accept ungrounded Pedicure slot", async () => {

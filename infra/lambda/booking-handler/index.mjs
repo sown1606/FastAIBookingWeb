@@ -3777,6 +3777,16 @@ function readSpokenMinuteValue(value) {
 
 function normalizeHourMinuteTimeExpression(value) {
   const source = String(value || "")
+    .replace(/\b(\d{3,4})\s*([ap])\s*\.?\s*m\.?\b/gi, (match, digits, periodLetter) => {
+      const hourText = digits.length === 3 ? digits.slice(0, 1) : digits.slice(0, 2);
+      const minuteText = digits.slice(-2);
+      const hour = Number(hourText);
+      const minute = Number(minuteText);
+      if (hour < 1 || hour > 12 || minute > 59) {
+        return match;
+      }
+      return `${hour}:${minuteText} ${String(periodLetter).toUpperCase()}M`;
+    })
     .replace(/\b([ap])\s*\.?\s*m\.?\b/gi, "$1m")
     .replace(/\ba\.?m\.?\b/gi, "am")
     .replace(/\bp\.?m\.?\b/gi, "pm");
@@ -6715,6 +6725,9 @@ async function buildKnownCallerLookupResponse(event, intentName) {
 async function applyKnownCallerLookupBeforePrompt(event, intentName) {
   const previous = event.sessionState?.sessionAttributes || {};
   const known = buildKnownBookingSessionAttributes(event);
+  const nextSlot = getBookingSlotToElicit(event);
+  const shouldUseFastGenericServicePrompt =
+    nextSlot === "serviceName" && isFastGenericServicePromptTurn(event);
   const hasKnownName = Boolean(
     known.customerName ||
       known.recognizedCustomerName ||
@@ -6725,6 +6738,7 @@ async function applyKnownCallerLookupBeforePrompt(event, intentName) {
     intentName !== "BookAppointmentIntent" ||
     getInputMode(event) === "DTMF" ||
     Boolean(readCurrentTurnDigit(event)) ||
+    shouldUseFastGenericServicePrompt ||
     previous.knownCallerLookupAttempted === "true" ||
     !known.customerPhone ||
     hasKnownName
@@ -6773,6 +6787,27 @@ async function applyKnownCallerLookupBeforePrompt(event, intentName) {
     customerProfileSource: "active_customer",
     customerPhone: resultAttributes.customerPhone || known.customerPhone
   });
+}
+
+function isFastGenericServicePromptTurn(event) {
+  const previous = event.sessionState?.sessionAttributes || {};
+  const transcript = getCurrentTurnTranscript(event);
+  if (!transcript) {
+    return false;
+  }
+  if (
+    hasCurrentTurnDatePhrase(transcript) ||
+    hasCurrentTurnTimePhrase(transcript, previous) ||
+    currentTurnRecognizedService(event)
+  ) {
+    return false;
+  }
+  const serviceSlot = getKnownField(event, "serviceName", { preferOriginal: true });
+  if (serviceSlot) {
+    return false;
+  }
+  const normalized = normalizeForMatch(transcript);
+  return /\b(?:book|booking|schedule|make)\b.*\b(?:appointment|service|services)\b/.test(normalized);
 }
 
 function getCallOrSessionIdFromPayload(payload = {}) {
