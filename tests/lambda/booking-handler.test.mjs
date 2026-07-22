@@ -1100,6 +1100,7 @@ test("Connect AI reception routes only explicit complete conversations to goodby
   const primary = actionsById.get("3b2877ca-bc16-4019-a8e6-04200c0ded06");
   const recovery = actionsById.get("6fbf4310-c8c6-44a8-a8f5-1d7830974c4d");
   const finalRecovery = actionsById.get("41e3f239-5b57-4363-92fc-9d594579fa98");
+  const finalFallbackTransfer = actionsById.get("final-fallback-transfer-message");
   const transferCheck = actionsById.get("check-transfer-to-queue");
   const completeCheck = actionsById.get("check-conversation-complete");
   const outcomeCheck = actionsById.get("check-terminal-conversation-outcome");
@@ -1153,16 +1154,25 @@ test("Connect AI reception routes only explicit complete conversations to goodby
   assert.equal(finalRecovery.Transitions.NextAction, "check-transfer-to-queue");
   assert.equal(finalRecovery.Transitions.Errors[0].NextAction, "final-recovery-goodbye");
   assert.equal(finalRecovery.Transitions.Errors[1].NextAction, "final-recovery-goodbye");
-  assert.ok(
-    recovery.Transitions.Conditions.some((condition) =>
-      condition.Condition.Operands.includes("FallbackIntent")
-    )
-  );
-  assert.ok(
-    recovery.Transitions.Conditions.some((condition) =>
-      condition.Condition.Operands.includes("AMAZON.FallbackIntent")
-    )
-  );
+  for (const condition of recovery.Transitions.Conditions) {
+    const operand = condition.Condition.Operands[0];
+    if (operand === "FallbackIntent" || operand === "AMAZON.FallbackIntent") {
+      assert.equal(condition.NextAction, "41e3f239-5b57-4363-92fc-9d594579fa98");
+    } else {
+      assert.equal(condition.NextAction, "check-transfer-to-queue", `${operand} should remain on normal handling`);
+    }
+  }
+  for (const condition of finalRecovery.Transitions.Conditions) {
+    const operand = condition.Condition.Operands[0];
+    if (operand === "FallbackIntent" || operand === "AMAZON.FallbackIntent") {
+      assert.equal(condition.NextAction, "final-fallback-transfer-message");
+    } else {
+      assert.equal(condition.NextAction, "check-transfer-to-queue", `${operand} should remain on normal handling`);
+    }
+  }
+  assert.equal(finalFallbackTransfer.Type, "MessageParticipant");
+  assert.match(finalFallbackTransfer.Parameters.Text, /connect you to a person now/i);
+  assert.equal(finalFallbackTransfer.Transitions.NextAction, "transfer-human-escalation-flow");
 });
 
 test("Connect AI reception recovery paths do not immediately disconnect after greeting", () => {
@@ -1174,7 +1184,12 @@ test("Connect AI reception recovery paths do not immediately disconnect after gr
   const recovery = actionsById.get("6fbf4310-c8c6-44a8-a8f5-1d7830974c4d");
   const finalRecovery = actionsById.get("41e3f239-5b57-4363-92fc-9d594579fa98");
 
-  for (const id of ["initial-lex-error-message", "retry-lex-error-message", "final-recovery-goodbye"]) {
+  for (const id of [
+    "initial-lex-error-message",
+    "retry-lex-error-message",
+    "final-recovery-goodbye",
+    "final-fallback-transfer-message"
+  ]) {
     assert.ok(reachable.has(id), `${id} must be reachable from StartAction`);
     assert.equal(actionsById.get(id)?.Type, "MessageParticipant", `${id} must be audible`);
     assert.ok(String(actionsById.get(id)?.Parameters?.Text || "").trim(), `${id} must have literal text`);
@@ -1202,6 +1217,13 @@ test("Connect AI reception recovery paths do not immediately disconnect after gr
     const path = assertPathReaches(aiReceptionFlow, error.NextAction, "ef8d8054-77ea-40c7-aa4e-800ed784c49c");
     assert.ok(path.includes("final-recovery-goodbye"), `${error.ErrorType} must play goodbye`);
     assert.equal(path.filter((id) => id === "41e3f239-5b57-4363-92fc-9d594579fa98").length, 0);
+  }
+  for (const condition of finalRecovery.Transitions.Conditions) {
+    if (!condition.Condition.Operands.includes("FallbackIntent")) {
+      continue;
+    }
+    const path = assertPathReaches(aiReceptionFlow, condition.NextAction, "transfer-human-escalation-flow");
+    assert.ok(path.includes("final-fallback-transfer-message"), "repeated fallback must announce transfer first");
   }
   for (const id of reachable) {
     const action = actionsById.get(id);
