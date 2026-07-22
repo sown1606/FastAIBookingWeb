@@ -69,6 +69,21 @@
       "utterance": "I want to book an appointment"
     },
     {
+      "utterance": "Hi I want to book an appointment"
+    },
+    {
+      "utterance": "Hello I want to book an appointment"
+    },
+    {
+      "utterance": "Hi I want to book services"
+    },
+    {
+      "utterance": "Hello I want to book services"
+    },
+    {
+      "utterance": "Hi I want to book a service"
+    },
+    {
       "utterance": "Schedule a {serviceName} {requestedDate} at {requestedTime}"
     },
     {

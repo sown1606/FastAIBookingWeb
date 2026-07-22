@@ -786,6 +786,24 @@ test("Lex v10 fallback intent recovers audibly instead of silently ending", () =
   assertFallbackRecovery("fallback close", intent.intentClosingSetting?.closingResponse, intent.intentClosingSetting?.nextStep);
 });
 
+test("Lex v10 booking intent includes greeting-prefixed generic booking utterances", () => {
+  const intent = JSON.parse(
+    readFileSync(
+      path.join(
+        repoRoot,
+        "infra/aws/lex/FastAIBookingBot-v10/BotLocales/en_US/Intents/BookAppointmentIntent/Intent.json"
+      ),
+      "utf8"
+    )
+  );
+  const utterances = new Set((intent.sampleUtterances || []).map((entry) => entry.utterance));
+
+  assert.ok(utterances.has("Hi I want to book an appointment"));
+  assert.ok(utterances.has("Hello I want to book an appointment"));
+  assert.ok(utterances.has("Hi I want to book services"));
+  assert.ok(utterances.has("Hello I want to book services"));
+});
+
 test("Connect human escalation flow transfers without duplicate wait prompt", () => {
   const humanEscalationFlow = JSON.parse(
     readFileSync(path.join(connectRoot, "human-escalation.json"), "utf8")
