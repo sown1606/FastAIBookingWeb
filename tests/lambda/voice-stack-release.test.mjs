@@ -172,6 +172,14 @@ test("voice release deploy syncs Lex intent source before build", () => {
   );
 });
 
+test("voice release deploy provisions enough Lambda CPU for low-latency dialog turns", () => {
+  const script = readFileSync(path.join(repoRoot, "scripts/aws/voice-stack-release.mjs"), "utf8");
+
+  assert.match(script, /const VOICE_LAMBDA_MEMORY_SIZE_MB = 512;/);
+  assert.match(script, /MemorySize: VOICE_LAMBDA_MEMORY_SIZE_MB/);
+  assert.match(script, /Lambda memory readback mismatch after publish/);
+});
+
 test("voice release acceptance rejects stale and missing fingerprints", () => {
   const manifest = {
     connect: { canary: { marker: "v49-human-asr-unit-canary" } },

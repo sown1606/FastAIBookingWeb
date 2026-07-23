@@ -26,6 +26,7 @@ const RELEASE_SCHEMA_VERSION = "fastaibooking.voice-release.v2";
 const OLD_PRODUCTION_MARKER = "2026-07-17-thuyet-voice-hotfix";
 const OLD_PRODUCTION_LEX_VERSION = "41";
 const EMERGENCY_AUTHORIZATION_FILE = "emergency-production-authorization.json";
+const VOICE_LAMBDA_MEMORY_SIZE_MB = 512;
 const REQUIRED_CUSTOM_VOCABULARY = [
   "Full Set",
   "Fullset",
@@ -2024,6 +2025,7 @@ function deployLambdaArtifact({
     "--cli-input-json",
     JSON.stringify({
       FunctionName: lambdaFunctionName,
+      MemorySize: VOICE_LAMBDA_MEMORY_SIZE_MB,
       Environment: {
         Variables: envVars
       }
@@ -2082,6 +2084,12 @@ function deployLambdaArtifact({
     "--qualifier",
     published.Version
   ]);
+  if (publishedConfiguration.MemorySize !== VOICE_LAMBDA_MEMORY_SIZE_MB) {
+    throw new ReleaseError("Lambda memory readback mismatch after publish", {
+      expected: VOICE_LAMBDA_MEMORY_SIZE_MB,
+      actual: publishedConfiguration.MemorySize
+    });
+  }
   const deployedToken = publishedConfiguration.Environment?.Variables?.FASTAIBOOKING_API_INTERNAL_TOKEN || "";
   if (apiInternalToken && deployedToken !== apiInternalToken) {
     throw new ReleaseError("Lambda/API internal token parity check failed after Lambda publish", {

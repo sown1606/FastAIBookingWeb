@@ -151,6 +151,8 @@ const PEDICURE_ALIASES = [
   "picque",
   "pique",
   "pick cue",
+  "edicque",
+  "edicure",
   "pick you",
   "picky"
 ];
@@ -290,6 +292,7 @@ const ANY_STAFF_ALIASES = [
 ];
 const CONTEXTUAL_ANY_STAFF_ALIASES = [
   "any stat",
+  "and stop",
   "what available",
   "who available",
   "one available",
@@ -310,7 +313,7 @@ const SERVICE_DTMF_PROMPT =
 const SERVICE_KEYPAD_PROMPT =
   "Which service would you like to book?";
 const SERVICE_DTMF_SHORT_PROMPT =
-  "Sorry, I didn't catch the service. Did you say Pedicure or Manicure?";
+  "I missed the service. Did you say Pedicure or Manicure?";
 const STAFF_DTMF_PROMPT =
   "Which staff would you like, Trang, Amy, Kelly, or first available?";
 const STAFF_DTMF_SHORT_PROMPT =
@@ -318,7 +321,7 @@ const STAFF_DTMF_SHORT_PROMPT =
 const NO_INPUT_HUMAN_CONFIRM_PROMPT =
   "Are you still there? Would you like me to connect you to a real person? You can press 0 for an operator.";
 const NO_INPUT_RECOVERY_PROMPT =
-  "Sorry, I didn't catch that. Please say the service, day, and time again.";
+  "I missed that. Please say the service, day, and time again.";
 const INVALID_MENU_CHOICE_PROMPT = "Invalid choice. Please select a valid number from the options provided.";
 const FAST_WAIT_PROMPT = "Please wait. Let me check...";
 const WAIT_PROMPTS = {
@@ -393,6 +396,8 @@ const SERVICE_ALIAS_GROUPS = {
     "full cet",
     "full send",
     "fuel set",
+    "bloomtet",
+    "bloom tet",
     "fake nails",
     "extension nails",
     "nail extensions",
@@ -5606,13 +5611,13 @@ function buildCustomerNamePrompt(event, options = {}) {
     forPhrase: options.already
   });
   if (options.forceClarification) {
-    return "Sorry, I didn't catch your name. What is your first name?";
+    return "I missed your name. What is your first name?";
   }
   if (options.spell && !options.already) {
     return "Sorry, could you spell your first name, one letter at a time?";
   }
   if (options.retry && !options.already) {
-    return "Sorry, I didn't catch your name. What is your first name?";
+    return "I missed your name. What is your first name?";
   }
   if (options.already && summary) {
     return `I already have ${summary}. What name should I put on the appointment?`;
@@ -6304,10 +6309,10 @@ function getNoInputPrompt(slotName, noInputCount, event) {
     return "Sorry, could you spell your first name, one letter at a time?";
   }
   if (slotName === "customerName") {
-    return "Sorry, I didn't catch your name. What is your first name?";
+    return "I missed your name. What is your first name?";
   }
   if (slotName === "customerPhone") {
-    return "Sorry, I didn't catch the phone number. What phone number should I use?";
+    return "I missed the phone number. What phone number should I use?";
   }
   if (slotName === "serviceName") {
     const bookingTime = [
@@ -6316,7 +6321,7 @@ function getNoInputPrompt(slotName, noInputCount, event) {
     ].filter(Boolean).join(" ");
     return bookingTime
       ? `I have ${bookingTime}. Which service would you like to book?`
-      : "Sorry, I didn't catch the service. Which service would you like to book?";
+      : "I missed the service. Which service would you like to book?";
   }
   if (slotName === "requestedDate") {
     const prefix = serviceName ? `I have ${serviceName}. ` : "";
@@ -8152,7 +8157,7 @@ function hasScopedFullSetPhoneticCandidate(text) {
       /\bfull\s+jet\b/.test(normalized) ||
       /\btime\s+to\s+fight\b/.test(normalized) ||
       /\bfun\s+facts?\b/.test(normalized) ||
-      /\b(?:phone\s+set|phone\s+chat|food\s+set|pool\s+set|cool\s+set|moon\s+set|fu\s+set|pun\s+set)\b/.test(normalized) ||
+      /\b(?:phone\s+set|phone\s+chat|food\s+set|pool\s+set|cool\s+set|moon\s+set|fu\s+set|pun\s+set|bloom\s*tet)\b/.test(normalized) ||
       /\b(?:can\s+we|could\s+we|so\s+we\s+ll|we\s+ll)\s+set\b/.test(normalized)
   );
 }

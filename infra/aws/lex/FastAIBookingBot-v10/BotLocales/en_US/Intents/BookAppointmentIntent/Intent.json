@@ -69,6 +69,24 @@
       "utterance": "I want to book an appointment"
     },
     {
+      "utterance": "Book services {requestedDate} at {requestedTime}"
+    },
+    {
+      "utterance": "Book a service {requestedDate} at {requestedTime}"
+    },
+    {
+      "utterance": "Book an appointment {requestedDate} at {requestedTime}"
+    },
+    {
+      "utterance": "I want to book services {requestedDate} at {requestedTime}"
+    },
+    {
+      "utterance": "Please help me book an appointment {requestedDate} at {requestedTime}"
+    },
+    {
+      "utterance": "Please help me book an appointment {requestedDate} at {requestedTime} with {staffPreference}"
+    },
+    {
       "utterance": "I want an appointment {requestedDate}"
     },
     {
@@ -194,7 +212,7 @@
             {
               "message": {
                 "plainTextMessage": {
-                  "value": "Sorry, I didn't catch that. Which service would you like to book?"
+                  "value": "I missed that. Which service would you like to book?"
                 }
               }
             }

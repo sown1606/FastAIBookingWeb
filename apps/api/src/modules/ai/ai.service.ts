@@ -265,7 +265,9 @@ const SERVICE_ALIASES: Record<string, string[]> = {
     "toe pedicure",
     "p t q",
     "ptq",
-    "picu"
+    "picu",
+    "edicque",
+    "edicure"
   ],
   manicure: [
     "many cure",
@@ -320,6 +322,8 @@ const SERVICE_ALIASES: Record<string, string[]> = {
     "full cet",
     "full send",
     "fuel set",
+    "bloomtet",
+    "bloom tet",
     "fake nails",
     "extension nails",
     "nail extensions",
@@ -468,6 +472,7 @@ const ANY_STAFF_PHRASES = new Set([
 ]);
 const CONTEXTUAL_ANY_STAFF_PHRASES = new Set([
   "any stat",
+  "and stop",
   "what available",
   "who available",
   "one available",
@@ -682,7 +687,7 @@ const CUSTOMER_NAME_SMALL_TALK_PATTERNS = [
 const SERVICE_DTMF_PROMPT =
   "Hi, I can help book your appointment. Tell me the service, day, time, and staff. You can press 0 for a person.";
 const SERVICE_DTMF_OPTIONS_PROMPT =
-  "Sorry, I didn't catch the service. Did you say Pedicure or Manicure?";
+  "I missed the service. Did you say Pedicure or Manicure?";
 const SERVICE_FIRST_RETRY_PROMPT = "Which service would you like to book?";
 const STAFF_DTMF_PROMPT =
   "Which staff would you like, Trang, Amy, Kelly, or first available?";
@@ -5165,7 +5170,7 @@ const hasScopedFullSetPhoneticCandidate = (value?: string | null): boolean => {
       /\bfull\s+jet\b/.test(normalized) ||
       /\btime\s+to\s+fight\b/.test(normalized) ||
       /\bfun\s+facts?\b/.test(normalized) ||
-      /\b(?:phone\s+set|phone\s+chat|food\s+set|pool\s+set|cool\s+set|moon\s+set|fu\s+set|pun\s+set)\b/.test(normalized) ||
+      /\b(?:phone\s+set|phone\s+chat|food\s+set|pool\s+set|cool\s+set|moon\s+set|fu\s+set|pun\s+set|bloom\s*tet)\b/.test(normalized) ||
       /\b(?:can\s+we|could\s+we|so\s+we\s+ll|we\s+ll)\s+set\b/.test(normalized)
   );
 };
@@ -8742,11 +8747,11 @@ const buildLexMessage = (input: {
         input.repeatedKnownFieldWhileAskingName && summary
           ? `I already have ${escapeSsml(summary)}. <break time="300ms"/> What name should I put on the appointment?`
           : input.rejectedCustomerName
-          ? "Sorry, I didn't catch your name. What is your first name?"
+          ? "I missed your name. What is your first name?"
           : (input.attemptCount ?? 1) >= 3
           ? "Could you spell your first name, one letter at a time?"
           : isRetry
-          ? "Sorry, I didn't catch your name. What is your first name?"
+          ? "I missed your name. What is your first name?"
           : input.currentTurnAcknowledgement
             ? `${escapeSsml(input.currentTurnAcknowledgement)} <break time="300ms"/> May I have your name, please?`
           : summary

@@ -31,6 +31,11 @@
       "displayAs": "Fullset"
     },
     {
+      "phrase": "bloomtet",
+      "weight": 3,
+      "displayAs": "Full Set"
+    },
+    {
       "phrase": "Kelly",
       "weight": 3,
       "displayAs": "Kelly"
@@ -57,6 +62,11 @@
     },
     {
       "phrase": "picque",
+      "weight": 3,
+      "displayAs": "Pedicure"
+    },
+    {
+      "phrase": "edicque",
       "weight": 3,
       "displayAs": "Pedicure"
     },

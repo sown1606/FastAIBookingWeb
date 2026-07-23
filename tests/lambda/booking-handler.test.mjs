@@ -17,7 +17,7 @@ const CANONICAL_SERVICE_PROMPT =
 const INITIAL_GREETING = "Hi, how can I help you today?";
 const FIRST_SERVICE_RETRY_PROMPT = "Which service would you like to book?";
 const SERVICE_MENU_PROMPT =
-  "Sorry, I didn't catch the service. Did you say Pedicure or Manicure?";
+  "I missed the service. Did you say Pedicure or Manicure?";
 let importCounter = 0;
 process.env.FASTAIBOOKING_TEST_NOW_ISO ||= "2026-07-17T10:00:00-04:00";
 
@@ -396,6 +396,9 @@ test("July 15 Lex v10 confirmation and ASR source contracts are present", () => 
   const customVocabularyPhrases = new Set(
     customVocabulary.customVocabularyItems.map((item) => item.phrase)
   );
+  const bookingUtterances = new Set(
+    bookIntent.sampleUtterances.map((item) => item.utterance)
+  );
   const anyStaffSynonyms = new Set(
     staffPreferenceType.slotTypeValues
       .find((entry) => entry.sampleValue?.value === "Any staff")
@@ -439,8 +442,10 @@ test("July 15 Lex v10 confirmation and ASR source contracts are present", () => 
   for (const phrase of [
     "Full Set",
     "Fullset",
+    "bloomtet",
     "Nail full set",
     "Pedicure",
+    "edicque",
     "Manicure",
     "Gel Manicure",
     "Any staff",
@@ -450,6 +455,14 @@ test("July 15 Lex v10 confirmation and ASR source contracts are present", () => 
     "Whoever is available"
   ]) {
     assert.equal(customVocabularyPhrases.has(phrase), true, `Custom vocabulary missing ${phrase}`);
+  }
+  for (const utterance of [
+    "Book services {requestedDate} at {requestedTime}",
+    "Book a service {requestedDate} at {requestedTime}",
+    "Please help me book an appointment {requestedDate} at {requestedTime}",
+    "Please help me book an appointment {requestedDate} at {requestedTime} with {staffPreference}"
+  ]) {
+    assert.equal(bookingUtterances.has(utterance), true, `Booking intent missing ${utterance}`);
   }
   for (const phrase of ["Any staff", "Any staff is fine", "First available", "Whoever is available"]) {
     assert.equal(anyStaffSynonyms.has(phrase), true, `StaffPreferenceType missing ${phrase}`);
@@ -848,7 +861,7 @@ test("Lex v10 fallback intent recovers audibly instead of silently ending", () =
   const assertFallbackRecovery = (label, response, nextStep) => {
     assert.equal(
       readablePrompt(response),
-      "Sorry, I didn't catch that. Please say the service, day, and time again.",
+      "I missed that. Please say the service, day, and time again.",
       `${label} prompt`
     );
     assert.equal(response?.allowInterrupt, true, `${label} allows interruption`);
@@ -1085,7 +1098,7 @@ test("Connect AI reception has one reachable greeting and no outer service promp
     const next = actionsById.get(action?.Transitions?.NextAction);
     const text = action?.Parameters?.Text || "";
     const isAllowedNoInputRecovery =
-      text === "Sorry, I didn't catch that. Please say the service, day, and time again.";
+      text === "I missed that. Please say the service, day, and time again.";
     const asksQuestion =
       !isAllowedNoInputRecovery &&
       /\?|what service|which service|are you still there|tell me the appointment/i.test(text);
@@ -1440,7 +1453,7 @@ test("Connect AI reception dynamic Lex prompts have a reachable literal fallback
   const fallbackLex = actionsById.get("continuation-fallback-lex");
   assert.equal(
     fallbackLex?.Parameters?.Text,
-    "Sorry, I didn't catch that. Please say the service, day, and time again."
+    "I missed that. Please say the service, day, and time again."
   );
 });
 
@@ -4592,7 +4605,7 @@ test("DialogCodeHook real no input repeats the missing service without resetting
   assert.equal(response.sessionState.sessionAttributes.customerPhone, "+17325956266");
   assert.equal(
     response.messages[0].content,
-    "Sorry, I didn't catch the service. Which service would you like to book?"
+    "I missed the service. Which service would you like to book?"
   );
   assert.doesNotMatch(response.messages[0].content, /1 for Pedicure/i);
   assert.doesNotMatch(response.messages[0].content, /2 for Manicure/i);
@@ -4636,7 +4649,7 @@ test("DialogCodeHook second no input repeats the active service question without
   assert.equal(response.sessionState.sessionAttributes.transferToQueue, undefined);
   assert.equal(
     response.messages[0].content,
-    "Sorry, I didn't catch the service. Which service would you like to book?"
+    "I missed the service. Which service would you like to book?"
   );
   assert.doesNotMatch(response.messages[0].content, /1 for Pedicure/i);
   assert.doesNotMatch(response.messages[0].content, /5 for Dip Powder/i);
@@ -4677,7 +4690,7 @@ test("DialogCodeHook first service no input asks for service and keeps the call 
   assert.equal(response.sessionState.sessionAttributes.noInputCount, "1");
   assert.equal(
     response.messages[0].content,
-    "Sorry, I didn't catch the service. Which service would you like to book?"
+    "I missed the service. Which service would you like to book?"
   );
   assert.notEqual(response.sessionState.dialogAction.type, "Close");
 });
@@ -5302,7 +5315,7 @@ test("DialogCodeHook voice full set resolves Full Set and asks the next missing 
     throw new Error("fetch should not be called for local Full Set speech recovery");
   };
 
-  for (const inputTranscript of ["full set", "fullset", "I want to book a full set", "full said", "fall set"]) {
+  for (const inputTranscript of ["full set", "fullset", "I want to book a full set", "full said", "fall set", "bloomtet"]) {
     const response = await handler(
       baseEvent({
         invocationSource: "DialogCodeHook",
@@ -7434,7 +7447,7 @@ test("DialogCodeHook customerName noise does not persist sorry", async () => {
   ]);
   assert.equal(
     response.messages[0].content,
-    "Sorry, I didn't catch your name. What is your first name?"
+    "I missed your name. What is your first name?"
   );
 });
 
@@ -7534,7 +7547,7 @@ test("DialogCodeHook customerName small talk asks first name and preserves trust
   assert.equal(response.sessionState.sessionAttributes.requestedTime, "3 PM");
   assert.equal(response.sessionState.sessionAttributes.staffPreference, "Trang");
   assert.equal(response.sessionState.sessionAttributes.customerPhone, "+84798171999");
-  assert.equal(response.messages[0].content, "Sorry, I didn't catch your name. What is your first name?");
+  assert.equal(response.messages[0].content, "I missed your name. What is your first name?");
   assert.deepEqual(JSON.parse(response.sessionState.sessionAttributes.ignoredNoiseFields), [
     "customerName"
   ]);
@@ -7579,7 +7592,7 @@ test("DialogCodeHook customerName small talk asks first name and preserves trust
   assert.equal(affirmativeNoise.sessionState.sessionAttributes.requestedDate, requestedDate);
   assert.equal(affirmativeNoise.sessionState.sessionAttributes.requestedTime, "3 PM");
   assert.equal(affirmativeNoise.sessionState.sessionAttributes.staffPreference, "Trang");
-  assert.equal(affirmativeNoise.messages[0].content, "Sorry, I didn't catch your name. What is your first name?");
+  assert.equal(affirmativeNoise.messages[0].content, "I missed your name. What is your first name?");
   assert.equal(fetchCalls.length, 2);
   assert.equal(fetchCalls[1].body.customerName, undefined);
   assert.equal(fetchCalls[1].body.attributes.customerName, undefined);
@@ -7620,7 +7633,7 @@ test("DialogCodeHook customerName small talk asks first name and preserves trust
   assert.equal(clippedNoise.sessionState.sessionAttributes.requestedDate, requestedDate);
   assert.equal(clippedNoise.sessionState.sessionAttributes.requestedTime, "3 PM");
   assert.equal(clippedNoise.sessionState.sessionAttributes.staffPreference, "Trang");
-  assert.equal(clippedNoise.messages[0].content, "Sorry, I didn't catch your name. What is your first name?");
+  assert.equal(clippedNoise.messages[0].content, "I missed your name. What is your first name?");
   assert.equal(fetchCalls.length, 3);
   assert.equal(fetchCalls[2].body.customerName, undefined);
   assert.equal(fetchCalls[2].body.attributes.customerName, undefined);
@@ -9094,7 +9107,7 @@ test("DialogCodeHook maps p t q to Pedicure in booking context and not staff", a
   assert.equal(response.sessionState.intent.slots.staffPreference, undefined);
 });
 
-test("DialogCodeHook recovers live picque ASR as Pedicure without a network menu lookup", async () => {
+test("DialogCodeHook recovers live Pedicure distortions without a network menu lookup", async () => {
   const handler = await loadHandler();
   let fetchCalled = false;
   globalThis.fetch = async () => {
@@ -9102,10 +9115,51 @@ test("DialogCodeHook recovers live picque ASR as Pedicure without a network menu
     throw new Error("Amazon Connect dialog turns must use the local menu");
   };
 
+  for (const inputTranscript of ["picque", "edicque"]) {
+    const response = await handler(
+      baseEvent({
+        invocationSource: "DialogCodeHook",
+        inputTranscript,
+        sessionState: {
+          ...baseEvent().sessionState,
+          sessionAttributes: {
+            provider: "AMAZON_CONNECT",
+            salonId: "salon-explicit",
+            CalledNumber: "+18483487681",
+            CustomerEndpointAddress: "+84798171999",
+            AmazonConnectContactId: `connect-thuyet-${inputTranscript}`,
+            customerName: "Lee",
+            customerNameSource: "current_turn_explicit",
+            requestedDate: "2026-07-24",
+            requestedTime: "11 AM",
+            lastAskedSlot: "serviceName"
+          },
+          intent: {
+            ...baseEvent().sessionState.intent,
+            confirmationState: "None",
+            slots: {}
+          }
+        }
+      })
+    );
+
+    assert.equal(fetchCalled, false, inputTranscript);
+    assert.equal(response.sessionState.sessionAttributes.serviceName, "Pedicure", inputTranscript);
+    assert.equal(response.sessionState.sessionAttributes.confirmedServiceName, "Pedicure", inputTranscript);
+    assert.equal(response.sessionState.dialogAction.slotToElicit, "staffPreference", inputTranscript);
+  }
+});
+
+test("DialogCodeHook recovers observed and-stop ASR as Any staff in the active staff slot", async () => {
+  const handler = await loadHandler();
+  globalThis.fetch = async () => {
+    throw new Error("Amazon Connect staff recovery must stay local");
+  };
+
   const response = await handler(
     baseEvent({
       invocationSource: "DialogCodeHook",
-      inputTranscript: "picque",
+      inputTranscript: "and stop",
       sessionState: {
         ...baseEvent().sessionState,
         sessionAttributes: {
@@ -9113,26 +9167,30 @@ test("DialogCodeHook recovers live picque ASR as Pedicure without a network menu
           salonId: "salon-explicit",
           CalledNumber: "+18483487681",
           CustomerEndpointAddress: "+84798171999",
-          AmazonConnectContactId: "connect-thuyet-picque",
-          customerName: "Lee",
-          customerNameSource: "current_turn_explicit",
+          AmazonConnectContactId: "connect-thuyet-and-stop",
+          serviceName: "Full Set",
+          confirmedServiceName: "Full Set",
           requestedDate: "2026-07-24",
           requestedTime: "11 AM",
-          lastAskedSlot: "serviceName"
+          lastAskedSlot: "staffPreference"
         },
         intent: {
           ...baseEvent().sessionState.intent,
           confirmationState: "None",
-          slots: {}
+          slots: {
+            serviceName: slot("Full Set"),
+            requestedDate: slot("2026-07-24"),
+            requestedTime: slot("11 AM")
+          }
         }
       }
     })
   );
 
-  assert.equal(fetchCalled, false);
-  assert.equal(response.sessionState.sessionAttributes.serviceName, "Pedicure");
-  assert.equal(response.sessionState.sessionAttributes.confirmedServiceName, "Pedicure");
-  assert.equal(response.sessionState.dialogAction.slotToElicit, "staffPreference");
+  assert.equal(response.sessionState.sessionAttributes.staffPreference, "Any staff");
+  assert.equal(response.sessionState.sessionAttributes.confirmedStaffName, "Any staff");
+  assert.notEqual(response.sessionState.dialogAction.slotToElicit, "staffPreference");
+  assert.doesNotMatch(response.messages?.[0]?.content || "", /Which staff/i);
 });
 
 test("Amazon Connect unsupported service retry uses an immediate local menu", async () => {
@@ -11898,6 +11956,53 @@ test("DialogCodeHook captures exact any-staff one-shot booking fields", async ()
     assert.equal(response.sessionState.sessionAttributes.conversationComplete, "false", phrase);
     assert.notEqual(response.sessionState.dialogAction.slotToElicit, "staffPreference", phrase);
     assert.doesNotMatch(response.messages?.[0]?.content || "", /Which service|Press 1 for/i, phrase);
+  }
+});
+
+test("DialogCodeHook preserves date, time, and optional staff when the one-shot service is missing", async () => {
+  for (const { phrase, expectedStaff } of [
+    {
+      phrase: "book services today at 9 pm",
+      expectedStaff: undefined
+    },
+    {
+      phrase: "please help me book appointment today at 9 pm any staff",
+      expectedStaff: "Any staff"
+    }
+  ]) {
+    const handler = await loadHandler();
+    globalThis.fetch = async () => {
+      throw new Error(`missing-service recovery must stay local for ${phrase}`);
+    };
+
+    const response = await handler(
+      baseEvent({
+        invocationSource: "DialogCodeHook",
+        inputTranscript: phrase,
+        sessionId: `connect-missing-service-${expectedStaff ? "staff" : "plain"}`,
+        sessionState: {
+          ...baseEvent().sessionState,
+          sessionAttributes: {
+            provider: "AMAZON_CONNECT",
+            salonId: "salon-explicit",
+            CalledNumber: "+18483487681",
+            CustomerEndpointAddress: "+84798171999",
+            AmazonConnectContactId: `connect-missing-service-${expectedStaff ? "staff" : "plain"}`,
+            lastAskedSlot: "serviceName"
+          },
+          intent: {
+            ...baseEvent().sessionState.intent,
+            slots: {}
+          }
+        }
+      })
+    );
+
+    assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName", phrase);
+    assert.equal(response.sessionState.sessionAttributes.requestedDate, usEasternDate(0), phrase);
+    assert.equal(response.sessionState.sessionAttributes.requestedTime, "9 PM", phrase);
+    assert.equal(response.sessionState.sessionAttributes.staffPreference, expectedStaff, phrase);
+    assert.doesNotMatch(response.messages?.[0]?.content || "", /Sorry|didn't catch/i, phrase);
   }
 });
 
