@@ -134,9 +134,17 @@ test("voice release deploy syncs Lex intent source before build", () => {
   const script = readFileSync(path.join(repoRoot, "scripts/aws/voice-stack-release.mjs"), "utf8");
 
   assert.match(script, /function syncLexIntents/);
+  assert.match(script, /function syncLexSlots/);
   assert.match(script, /lexv2-models", "update-intent"/);
+  assert.match(script, /lexv2-models", "update-slot"/);
   assert.match(script, /validateIntentReadback/);
+  assert.match(script, /const slots = syncLexSlots\(targets, releaseId\);/);
   assert.match(script, /const intents = syncLexIntents\(targets, releaseId\);/);
+  assert.ok(
+    script.indexOf("const slots = syncLexSlots(targets, releaseId);") <
+      script.indexOf("\"lexv2-models\", \"build-bot-locale\""),
+    "slot source must be applied before building the Lex locale"
+  );
   assert.ok(
     script.indexOf("const intents = syncLexIntents(targets, releaseId);") <
       script.indexOf("\"lexv2-models\", \"build-bot-locale\""),

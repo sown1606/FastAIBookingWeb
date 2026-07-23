@@ -147,7 +147,12 @@ const PEDICURE_ALIASES = [
   "toe pedicure",
   "p t q",
   "ptq",
-  "picu"
+  "picu",
+  "picque",
+  "pique",
+  "pick cue",
+  "pick you",
+  "picky"
 ];
 
 const DEMO_SERVICE_NAMES = [
@@ -6425,6 +6430,10 @@ function buildBookServiceElicitResponse(event) {
   );
 }
 
+function isAmazonConnectVoiceEvent(event) {
+  return event.sessionState?.sessionAttributes?.provider === "AMAZON_CONNECT";
+}
+
 function shouldRequestDynamicServiceMenu(event) {
   const previous = event.sessionState?.sessionAttributes || {};
   const serviceSlot = getKnownField(event, "serviceName", { preferOriginal: true });
@@ -6453,6 +6462,9 @@ function shouldRequestDynamicServiceMenu(event) {
 }
 
 async function buildDynamicServiceElicitResponse(event, intentName) {
+  if (isAmazonConnectVoiceEvent(event)) {
+    return buildBookServiceElicitResponse(event);
+  }
   const result = await postInternalAppointment(
     buildInternalPayload(event, intentName, {
       currentTurnSemanticType: "SERVICE_REQUEST"
@@ -6479,6 +6491,9 @@ async function buildDynamicServiceElicitResponse(event, intentName) {
 }
 
 async function buildDynamicStaffElicitResponse(event, intentName) {
+  if (isAmazonConnectVoiceEvent(event)) {
+    return buildElicitSlotResponse(event, "staffPreference");
+  }
   const result = await postInternalAppointment(buildInternalPayload(event, intentName), {
     operationName: "staff_dtmf_options_generation",
     waitPrompt: WAIT_PROMPTS.staff_dtmf_options,

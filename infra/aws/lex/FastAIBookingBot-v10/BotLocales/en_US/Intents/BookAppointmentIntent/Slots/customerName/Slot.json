@@ -64,7 +64,8 @@
       "failureResponse": null,
       "failureNextStep": {
         "sessionAttributes": {
-          "lastAskedSlot": "customerName"
+          "lastAskedSlot": "customerName",
+          "conversationComplete": "false"
         },
         "intent": {
           "name": null,

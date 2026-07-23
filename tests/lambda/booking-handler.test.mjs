@@ -731,6 +731,43 @@ test("Lex customerName failure path invokes the booking dialog hook instead of F
   }
 });
 
+test("Lex v10 slot failures return to the booking dialog instead of ending the call", () => {
+  const slotsRoot = path.join(
+    repoRoot,
+    "infra/aws/lex/FastAIBookingBot-v10/BotLocales/en_US/Intents/BookAppointmentIntent/Slots"
+  );
+  for (const slotName of [
+    "bookingConfirmation",
+    "customerName",
+    "customerPhone",
+    "requestedDate",
+    "requestedTime",
+    "serviceName",
+    "staffPreference"
+  ]) {
+    const slotExport = JSON.parse(
+      readFileSync(path.join(slotsRoot, slotName, "Slot.json"), "utf8")
+    );
+    const failureNextStep =
+      slotExport.valueElicitationSetting?.slotCaptureSetting?.failureNextStep;
+    assert.equal(
+      failureNextStep?.dialogAction?.type,
+      "InvokeDialogCodeHook",
+      `${slotName} must recover through Lambda`
+    );
+    assert.equal(
+      failureNextStep?.sessionAttributes?.lastAskedSlot,
+      slotName,
+      `${slotName} must preserve the active slot`
+    );
+    assert.equal(
+      failureNextStep?.sessionAttributes?.conversationComplete,
+      "false",
+      `${slotName} must keep the call open`
+    );
+  }
+});
+
 test("Lex v10 booking code hook failures recover audibly instead of ending the conversation", () => {
   const intent = JSON.parse(
     readFileSync(
@@ -1042,13 +1079,13 @@ test("Connect AI reception has one reachable greeting and no outer service promp
     primary.Parameters.LexSessionAttributes["x-amz-lex:allow-interrupt:BookAppointmentIntent:serviceName"],
     "true"
   );
-  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:start-timeout-ms:*:*"], "3000");
-  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:*:*"], "1300");
+  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:start-timeout-ms:*:*"], "5000");
+  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:*:*"], "2000");
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:max-length-ms:*:*"], "12000");
-  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName"], "1600");
+  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName"], "2500");
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedDate"], "1300");
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedTime"], "1100");
-  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference"], "1400");
+  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference"], "2000");
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:customerName"], "1200");
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:bookingConfirmation"], "700");
   assert.equal(primary.Parameters.LexSessionAttributes.lastAskedSlot, "serviceName");
@@ -1063,8 +1100,8 @@ test("Connect AI reception has one reachable greeting and no outer service promp
   for (const action of aiReceptionFlow.Actions.filter((item) => item.Type === "ConnectParticipantWithLexBot")) {
     assert.equal(
       action.Parameters.LexSessionAttributes["x-amz-lex:audio:start-timeout-ms:*:*"],
-      "3000",
-      `${action.Identifier} should check on a silent caller after three seconds`
+      action.Identifier === "3b2877ca-bc16-4019-a8e6-04200c0ded06" ? "5000" : "3000",
+      `${action.Identifier} should use the approved initial or recovery silence window`
     );
     assert.equal(
       action.Parameters.LexSessionAttributes["x-amz-lex:allow-interrupt:BookAppointmentIntent:serviceName"],
@@ -8945,6 +8982,84 @@ test("DialogCodeHook maps p t q to Pedicure in booking context and not staff", a
   assert.equal(response.sessionState.sessionAttributes.staffPreference, undefined);
   assert.equal(response.sessionState.intent.slots.serviceName.value.interpretedValue, "Pedicure");
   assert.equal(response.sessionState.intent.slots.staffPreference, undefined);
+});
+
+test("DialogCodeHook recovers live picque ASR as Pedicure without a network menu lookup", async () => {
+  const handler = await loadHandler();
+  let fetchCalled = false;
+  globalThis.fetch = async () => {
+    fetchCalled = true;
+    throw new Error("Amazon Connect dialog turns must use the local menu");
+  };
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "picque",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          provider: "AMAZON_CONNECT",
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+84798171999",
+          AmazonConnectContactId: "connect-thuyet-picque",
+          customerName: "Lee",
+          customerNameSource: "current_turn_explicit",
+          requestedDate: "2026-07-24",
+          requestedTime: "11 AM",
+          lastAskedSlot: "serviceName"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          confirmationState: "None",
+          slots: {}
+        }
+      }
+    })
+  );
+
+  assert.equal(fetchCalled, false);
+  assert.equal(response.sessionState.sessionAttributes.serviceName, "Pedicure");
+  assert.equal(response.sessionState.sessionAttributes.confirmedServiceName, "Pedicure");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "staffPreference");
+});
+
+test("Amazon Connect unsupported service retry uses an immediate local menu", async () => {
+  const handler = await loadHandler();
+  let fetchCalled = false;
+  globalThis.fetch = async () => {
+    fetchCalled = true;
+    throw new Error("Amazon Connect dialog turns must not wait for menu APIs");
+  };
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "I want haircut",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          provider: "AMAZON_CONNECT",
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+84798171999",
+          AmazonConnectContactId: "connect-thuyet-local-service-menu",
+          lastAskedSlot: "serviceName",
+          turnSequence: "1"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          confirmationState: "None",
+          slots: {}
+        }
+      }
+    })
+  );
+
+  assert.equal(fetchCalled, false);
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName");
+  assert.equal(response.messages[0].content, "Which service would you like to book?");
 });
 
 test("DialogCodeHook unsupported service words do not become staff", async () => {

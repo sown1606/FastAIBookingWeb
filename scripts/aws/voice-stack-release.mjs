@@ -67,6 +67,13 @@ const SOURCE_HASH_FILES = [
   "infra/aws/lex/FastAIBookingBot-v10/BotLocales/en_US/Intents/FallbackIntent/Intent.json",
   "infra/aws/lex/FastAIBookingBot-v10/BotLocales/en_US/Intents/HumanEscalationIntent/Intent.json",
   "infra/aws/lex/FastAIBookingBot-v10/BotLocales/en_US/Intents/RescheduleAppointmentIntent/Intent.json",
+  "infra/aws/lex/FastAIBookingBot-v10/BotLocales/en_US/Intents/BookAppointmentIntent/Slots/bookingConfirmation/Slot.json",
+  "infra/aws/lex/FastAIBookingBot-v10/BotLocales/en_US/Intents/BookAppointmentIntent/Slots/customerName/Slot.json",
+  "infra/aws/lex/FastAIBookingBot-v10/BotLocales/en_US/Intents/BookAppointmentIntent/Slots/customerPhone/Slot.json",
+  "infra/aws/lex/FastAIBookingBot-v10/BotLocales/en_US/Intents/BookAppointmentIntent/Slots/requestedDate/Slot.json",
+  "infra/aws/lex/FastAIBookingBot-v10/BotLocales/en_US/Intents/BookAppointmentIntent/Slots/requestedTime/Slot.json",
+  "infra/aws/lex/FastAIBookingBot-v10/BotLocales/en_US/Intents/BookAppointmentIntent/Slots/serviceName/Slot.json",
+  "infra/aws/lex/FastAIBookingBot-v10/BotLocales/en_US/Intents/BookAppointmentIntent/Slots/staffPreference/Slot.json",
   "infra/aws/lex/FastAIBookingBot-v10/BotLocales/en_US/SlotTypes/NailServiceType/SlotType.json",
   "infra/aws/lex/FastAIBookingBot-v10/BotLocales/en_US/SlotTypes/StaffPreferenceType/SlotType.json"
 ];
@@ -1357,6 +1364,7 @@ export function buildReleasePlan({ target, dryRun = false, acceptedManifest = nu
           "lambda:create-or-update-alias",
           "lex:update-bot-locale",
           "lex:update-intent",
+          "lex:update-slot",
           "lex:create-slot-type",
           "lex:update-slot-type",
           "lex:batch-create-custom-vocabulary-item",
@@ -2402,6 +2410,126 @@ function normalizeLexUpdateValue(value) {
   return normalized;
 }
 
+function syncLexSlots(targets, releaseId) {
+  const intentRoot = path.join(LOCALE_ROOT, "Intents");
+  const liveIntents = listLexIntentSummaries(targets);
+  const liveIntentsByName = new Map(liveIntents.map((intent) => [intent.intentName, intent]));
+  const liveSlotTypesByName = new Map(
+    listLexSlotTypeSummaries(targets).map((slotType) => [slotType.slotTypeName, slotType.slotTypeId])
+  );
+  const updated = [];
+
+  for (const intentDirName of fs.readdirSync(intentRoot)) {
+    const intentDir = path.join(intentRoot, intentDirName);
+    const intentPath = path.join(intentDir, "Intent.json");
+    const slotsRoot = path.join(intentDir, "Slots");
+    if (!fs.existsSync(intentPath) || !fs.existsSync(slotsRoot)) {
+      continue;
+    }
+    const intentSource = readJson(intentPath);
+    const intentId = liveIntentsByName.get(intentSource.name)?.intentId || intentSource.identifier;
+    if (!intentId) {
+      throw new ReleaseError("Unable to map Lex slot source to live intent", {
+        intentName: intentSource.name
+      });
+    }
+    const liveSlotsByName = new Map(
+      listLexSlotsForIntent(targets, intentId).map((slot) => [slot.slotName, slot])
+    );
+
+    for (const slotDirName of fs.readdirSync(slotsRoot)) {
+      const slotPath = path.join(slotsRoot, slotDirName, "Slot.json");
+      if (!fs.existsSync(slotPath)) {
+        continue;
+      }
+      const source = readJson(slotPath);
+      const liveSlot = liveSlotsByName.get(source.name);
+      const slotId = liveSlot?.slotId || source.identifier;
+      const slotTypeId = source.slotTypeName?.startsWith("AMAZON.")
+        ? source.slotTypeName
+        : liveSlotTypesByName.get(source.slotTypeName);
+      if (!slotId || !slotTypeId) {
+        throw new ReleaseError("Unable to map Lex slot or slot type to live ID", {
+          intentName: intentSource.name,
+          slotName: source.name,
+          slotTypeName: source.slotTypeName
+        });
+      }
+      const input = {
+        slotId,
+        slotName: source.name,
+        slotTypeId,
+        valueElicitationSetting: normalizeLexUpdateValue(source.valueElicitationSetting),
+        botId: targets.lex.botId,
+        botVersion: "DRAFT",
+        localeId: "en_US",
+        intentId
+      };
+      for (const [sourceKey, targetKey] of [
+        ["description", "description"],
+        ["obfuscationSetting", "obfuscationSetting"],
+        ["multipleValuesSetting", "multipleValuesSetting"]
+      ]) {
+        const value = normalizeLexUpdateValue(source[sourceKey]);
+        if (value !== undefined) {
+          input[targetKey] = value;
+        }
+      }
+      const inputPath = path.join(
+        releaseDirFor(releaseId),
+        `lex-${intentSource.name}-${source.name}-slot-update.json`
+      );
+      writeJson(inputPath, input);
+      awsJson(targets, "lexv2-models", "update-slot", [
+        "--cli-input-json",
+        `file://${inputPath}`
+      ], {
+        resourceArn: `arn:aws:lex:${targets.region}:${targets.accountId}:bot/${targets.lex.botId}`,
+        requiredAction: "lex:UpdateSlot"
+      });
+      const readback = awsJson(targets, "lexv2-models", "describe-slot", [
+        "--bot-id",
+        targets.lex.botId,
+        "--bot-version",
+        "DRAFT",
+        "--locale-id",
+        "en_US",
+        "--intent-id",
+        intentId,
+        "--slot-id",
+        slotId
+      ]);
+      const expectedFailureStep =
+        input.valueElicitationSetting?.slotCaptureSetting?.failureNextStep;
+      const actualFailureStep =
+        readback.valueElicitationSetting?.slotCaptureSetting?.failureNextStep;
+      if (
+        expectedFailureStep &&
+        (actualFailureStep?.dialogAction?.type !== expectedFailureStep.dialogAction?.type ||
+          actualFailureStep?.sessionAttributes?.lastAskedSlot !==
+            expectedFailureStep.sessionAttributes?.lastAskedSlot)
+      ) {
+        throw new ReleaseError("Lex slot failure recovery readback mismatch", {
+          intentName: intentSource.name,
+          slotName: source.name,
+          expected: expectedFailureStep,
+          actual: actualFailureStep || null
+        });
+      }
+      updated.push({
+        intentName: intentSource.name,
+        intentId,
+        slotName: source.name,
+        slotId,
+        slotTypeId,
+        failureDialogAction: actualFailureStep?.dialogAction?.type || null,
+        failureLastAskedSlot: actualFailureStep?.sessionAttributes?.lastAskedSlot || null
+      });
+    }
+  }
+  return updated;
+}
+
 function normalizedIntentSlotPriorities(targets, intentId, sourcePriorities = []) {
   if (!sourcePriorities.length) {
     return [];
@@ -2777,6 +2905,7 @@ function applyLexDraftAndPublish({ targets, releaseId, lambdaRelease, sourceHash
   }
   const slotTypes = syncLexSlotTypes(targets, releaseId);
   const vocabularySync = syncCustomVocabulary(targets, releaseId);
+  const slots = syncLexSlots(targets, releaseId);
   const intents = syncLexIntents(targets, releaseId);
   awsJson(targets, "lexv2-models", "build-bot-locale", [
     "--bot-id",
@@ -2917,6 +3046,7 @@ function applyLexDraftAndPublish({ targets, releaseId, lambdaRelease, sourceHash
     audioFillerSettingsReadback,
     speechDetectionSensitivity: speechDetectionSensitivityReadback,
     slotTypes,
+    slots,
     intents,
     vocabularySync,
     serviceSlotReadback: {

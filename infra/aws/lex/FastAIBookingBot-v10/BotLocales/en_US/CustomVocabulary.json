@@ -56,6 +56,11 @@
       "displayAs": "Pedicure"
     },
     {
+      "phrase": "picque",
+      "weight": 3,
+      "displayAs": "Pedicure"
+    },
+    {
       "phrase": "Manicure",
       "weight": 3,
       "displayAs": "Manicure"

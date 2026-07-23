@@ -11,7 +11,22 @@
       "captureNextStep": null,
       "captureConditional": null,
       "failureResponse": null,
-      "failureNextStep": null,
+      "failureNextStep": {
+        "sessionAttributes": {
+          "lastAskedSlot": "staffPreference",
+          "conversationComplete": "false"
+        },
+        "intent": {
+          "name": null,
+          "slots": null
+        },
+        "dialogAction": {
+          "type": "InvokeDialogCodeHook",
+          "slotToElicit": null,
+          "suppressNextMessage": null,
+          "intentsInScope": null
+        }
+      },
       "failureConditional": null,
       "elicitationCodeHook": {
         "enableCodeHookInvocation": true,
