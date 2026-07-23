@@ -156,6 +156,11 @@ test("voice release deploy syncs Lex intent source before build", () => {
     "slot source must be applied before building the Lex locale"
   );
   assert.ok(
+    script.indexOf("const slots = syncLexSlots(targets, releaseId);") <
+      script.indexOf("const draftLocaleUpdate = updateLexLocaleSpeechSettings(targets, localeSource);"),
+    "slot failures must be repaired before reopening a failed Lex locale"
+  );
+  assert.ok(
     script.indexOf("const intents = syncLexIntents(targets, releaseId);") <
       script.indexOf("\"lexv2-models\", \"build-bot-locale\""),
     "intent source must be applied before building the Lex locale"

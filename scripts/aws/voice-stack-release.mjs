@@ -2864,6 +2864,10 @@ function applyLexDraftAndPublish({ targets, releaseId, lambdaRelease, sourceHash
   const lexSource = validateLexSource();
   waitForLexLocale(targets, "DRAFT", ["Built", "ReadyExpressTesting", "NotBuilt", "Failed"]);
   const localeSource = readJson(path.join(LOCALE_ROOT, "BotLocale.json"));
+  const slotTypes = syncLexSlotTypes(targets, releaseId);
+  const vocabularySync = syncCustomVocabulary(targets, releaseId);
+  const slots = syncLexSlots(targets, releaseId);
+  const intents = syncLexIntents(targets, releaseId);
   const draftLocaleUpdate = updateLexLocaleSpeechSettings(targets, localeSource);
   waitForLexLocale(targets, "DRAFT");
   const draftLocaleSpeechReadback = describeLexLocaleRaw(targets, "DRAFT");
@@ -2909,10 +2913,6 @@ function applyLexDraftAndPublish({ targets, releaseId, lambdaRelease, sourceHash
       actual: draftLocaleSpeechReadback.speechDetectionSensitivity || null
     });
   }
-  const slotTypes = syncLexSlotTypes(targets, releaseId);
-  const vocabularySync = syncCustomVocabulary(targets, releaseId);
-  const slots = syncLexSlots(targets, releaseId);
-  const intents = syncLexIntents(targets, releaseId);
   awsJson(targets, "lexv2-models", "build-bot-locale", [
     "--bot-id",
     targets.lex.botId,
