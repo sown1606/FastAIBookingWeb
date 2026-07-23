@@ -423,9 +423,9 @@ test("July 15 Lex v10 confirmation and ASR source contracts are present", () => 
     true
   );
   assert.equal(botLocale.speechDetectionSensitivity, "Default");
-  assert.equal(botLocale.speechRecognitionSettings, undefined);
-  assert.equal(botLocale.audioFillerSettings?.enabled, true);
-  assert.equal(botLocale.audioFillerSettings?.audioType, "MELODY_PATIENT_PING");
+  assert.deepEqual(botLocale.speechRecognitionSettings, { speechModelPreference: "Neural" });
+  assert.equal(botLocale.unifiedSpeechSettings, undefined);
+  assert.equal(botLocale.audioFillerSettings, undefined);
   assert.equal(
     nailServiceType.valueSelectionSetting?.advancedRecognitionSetting?.audioRecognitionStrategy,
     "UseSlotValuesAsCustomVocabulary"
@@ -676,7 +676,7 @@ test("Lex fulfillment progress updates cover slow booking, appointment changes, 
   }
 });
 
-test("Lex locale plays filler audio during Lambda processing gaps", () => {
+test("Lex locale keeps Neural STT and avoids unified filler ASR regressions", () => {
   const locale = JSON.parse(
     readFileSync(
       path.join(
@@ -687,18 +687,11 @@ test("Lex locale plays filler audio during Lambda processing gaps", () => {
     )
   );
 
-  assert.equal(
-    locale.unifiedSpeechSettings?.speechFoundationModel?.modelArn,
-    "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-2-sonic-v1:0"
-  );
-  assert.equal(locale.unifiedSpeechSettings?.speechFoundationModel?.voiceId, "tiffany");
-  assert.deepEqual(locale.audioFillerSettings, {
-    enabled: true,
-    audioType: "MELODY_PATIENT_PING",
-    startDelayInMilliseconds: 1000,
-    minimumPlayDurationInMilliseconds: 1000,
-    responseDeliveryDelayInMilliseconds: 200
+  assert.deepEqual(locale.speechRecognitionSettings, {
+    speechModelPreference: "Neural"
   });
+  assert.equal(locale.unifiedSpeechSettings, undefined);
+  assert.equal(locale.audioFillerSettings, undefined);
 });
 
 test("Lex customerName failure path invokes the booking dialog hook instead of FallbackIntent", () => {
@@ -1504,20 +1497,9 @@ test("phone voice source contract keeps bounded audio and the approved filler mo
     readFileSync(path.join(repoRoot, "infra/aws/lex/FastAIBookingBot-v10/BotLocales/en_US/BotLocale.json"), "utf8")
   );
   assert.equal(locale.speechDetectionSensitivity, "Default");
-  assert.equal(locale.speechRecognitionSettings, undefined);
-  assert.deepEqual(locale.unifiedSpeechSettings, {
-    speechFoundationModel: {
-      modelArn: "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-2-sonic-v1:0",
-      voiceId: "tiffany"
-    }
-  });
-  assert.deepEqual(locale.audioFillerSettings, {
-    enabled: true,
-    audioType: "MELODY_PATIENT_PING",
-    startDelayInMilliseconds: 1000,
-    minimumPlayDurationInMilliseconds: 1000,
-    responseDeliveryDelayInMilliseconds: 200
-  });
+  assert.deepEqual(locale.speechRecognitionSettings, { speechModelPreference: "Neural" });
+  assert.equal(locale.unifiedSpeechSettings, undefined);
+  assert.equal(locale.audioFillerSettings, undefined);
   assert.match(
     readFileSync(apiAiServicePath, "utf8"),
     /confidence:\s*Number\.isFinite\(speechConfidence\)\s*\?\s*speechConfidence\s*:\s*null/,
@@ -3574,6 +3556,61 @@ test("DialogCodeHook appointment-only tomorrow phrases retain the day and ask fo
     assert.equal(response.sessionState.sessionAttributes.requestedDate, usEasternDate(1), phrase);
     assert.equal(response.sessionState.sessionAttributes.serviceName, undefined, phrase);
     assert.equal(response.messages[0].content, "I have tomorrow. Which service would you like to book?", phrase);
+    assert.doesNotMatch(response.messages[0].content, /Are you still there/i, phrase);
+  }
+});
+
+test("DialogCodeHook Thuyet one-shot phrases retain service tomorrow and time", async () => {
+  for (const [index, expectedService, phrase] of [
+    [0, "Pedicure", "I want appointment tomorrow 1 PM, Pedicure."],
+    [1, "Pedicure", "Book me appointment tomorrow 11 AM, Pedicure."],
+    [2, "Full Set", "Please help me book fullset at 11 AM tomorrow."],
+    [3, "Full Set", "Book me a service for fullset tomorrow 11 AM."]
+  ]) {
+    const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
+    globalThis.fetch = async () => {
+      throw new Error(`dynamic staff lookup unavailable for ${phrase}`);
+    };
+
+    const response = await handler(
+      baseEvent({
+        invocationSource: "DialogCodeHook",
+        inputTranscript: phrase,
+        sessionId: `connect-thuyet-one-shot-${index}`,
+        sessionState: {
+          ...baseEvent().sessionState,
+          sessionAttributes: {
+            salonId: "salon-explicit",
+            CalledNumber: "+18483487681",
+            CustomerEndpointAddress: "+84798171999",
+            AmazonConnectContactId: `connect-thuyet-one-shot-${index}`,
+            customerName: "Lee",
+            customerNameSource: "current_turn_explicit"
+          },
+          intent: {
+            ...baseEvent().sessionState.intent,
+            name: "BookAppointmentIntent",
+            state: "InProgress",
+            confirmationState: "None",
+            slots: {}
+          }
+        }
+      })
+    );
+
+    assert.equal(response.sessionState.sessionAttributes.serviceName, expectedService, phrase);
+    assert.match(
+      response.sessionState.sessionAttributes.requestedDate,
+      /^\d{4}-\d{2}-\d{2}$/,
+      phrase
+    );
+    assert.equal(
+      response.sessionState.sessionAttributes.requestedTime,
+      index === 0 ? "1 PM" : "11 AM",
+      phrase
+    );
+    assert.equal(response.sessionState.dialogAction.slotToElicit, "staffPreference", phrase);
+    assert.match(response.messages[0].content, /tomorrow/i, phrase);
     assert.doesNotMatch(response.messages[0].content, /Are you still there/i, phrase);
   }
 });

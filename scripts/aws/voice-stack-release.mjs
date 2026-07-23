@@ -503,11 +503,11 @@ function updateLexLocaleSpeechSettings(targets, localeSource) {
     nluIntentConfidenceThreshold: Number(localeSource.nluConfidenceThreshold ?? current.nluIntentConfidenceThreshold ?? 0.4),
     ...(current.voiceSettings ? { voiceSettings: current.voiceSettings } : {}),
     ...(current.generativeAISettings ? { generativeAISettings: current.generativeAISettings } : {}),
-    ...(localeSource.audioFillerSettings || current.audioFillerSettings
-      ? { audioFillerSettings: localeSource.audioFillerSettings || current.audioFillerSettings }
+    ...(localeSource.audioFillerSettings
+      ? { audioFillerSettings: localeSource.audioFillerSettings }
       : {}),
-    ...(localeSource.unifiedSpeechSettings || current.unifiedSpeechSettings
-      ? { unifiedSpeechSettings: localeSource.unifiedSpeechSettings || current.unifiedSpeechSettings }
+    ...(localeSource.unifiedSpeechSettings
+      ? { unifiedSpeechSettings: localeSource.unifiedSpeechSettings }
       : {}),
     ...(!localeSource.unifiedSpeechSettings && localeSource.speechRecognitionSettings
       ? { speechRecognitionSettings: localeSource.speechRecognitionSettings }
@@ -2759,6 +2759,16 @@ function applyLexDraftAndPublish({ targets, releaseId, lambdaRelease, sourceHash
       actual: draftLocaleSpeechReadback.speechRecognitionSettings?.speechModelPreference || null
     });
   }
+  if (
+    !localeSource.unifiedSpeechSettings &&
+    (draftLocaleSpeechReadback.unifiedSpeechSettings ||
+      draftLocaleSpeechReadback.audioFillerSettings?.enabled === true)
+  ) {
+    throw new ReleaseError("Lex DRAFT retained incompatible unified speech settings", {
+      actualUnifiedSpeech: draftLocaleSpeechReadback.unifiedSpeechSettings || null,
+      actualAudioFiller: draftLocaleSpeechReadback.audioFillerSettings || null
+    });
+  }
   if (draftLocaleSpeechReadback.speechDetectionSensitivity !== "Default") {
     throw new ReleaseError("Lex DRAFT speech detection sensitivity readback mismatch", {
       expected: "Default",
@@ -2818,6 +2828,16 @@ function applyLexDraftAndPublish({ targets, releaseId, lambdaRelease, sourceHash
     throw new ReleaseError("Lex version speech model readback mismatch", {
       expected: "Neural",
       actual: speechModelPreferenceReadback || null,
+      botVersion
+    });
+  }
+  if (
+    !localeSource.unifiedSpeechSettings &&
+    (unifiedSpeechSettingsReadback || audioFillerSettingsReadback?.enabled === true)
+  ) {
+    throw new ReleaseError("Lex version retained incompatible unified speech settings", {
+      actualUnifiedSpeech: unifiedSpeechSettingsReadback,
+      actualAudioFiller: audioFillerSettingsReadback,
       botVersion
     });
   }
