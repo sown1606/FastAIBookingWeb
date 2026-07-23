@@ -115,7 +115,7 @@
             "startTimeoutMs": 8000,
             "audioSpecification": {
               "endTimeoutMs": 1100,
-              "maxLengthMs": 12000
+              "maxLengthMs": 15000
             },
             "dtmfSpecification": {
               "maxLength": 1,
@@ -138,7 +138,7 @@
             "startTimeoutMs": 8000,
             "audioSpecification": {
               "endTimeoutMs": 1100,
-              "maxLengthMs": 12000
+              "maxLengthMs": 15000
             },
             "dtmfSpecification": {
               "maxLength": 1,
@@ -161,7 +161,7 @@
             "startTimeoutMs": 8000,
             "audioSpecification": {
               "endTimeoutMs": 1100,
-              "maxLengthMs": 12000
+              "maxLengthMs": 15000
             },
             "dtmfSpecification": {
               "maxLength": 1,
@@ -184,7 +184,7 @@
             "startTimeoutMs": 8000,
             "audioSpecification": {
               "endTimeoutMs": 1100,
-              "maxLengthMs": 12000
+              "maxLengthMs": 15000
             },
             "dtmfSpecification": {
               "maxLength": 1,

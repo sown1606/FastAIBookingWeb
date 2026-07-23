@@ -987,6 +987,15 @@ const CUSTOMER_NAME_CAPTURE_STOP_WORDS = new Set([
   "and",
   "please"
 ]);
+const CUSTOMER_NAME_LEADING_FILLERS = new Set([
+  "uh",
+  "um",
+  "er",
+  "ah",
+  "hmm",
+  "so",
+  "yeah"
+]);
 
 const readCustomerNameCandidateTokens = (text?: string | null): string[] => {
   const raw = text ?? "";
@@ -1001,6 +1010,9 @@ const readCustomerNameCandidateTokens = (text?: string | null): string[] => {
     for (const token of phrase.split(/\s+/).filter(Boolean)) {
       const cleaned = token.replace(/^[^\p{L}'-]+|[^\p{L}'-]+$/gu, "");
       const normalized = normalizeForMatch(cleaned);
+      if (!tokens.length && CUSTOMER_NAME_LEADING_FILLERS.has(normalized)) {
+        continue;
+      }
       if (
         !cleaned ||
         !/^\p{L}[\p{L}'-]*$/u.test(cleaned) ||
@@ -1382,6 +1394,7 @@ const isInvalidCustomerNameNoise = (value?: string | null): boolean => {
     normalized &&
       (CUSTOMER_NAME_NOISE.has(normalized) ||
         CUSTOMER_NAME_SMALL_TALK_PATTERNS.some((pattern) => pattern.test(normalized)) ||
+        /^(?:uh+\s+|um+\s+|so\s+)*(?:my\s+name\s+is|name\s+is|this\s+is|call\s+me)$/.test(normalized) ||
         isDigitOnlyOrSequenceUtterance(value) ||
         /\b(book|booking|appointment|service|pedicure|manicure|full set|dip|powder|first available|any staff|tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|morning|afternoon|evening|night|am|pm|with|at|on|for|to|by|from|and|the|please|phone|number|zero|one|two|three|four|five|six|seven|eight|nine|ten)\b/.test(
           normalized
@@ -1455,7 +1468,7 @@ const isReusableCallerName = (value?: string | null): value is string => {
 
 const STAFF_ALIAS_PHRASES: Record<string, string[]> = {
   trang: ["trang", "chang", "jang", "jan", "jen", "train", "trangg", "dang"],
-  amy: ["amy", "amie", "aimee", "emmy", "emmie", "a me"],
+  amy: ["amy", "ammy", "amie", "aimee", "emmy", "emmie", "a me"],
   kelly: ["kelly", "kelley", "keli", "ke li"],
   kevin: ["kevin", "kenvin"]
 };

@@ -14,6 +14,14 @@ const API_TIMEOUT_MS =
   Number.isFinite(configuredApiTimeoutMs) && configuredApiTimeoutMs > 0
     ? configuredApiTimeoutMs
     : 5000;
+const configuredKnownCallerLookupTimeoutMs = Number(
+  process.env.BOOKING_HANDLER_KNOWN_CALLER_LOOKUP_TIMEOUT_MS
+);
+const KNOWN_CALLER_LOOKUP_TIMEOUT_MS =
+  Number.isFinite(configuredKnownCallerLookupTimeoutMs) &&
+  configuredKnownCallerLookupTimeoutMs > 0
+    ? configuredKnownCallerLookupTimeoutMs
+    : 900;
 
 const NUMBER_WORDS = {
   one: 1,
@@ -255,7 +263,7 @@ const CUSTOMER_NAME_SMALL_TALK_PATTERNS = [
 ];
 const STAFF_ALIAS_GROUPS = {
   Trang: ["trang", "chang", "jang", "jan", "jen", "train", "trangg", "dang"],
-  Amy: ["amy", "amie", "aimee", "emmy", "emmie", "a me"],
+  Amy: ["amy", "ammy", "amie", "aimee", "emmy", "emmie", "a me"],
   Kelly: ["kelly", "kelley", "keli", "ke li"],
   Kevin: ["kevin", "kenvin"]
 };
@@ -321,7 +329,7 @@ const STAFF_DTMF_SHORT_PROMPT =
 const NO_INPUT_HUMAN_CONFIRM_PROMPT =
   "Are you still there? Would you like me to connect you to a real person? You can press 0 for an operator.";
 const NO_INPUT_RECOVERY_PROMPT =
-  "I missed that. Please say the service, day, and time again.";
+  "I'm still here. When you're ready, tell me the service, day, and time.";
 const INVALID_MENU_CHOICE_PROMPT = "Invalid choice. Please select a valid number from the options provided.";
 const FAST_WAIT_PROMPT = "Please wait. Let me check...";
 const WAIT_PROMPTS = {
@@ -1913,6 +1921,7 @@ function isInvalidCustomerNameNoise(value) {
     normalized &&
       (CUSTOMER_NAME_NOISE.has(normalized) ||
         CUSTOMER_NAME_SMALL_TALK_PATTERNS.some((pattern) => pattern.test(normalized)) ||
+        /^(?:uh+\s+|um+\s+|so\s+)*(?:my\s+name\s+is|name\s+is|this\s+is|call\s+me)$/.test(normalized) ||
 	        isDigitOnlyOrSequenceUtterance(value) ||
 	        extractServiceFromTranscript(value) ||
 	        getPreferredDateCandidate(value) ||
@@ -3433,6 +3442,15 @@ const CUSTOMER_NAME_CAPTURE_STOP_WORDS = new Set([
   "and",
   "please"
 ]);
+const CUSTOMER_NAME_LEADING_FILLERS = new Set([
+  "uh",
+  "um",
+  "er",
+  "ah",
+  "hmm",
+  "so",
+  "yeah"
+]);
 
 function readCustomerNameCandidateTokens(text) {
   const raw = String(text || "");
@@ -3447,6 +3465,9 @@ function readCustomerNameCandidateTokens(text) {
     for (const token of phrase.split(/\s+/).filter(Boolean)) {
       const cleaned = token.replace(/^[^\p{L}'-]+|[^\p{L}'-]+$/gu, "");
       const normalized = normalizeForMatch(cleaned);
+      if (!tokens.length && CUSTOMER_NAME_LEADING_FILLERS.has(normalized)) {
+        continue;
+      }
       if (
         !cleaned ||
         !/^\p{L}[\p{L}'-]*$/u.test(cleaned) ||
@@ -3782,6 +3803,36 @@ function getBareSameDayWeekdayClarification(value, timeZone = DEFAULT_SALON_TIME
 
 function buildBareSameDayWeekdayPrompt(clarification) {
   return `Do you mean today, ${clarification.todayLabel}, or next ${clarification.nextLabel}?`;
+}
+
+function getByWeekdayAsrClarification(value, timeZone = DEFAULT_SALON_TIMEZONE) {
+  const normalized = normalizeForMatch(value);
+  const match = normalized.match(new RegExp(`\\bby\\s+(${WEEKDAY_WORD_PATTERN})\\b`));
+  if (
+    !match?.[1] ||
+    /\b(?:on|this|next)\s+(?:sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/.test(
+      normalized
+    )
+  ) {
+    return null;
+  }
+  const intendedDate = resolveDatePhrase(match[1], timeZone);
+  const intendedParts = parseIsoDateParts(intendedDate);
+  const todayParts = getZonedDateParts(timeZone);
+  if (!intendedParts) {
+    return null;
+  }
+  return {
+    rawPhrase: match[0],
+    todayDate: formatDateParts(todayParts),
+    todayLabel: formatClarificationDate(todayParts),
+    intendedDate,
+    intendedDateLabel: formatClarificationDate(intendedParts)
+  };
+}
+
+function buildByWeekdayAsrClarificationPrompt(clarification) {
+  return `Did you mean today, ${clarification.todayLabel}, or ${clarification.intendedDateLabel}?`;
 }
 
 function formatClarificationDate(parts) {
@@ -7032,10 +7083,10 @@ async function applyKnownCallerLookupBeforePrompt(event, intentName) {
   );
   if (
     intentName !== "BookAppointmentIntent" ||
-    previous.provider === "AMAZON_CONNECT" ||
     getInputMode(event) === "DTMF" ||
     Boolean(readCurrentTurnDigit(event)) ||
     shouldUseFastGenericServicePrompt ||
+    nextSlot !== "customerName" ||
     previous.knownCallerLookupAttempted === "true" ||
     !known.customerPhone ||
     hasKnownName
@@ -7051,7 +7102,8 @@ async function applyKnownCallerLookupBeforePrompt(event, intentName) {
     {
       operationName: "customer_lookup",
       waitPrompt: WAIT_PROMPTS.customer_lookup,
-      mechanism: "Lambda customer lookup before missing-slot decision"
+      mechanism: "Lambda customer lookup before missing-slot decision",
+      timeoutMs: KNOWN_CALLER_LOOKUP_TIMEOUT_MS
     }
   );
   if (!result.ok) {
@@ -7163,7 +7215,12 @@ async function postInternalAppointment(payload, coverage = {}) {
   }
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  const requestedTimeoutMs = Number(coverage.timeoutMs);
+  const timeoutMs =
+    Number.isFinite(requestedTimeoutMs) && requestedTimeoutMs > 0
+      ? Math.min(requestedTimeoutMs, API_TIMEOUT_MS)
+      : API_TIMEOUT_MS;
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   let response;
   try {
@@ -8015,7 +8072,7 @@ function getSpeechSegmentId(event) {
   return [getPhysicalSpeechTurnId(event), transcriptFingerprint, event.invocationSource || "unknown"].join(":");
 }
 
-function getAsrDiagnostics(event) {
+export function getAsrDiagnostics(event) {
   const sessionAttributes = event.sessionState?.sessionAttributes || {};
   const transcriptionAlternatives = [];
   const interpretationAlternatives = [];
@@ -9599,10 +9656,14 @@ async function handleLexEvent(event, analysis = {}) {
       !shouldEscalate && intentName === "BookAppointmentIntent"
         ? buildKnownBookingSessionAttributes(event)
         : {};
-	    const weekdayDateConflict =
-	      !shouldEscalate && intentName === "BookAppointmentIntent"
-	        ? findWeekdayDateConflict(getCurrentTurnTranscript(event), timeZone)
-	        : null;
+    const weekdayDateConflict =
+      !shouldEscalate && intentName === "BookAppointmentIntent"
+        ? findWeekdayDateConflict(getCurrentTurnTranscript(event), timeZone)
+        : null;
+    const byWeekdayAsrClarification =
+      !shouldEscalate && intentName === "BookAppointmentIntent"
+        ? getByWeekdayAsrClarification(getCurrentTurnTranscript(event), timeZone)
+        : null;
     const temporalConflict =
       !shouldEscalate && intentName === "BookAppointmentIntent"
         ? getCurrentTurnTemporalConflict(getCurrentTurnTranscript(event), timeZone)
@@ -9631,7 +9692,7 @@ async function handleLexEvent(event, analysis = {}) {
         temporalConflict.prompt
       );
     }
-	    if (weekdayDateConflict) {
+    if (weekdayDateConflict) {
       return buildElicitSlotResponse(
         event,
         "requestedDate",
@@ -9644,9 +9705,43 @@ async function handleLexEvent(event, analysis = {}) {
           forceHumanEscalation: "false",
           transferToQueue: "false"
         },
-	        buildWeekdayDateConflictPrompt(weekdayDateConflict)
-	      );
-	    }
+        buildWeekdayDateConflictPrompt(weekdayDateConflict)
+      );
+    }
+    if (byWeekdayAsrClarification) {
+      return buildElicitSlotResponse(
+        event,
+        "requestedDate",
+        {
+          requestedDate: undefined,
+          dateClarificationReason: "by_weekday_asr_ambiguous",
+          dateDecisionDiagnostic: JSON.stringify({
+            rawTranscript: getCurrentTurnTranscript(event),
+            salonTimezone: timeZone,
+            referenceLocalDate: byWeekdayAsrClarification.todayDate,
+            selectedDate: null,
+            decisionReason: "by_weekday_asr_ambiguous",
+            confidenceBand: "needs_clarification",
+            clarificationReason: "by_weekday_asr_ambiguous",
+            candidates: [
+              {
+                date: byWeekdayAsrClarification.todayDate,
+                label: byWeekdayAsrClarification.todayLabel
+              },
+              {
+                date: byWeekdayAsrClarification.intendedDate,
+                label: byWeekdayAsrClarification.intendedDateLabel
+              }
+            ]
+          }),
+          awaitingFinalBookingConfirmation: "false",
+          bookingConfirmationAsked: "false",
+          forceHumanEscalation: "false",
+          transferToQueue: "false"
+        },
+        buildByWeekdayAsrClarificationPrompt(byWeekdayAsrClarification)
+      );
+    }
     const bareSameDayWeekday = !shouldEscalate && intentName === "BookAppointmentIntent"
       ? getBareSameDayWeekdayClarification(getCurrentTurnTranscript(event), timeZone)
       : null;

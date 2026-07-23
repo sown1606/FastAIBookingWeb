@@ -18,6 +18,8 @@ const INITIAL_GREETING = "Hi, how can I help you today?";
 const FIRST_SERVICE_RETRY_PROMPT = "Which service would you like to book?";
 const SERVICE_MENU_PROMPT =
   "I missed the service. Did you say Pedicure or Manicure?";
+const NO_INPUT_RECOVERY_PROMPT =
+  "I'm still here. When you're ready, tell me the service, day, and time.";
 let importCounter = 0;
 process.env.FASTAIBOOKING_TEST_NOW_ISO ||= "2026-07-17T10:00:00-04:00";
 
@@ -404,6 +406,11 @@ test("July 15 Lex v10 confirmation and ASR source contracts are present", () => 
       .find((entry) => entry.sampleValue?.value === "Any staff")
       ?.synonyms?.map((synonym) => synonym.value) || []
   );
+  const amySynonyms = new Set(
+    staffPreferenceType.slotTypeValues
+      .find((entry) => entry.sampleValue?.value === "Amy")
+      ?.synonyms?.map((synonym) => synonym.value) || []
+  );
 
   assert.match(lambdaSource, /"mini q"/);
   assert.match(apiSource, /"mini q"/);
@@ -448,6 +455,7 @@ test("July 15 Lex v10 confirmation and ASR source contracts are present", () => 
     "edicque",
     "Manicure",
     "Gel Manicure",
+    "ammy",
     "Any staff",
     "Any staff is fine",
     "First available",
@@ -467,6 +475,7 @@ test("July 15 Lex v10 confirmation and ASR source contracts are present", () => 
   for (const phrase of ["Any staff", "Any staff is fine", "First available", "Whoever is available"]) {
     assert.equal(anyStaffSynonyms.has(phrase), true, `StaffPreferenceType missing ${phrase}`);
   }
+  assert.equal(amySynonyms.has("ammy"), true, "StaffPreferenceType missing ammy");
   const lowerCustomVocabularyPhrases = new Set(
     Array.from(customVocabularyPhrases).map((phrase) => String(phrase).toLowerCase())
   );
@@ -861,7 +870,7 @@ test("Lex v10 fallback intent recovers audibly instead of silently ending", () =
   const assertFallbackRecovery = (label, response, nextStep) => {
     assert.equal(
       readablePrompt(response),
-      "I missed that. Please say the service, day, and time again.",
+      NO_INPUT_RECOVERY_PROMPT,
       `${label} prompt`
     );
     assert.equal(response?.allowInterrupt, true, `${label} allows interruption`);
@@ -1098,7 +1107,7 @@ test("Connect AI reception has one reachable greeting and no outer service promp
     const next = actionsById.get(action?.Transitions?.NextAction);
     const text = action?.Parameters?.Text || "";
     const isAllowedNoInputRecovery =
-      text === "I missed that. Please say the service, day, and time again.";
+      text === NO_INPUT_RECOVERY_PROMPT;
     const asksQuestion =
       !isAllowedNoInputRecovery &&
       /\?|what service|which service|are you still there|tell me the appointment/i.test(text);
@@ -1120,7 +1129,7 @@ test("Connect AI reception has one reachable greeting and no outer service promp
   );
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:start-timeout-ms:*:*"], "5000");
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:*:*"], "2000");
-  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:max-length-ms:*:*"], "12000");
+  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:max-length-ms:*:*"], "15000");
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName"], "2500");
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedDate"], "1300");
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedTime"], "1100");
@@ -1453,7 +1462,7 @@ test("Connect AI reception dynamic Lex prompts have a reachable literal fallback
   const fallbackLex = actionsById.get("continuation-fallback-lex");
   assert.equal(
     fallbackLex?.Parameters?.Text,
-    "I missed that. Please say the service, day, and time again."
+    NO_INPUT_RECOVERY_PROMPT
   );
 });
 
@@ -1509,13 +1518,13 @@ test("Lex booking slot prompt attempts allow service and staff interruption with
     "infra/aws/lex/FastAIBookingBot-v10/BotLocales/en_US/Intents/BookAppointmentIntent/Slots"
   );
   const expected = {
-    serviceName: { startMin: 8000, endMin: 1500, endMax: 1700, max: 12000 },
-    requestedDate: { startMin: 8000, endMin: 1200, endMax: 1400, max: 12000 },
-    requestedTime: { startMin: 8000, endMin: 1000, endMax: 1200, max: 12000 },
-    staffPreference: { startMin: 8000, endMin: 1300, endMax: 1500, max: 12000 },
-    customerName: { startMin: 8000, endMin: 1100, endMax: 1300, max: 12000 },
-    customerPhone: { startMin: 8000, endMin: 1100, endMax: 1300, max: 12000 },
-    bookingConfirmation: { startMin: 6000, endMin: 600, endMax: 800, max: 12000 }
+    serviceName: { startMin: 8000, endMin: 1500, endMax: 1700, max: 15000 },
+    requestedDate: { startMin: 8000, endMin: 1200, endMax: 1400, max: 15000 },
+    requestedTime: { startMin: 8000, endMin: 1000, endMax: 1200, max: 15000 },
+    staffPreference: { startMin: 8000, endMin: 1300, endMax: 1500, max: 15000 },
+    customerName: { startMin: 8000, endMin: 1100, endMax: 1300, max: 15000 },
+    customerPhone: { startMin: 8000, endMin: 1100, endMax: 1300, max: 15000 },
+    bookingConfirmation: { startMin: 6000, endMin: 600, endMax: 800, max: 15000 }
   };
 
   for (const [slotName, range] of Object.entries(expected)) {
@@ -4002,33 +4011,11 @@ test("DialogCodeHook does not treat unrelated sunset sentence as Full Set", asyn
 
 test("DialogCodeHook blocks sunset even when Lex resolves a service slot", async () => {
   const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
-  const fetchCalls = installFetchMock((_url, _options, body) =>
-    jsonResponse(
-      successfulBackendPayload({
-        outcome: "MISSING_INFO",
-        appointment: null,
-        lexResponse: {
-          fulfillmentState: "InProgress",
-          message: "Which service would you like?",
-          messageContentType: "PlainText",
-          dialogAction: {
-            type: "ElicitSlot",
-            slotToElicit: "serviceName"
-          },
-          sessionAttributes: {
-            serviceName: body.serviceName,
-            confirmedServiceName: body.serviceName,
-            requestedDate: body.requestedDate,
-            requestedTime: body.requestedTime,
-            lastAskedSlot: "serviceName"
-          }
-        },
-        missingFields: ["serviceName"]
-      })
-    )
-  );
+  const fetchCalls = installFetchMock(() => {
+    throw new Error("unsafe service must be rejected locally");
+  });
 
-  await handler(
+  const response = await handler(
     baseEvent({
       invocationSource: "DialogCodeHook",
       inputTranscript: "sunset tomorrow at three pm",
@@ -4058,11 +4045,12 @@ test("DialogCodeHook blocks sunset even when Lex resolves a service slot", async
     })
   );
 
-  const bookingCall = fetchCalls.at(-1);
-  assert.equal(bookingCall.body.serviceName, undefined);
-  assert.notEqual(bookingCall.body.serviceName, "Full Set");
-  assert.equal(bookingCall.body.requestedDate, usEasternDate(1));
-  assert.equal(bookingCall.body.requestedTime, "3 PM");
+  assert.equal(fetchCalls.length, 0);
+  assert.equal(response.sessionState.sessionAttributes.serviceName, undefined);
+  assert.notEqual(response.sessionState.sessionAttributes.serviceName, "Full Set");
+  assert.equal(response.sessionState.sessionAttributes.requestedDate, usEasternDate(1));
+  assert.equal(response.sessionState.sessionAttributes.requestedTime, "3 PM");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName");
 });
 
 test("DialogCodeHook does not map billing-like pay the bill phrase to Pedicure", async () => {
@@ -4845,7 +4833,7 @@ test("DialogCodeHook first generic service question skips known-caller lookup", 
   assert.equal(response.sessionState.sessionAttributes.knownCallerLookupAttempted, undefined);
 });
 
-test("Amazon Connect booking turns never block on known-caller lookup", async () => {
+test("Amazon Connect booking turns before the name prompt skip known-caller lookup", async () => {
   const handler = await loadHandler();
   globalThis.fetch = async () => {
     throw new Error("realtime Connect dialog must not wait for customer lookup");
@@ -5567,38 +5555,11 @@ test("DialogCodeHook known caller lookup avoids asking name", async () => {
   assert.notEqual(response.sessionState.sessionAttributes.transferToQueue, "true");
 });
 
-test("DialogCodeHook known caller enrichment elicits next slot without asking name", async () => {
+test("DialogCodeHook defers known caller enrichment until the name would be requested", async () => {
   const handler = await loadHandler();
-  installFetchMock(() =>
-    jsonResponse(
-      successfulBackendPayload({
-        outcome: "MISSING_INFO",
-        appointment: null,
-        lexResponse: {
-          fulfillmentState: "InProgress",
-          message: '<speak>Welcome back, Lee. Got it. <break time="300ms"/> What time works best?</speak>',
-          messageContentType: "SSML",
-          dialogAction: {
-            type: "ElicitSlot",
-            slotToElicit: "requestedTime"
-          },
-          sessionAttributes: {
-            customerName: "Lee",
-            recognizedCustomerName: "Lee",
-            knownCallerAcknowledged: "true",
-            customerNameSource: "customer",
-            customerPhone: "+84798171999",
-            serviceName: "Pedicure",
-            confirmedServiceName: "Pedicure",
-            requestedDate: usEasternDate(1),
-            forceHumanEscalation: "false",
-            transferToQueue: "false"
-          }
-        },
-        missingFields: ["preferredDateTime"]
-      })
-    )
-  );
+  const fetchCalls = installFetchMock(() => {
+    throw new Error("customer lookup must wait until the name is the next missing field");
+  });
 
   const response = await handler(
     baseEvent({
@@ -5625,9 +5586,9 @@ test("DialogCodeHook known caller enrichment elicits next slot without asking na
 
   assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
   assert.equal(response.sessionState.dialogAction.slotToElicit, "requestedTime");
-  assert.equal(response.sessionState.sessionAttributes.customerName, "Lee");
-  assert.equal(response.sessionState.sessionAttributes.customerNameSource, "phone_lookup");
-  assert.equal(response.sessionState.sessionAttributes.knownCallerLookupStatus, "FOUND");
+  assert.equal(fetchCalls.length, 0);
+  assert.equal(response.sessionState.sessionAttributes.customerName, undefined);
+  assert.equal(response.sessionState.sessionAttributes.knownCallerLookupStatus, undefined);
   assert.notEqual(response.sessionState.dialogAction.slotToElicit, "customerName");
 });
 
@@ -5865,30 +5826,8 @@ test("DialogCodeHook repairs observed picu and does not treat stop-at-five staff
 });
 
 test("DialogCodeHook does not synthesize ASR confidence from NLU confidence", async () => {
-  const handler = await loadHandler();
-  const fetchCalls = installFetchMock(() =>
-    jsonResponse(
-      successfulBackendPayload({
-        outcome: "MISSING_INFO",
-        appointment: null,
-        lexResponse: {
-          fulfillmentState: "InProgress",
-          message: "Which service would you like?",
-          messageContentType: "PlainText",
-          dialogAction: {
-            type: "ElicitSlot",
-            slotToElicit: "serviceName"
-          },
-          sessionAttributes: {
-            lastAskedSlot: "serviceName"
-          }
-        },
-        missingFields: ["serviceName"]
-      })
-    )
-  );
-
-  await handler(
+  const { getAsrDiagnostics } = await loadLambdaModule();
+  const asrDiagnostics = getAsrDiagnostics(
     baseEvent({
       invocationSource: "DialogCodeHook",
       inputTranscript: "sunset is it food",
@@ -5918,7 +5857,6 @@ test("DialogCodeHook does not synthesize ASR confidence from NLU confidence", as
     })
   );
 
-  const asrDiagnostics = JSON.parse(fetchCalls[0].body.attributes.asrDiagnostics);
   assert.equal(asrDiagnostics.topTranscript, "sunset is it food");
   assert.equal(asrDiagnostics.nluConfidence, 1);
   assert.equal(asrDiagnostics.transcriptionConfidence, undefined);
@@ -7451,6 +7389,56 @@ test("DialogCodeHook customerName noise does not persist sorry", async () => {
   );
 });
 
+test("DialogCodeHook removes leading speech fillers from the reported Lee name turn", async () => {
+  const handler = await loadHandler();
+  globalThis.fetch = async () => {
+    throw new Error("accepted customer name dialog must remain local");
+  };
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "uh so my name is uh lee",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          provider: "AMAZON_CONNECT",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+15555550123",
+          AmazonConnectContactId: "7c41b6bb-d868-452e-9b08-0e8dc7fd11bf",
+          lastAskedSlot: "customerName",
+          knownCallerLookupAttempted: "true",
+          knownCallerLookupStatus: "NOT_FOUND",
+          serviceName: "Full Set",
+          confirmedServiceName: "Full Set",
+          requestedDate: usEasternDate(0),
+          requestedTime: "2 PM",
+          staffPreference: "Any staff",
+          confirmedStaffName: "Any staff",
+          customerPhone: "+15555550123"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          state: "InProgress",
+          confirmationState: "None",
+          slots: {
+            serviceName: slot("Full Set"),
+            requestedDate: slot(usEasternDate(0)),
+            requestedTime: slot("2 PM"),
+            staffPreference: slot("Any staff"),
+            customerName: slot("uh lee")
+          }
+        }
+      }
+    })
+  );
+
+  assert.equal(response.sessionState.sessionAttributes.customerName, "lee");
+  assert.notEqual(response.sessionState.sessionAttributes.customerName, "uh lee");
+  assert.notEqual(response.sessionState.dialogAction.slotToElicit, "customerName");
+});
+
 test("DialogCodeHook customerName noise does not persist with Kevin", async () => {
   const handler = await loadHandler();
   globalThis.fetch = async () => {
@@ -8715,7 +8703,7 @@ test("DialogCodeHook final confirmation value-only changes route as draft update
   }
 });
 
-test("DialogCodeHook canonicalizes with emmy to Amy while staffPreference is being asked", async () => {
+test("DialogCodeHook canonicalizes observed Amy distortions while staffPreference is being asked", async () => {
   const handler = await loadHandler();
   const fetchCalls = installFetchMock((_url, _options, body) =>
     jsonResponse(
@@ -8748,62 +8736,68 @@ test("DialogCodeHook canonicalizes with emmy to Amy while staffPreference is bei
     )
   );
 
-  const response = await handler(
-    baseEvent({
-      invocationSource: "DialogCodeHook",
-      inputTranscript: "with emmy",
-      sessionState: {
-        ...baseEvent().sessionState,
-        sessionAttributes: {
-          salonId: "salon-explicit",
-          CalledNumber: "+18483487681",
-          CustomerEndpointAddress: "+15555550123",
-          AmazonConnectContactId: "connect-with-emmy",
-          customerName: "Jane",
-          customerPhone: "+15555550123",
-          serviceName: "Pedicure",
-          confirmedServiceName: "Pedicure",
-          requestedDate: usEasternDate(1),
-          requestedTime: "11 AM",
-          lastAskedSlot: "staffPreference",
-          staffDtmfOptions: JSON.stringify({
-            "1": "Trang",
-            "2": "Amy",
-            "3": "Kelly",
-            "4": "Any staff"
-          }),
-          staffDtmfStaffIds: JSON.stringify({
-            "1": "staff-trang",
-            "2": "staff-amy",
-            "3": "staff-kelly"
-          })
-        },
-        intent: {
-          ...baseEvent().sessionState.intent,
-          confirmationState: "None",
-          slots: {
-            serviceName: slot("Pedicure"),
-            requestedDate: slot("tomorrow"),
-            requestedTime: slot("11 AM"),
-            staffPreference: slotWith({
-              originalValue: "with emmy",
-              interpretedValue: "withemmy",
-              resolvedValues: ["withemmy"]
+  for (const distortion of ["with emmy", "ammy"]) {
+    const response = await handler(
+      baseEvent({
+        invocationSource: "DialogCodeHook",
+        inputTranscript: distortion,
+        sessionState: {
+          ...baseEvent().sessionState,
+          sessionAttributes: {
+            salonId: "salon-explicit",
+            CalledNumber: "+18483487681",
+            CustomerEndpointAddress: "+15555550123",
+            AmazonConnectContactId: `connect-${distortion.replace(/\W+/g, "-")}`,
+            customerName: "Jane",
+            customerPhone: "+15555550123",
+            serviceName: "Pedicure",
+            confirmedServiceName: "Pedicure",
+            requestedDate: usEasternDate(1),
+            requestedTime: "11 AM",
+            lastAskedSlot: "staffPreference",
+            staffDtmfOptions: JSON.stringify({
+              "1": "Trang",
+              "2": "Amy",
+              "3": "Kelly",
+              "4": "Any staff"
             }),
-            customerName: slot("Jane"),
-            customerPhone: slot("+15555550123")
+            staffDtmfStaffIds: JSON.stringify({
+              "1": "staff-trang",
+              "2": "staff-amy",
+              "3": "staff-kelly"
+            })
+          },
+          intent: {
+            ...baseEvent().sessionState.intent,
+            confirmationState: "None",
+            slots: {
+              serviceName: slot("Pedicure"),
+              requestedDate: slot("tomorrow"),
+              requestedTime: slot("11 AM"),
+              staffPreference: slotWith({
+                originalValue: distortion,
+                interpretedValue: distortion.replace(/\s+/g, ""),
+                resolvedValues: [distortion.replace(/\s+/g, "")]
+              }),
+              customerName: slot("Jane"),
+              customerPhone: slot("+15555550123")
+            }
           }
         }
-      }
-    })
-  );
+      })
+    );
 
-  assert.equal(fetchCalls.length, 0);
-  assert.equal(response.sessionState.intent.slots.staffPreference.value.interpretedValue, "Amy");
-  assert.equal(response.sessionState.sessionAttributes.staffPreference, "Amy");
-  assert.equal(response.sessionState.sessionAttributes.confirmedStaffName, "Amy");
-  assert.equal(response.sessionState.sessionAttributes.staffSource, "current_turn_alias");
-  assert.equal(response.sessionState.sessionAttributes.discardedStaleStaff, "with emmy");
+    assert.equal(fetchCalls.length, 0, distortion);
+    assert.equal(
+      response.sessionState.intent.slots.staffPreference.value.interpretedValue,
+      "Amy",
+      distortion
+    );
+    assert.equal(response.sessionState.sessionAttributes.staffPreference, "Amy", distortion);
+    assert.equal(response.sessionState.sessionAttributes.confirmedStaffName, "Amy", distortion);
+    assert.equal(response.sessionState.sessionAttributes.staffSource, "current_turn_alias", distortion);
+    assert.equal(response.sessionState.sessionAttributes.discardedStaleStaff, distortion, distortion);
+  }
 });
 
 test("DialogCodeHook maps scoped dang to Trang only in staff context", async () => {
@@ -11875,6 +11869,7 @@ test("DialogCodeHook known caller lookup runs before first name prompt", async (
         ...baseEvent().sessionState,
         sessionAttributes: {
           salonId: "salon-explicit",
+          provider: "AMAZON_CONNECT",
           CalledNumber: "+18483487681",
           CustomerEndpointAddress: "+84798171999",
           AmazonConnectContactId: "connect-known-caller-initial"
@@ -11895,6 +11890,58 @@ test("DialogCodeHook known caller lookup runs before first name prompt", async (
   assert.equal(response.sessionState.sessionAttributes.knownCallerLookupStatus, "FOUND");
   assert.notEqual(response.sessionState.dialogAction.slotToElicit, "customerName");
   assert.doesNotMatch(response.messages?.[0]?.content || "", /name/i);
+});
+
+test("Amazon Connect known-caller lookup is bounded and falls through to the name prompt", async () => {
+  const handler = await loadHandler({
+    BOOKING_HANDLER_KNOWN_CALLER_LOOKUP_TIMEOUT_MS: "20"
+  });
+  delete process.env.BOOKING_HANDLER_KNOWN_CALLER_LOOKUP_TIMEOUT_MS;
+  const fetchCalls = installFetchMock((_url, options) =>
+    abortableDelayedJsonResponse(successfulBackendPayload(), 1000, options?.signal)
+  );
+  const startedAt = Date.now();
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "I want a Full Set today at 2 PM with any staff.",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          provider: "AMAZON_CONNECT",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+15555550123",
+          AmazonConnectContactId: "connect-known-caller-timeout",
+          serviceName: "Full Set",
+          confirmedServiceName: "Full Set",
+          requestedDate: usEasternDate(0),
+          requestedTime: "2 PM",
+          staffPreference: "Any staff",
+          confirmedStaffName: "Any staff",
+          customerPhone: "+15555550123"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          state: "InProgress",
+          confirmationState: "None",
+          slots: {
+            serviceName: slot("Full Set"),
+            requestedDate: slot(usEasternDate(0)),
+            requestedTime: slot("2 PM"),
+            staffPreference: slot("Any staff")
+          }
+        }
+      }
+    })
+  );
+
+  assert.equal(fetchCalls.length, 1);
+  assert.ok(Date.now() - startedAt < 500);
+  assert.equal(response.sessionState.sessionAttributes.knownCallerLookupAttempted, "true");
+  assert.equal(response.sessionState.sessionAttributes.knownCallerLookupStatus, "ERROR");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "customerName");
 });
 
 test("DialogCodeHook captures exact any-staff one-shot booking fields", async () => {
@@ -12813,6 +12860,61 @@ test("DialogCodeHook rejects contradictory weekday and explicit date without los
   assert.equal(response.sessionState.sessionAttributes.serviceName, "Full Set");
   assert.equal(response.sessionState.sessionAttributes.staffPreference, "Amy");
   assert.match(response.messages[0].content, new RegExp(`${monthName} ${day} is ${actualWeekday}`));
+});
+
+test("DialogCodeHook clarifies observed by-Monday ASR instead of silently changing today", async () => {
+  const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
+  globalThis.fetch = async () => {
+    throw new Error("fetch should not be called for by-weekday clarification");
+  };
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "i want to book a by monday at three p. m. p. q.",
+      inputMode: "Speech",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          provider: "AMAZON_CONNECT",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+84798171999",
+          AmazonConnectContactId: "connect-by-monday-asr",
+          customerName: "Lee",
+          customerPhone: "+84798171999",
+          serviceName: "Pedicure",
+          confirmedServiceName: "Pedicure",
+          requestedTime: "3 PM",
+          staffPreference: "Amy",
+          confirmedStaffName: "Amy",
+          lastAskedSlot: "requestedDate"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          state: "InProgress",
+          confirmationState: "None",
+          slots: {
+            serviceName: slot("Pedicure"),
+            requestedDate: slot("Monday"),
+            requestedTime: slot("3 PM"),
+            staffPreference: slot("Amy"),
+            customerName: slot("Lee"),
+            customerPhone: slot("+84798171999")
+          }
+        }
+      }
+    })
+  );
+
+  const attrs = response.sessionState.sessionAttributes;
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "requestedDate");
+  assert.equal(attrs.requestedDate, undefined);
+  assert.equal(attrs.requestedTime, "3 PM");
+  assert.equal(attrs.serviceName, "Pedicure");
+  assert.equal(attrs.dateClarificationReason, "by_weekday_asr_ambiguous");
+  assert.match(response.messages[0].content, /Did you mean today,/i);
+  assert.match(response.messages[0].content, /or Monday,/i);
 });
 
 test("DialogCodeHook clarifies conflicting today and tomorrow before availability", async () => {

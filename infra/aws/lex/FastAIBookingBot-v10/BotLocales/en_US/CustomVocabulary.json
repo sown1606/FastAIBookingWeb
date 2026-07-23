@@ -6,6 +6,11 @@
       "displayAs": "Amy"
     },
     {
+      "phrase": "ammy",
+      "weight": 3,
+      "displayAs": "Amy"
+    },
+    {
       "phrase": "Any staff",
       "weight": 3,
       "displayAs": "Any staff"

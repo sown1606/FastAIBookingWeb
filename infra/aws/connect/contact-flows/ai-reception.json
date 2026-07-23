@@ -322,7 +322,7 @@
           "operatorHelpMentioned": "true",
           "x-amz-lex:audio:start-timeout-ms:*:*": "5000",
           "x-amz-lex:audio:end-timeout-ms:*:*": "2000",
-          "x-amz-lex:audio:max-length-ms:*:*": "12000",
+          "x-amz-lex:audio:max-length-ms:*:*": "15000",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName": "2500",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedTime": "1100",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference": "2000",
@@ -443,7 +443,7 @@
           "operatorHelpMentioned": "true",
           "x-amz-lex:audio:start-timeout-ms:*:*": "3000",
           "x-amz-lex:audio:end-timeout-ms:*:*": "2000",
-          "x-amz-lex:audio:max-length-ms:*:*": "12000",
+          "x-amz-lex:audio:max-length-ms:*:*": "15000",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName": "2500",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedTime": "1100",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference": "2000",
@@ -597,7 +597,7 @@
           "operatorHelpMentioned": "true",
           "x-amz-lex:audio:start-timeout-ms:*:*": "3000",
           "x-amz-lex:audio:end-timeout-ms:*:*": "2000",
-          "x-amz-lex:audio:max-length-ms:*:*": "12000",
+          "x-amz-lex:audio:max-length-ms:*:*": "15000",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName": "2500",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedTime": "1100",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference": "2000",
@@ -1007,7 +1007,7 @@
       "Type": "MessageParticipant",
       "Parameters": {
         "SkipWhenDTMFBufferEnabled": "false",
-        "Text": "I missed that. Please say the service, day, and time again."
+        "Text": "I'm still here. When you're ready, tell me the service, day, and time."
       },
       "Transitions": {
         "NextAction": "41e3f239-5b57-4363-92fc-9d594579fa98",
@@ -1085,7 +1085,7 @@
           "operatorHelpMentioned": "true",
           "x-amz-lex:audio:start-timeout-ms:*:*": "3000",
           "x-amz-lex:audio:end-timeout-ms:*:*": "2000",
-          "x-amz-lex:audio:max-length-ms:*:*": "12000",
+          "x-amz-lex:audio:max-length-ms:*:*": "15000",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName": "2500",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedTime": "1100",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference": "2000",
@@ -1145,7 +1145,7 @@
           "x-amz-lex:allow-interrupt:BookAppointmentIntent:customerName": "false",
           "x-amz-lex:allow-interrupt:BookAppointmentIntent:bookingConfirmation": "false"
         },
-        "Text": "I missed that. Please say the service, day, and time again."
+        "Text": "I'm still here. When you're ready, tell me the service, day, and time."
       },
       "Transitions": {
         "NextAction": "check-transfer-to-queue",
