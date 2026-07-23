@@ -5,9 +5,6 @@
   "description": null,
   "voiceSettings": null,
   "nluConfidenceThreshold": 0.4,
-  "speechRecognitionSettings": {
-    "speechModelPreference": "Neural"
-  },
   "speechDetectionSensitivity": "Default",
   "unifiedSpeechSettings": {
     "speechFoundationModel": {

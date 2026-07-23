@@ -509,7 +509,9 @@ function updateLexLocaleSpeechSettings(targets, localeSource) {
     ...(localeSource.unifiedSpeechSettings || current.unifiedSpeechSettings
       ? { unifiedSpeechSettings: localeSource.unifiedSpeechSettings || current.unifiedSpeechSettings }
       : {}),
-    speechRecognitionSettings: localeSource.speechRecognitionSettings,
+    ...(!localeSource.unifiedSpeechSettings && localeSource.speechRecognitionSettings
+      ? { speechRecognitionSettings: localeSource.speechRecognitionSettings }
+      : {}),
     speechDetectionSensitivity: localeSource.speechDetectionSensitivity || "Default"
   };
   return signedAwsHttpJson(targets, {
@@ -1770,8 +1772,28 @@ function validateLexSource() {
   const staffAny = staffSlot.slotTypeValues.find((value) => value.sampleValue?.value === "Any staff");
   const staffSynonyms = new Set((staffAny?.synonyms ?? []).map((synonym) => synonym.value.toLowerCase()));
   const failures = [];
-  if (locale.speechRecognitionSettings?.speechModelPreference !== "Neural") {
+  const unifiedSpeechModel = locale.unifiedSpeechSettings?.speechFoundationModel;
+  const usesUnifiedSpeech = Boolean(unifiedSpeechModel?.modelArn);
+  if (!usesUnifiedSpeech && locale.speechRecognitionSettings?.speechModelPreference !== "Neural") {
     failures.push("source speechModelPreference is not Neural");
+  }
+  if (
+    usesUnifiedSpeech &&
+    (unifiedSpeechModel.modelArn !==
+      "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-2-sonic-v1:0" ||
+      unifiedSpeechModel.voiceId !== "tiffany")
+  ) {
+    failures.push("source unified speech model or voice is not approved");
+  }
+  if (
+    usesUnifiedSpeech &&
+    (locale.audioFillerSettings?.enabled !== true ||
+      locale.audioFillerSettings?.audioType !== "MELODY_PATIENT_PING" ||
+      locale.audioFillerSettings?.startDelayInMilliseconds !== 1000 ||
+      locale.audioFillerSettings?.minimumPlayDurationInMilliseconds !== 1000 ||
+      locale.audioFillerSettings?.responseDeliveryDelayInMilliseconds !== 200)
+  ) {
+    failures.push("source audio filler settings are not approved");
   }
   if (locale.speechDetectionSensitivity !== "Default") {
     failures.push("source speechDetectionSensitivity is not Default");
@@ -1804,7 +1826,10 @@ function validateLexSource() {
     throw new ReleaseError("Lex source validation failed", { failures });
   }
   return {
-    speechModelPreference: "Neural",
+    speechMode: usesUnifiedSpeech ? "unified" : "neural_stt",
+    speechModelPreference: usesUnifiedSpeech ? null : "Neural",
+    unifiedSpeechSettings: locale.unifiedSpeechSettings || null,
+    audioFillerSettings: locale.audioFillerSettings || null,
     speechDetectionSensitivity: "Default",
     serviceSlotAudioRecognitionStrategy:
       serviceSlot.valueSelectionSetting.advancedRecognitionSetting.audioRecognitionStrategy,
@@ -2708,7 +2733,27 @@ function applyLexDraftAndPublish({ targets, releaseId, lambdaRelease, sourceHash
   const draftLocaleUpdate = updateLexLocaleSpeechSettings(targets, localeSource);
   waitForLexLocale(targets, "DRAFT");
   const draftLocaleSpeechReadback = describeLexLocaleRaw(targets, "DRAFT");
-  if (draftLocaleSpeechReadback.speechRecognitionSettings?.speechModelPreference !== "Neural") {
+  if (
+    localeSource.unifiedSpeechSettings &&
+    (draftLocaleSpeechReadback.unifiedSpeechSettings?.speechFoundationModel?.modelArn !==
+      localeSource.unifiedSpeechSettings.speechFoundationModel.modelArn ||
+      draftLocaleSpeechReadback.unifiedSpeechSettings?.speechFoundationModel?.voiceId !==
+        localeSource.unifiedSpeechSettings.speechFoundationModel.voiceId ||
+      draftLocaleSpeechReadback.audioFillerSettings?.enabled !== true ||
+      draftLocaleSpeechReadback.audioFillerSettings?.audioType !==
+        localeSource.audioFillerSettings.audioType)
+  ) {
+    throw new ReleaseError("Lex DRAFT unified speech or audio filler readback mismatch", {
+      expectedUnifiedSpeech: localeSource.unifiedSpeechSettings,
+      actualUnifiedSpeech: draftLocaleSpeechReadback.unifiedSpeechSettings || null,
+      expectedAudioFiller: localeSource.audioFillerSettings,
+      actualAudioFiller: draftLocaleSpeechReadback.audioFillerSettings || null
+    });
+  }
+  if (
+    !localeSource.unifiedSpeechSettings &&
+    draftLocaleSpeechReadback.speechRecognitionSettings?.speechModelPreference !== "Neural"
+  ) {
     throw new ReleaseError("Lex DRAFT speech model readback mismatch", {
       expected: "Neural",
       actual: draftLocaleSpeechReadback.speechRecognitionSettings?.speechModelPreference || null
@@ -2749,8 +2794,27 @@ function applyLexDraftAndPublish({ targets, releaseId, lambdaRelease, sourceHash
   const versionLocaleSpeechReadback = describeLexLocaleRaw(targets, botVersion);
   const speechModelPreferenceReadback =
     versionLocaleSpeechReadback.speechRecognitionSettings?.speechModelPreference || "";
+  const unifiedSpeechSettingsReadback = versionLocaleSpeechReadback.unifiedSpeechSettings || null;
+  const audioFillerSettingsReadback = versionLocaleSpeechReadback.audioFillerSettings || null;
   const speechDetectionSensitivityReadback = versionLocaleSpeechReadback.speechDetectionSensitivity || "";
-  if (speechModelPreferenceReadback !== "Neural") {
+  if (
+    localeSource.unifiedSpeechSettings &&
+    (unifiedSpeechSettingsReadback?.speechFoundationModel?.modelArn !==
+      localeSource.unifiedSpeechSettings.speechFoundationModel.modelArn ||
+      unifiedSpeechSettingsReadback?.speechFoundationModel?.voiceId !==
+        localeSource.unifiedSpeechSettings.speechFoundationModel.voiceId ||
+      audioFillerSettingsReadback?.enabled !== true ||
+      audioFillerSettingsReadback?.audioType !== localeSource.audioFillerSettings.audioType)
+  ) {
+    throw new ReleaseError("Lex version unified speech or audio filler readback mismatch", {
+      expectedUnifiedSpeech: localeSource.unifiedSpeechSettings,
+      actualUnifiedSpeech: unifiedSpeechSettingsReadback,
+      expectedAudioFiller: localeSource.audioFillerSettings,
+      actualAudioFiller: audioFillerSettingsReadback,
+      botVersion
+    });
+  }
+  if (!localeSource.unifiedSpeechSettings && speechModelPreferenceReadback !== "Neural") {
     throw new ReleaseError("Lex version speech model readback mismatch", {
       expected: "Neural",
       actual: speechModelPreferenceReadback || null,
@@ -2817,13 +2881,20 @@ function applyLexDraftAndPublish({ targets, releaseId, lambdaRelease, sourceHash
     draftLocaleUpdate,
     draftLocaleSpeechReadback: {
       speechRecognitionSettings: draftLocaleSpeechReadback.speechRecognitionSettings,
+      unifiedSpeechSettings: draftLocaleSpeechReadback.unifiedSpeechSettings,
+      audioFillerSettings: draftLocaleSpeechReadback.audioFillerSettings,
       speechDetectionSensitivity: draftLocaleSpeechReadback.speechDetectionSensitivity
     },
     draftLocaleStatus: lexLocaleStatus(draftLocale),
     botVersion,
     versionLocaleBuildStatus: lexLocaleStatus(versionLocale),
-    speechModelPreference: localeSource.speechRecognitionSettings?.speechModelPreference || "Neural",
+    speechMode: localeSource.unifiedSpeechSettings ? "unified" : "neural_stt",
+    speechModelPreference: localeSource.speechRecognitionSettings?.speechModelPreference || null,
     speechModelPreferenceReadback,
+    unifiedSpeechSettings: localeSource.unifiedSpeechSettings || null,
+    unifiedSpeechSettingsReadback,
+    audioFillerSettings: localeSource.audioFillerSettings || null,
+    audioFillerSettingsReadback,
     speechDetectionSensitivity: speechDetectionSensitivityReadback,
     slotTypes,
     intents,
@@ -2959,8 +3030,11 @@ function readbackCanary({ targets, releaseId, apiRelease, lambdaRelease, lexArti
       botVersion: lexAliasBotVersionFrom(alias),
       status: pick(alias, "botAliasStatus", "BotAliasStatus"),
       localeBuildStatus: lexLocaleStatus(locale),
+      speechMode: lexArtifact.speechMode,
       speechModelPreference: lexArtifact.speechModelPreference,
       speechModelPreferenceReadback: lexArtifact.speechModelPreferenceReadback,
+      unifiedSpeechSettings: lexArtifact.unifiedSpeechSettingsReadback,
+      audioFillerSettings: lexArtifact.audioFillerSettingsReadback,
       speechDetectionSensitivity: lexArtifact.speechDetectionSensitivity,
       lambdaArn: lexAliasLocaleSettingsFrom(alias)?.en_US?.codeHookSpecification?.lambdaCodeHook?.lambdaARN
     },

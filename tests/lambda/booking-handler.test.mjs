@@ -423,7 +423,9 @@ test("July 15 Lex v10 confirmation and ASR source contracts are present", () => 
     true
   );
   assert.equal(botLocale.speechDetectionSensitivity, "Default");
-  assert.deepEqual(botLocale.speechRecognitionSettings, { speechModelPreference: "Neural" });
+  assert.equal(botLocale.speechRecognitionSettings, undefined);
+  assert.equal(botLocale.audioFillerSettings?.enabled, true);
+  assert.equal(botLocale.audioFillerSettings?.audioType, "MELODY_PATIENT_PING");
   assert.equal(
     nailServiceType.valueSelectionSetting?.advancedRecognitionSetting?.audioRecognitionStrategy,
     "UseSlotValuesAsCustomVocabulary"
@@ -1502,7 +1504,7 @@ test("phone voice source contract keeps bounded audio and the approved filler mo
     readFileSync(path.join(repoRoot, "infra/aws/lex/FastAIBookingBot-v10/BotLocales/en_US/BotLocale.json"), "utf8")
   );
   assert.equal(locale.speechDetectionSensitivity, "Default");
-  assert.deepEqual(locale.speechRecognitionSettings, { speechModelPreference: "Neural" });
+  assert.equal(locale.speechRecognitionSettings, undefined);
   assert.deepEqual(locale.unifiedSpeechSettings, {
     speechFoundationModel: {
       modelArn: "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-2-sonic-v1:0",
