@@ -674,6 +674,31 @@ test("Lex fulfillment progress updates cover slow booking, appointment changes, 
   }
 });
 
+test("Lex locale plays filler audio during Lambda processing gaps", () => {
+  const locale = JSON.parse(
+    readFileSync(
+      path.join(
+        repoRoot,
+        "infra/aws/lex/FastAIBookingBot-v10/BotLocales/en_US/BotLocale.json"
+      ),
+      "utf8"
+    )
+  );
+
+  assert.equal(
+    locale.unifiedSpeechSettings?.speechFoundationModel?.modelArn,
+    "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-2-sonic-v1:0"
+  );
+  assert.equal(locale.unifiedSpeechSettings?.speechFoundationModel?.voiceId, "tiffany");
+  assert.deepEqual(locale.audioFillerSettings, {
+    enabled: true,
+    audioType: "MELODY_PATIENT_PING",
+    startDelayInMilliseconds: 1000,
+    minimumPlayDurationInMilliseconds: 1000,
+    responseDeliveryDelayInMilliseconds: 200
+  });
+});
+
 test("Lex customerName failure path invokes the booking dialog hook instead of FallbackIntent", () => {
   for (const { version, root } of lexRoots) {
     const slotExport = JSON.parse(
@@ -1022,7 +1047,7 @@ test("Connect AI reception has one reachable greeting and no outer service promp
     primary.Parameters.LexSessionAttributes["x-amz-lex:allow-interrupt:BookAppointmentIntent:serviceName"],
     "true"
   );
-  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:start-timeout-ms:*:*"], "9000");
+  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:start-timeout-ms:*:*"], "3000");
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:*:*"], "1300");
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:max-length-ms:*:*"], "12000");
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName"], "1600");
@@ -1041,6 +1066,11 @@ test("Connect AI reception has one reachable greeting and no outer service promp
   assert.equal(primary.Parameters.LexSessionAttributes.connectTerminalReason, "active");
   assert.equal(primary.Parameters.LexSessionAttributes.connectFlowSourceVersion, "2026-07-21-thuyet-p0-greeting-service-time-hotfix");
   for (const action of aiReceptionFlow.Actions.filter((item) => item.Type === "ConnectParticipantWithLexBot")) {
+    assert.equal(
+      action.Parameters.LexSessionAttributes["x-amz-lex:audio:start-timeout-ms:*:*"],
+      "3000",
+      `${action.Identifier} should check on a silent caller after three seconds`
+    );
     assert.equal(
       action.Parameters.LexSessionAttributes["x-amz-lex:allow-interrupt:BookAppointmentIntent:serviceName"],
       "true",
@@ -1101,7 +1131,6 @@ test("Connect AI reception routes only explicit complete conversations to goodby
   const primary = actionsById.get("3b2877ca-bc16-4019-a8e6-04200c0ded06");
   const recovery = actionsById.get("6fbf4310-c8c6-44a8-a8f5-1d7830974c4d");
   const finalRecovery = actionsById.get("41e3f239-5b57-4363-92fc-9d594579fa98");
-  const finalFallbackTransfer = actionsById.get("final-fallback-transfer-message");
   const transferCheck = actionsById.get("check-transfer-to-queue");
   const completeCheck = actionsById.get("check-conversation-complete");
   const outcomeCheck = actionsById.get("check-terminal-conversation-outcome");
@@ -1153,8 +1182,8 @@ test("Connect AI reception routes only explicit complete conversations to goodby
   assert.notEqual(recovery.Transitions.Errors[1].NextAction, "67ada978-600a-4d39-9965-6230c52810a9");
   assert.equal(finalRecovery.Type, "ConnectParticipantWithLexBot");
   assert.equal(finalRecovery.Transitions.NextAction, "check-transfer-to-queue");
-  assert.equal(finalRecovery.Transitions.Errors[0].NextAction, "final-recovery-goodbye");
-  assert.equal(finalRecovery.Transitions.Errors[1].NextAction, "final-recovery-goodbye");
+  assert.equal(finalRecovery.Transitions.Errors[0].NextAction, "continuation-fallback-lex");
+  assert.equal(finalRecovery.Transitions.Errors[1].NextAction, "continuation-fallback-lex");
   for (const condition of recovery.Transitions.Conditions) {
     const operand = condition.Condition.Operands[0];
     if (operand === "FallbackIntent" || operand === "AMAZON.FallbackIntent") {
@@ -1166,14 +1195,11 @@ test("Connect AI reception routes only explicit complete conversations to goodby
   for (const condition of finalRecovery.Transitions.Conditions) {
     const operand = condition.Condition.Operands[0];
     if (operand === "FallbackIntent" || operand === "AMAZON.FallbackIntent") {
-      assert.equal(condition.NextAction, "final-fallback-transfer-message");
+      assert.equal(condition.NextAction, "continuation-fallback-lex");
     } else {
       assert.equal(condition.NextAction, "check-transfer-to-queue", `${operand} should remain on normal handling`);
     }
   }
-  assert.equal(finalFallbackTransfer.Type, "MessageParticipant");
-  assert.match(finalFallbackTransfer.Parameters.Text, /connect you to a person now/i);
-  assert.equal(finalFallbackTransfer.Transitions.NextAction, "transfer-human-escalation-flow");
 });
 
 test("Connect AI reception recovery paths do not immediately disconnect after greeting", () => {
@@ -1187,9 +1213,7 @@ test("Connect AI reception recovery paths do not immediately disconnect after gr
 
   for (const id of [
     "initial-lex-error-message",
-    "retry-lex-error-message",
-    "final-recovery-goodbye",
-    "final-fallback-transfer-message"
+    "retry-lex-error-message"
   ]) {
     assert.ok(reachable.has(id), `${id} must be reachable from StartAction`);
     assert.equal(actionsById.get(id)?.Type, "MessageParticipant", `${id} must be audible`);
@@ -1214,17 +1238,16 @@ test("Connect AI reception recovery paths do not immediately disconnect after gr
     assertPathHasAudibleActionBeforeLex(aiReceptionFlow, error.NextAction, `${error.ErrorType} should be audible before final Lex`);
   }
   for (const error of finalRecovery.Transitions.Errors) {
-    assert.equal(error.NextAction, "final-recovery-goodbye");
-    const path = assertPathReaches(aiReceptionFlow, error.NextAction, "ef8d8054-77ea-40c7-aa4e-800ed784c49c");
-    assert.ok(path.includes("final-recovery-goodbye"), `${error.ErrorType} must play goodbye`);
-    assert.equal(path.filter((id) => id === "41e3f239-5b57-4363-92fc-9d594579fa98").length, 0);
+    assert.equal(error.NextAction, "continuation-fallback-lex");
+    assert.equal(actionsById.get(error.NextAction)?.Type, "ConnectParticipantWithLexBot");
+    assert.match(actionsById.get(error.NextAction)?.Parameters?.Text || "", /are you still there/i);
   }
   for (const condition of finalRecovery.Transitions.Conditions) {
     if (!condition.Condition.Operands.includes("FallbackIntent")) {
       continue;
     }
-    const path = assertPathReaches(aiReceptionFlow, condition.NextAction, "transfer-human-escalation-flow");
-    assert.ok(path.includes("final-fallback-transfer-message"), "repeated fallback must announce transfer first");
+    assert.equal(condition.NextAction, "continuation-fallback-lex");
+    assert.equal(actionsById.get(condition.NextAction)?.Type, "ConnectParticipantWithLexBot");
   }
   for (const id of reachable) {
     const action = actionsById.get(id);
@@ -1441,7 +1464,7 @@ test("Lex booking slot prompt attempts allow service and staff interruption with
   }
 });
 
-test("phone voice source contract rejects Connect-unsafe speech settings", () => {
+test("phone voice source contract keeps bounded audio and the approved filler model", () => {
   const failures = [];
   const connectFiles = listJsonFiles(connectRoot);
   const lexFiles = lexRoots.flatMap(({ root }) => listJsonFiles(root));
@@ -1480,7 +1503,19 @@ test("phone voice source contract rejects Connect-unsafe speech settings", () =>
   );
   assert.equal(locale.speechDetectionSensitivity, "Default");
   assert.deepEqual(locale.speechRecognitionSettings, { speechModelPreference: "Neural" });
-  assert.equal(locale.unifiedSpeechSettings, undefined);
+  assert.deepEqual(locale.unifiedSpeechSettings, {
+    speechFoundationModel: {
+      modelArn: "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-2-sonic-v1:0",
+      voiceId: "tiffany"
+    }
+  });
+  assert.deepEqual(locale.audioFillerSettings, {
+    enabled: true,
+    audioType: "MELODY_PATIENT_PING",
+    startDelayInMilliseconds: 1000,
+    minimumPlayDurationInMilliseconds: 1000,
+    responseDeliveryDelayInMilliseconds: 200
+  });
   assert.match(
     readFileSync(apiAiServicePath, "utf8"),
     /confidence:\s*Number\.isFinite\(speechConfidence\)\s*\?\s*speechConfidence\s*:\s*null/,
@@ -4611,6 +4646,46 @@ test("DialogCodeHook first generic service question skips known-caller lookup", 
   assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
   assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName");
   assert.equal(response.messages[0].content, "Which service would you like to book?");
+  assert.equal(response.sessionState.sessionAttributes.knownCallerLookupAttempted, undefined);
+});
+
+test("Amazon Connect booking turns never block on known-caller lookup", async () => {
+  const handler = await loadHandler();
+  globalThis.fetch = async () => {
+    throw new Error("realtime Connect dialog must not wait for customer lookup");
+  };
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "hi i would like to book in for a manicure",
+      inputMode: "Speech",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          provider: "AMAZON_CONNECT",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+61468349339",
+          AmazonConnectContactId: "connect-australia-latency-regression",
+          customerPhone: "+61468349339",
+          lastAskedSlot: "serviceName"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          state: "InProgress",
+          confirmationState: "None",
+          slots: {
+            serviceName: slot("manicure")
+          }
+        }
+      }
+    })
+  );
+
+  assert.equal(response.sessionState.sessionAttributes.serviceName, "Manicure");
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "requestedDate");
+  assert.equal(response.messages[0].content, "What day would you like? You can say today or tomorrow.");
   assert.equal(response.sessionState.sessionAttributes.knownCallerLookupAttempted, undefined);
 });
 

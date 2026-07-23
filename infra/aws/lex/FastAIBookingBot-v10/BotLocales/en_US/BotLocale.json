@@ -8,5 +8,18 @@
   "speechRecognitionSettings": {
     "speechModelPreference": "Neural"
   },
-  "speechDetectionSensitivity": "Default"
+  "speechDetectionSensitivity": "Default",
+  "unifiedSpeechSettings": {
+    "speechFoundationModel": {
+      "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-2-sonic-v1:0",
+      "voiceId": "tiffany"
+    }
+  },
+  "audioFillerSettings": {
+    "enabled": true,
+    "audioType": "MELODY_PATIENT_PING",
+    "startDelayInMilliseconds": 1000,
+    "minimumPlayDurationInMilliseconds": 1000,
+    "responseDeliveryDelayInMilliseconds": 200
+  }
 }

@@ -320,7 +320,7 @@
           "AmazonConnectContactId": "$.ContactId",
           "InitialContactId": "$.InitialContactId",
           "operatorHelpMentioned": "true",
-          "x-amz-lex:audio:start-timeout-ms:*:*": "9000",
+          "x-amz-lex:audio:start-timeout-ms:*:*": "3000",
           "x-amz-lex:audio:end-timeout-ms:*:*": "1300",
           "x-amz-lex:audio:max-length-ms:*:*": "12000",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName": "1600",
@@ -441,7 +441,7 @@
           "AmazonConnectContactId": "$.ContactId",
           "InitialContactId": "$.InitialContactId",
           "operatorHelpMentioned": "true",
-          "x-amz-lex:audio:start-timeout-ms:*:*": "9000",
+          "x-amz-lex:audio:start-timeout-ms:*:*": "3000",
           "x-amz-lex:audio:end-timeout-ms:*:*": "1300",
           "x-amz-lex:audio:max-length-ms:*:*": "12000",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName": "1600",
@@ -595,7 +595,7 @@
           "AmazonConnectContactId": "$.ContactId",
           "InitialContactId": "$.InitialContactId",
           "operatorHelpMentioned": "true",
-          "x-amz-lex:audio:start-timeout-ms:*:*": "9000",
+          "x-amz-lex:audio:start-timeout-ms:*:*": "3000",
           "x-amz-lex:audio:end-timeout-ms:*:*": "1300",
           "x-amz-lex:audio:max-length-ms:*:*": "12000",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName": "1600",
@@ -699,7 +699,7 @@
             }
           },
           {
-            "NextAction": "final-fallback-transfer-message",
+            "NextAction": "continuation-fallback-lex",
             "Condition": {
               "Operator": "Equals",
               "Operands": [
@@ -708,7 +708,7 @@
             }
           },
           {
-            "NextAction": "final-fallback-transfer-message",
+            "NextAction": "continuation-fallback-lex",
             "Condition": {
               "Operator": "Equals",
               "Operands": [
@@ -719,11 +719,11 @@
         ],
         "Errors": [
           {
-            "NextAction": "final-recovery-goodbye",
+            "NextAction": "continuation-fallback-lex",
             "ErrorType": "NoMatchingCondition"
           },
           {
-            "NextAction": "final-recovery-goodbye",
+            "NextAction": "continuation-fallback-lex",
             "ErrorType": "NoMatchingError"
           }
         ]
@@ -1083,7 +1083,7 @@
           "AmazonConnectContactId": "$.ContactId",
           "InitialContactId": "$.InitialContactId",
           "operatorHelpMentioned": "true",
-          "x-amz-lex:audio:start-timeout-ms:*:*": "9000",
+          "x-amz-lex:audio:start-timeout-ms:*:*": "3000",
           "x-amz-lex:audio:end-timeout-ms:*:*": "1300",
           "x-amz-lex:audio:max-length-ms:*:*": "12000",
           "x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName": "1600",

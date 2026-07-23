@@ -503,8 +503,12 @@ function updateLexLocaleSpeechSettings(targets, localeSource) {
     nluIntentConfidenceThreshold: Number(localeSource.nluConfidenceThreshold ?? current.nluIntentConfidenceThreshold ?? 0.4),
     ...(current.voiceSettings ? { voiceSettings: current.voiceSettings } : {}),
     ...(current.generativeAISettings ? { generativeAISettings: current.generativeAISettings } : {}),
-    ...(current.audioFillerSettings ? { audioFillerSettings: current.audioFillerSettings } : {}),
-    ...(current.unifiedSpeechSettings ? { unifiedSpeechSettings: current.unifiedSpeechSettings } : {}),
+    ...(localeSource.audioFillerSettings || current.audioFillerSettings
+      ? { audioFillerSettings: localeSource.audioFillerSettings || current.audioFillerSettings }
+      : {}),
+    ...(localeSource.unifiedSpeechSettings || current.unifiedSpeechSettings
+      ? { unifiedSpeechSettings: localeSource.unifiedSpeechSettings || current.unifiedSpeechSettings }
+      : {}),
     speechRecognitionSettings: localeSource.speechRecognitionSettings,
     speechDetectionSensitivity: localeSource.speechDetectionSensitivity || "Default"
   };

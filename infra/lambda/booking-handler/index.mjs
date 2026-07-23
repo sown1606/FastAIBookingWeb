@@ -6884,7 +6884,11 @@ function withSessionAttributes(event, sessionAttributes = {}) {
 
 async function buildKnownCallerLookupResponse(event, intentName) {
   const known = buildKnownBookingSessionAttributes(event);
-  if (!known.customerPhone || known.customerName) {
+  if (
+    event.sessionState?.sessionAttributes?.provider === "AMAZON_CONNECT" ||
+    !known.customerPhone ||
+    known.customerName
+  ) {
     return null;
   }
 
@@ -6976,6 +6980,7 @@ async function applyKnownCallerLookupBeforePrompt(event, intentName) {
   );
   if (
     intentName !== "BookAppointmentIntent" ||
+    previous.provider === "AMAZON_CONNECT" ||
     getInputMode(event) === "DTMF" ||
     Boolean(readCurrentTurnDigit(event)) ||
     shouldUseFastGenericServicePrompt ||
