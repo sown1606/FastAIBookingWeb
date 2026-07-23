@@ -142,8 +142,13 @@ test("voice release deploy syncs Lex intent source before build", () => {
   assert.match(script, /const intents = syncLexIntents\(targets, releaseId\);/);
   assert.match(
     script,
-    /waitForLexLocale\(targets, "DRAFT", \["Built", "ReadyExpressTesting", "NotBuilt", "Failed"\]\)/,
-    "a failed DRAFT must be reopened by update-bot-locale before source synchronization"
+    /const initialDraftLocale = waitForLexLocale\([\s\S]*?\["Built", "ReadyExpressTesting", "NotBuilt", "Failed"\][\s\S]*?\);/,
+    "a failed DRAFT must be detected without aborting source synchronization"
+  );
+  assert.match(
+    script,
+    /if \(lexLocaleStatus\(initialDraftLocale\) === "Failed"\) \{[\s\S]*?"build-bot-locale"[\s\S]*?waitForLexLocale\(targets, "DRAFT", \["Built", "ReadyExpressTesting"\]\);/,
+    "a failed DRAFT must be rebuilt after repairing its children and before locale updates"
   );
   assert.match(
     script,

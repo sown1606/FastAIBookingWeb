@@ -2862,12 +2862,29 @@ function associateLexAliasWithConnect({ targets, lexAliasArnValue }) {
 
 function applyLexDraftAndPublish({ targets, releaseId, lambdaRelease, sourceHash }) {
   const lexSource = validateLexSource();
-  waitForLexLocale(targets, "DRAFT", ["Built", "ReadyExpressTesting", "NotBuilt", "Failed"]);
+  const initialDraftLocale = waitForLexLocale(
+    targets,
+    "DRAFT",
+    ["Built", "ReadyExpressTesting", "NotBuilt", "Failed"]
+  );
   const localeSource = readJson(path.join(LOCALE_ROOT, "BotLocale.json"));
   const slotTypes = syncLexSlotTypes(targets, releaseId);
   const vocabularySync = syncCustomVocabulary(targets, releaseId);
   const slots = syncLexSlots(targets, releaseId);
   const intents = syncLexIntents(targets, releaseId);
+  if (lexLocaleStatus(initialDraftLocale) === "Failed") {
+    awsJson(targets, "lexv2-models", "build-bot-locale", [
+      "--bot-id",
+      targets.lex.botId,
+      "--bot-version",
+      "DRAFT",
+      "--locale-id",
+      "en_US"
+    ], {
+      requiredAction: "lex:BuildBotLocale"
+    });
+    waitForLexLocale(targets, "DRAFT", ["Built", "ReadyExpressTesting"]);
+  }
   const draftLocaleUpdate = updateLexLocaleSpeechSettings(targets, localeSource);
   waitForLexLocale(targets, "DRAFT");
   const draftLocaleSpeechReadback = describeLexLocaleRaw(targets, "DRAFT");
