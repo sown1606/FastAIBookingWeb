@@ -33,7 +33,7 @@
         "invocationLabel": null
       }
     },
-    "slotConstraint": "Optional",
+    "slotConstraint": "Required",
     "promptSpecification": {
       "messageGroupsList": [
         {

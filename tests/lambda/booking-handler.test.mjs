@@ -751,6 +751,11 @@ test("Lex v10 slot failures return to the booking dialog instead of ending the c
     const failureNextStep =
       slotExport.valueElicitationSetting?.slotCaptureSetting?.failureNextStep;
     assert.equal(
+      slotExport.valueElicitationSetting?.slotConstraint,
+      "Required",
+      `${slotName} must be required so Lex accepts failure recovery`
+    );
+    assert.equal(
       failureNextStep?.dialogAction?.type,
       "InvokeDialogCodeHook",
       `${slotName} must recover through Lambda`
