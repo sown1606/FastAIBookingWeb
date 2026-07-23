@@ -2505,8 +2505,15 @@ function syncLexSlots(targets, releaseId) {
         readback.valueElicitationSetting?.slotCaptureSetting?.failureNextStep;
       const expectedSlotConstraint = input.valueElicitationSetting?.slotConstraint;
       const actualSlotConstraint = readback.valueElicitationSetting?.slotConstraint;
+      const expectedCaptureCodeHook =
+        input.valueElicitationSetting?.slotCaptureSetting?.codeHook;
+      const actualCaptureCodeHook =
+        readback.valueElicitationSetting?.slotCaptureSetting?.codeHook;
       if (
         actualSlotConstraint !== expectedSlotConstraint ||
+        (expectedCaptureCodeHook?.active === true &&
+          (actualCaptureCodeHook?.active !== true ||
+            actualCaptureCodeHook?.enableCodeHookInvocation !== true)) ||
         (expectedFailureStep &&
           (actualFailureStep?.dialogAction?.type !== expectedFailureStep.dialogAction?.type ||
           actualFailureStep?.sessionAttributes?.lastAskedSlot !==
@@ -2517,6 +2524,8 @@ function syncLexSlots(targets, releaseId) {
           slotName: source.name,
           expectedSlotConstraint,
           actualSlotConstraint: actualSlotConstraint || null,
+          expectedCaptureCodeHook: expectedCaptureCodeHook || null,
+          actualCaptureCodeHook: actualCaptureCodeHook || null,
           expected: expectedFailureStep,
           actual: actualFailureStep || null
         });
@@ -2528,6 +2537,7 @@ function syncLexSlots(targets, releaseId) {
         slotId,
         slotTypeId,
         slotConstraint: actualSlotConstraint || null,
+        captureCodeHookActive: actualCaptureCodeHook?.active === true,
         failureDialogAction: actualFailureStep?.dialogAction?.type || null,
         failureLastAskedSlot: actualFailureStep?.sessionAttributes?.lastAskedSlot || null
       });

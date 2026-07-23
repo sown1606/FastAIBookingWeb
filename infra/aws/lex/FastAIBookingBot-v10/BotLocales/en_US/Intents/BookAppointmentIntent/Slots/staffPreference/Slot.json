@@ -6,7 +6,10 @@
   "obfuscationSetting": null,
   "valueElicitationSetting": {
     "slotCaptureSetting": {
-      "codeHook": null,
+      "codeHook": {
+        "enableCodeHookInvocation": true,
+        "active": true
+      },
       "captureResponse": null,
       "captureNextStep": null,
       "captureConditional": null,
