@@ -317,7 +317,8 @@ const STAFF_DTMF_SHORT_PROMPT =
   "For staff, press 1 for Trang, 2 for Amy, 3 for Kelly, 4 for first available, or 0 for an operator.";
 const NO_INPUT_HUMAN_CONFIRM_PROMPT =
   "Are you still there? Would you like me to connect you to a real person? You can press 0 for an operator.";
-const NO_INPUT_RECOVERY_PROMPT = "Are you still there? How can I help?";
+const NO_INPUT_RECOVERY_PROMPT =
+  "Sorry, I didn't catch that. Please say the service, day, and time again.";
 const INVALID_MENU_CHOICE_PROMPT = "Invalid choice. Please select a valid number from the options provided.";
 const FAST_WAIT_PROMPT = "Please wait. Let me check...";
 const WAIT_PROMPTS = {
@@ -6278,8 +6279,21 @@ function buildElicitSlotResponse(event, slotName, extraAttributes = {}, messageO
 	}
 
 function getNoInputPrompt(slotName, noInputCount, event) {
-  if (noInputCount <= 2) {
-    return NO_INPUT_RECOVERY_PROMPT;
+  const known = buildKnownBookingSessionAttributes(event);
+  const serviceName = normalizeServiceName(
+    known.confirmedServiceName || known.serviceName
+  );
+  const requestedDate = formatDateForPrompt(
+    known.requestedDate,
+    getAttribute(event, attributeNames.timezone) || DEFAULT_SALON_TIMEZONE
+  );
+  const requestedTime = formatTimeForPrompt(known.requestedTime);
+
+  if (slotName === "bookingConfirmation") {
+    const summary = buildKnownBookingPromptSummary(event, { forPhrase: false });
+    return summary
+      ? `I didn't hear your answer. Is ${summary} correct? Please say yes or no.`
+      : "I didn't hear your answer. Please say yes or no.";
   }
   if (slotName === "staffPreference") {
     const summary = buildKnownBookingPromptSummary(event, { forPhrase: false });
@@ -6292,10 +6306,28 @@ function getNoInputPrompt(slotName, noInputCount, event) {
   if (slotName === "customerName") {
     return "Sorry, I didn't catch your name. What is your first name?";
   }
-  if (slotName === "serviceName") {
-    return "I'm still here. You can say book an appointment, or press zero for a person.";
+  if (slotName === "customerPhone") {
+    return "Sorry, I didn't catch the phone number. What phone number should I use?";
   }
-  return getElicitPrompt(event, slotName, 2);
+  if (slotName === "serviceName") {
+    const bookingTime = [
+      requestedDate,
+      requestedTime ? `at ${requestedTime}` : ""
+    ].filter(Boolean).join(" ");
+    return bookingTime
+      ? `I have ${bookingTime}. Which service would you like to book?`
+      : "Sorry, I didn't catch the service. Which service would you like to book?";
+  }
+  if (slotName === "requestedDate") {
+    const prefix = serviceName ? `I have ${serviceName}. ` : "";
+    return `${prefix}What day would you like? You can say today or tomorrow.`;
+  }
+  if (slotName === "requestedTime") {
+    const booking = [serviceName, requestedDate].filter(Boolean).join(" ");
+    const prefix = booking ? `I have ${booking}. ` : "";
+    return `${prefix}What time would you like?`;
+  }
+  return NO_INPUT_RECOVERY_PROMPT;
 }
 
 function buildNoInputResponse(event, slotName) {

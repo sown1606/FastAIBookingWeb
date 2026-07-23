@@ -11,7 +11,7 @@
     "nextStep": {
       "sessionAttributes": {
         "conversationComplete": "false",
-        "connectContinuationPrompt": "Are you still there? How can I help?",
+        "connectContinuationPrompt": "Sorry, I didn't catch that. Please say the service, day, and time again.",
         "connectContinuationPromptAvailable": "true"
       },
       "intent": {
@@ -30,7 +30,7 @@
         {
           "message": {
             "plainTextMessage": {
-              "value": "Are you still there? How can I help?"
+              "value": "Sorry, I didn't catch that. Please say the service, day, and time again."
             }
           }
         }
@@ -50,7 +50,7 @@
             {
               "message": {
                 "plainTextMessage": {
-                  "value": "Are you still there? How can I help?"
+                  "value": "Sorry, I didn't catch that. Please say the service, day, and time again."
                 }
               }
             }
@@ -60,7 +60,7 @@
         "failureNextStep": {
           "sessionAttributes": {
             "conversationComplete": "false",
-            "connectContinuationPrompt": "Are you still there? How can I help?",
+            "connectContinuationPrompt": "Sorry, I didn't catch that. Please say the service, day, and time again.",
             "connectContinuationPromptAvailable": "true"
           },
           "intent": {
@@ -80,7 +80,7 @@
             {
               "message": {
                 "plainTextMessage": {
-                  "value": "Are you still there? How can I help?"
+                  "value": "Sorry, I didn't catch that. Please say the service, day, and time again."
                 }
               }
             }
@@ -90,7 +90,7 @@
         "successNextStep": {
           "sessionAttributes": {
             "conversationComplete": "false",
-            "connectContinuationPrompt": "Are you still there? How can I help?",
+            "connectContinuationPrompt": "Sorry, I didn't catch that. Please say the service, day, and time again.",
             "connectContinuationPromptAvailable": "true"
           },
           "intent": {
@@ -110,7 +110,7 @@
             {
               "message": {
                 "plainTextMessage": {
-                  "value": "Are you still there? How can I help?"
+                  "value": "Sorry, I didn't catch that. Please say the service, day, and time again."
                 }
               }
             }
@@ -120,7 +120,7 @@
         "timeoutNextStep": {
           "sessionAttributes": {
             "conversationComplete": "false",
-            "connectContinuationPrompt": "Are you still there? How can I help?",
+            "connectContinuationPrompt": "Sorry, I didn't catch that. Please say the service, day, and time again.",
             "connectContinuationPromptAvailable": "true"
           },
           "intent": {

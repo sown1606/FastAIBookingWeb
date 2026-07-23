@@ -846,7 +846,11 @@ test("Lex v10 fallback intent recovers audibly instead of silently ending", () =
       .filter(Boolean)
       .join(" ");
   const assertFallbackRecovery = (label, response, nextStep) => {
-    assert.equal(readablePrompt(response), "Are you still there? How can I help?", `${label} prompt`);
+    assert.equal(
+      readablePrompt(response),
+      "Sorry, I didn't catch that. Please say the service, day, and time again.",
+      `${label} prompt`
+    );
     assert.equal(response?.allowInterrupt, true, `${label} allows interruption`);
     assert.equal(nextStep?.sessionAttributes?.conversationComplete, "false", `${label} keeps the call active`);
     assert.equal(
@@ -1080,7 +1084,8 @@ test("Connect AI reception has one reachable greeting and no outer service promp
     const action = actionsById.get(id);
     const next = actionsById.get(action?.Transitions?.NextAction);
     const text = action?.Parameters?.Text || "";
-    const isAllowedNoInputRecovery = text === "Are you still there? How can I help?";
+    const isAllowedNoInputRecovery =
+      text === "Sorry, I didn't catch that. Please say the service, day, and time again.";
     const asksQuestion =
       !isAllowedNoInputRecovery &&
       /\?|what service|which service|are you still there|tell me the appointment/i.test(text);
@@ -1293,7 +1298,10 @@ test("Connect AI reception recovery paths do not immediately disconnect after gr
   for (const error of finalRecovery.Transitions.Errors) {
     assert.equal(error.NextAction, "continuation-fallback-lex");
     assert.equal(actionsById.get(error.NextAction)?.Type, "ConnectParticipantWithLexBot");
-    assert.match(actionsById.get(error.NextAction)?.Parameters?.Text || "", /are you still there/i);
+    assert.match(
+      actionsById.get(error.NextAction)?.Parameters?.Text || "",
+      /service, day, and time/i
+    );
   }
   for (const condition of finalRecovery.Transitions.Conditions) {
     if (!condition.Condition.Operands.includes("FallbackIntent")) {
@@ -1383,7 +1391,7 @@ test("Connect AI reception missing fields and no-match paths stay nonterminal", 
   assert.doesNotMatch(initialMessage.Parameters?.Text || "", /didn't catch/i);
   assert.notEqual(actionsById.get(initialMessage.Transitions.NextAction)?.Type, "DisconnectParticipant");
   assert.equal(retryMessage.Type, "MessageParticipant");
-  assert.doesNotMatch(retryMessage.Parameters?.Text || "", /didn't catch/i);
+  assert.match(retryMessage.Parameters?.Text || "", /service, day, and time/i);
   assert.notEqual(actionsById.get(retryMessage.Transitions.NextAction)?.Type, "DisconnectParticipant");
 });
 
@@ -1430,7 +1438,10 @@ test("Connect AI reception dynamic Lex prompts have a reachable literal fallback
     );
   }
   const fallbackLex = actionsById.get("continuation-fallback-lex");
-  assert.equal(fallbackLex?.Parameters?.Text, "Are you still there? How can I help?");
+  assert.equal(
+    fallbackLex?.Parameters?.Text,
+    "Sorry, I didn't catch that. Please say the service, day, and time again."
+  );
 });
 
 test("Connect source contract documents required production env keys without local .env", () => {
@@ -4547,7 +4558,7 @@ test("DialogCodeHook delegates when the utterance is not an escalation", async (
   assert.equal(response.sessionState.intent.slots.customerName.value.interpretedValue, "Kiet Nguyen");
 });
 
-test("DialogCodeHook real no input asks an audible help question before any service menu", async () => {
+test("DialogCodeHook real no input repeats the missing service without resetting context", async () => {
   const handler = await loadHandler();
   globalThis.fetch = async () => {
     throw new Error("fetch should not be called for no-input DialogCodeHook");
@@ -4579,7 +4590,10 @@ test("DialogCodeHook real no input asks an audible help question before any serv
   assert.equal(response.sessionState.sessionAttributes.noInputCount, "1");
   assert.equal(response.sessionState.sessionAttributes.awaitingNoInputHumanConfirmation, "false");
   assert.equal(response.sessionState.sessionAttributes.customerPhone, "+17325956266");
-  assert.equal(response.messages[0].content, "Are you still there? How can I help?");
+  assert.equal(
+    response.messages[0].content,
+    "Sorry, I didn't catch the service. Which service would you like to book?"
+  );
   assert.doesNotMatch(response.messages[0].content, /1 for Pedicure/i);
   assert.doesNotMatch(response.messages[0].content, /2 for Manicure/i);
   assert.doesNotMatch(response.messages[0].content, /3 for Gel Manicure/i);
@@ -4587,7 +4601,7 @@ test("DialogCodeHook real no input asks an audible help question before any serv
   assert.doesNotMatch(response.messages[0].content, /5 for Dip Powder/i);
 });
 
-test("DialogCodeHook second no input uses exact still-there prompt without transfer", async () => {
+test("DialogCodeHook second no input repeats the active service question without transfer", async () => {
   const handler = await loadHandler();
   globalThis.fetch = async () => {
     throw new Error("fetch should not be called for second no-input DialogCodeHook");
@@ -4620,13 +4634,16 @@ test("DialogCodeHook second no input uses exact still-there prompt without trans
   assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName");
   assert.equal(response.sessionState.sessionAttributes.noInputCount, "2");
   assert.equal(response.sessionState.sessionAttributes.transferToQueue, undefined);
-  assert.equal(response.messages[0].content, "Are you still there? How can I help?");
+  assert.equal(
+    response.messages[0].content,
+    "Sorry, I didn't catch the service. Which service would you like to book?"
+  );
   assert.doesNotMatch(response.messages[0].content, /1 for Pedicure/i);
   assert.doesNotMatch(response.messages[0].content, /5 for Dip Powder/i);
   assert.doesNotMatch(response.messages[0].content, /You can also press 1 for Pedicure/i);
 });
 
-test("DialogCodeHook first service no input asks if caller is still there", async () => {
+test("DialogCodeHook first service no input asks for service and keeps the call open", async () => {
   const handler = await loadHandler();
   globalThis.fetch = async () => {
     throw new Error("fetch should not be called for first service no-input DialogCodeHook");
@@ -4658,7 +4675,10 @@ test("DialogCodeHook first service no input asks if caller is still there", asyn
   assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
   assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName");
   assert.equal(response.sessionState.sessionAttributes.noInputCount, "1");
-  assert.equal(response.messages[0].content, "Are you still there? How can I help?");
+  assert.equal(
+    response.messages[0].content,
+    "Sorry, I didn't catch the service. Which service would you like to book?"
+  );
   assert.notEqual(response.sessionState.dialogAction.type, "Close");
 });
 
@@ -4706,6 +4726,72 @@ test("DialogCodeHook generic booking request asks one short service question", a
   assert.doesNotMatch(response.messages[0].content, /^Sure\b/i);
   assert.doesNotMatch(response.messages[0].content, /Press 1 for Pedicure/i);
   assert.equal(response.sessionState.sessionAttributes.conversationComplete, "false");
+});
+
+test("DialogCodeHook preserves the three reported Pedicure and Full Set booking phrases", async () => {
+  const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
+  globalThis.fetch = async () => {
+    throw new Error("reported first booking turns must not wait for a network lookup");
+  };
+
+  const cases = [
+    {
+      transcript:
+        "I want appointment tomorrow at 1 PM, Pedicure, make me appointment for tomorrow",
+      serviceName: "Pedicure",
+      requestedTime: "1 PM"
+    },
+    {
+      transcript: "Book me appointment tomorrow at 11 AM, Pedicure",
+      serviceName: "Pedicure",
+      requestedTime: "11 AM"
+    },
+    {
+      transcript: "Book me a service for Full Set tomorrow at 11 AM.",
+      serviceName: "Full Set",
+      requestedTime: "11 AM"
+    }
+  ];
+
+  for (const [index, reportedCase] of cases.entries()) {
+    const response = await handler(
+      baseEvent({
+        invocationSource: "DialogCodeHook",
+        inputTranscript: reportedCase.transcript,
+        inputMode: "Speech",
+        sessionId: `reported-booking-${index + 1}`,
+        sessionState: {
+          ...baseEvent().sessionState,
+          sessionAttributes: {
+            provider: "AMAZON_CONNECT",
+            salonId: "salon-explicit",
+            CalledNumber: "+18483487681",
+            CustomerEndpointAddress: "+15555550123",
+            AmazonConnectContactId: `reported-booking-${index + 1}`,
+            lastAskedSlot: "serviceName",
+            initialVoiceBookingContext: "true",
+            conversationComplete: "false"
+          },
+          intent: {
+            ...baseEvent().sessionState.intent,
+            state: "InProgress",
+            confirmationState: "None",
+            slots: {}
+          }
+        }
+      })
+    );
+
+    assert.equal(response.sessionState.sessionAttributes.serviceName, reportedCase.serviceName);
+    assert.equal(
+      response.sessionState.sessionAttributes.confirmedServiceName,
+      reportedCase.serviceName
+    );
+    assert.equal(response.sessionState.sessionAttributes.requestedDate, usEasternDate(1));
+    assert.equal(response.sessionState.sessionAttributes.requestedTime, reportedCase.requestedTime);
+    assert.notEqual(response.sessionState.dialogAction.type, "Close");
+    assert.doesNotMatch(response.messages[0].content, /Are you still there/i);
+  }
 });
 
 test("DialogCodeHook first generic service question skips known-caller lookup", async () => {
@@ -4941,7 +5027,10 @@ test("DialogCodeHook no input while staff is missing repeats trusted booking sta
   assert.equal(response.sessionState.dialogAction.type, "ElicitSlot");
   assert.equal(response.sessionState.dialogAction.slotToElicit, "staffPreference");
   assert.equal(response.sessionState.sessionAttributes.noInputCount, "1");
-  assert.equal(response.messages[0].content, "Are you still there? How can I help?");
+  assert.equal(
+    response.messages[0].content,
+    "I have Full Set today at 3 PM. Which staff would you like, or say first available? You can press 0 for a person."
+  );
   assert.doesNotMatch(response.messages[0].content, /Press 1 for Trang/i);
   assert.notEqual(response.sessionState.sessionAttributes.conversationComplete, "true");
 });

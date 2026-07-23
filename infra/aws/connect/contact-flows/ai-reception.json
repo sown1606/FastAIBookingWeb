@@ -1007,7 +1007,7 @@
       "Type": "MessageParticipant",
       "Parameters": {
         "SkipWhenDTMFBufferEnabled": "false",
-        "Text": "Are you still there? How can I help?"
+        "Text": "Sorry, I didn't catch that. Please say the service, day, and time again."
       },
       "Transitions": {
         "NextAction": "41e3f239-5b57-4363-92fc-9d594579fa98",
@@ -1145,7 +1145,7 @@
           "x-amz-lex:allow-interrupt:BookAppointmentIntent:customerName": "false",
           "x-amz-lex:allow-interrupt:BookAppointmentIntent:bookingConfirmation": "false"
         },
-        "Text": "Are you still there? How can I help?"
+        "Text": "Sorry, I didn't catch that. Please say the service, day, and time again."
       },
       "Transitions": {
         "NextAction": "check-transfer-to-queue",
