@@ -767,6 +767,10 @@ test("Lex v10 slot failures return to the booking dialog instead of ending the c
       true,
       `${slotName} must keep the failure DialogCodeHook step active`
     );
+    assert.ok(
+      captureCodeHook?.postCodeHookSpecification,
+      `${slotName} must include the Lex-required post hook specification`
+    );
     assert.equal(
       failureNextStep?.dialogAction?.type,
       "InvokeDialogCodeHook",

@@ -8,7 +8,55 @@
     "slotCaptureSetting": {
       "codeHook": {
         "enableCodeHookInvocation": true,
-        "active": true
+        "active": true,
+        "invocationLabel": null,
+        "postCodeHookSpecification": {
+          "successResponse": null,
+          "successNextStep": {
+            "sessionAttributes": null,
+            "intent": {
+              "name": null,
+              "slots": null
+            },
+            "dialogAction": {
+              "type": "ElicitIntent",
+              "slotToElicit": null,
+              "suppressNextMessage": null,
+              "intentsInScope": null
+            }
+          },
+          "successConditional": null,
+          "failureResponse": null,
+          "failureNextStep": {
+            "sessionAttributes": null,
+            "intent": {
+              "name": null,
+              "slots": null
+            },
+            "dialogAction": {
+              "type": "ElicitIntent",
+              "slotToElicit": null,
+              "suppressNextMessage": null,
+              "intentsInScope": null
+            }
+          },
+          "failureConditional": null,
+          "timeoutResponse": null,
+          "timeoutNextStep": {
+            "sessionAttributes": null,
+            "intent": {
+              "name": null,
+              "slots": null
+            },
+            "dialogAction": {
+              "type": "ElicitIntent",
+              "slotToElicit": null,
+              "suppressNextMessage": null,
+              "intentsInScope": null
+            }
+          },
+          "timeoutConditional": null
+        }
       },
       "captureResponse": null,
       "captureNextStep": null,
