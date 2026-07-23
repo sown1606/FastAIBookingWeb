@@ -2129,11 +2129,11 @@ function waitForLexLocale(targets, botVersion = "DRAFT", allowedStatuses = ["Bui
       throw error;
     }
     const status = lexLocaleStatus(locale);
-    if (status === "Failed") {
-      throw new ReleaseError("Lex locale build failed", { locale });
-    }
     if (allowed.has(status)) {
       return locale;
+    }
+    if (status === "Failed") {
+      throw new ReleaseError("Lex locale build failed", { locale });
     }
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10000);
   }
@@ -2503,15 +2503,20 @@ function syncLexSlots(targets, releaseId) {
         input.valueElicitationSetting?.slotCaptureSetting?.failureNextStep;
       const actualFailureStep =
         readback.valueElicitationSetting?.slotCaptureSetting?.failureNextStep;
+      const expectedSlotConstraint = input.valueElicitationSetting?.slotConstraint;
+      const actualSlotConstraint = readback.valueElicitationSetting?.slotConstraint;
       if (
-        expectedFailureStep &&
-        (actualFailureStep?.dialogAction?.type !== expectedFailureStep.dialogAction?.type ||
+        actualSlotConstraint !== expectedSlotConstraint ||
+        (expectedFailureStep &&
+          (actualFailureStep?.dialogAction?.type !== expectedFailureStep.dialogAction?.type ||
           actualFailureStep?.sessionAttributes?.lastAskedSlot !==
-            expectedFailureStep.sessionAttributes?.lastAskedSlot)
+            expectedFailureStep.sessionAttributes?.lastAskedSlot))
       ) {
         throw new ReleaseError("Lex slot failure recovery readback mismatch", {
           intentName: intentSource.name,
           slotName: source.name,
+          expectedSlotConstraint,
+          actualSlotConstraint: actualSlotConstraint || null,
           expected: expectedFailureStep,
           actual: actualFailureStep || null
         });
@@ -2522,6 +2527,7 @@ function syncLexSlots(targets, releaseId) {
         slotName: source.name,
         slotId,
         slotTypeId,
+        slotConstraint: actualSlotConstraint || null,
         failureDialogAction: actualFailureStep?.dialogAction?.type || null,
         failureLastAskedSlot: actualFailureStep?.sessionAttributes?.lastAskedSlot || null
       });
@@ -2856,7 +2862,7 @@ function associateLexAliasWithConnect({ targets, lexAliasArnValue }) {
 
 function applyLexDraftAndPublish({ targets, releaseId, lambdaRelease, sourceHash }) {
   const lexSource = validateLexSource();
-  waitForLexLocale(targets, "DRAFT");
+  waitForLexLocale(targets, "DRAFT", ["Built", "ReadyExpressTesting", "NotBuilt", "Failed"]);
   const localeSource = readJson(path.join(LOCALE_ROOT, "BotLocale.json"));
   const draftLocaleUpdate = updateLexLocaleSpeechSettings(targets, localeSource);
   waitForLexLocale(targets, "DRAFT");

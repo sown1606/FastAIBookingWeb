@@ -140,6 +140,16 @@ test("voice release deploy syncs Lex intent source before build", () => {
   assert.match(script, /validateIntentReadback/);
   assert.match(script, /const slots = syncLexSlots\(targets, releaseId\);/);
   assert.match(script, /const intents = syncLexIntents\(targets, releaseId\);/);
+  assert.match(
+    script,
+    /waitForLexLocale\(targets, "DRAFT", \["Built", "ReadyExpressTesting", "NotBuilt", "Failed"\]\)/,
+    "a failed DRAFT must be reopened by update-bot-locale before source synchronization"
+  );
+  assert.match(
+    script,
+    /actualSlotConstraint !== expectedSlotConstraint/,
+    "slot recovery deployment must verify the required constraint before build"
+  );
   assert.ok(
     script.indexOf("const slots = syncLexSlots(targets, releaseId);") <
       script.indexOf("\"lexv2-models\", \"build-bot-locale\""),
