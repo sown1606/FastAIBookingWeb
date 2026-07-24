@@ -157,6 +157,7 @@ const PEDICURE_ALIASES = [
   "ptq",
   "picu",
   "picque",
+  "pedicq",
   "pique",
   "pick cue",
   "edicque",
@@ -329,7 +330,7 @@ const STAFF_DTMF_SHORT_PROMPT =
 const NO_INPUT_HUMAN_CONFIRM_PROMPT =
   "Are you still there? Would you like me to connect you to a real person? You can press 0 for an operator.";
 const NO_INPUT_RECOVERY_PROMPT =
-  "I'm still here. When you're ready, tell me the service, day, and time.";
+  "Take your time. When you're ready, tell me the service, day, and time.";
 const INVALID_MENU_CHOICE_PROMPT = "Invalid choice. Please select a valid number from the options provided.";
 const FAST_WAIT_PROMPT = "Please wait. Let me check...";
 const WAIT_PROMPTS = {
@@ -8323,6 +8324,34 @@ function findProposedFullSetServiceClarification(event, knownAttributes = {}) {
   return null;
 }
 
+function shouldAutoAcceptContextualPhoneSet(event, knownAttributes = {}, proposedService = null) {
+  if (
+    proposedService?.proposedServiceName !== "Full Set" ||
+    proposedService?.reason !== "scoped_phonetic_full_set" ||
+    getSessionAttribute(knownAttributes, slotNames.serviceName) ||
+    knownAttributes.confirmedServiceName
+  ) {
+    return false;
+  }
+  const transcript = getCurrentTurnTranscript(event);
+  if (!/\bphone\s+set\b/.test(normalizeForMatch(transcript))) {
+    return false;
+  }
+  const confidence = Number(getAsrDiagnostics(event).confidence);
+  if (!Number.isFinite(confidence) || confidence < 0.9) {
+    return false;
+  }
+  if (
+    !knownAttributes.requestedDate ||
+    !knownAttributes.requestedTime ||
+    !(knownAttributes.staffPreference || knownAttributes.confirmedStaffName) ||
+    !isBookingLikeUtterance(transcript)
+  ) {
+    return false;
+  }
+  return catalogAllowsTruncatedFullSetRepair(knownAttributes);
+}
+
 function findProposedAnyStaffClarification(event, knownAttributes = {}) {
   const previous = event.sessionState?.sessionAttributes || {};
   const topTranscript = getCurrentTurnTranscript(event);
@@ -9656,6 +9685,51 @@ async function handleLexEvent(event, analysis = {}) {
       !shouldEscalate && intentName === "BookAppointmentIntent"
         ? buildKnownBookingSessionAttributes(event)
         : {};
+    const contextualFullSetProposal =
+      !shouldEscalate && intentName === "BookAppointmentIntent"
+        ? findProposedFullSetServiceClarification(event, knownAfterTimeSanitization)
+        : null;
+    if (
+      contextualFullSetProposal &&
+      shouldAutoAcceptContextualPhoneSet(
+        event,
+        knownAfterTimeSanitization,
+        contextualFullSetProposal
+      )
+    ) {
+      const autoAcceptedDecision = buildVoiceSlotDecision({
+        slot: "serviceName",
+        action: "accept",
+        canonicalValue: "Full Set",
+        reason: "high_confidence_complete_booking_phone_set",
+        confidenceBand: "high",
+        evidence: [contextualFullSetProposal.matchedTranscript],
+        alternativesUsed: contextualFullSetProposal.asrAlternativesUsed,
+        source: "contextual_repair",
+        activeSlot: getActiveVoiceSlot(event.sessionState?.sessionAttributes || {}),
+        requiresConfirmation: false
+      });
+      event = withSessionAttributes(event, {
+        serviceName: "Full Set",
+        confirmedServiceName: "Full Set",
+        serviceRecognitionConfirmed: "true",
+        serviceClarificationReason: "high_confidence_complete_booking_phone_set",
+        proposedServiceName: "",
+        awaitingServiceConfirmation: "false",
+        voiceSlotDecisions: JSON.stringify([autoAcceptedDecision]),
+        proposedSlotMutation: ""
+      });
+      Object.assign(knownAfterTimeSanitization, {
+        serviceName: "Full Set",
+        confirmedServiceName: "Full Set",
+        serviceRecognitionConfirmed: "true",
+        serviceClarificationReason: "high_confidence_complete_booking_phone_set",
+        proposedServiceName: "",
+        awaitingServiceConfirmation: "false",
+        voiceSlotDecisions: JSON.stringify([autoAcceptedDecision]),
+        proposedSlotMutation: ""
+      });
+    }
     const weekdayDateConflict =
       !shouldEscalate && intentName === "BookAppointmentIntent"
         ? findWeekdayDateConflict(getCurrentTurnTranscript(event), timeZone)

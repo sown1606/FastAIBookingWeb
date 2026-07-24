@@ -1007,7 +1007,7 @@
       "Type": "MessageParticipant",
       "Parameters": {
         "SkipWhenDTMFBufferEnabled": "false",
-        "Text": "I'm still here. When you're ready, tell me the service, day, and time."
+        "Text": "Take your time. When you're ready, tell me the service, day, and time."
       },
       "Transitions": {
         "NextAction": "41e3f239-5b57-4363-92fc-9d594579fa98",
@@ -1145,7 +1145,7 @@
           "x-amz-lex:allow-interrupt:BookAppointmentIntent:customerName": "false",
           "x-amz-lex:allow-interrupt:BookAppointmentIntent:bookingConfirmation": "false"
         },
-        "Text": "I'm still here. When you're ready, tell me the service, day, and time."
+        "Text": "Take your time. When you're ready, tell me the service, day, and time."
       },
       "Transitions": {
         "NextAction": "check-transfer-to-queue",

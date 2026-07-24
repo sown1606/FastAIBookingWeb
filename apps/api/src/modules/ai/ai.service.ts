@@ -266,6 +266,7 @@ const SERVICE_ALIASES: Record<string, string[]> = {
     "p t q",
     "ptq",
     "picu",
+    "pedicq",
     "edicque",
     "edicure"
   ],
@@ -8596,7 +8597,7 @@ const buildBookingConfirmationMessage = (input: {
     input.salonTimezone
   );
   const selectedStaffPrefix = input.requestedAnyStaff
-    ? `You said first available. ${escapeSsml(input.staffName)} is available. <break time="300ms"/> `
+    ? `${escapeSsml(input.staffName)} is the first available technician. <break time="300ms"/> `
     : "";
   const fallbackNotice = input.customerNameFallbackNotice
     ? `${escapeSsml(input.customerNameFallbackNotice)} <break time="300ms"/> `

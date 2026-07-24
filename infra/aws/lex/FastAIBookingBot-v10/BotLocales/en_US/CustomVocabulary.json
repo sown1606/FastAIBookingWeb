@@ -71,6 +71,11 @@
       "displayAs": "Pedicure"
     },
     {
+      "phrase": "pedicq",
+      "weight": 3,
+      "displayAs": "Pedicure"
+    },
+    {
       "phrase": "edicque",
       "weight": 3,
       "displayAs": "Pedicure"

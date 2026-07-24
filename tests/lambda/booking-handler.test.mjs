@@ -19,7 +19,7 @@ const FIRST_SERVICE_RETRY_PROMPT = "Which service would you like to book?";
 const SERVICE_MENU_PROMPT =
   "I missed the service. Did you say Pedicure or Manicure?";
 const NO_INPUT_RECOVERY_PROMPT =
-  "I'm still here. When you're ready, tell me the service, day, and time.";
+  "Take your time. When you're ready, tell me the service, day, and time.";
 let importCounter = 0;
 process.env.FASTAIBOOKING_TEST_NOW_ISO ||= "2026-07-17T10:00:00-04:00";
 
@@ -452,6 +452,7 @@ test("July 15 Lex v10 confirmation and ASR source contracts are present", () => 
     "bloomtet",
     "Nail full set",
     "Pedicure",
+    "pedicq",
     "edicque",
     "Manicure",
     "Gel Manicure",
@@ -7245,16 +7246,24 @@ test("DialogCodeHook proposes Full Set for active service-slot phonetic corpus",
   }
 });
 
-test("DialogCodeHook proposes Full Set for contextual phone set without committing service", async () => {
+test("DialogCodeHook accepts high-confidence contextual phone set in a complete booking frame", async () => {
   const handler = await loadHandler();
+  const liveTranscript =
+    "hi hi i want to make an appointment today at 11 pm uh phone set with any staff";
   globalThis.fetch = async () => {
-    throw new Error("fetch should not be called before phone set service clarification");
+    throw new Error("complete local booking capture should not require a menu lookup");
   };
 
   const response = await handler(
     baseEvent({
       invocationSource: "DialogCodeHook",
-      inputTranscript: "I want to book a phone set tomorrow at 3 PM with Trang",
+      inputTranscript: liveTranscript,
+      transcriptions: [
+        {
+          transcription: liveTranscript,
+          transcriptionConfidence: 0.91
+        }
+      ],
       sessionState: {
         ...baseEvent().sessionState,
         sessionAttributes: {
@@ -7271,15 +7280,64 @@ test("DialogCodeHook proposes Full Set for contextual phone set without committi
     })
   );
 
+  assert.equal(response.sessionState.sessionAttributes.serviceName, "Full Set");
+  assert.equal(response.sessionState.sessionAttributes.confirmedServiceName, "Full Set");
+  assert.equal(response.sessionState.sessionAttributes.proposedServiceName, "");
+  assert.equal(response.sessionState.sessionAttributes.awaitingServiceConfirmation, "false");
+  assert.equal(response.sessionState.sessionAttributes.requestedDate, usEasternDate(0));
+  assert.equal(response.sessionState.sessionAttributes.requestedTime, "11 PM");
+  assert.equal(response.sessionState.sessionAttributes.staffPreference, "Any staff");
+  assert.notEqual(response.sessionState.dialogAction.slotToElicit, "serviceName");
+  assert.doesNotMatch(response.messages?.[0]?.content || "", /Did you say Full Set|Which service/i);
+  const [decision] = JSON.parse(response.sessionState.sessionAttributes.voiceSlotDecisions);
+  assert.equal(decision.slot, "serviceName");
+  assert.equal(decision.action, "accept");
+  assert.equal(decision.canonicalValue, "Full Set");
+  assert.equal(decision.reason, "high_confidence_complete_booking_phone_set");
+  assert.notEqual(response.sessionState.sessionAttributes.transferToQueue, "true");
+});
+
+test("DialogCodeHook keeps low-confidence contextual phone set behind confirmation", async () => {
+  const handler = await loadHandler();
+  const liveTranscript =
+    "hi hi i want to make an appointment today at 11 pm uh phone set with any staff";
+  globalThis.fetch = async () => {
+    throw new Error("low-confidence phone set must stay local until service confirmation");
+  };
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: liveTranscript,
+      transcriptions: [
+        {
+          transcription: liveTranscript,
+          transcriptionConfidence: 0.82
+        }
+      ],
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: "connect-phone-set-low-confidence",
+          customerName: "Jane",
+          customerPhone: "+17325956266"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          slots: {}
+        }
+      }
+    })
+  );
+
   assert.equal(response.sessionState.sessionAttributes.serviceName, undefined);
   assert.equal(response.sessionState.sessionAttributes.proposedServiceName, "Full Set");
   assert.equal(response.sessionState.sessionAttributes.awaitingServiceConfirmation, "true");
-  assert.equal(response.sessionState.sessionAttributes.requestedDate, usEasternDate(1));
-  assert.equal(response.sessionState.sessionAttributes.requestedTime, "3 PM");
-  assert.equal(response.sessionState.sessionAttributes.staffPreference, "Trang");
   assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName");
   assert.match(response.messages?.[0]?.content || "", /Did you say Full Set/i);
-  assert.notEqual(response.sessionState.sessionAttributes.transferToQueue, "true");
 });
 
 test("DialogCodeHook clears one-letter staff noise and asks staff again without API staffPreference", async () => {
@@ -9109,7 +9167,7 @@ test("DialogCodeHook recovers live Pedicure distortions without a network menu l
     throw new Error("Amazon Connect dialog turns must use the local menu");
   };
 
-  for (const inputTranscript of ["picque", "edicque"]) {
+  for (const inputTranscript of ["picque", "pedicq", "edicque"]) {
     const response = await handler(
       baseEvent({
         invocationSource: "DialogCodeHook",

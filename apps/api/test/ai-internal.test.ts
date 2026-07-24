@@ -1636,7 +1636,7 @@ test("known caller exact Full Set any-staff request selects first eligible staff
     assert.equal(attrs.staffPreference, "Trang", phrase);
     assert.equal(attrs.staffId, ids.trang, phrase);
     assert.equal(attrs.customerName, "Lee", phrase);
-    assert.match(result.body.data.lexResponse.message, /You said first available\. Trang is available/i, phrase);
+    assert.match(result.body.data.lexResponse.message, /Trang is the first available technician/i, phrase);
     assert.match(
       result.body.data.lexResponse.message,
       new RegExp(`Full Set ${expectedDate === today ? "today" : "tomorrow"} at 3 PM with Trang`, "i"),
@@ -4798,7 +4798,7 @@ test("any-staff phrases resolve to an actual staff member before final confirmat
     assertBookingConfirmationDialog(result.body.data.lexResponse.dialogAction);
     assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
     assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedStaffName, "Trang");
-    assert.match(result.body.data.lexResponse.message, /You said first available\. Trang is available/i);
+    assert.match(result.body.data.lexResponse.message, /Trang is the first available technician/i);
     assert.equal(result.body.data.aiInteractionId, state.aiInteractionLogs[0].id);
     assert.equal(state.staffFindManyCalls[0].where.status, StaffStatus.ACTIVE);
     assert.equal(state.staffFindManyCalls[0].where.isBookable, true);
@@ -6245,7 +6245,7 @@ test("staff DTMF 4 maps to any staff and resolves before confirmation", async ()
   assert.equal(result.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
   assert.equal(result.body.data.lexResponse.sessionAttributes.staffId, ids.trang);
   assert.equal(result.body.data.lexResponse.sessionAttributes.confirmedStaffName, "Trang");
-  assert.match(result.body.data.lexResponse.message, /You said first available\. Trang is available/i);
+  assert.match(result.body.data.lexResponse.message, /Trang is the first available technician/i);
   assert.equal(state.appointments.length, 0);
 });
 
@@ -6320,7 +6320,7 @@ test("missing staff asks once, then first available resolves before confirmation
   assertBookingConfirmationDialog(second.body.data.lexResponse.dialogAction);
   assert.equal(second.body.data.lexResponse.sessionAttributes.staffPreference, "Trang");
   assert.equal(second.body.data.lexResponse.sessionAttributes.staffId, ids.trang);
-  assert.match(second.body.data.lexResponse.message, /You said first available\. Trang is available/i);
+  assert.match(second.body.data.lexResponse.message, /Trang is the first available technician/i);
   assert.match(second.body.data.lexResponse.message, /just to confirm: Pedicure .* with Trang/i);
   assert.equal(state.appointments.length, 0);
 });

@@ -11,7 +11,7 @@
     "nextStep": {
       "sessionAttributes": {
         "conversationComplete": "false",
-        "connectContinuationPrompt": "I'm still here. When you're ready, tell me the service, day, and time.",
+        "connectContinuationPrompt": "Take your time. When you're ready, tell me the service, day, and time.",
         "connectContinuationPromptAvailable": "true"
       },
       "intent": {
@@ -30,7 +30,7 @@
         {
           "message": {
             "plainTextMessage": {
-              "value": "I'm still here. When you're ready, tell me the service, day, and time."
+              "value": "Take your time. When you're ready, tell me the service, day, and time."
             }
           }
         }
@@ -50,7 +50,7 @@
             {
               "message": {
                 "plainTextMessage": {
-                  "value": "I'm still here. When you're ready, tell me the service, day, and time."
+                  "value": "Take your time. When you're ready, tell me the service, day, and time."
                 }
               }
             }
@@ -60,7 +60,7 @@
         "failureNextStep": {
           "sessionAttributes": {
             "conversationComplete": "false",
-            "connectContinuationPrompt": "I'm still here. When you're ready, tell me the service, day, and time.",
+            "connectContinuationPrompt": "Take your time. When you're ready, tell me the service, day, and time.",
             "connectContinuationPromptAvailable": "true"
           },
           "intent": {
@@ -80,7 +80,7 @@
             {
               "message": {
                 "plainTextMessage": {
-                  "value": "I'm still here. When you're ready, tell me the service, day, and time."
+                  "value": "Take your time. When you're ready, tell me the service, day, and time."
                 }
               }
             }
@@ -90,7 +90,7 @@
         "successNextStep": {
           "sessionAttributes": {
             "conversationComplete": "false",
-            "connectContinuationPrompt": "I'm still here. When you're ready, tell me the service, day, and time.",
+            "connectContinuationPrompt": "Take your time. When you're ready, tell me the service, day, and time.",
             "connectContinuationPromptAvailable": "true"
           },
           "intent": {
@@ -110,7 +110,7 @@
             {
               "message": {
                 "plainTextMessage": {
-                  "value": "I'm still here. When you're ready, tell me the service, day, and time."
+                  "value": "Take your time. When you're ready, tell me the service, day, and time."
                 }
               }
             }
@@ -120,7 +120,7 @@
         "timeoutNextStep": {
           "sessionAttributes": {
             "conversationComplete": "false",
-            "connectContinuationPrompt": "I'm still here. When you're ready, tell me the service, day, and time.",
+            "connectContinuationPrompt": "Take your time. When you're ready, tell me the service, day, and time.",
             "connectContinuationPromptAvailable": "true"
           },
           "intent": {
