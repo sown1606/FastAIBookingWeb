@@ -321,8 +321,10 @@ const SERVICE_DTMF_PROMPT =
   "Hi, I can help book your appointment. Tell me the service, day, time, and staff. You can press 0 for a person.";
 const SERVICE_KEYPAD_PROMPT =
   "Which service would you like to book?";
+const SERVICE_KEYPAD_OPTIONS_PROMPT =
+  "For service, press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Full Set, 5 for Dip Powder, or 0 for a person.";
 const SERVICE_DTMF_SHORT_PROMPT =
-  "I missed the service. Did you say Pedicure or Manicure?";
+  SERVICE_KEYPAD_OPTIONS_PROMPT;
 const STAFF_DTMF_PROMPT =
   "Which staff would you like, Trang, Amy, Kelly, or first available?";
 const STAFF_DTMF_SHORT_PROMPT =
@@ -455,8 +457,8 @@ const WEEKDAY_LABELS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", 
 const SLOT_ELICIT_PROMPTS = {
   serviceName: [
     SERVICE_KEYPAD_PROMPT,
-    SERVICE_KEYPAD_PROMPT,
-    SERVICE_DTMF_SHORT_PROMPT
+    SERVICE_KEYPAD_OPTIONS_PROMPT,
+    SERVICE_KEYPAD_OPTIONS_PROMPT
   ],
   staffPreference: [
     STAFF_DTMF_PROMPT,
@@ -4106,6 +4108,19 @@ function normalizeHourMinuteTimeExpression(value) {
   });
 }
 
+function compactAsrTimeRepeatsTrustedHour(value, trustedTime) {
+  const trusted = normalizeTimePhrase(trustedTime);
+  const trustedMatch = trusted.match(/^(\d{1,2})\s+(AM|PM)$/i);
+  if (!trustedMatch || hasExplicitSlotCorrectionPhrase(value)) {
+    return false;
+  }
+  const compactHour = `${Number(trustedMatch[1])}0`;
+  const period = trustedMatch[2].toLowerCase();
+  return new RegExp(`\\b${compactHour}\\s*${period[0]}\\s*\\.?\\s*m\\.?\\b`, "i").test(
+    String(value || "")
+  );
+}
+
 function hasGpsTimeContext(value, context = {}) {
   const normalized = normalizeForMatch(value);
   return Boolean(
@@ -4899,6 +4914,14 @@ function isAffirmativeUtterance(value) {
   return /^(?:yes|yeah|yep|correct|right|sure|ok|okay|confirm|confirmed|go ahead|book it|that is correct|please|connect me|one|1)$/i.test(
     normalizeForMatch(value)
   );
+}
+
+function isAffirmativeServiceClarification(value) {
+  const normalized = normalizeForMatch(value);
+  if (!normalized || /\b(?:no|nope|not|don t|dont|do not)\b/.test(normalized)) {
+    return false;
+  }
+  return /^(?:yes|yeah|yep|correct|right|sure|ok|okay)\b/.test(normalized);
 }
 
 function isNegativeUtterance(value) {
@@ -5926,6 +5949,10 @@ function buildKnownBookingSessionAttributes(event) {
     ? currentRecovered.requestedDate || currentTurnResolvedDate || knownResolvedDate
     : "";
   const previousResolvedTime = normalizeTimePhrase(previousTime) || previousTime;
+  const compactAsrRepeatedTrustedTime =
+    Boolean(previousResolvedTime) &&
+    recoveredTimeIsGrounded &&
+    compactAsrTimeRepeatsTrustedHour(currentTurnTranscript, previousResolvedTime);
   const knownResolvedTime =
     ignoreUngroundedCurrentLexTime || timeGrounding.requiresConfirmation
       ? ""
@@ -5950,7 +5977,7 @@ function buildKnownBookingSessionAttributes(event) {
   const finalDate = previousResolvedDate && !groundedCurrentDate
     ? previousResolvedDate
     : groundedCurrentDate || previousResolvedDate || knownResolvedDate || historicalRecoveredDate;
-  const finalTime = previousResolvedTime && !recoveredTimeIsGrounded
+  const finalTime = previousResolvedTime && (!recoveredTimeIsGrounded || compactAsrRepeatedTrustedTime)
     ? previousResolvedTime
     : (recoveredTimeIsGrounded ? currentRecovered.requestedTime : "") ||
       previousResolvedTime ||
@@ -6514,8 +6541,7 @@ function buildBookServiceElicitResponse(event) {
     "serviceName",
     {
       serviceFallbackOffered: "true"
-    },
-    SERVICE_KEYPAD_PROMPT
+    }
   );
 }
 
@@ -9501,7 +9527,10 @@ async function handleLexEvent(event, analysis = {}) {
       intentName === "BookAppointmentIntent" &&
       sessionAttributes.awaitingServiceConfirmation === "true"
     ) {
-      if (isAffirmativeUtterance(event.inputTranscript) && sessionAttributes.proposedServiceName) {
+      if (
+        isAffirmativeServiceClarification(event.inputTranscript) &&
+        sessionAttributes.proposedServiceName
+      ) {
         event = withSessionAttributes(event, {
           serviceName: sessionAttributes.proposedServiceName,
           confirmedServiceName: sessionAttributes.proposedServiceName,

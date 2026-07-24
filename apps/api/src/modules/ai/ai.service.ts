@@ -688,7 +688,7 @@ const CUSTOMER_NAME_SMALL_TALK_PATTERNS = [
 const SERVICE_DTMF_PROMPT =
   "Hi, I can help book your appointment. Tell me the service, day, time, and staff. You can press 0 for a person.";
 const SERVICE_DTMF_OPTIONS_PROMPT =
-  "I missed the service. Did you say Pedicure or Manicure?";
+  "For service, press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Full Set, 5 for Dip Powder, or 0 for a person.";
 const SERVICE_FIRST_RETRY_PROMPT = "Which service would you like to book?";
 const STAFF_DTMF_PROMPT =
   "Which staff would you like, Trang, Amy, Kelly, or first available?";

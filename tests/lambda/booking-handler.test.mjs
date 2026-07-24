@@ -17,7 +17,7 @@ const CANONICAL_SERVICE_PROMPT =
 const INITIAL_GREETING = "Hi, how can I help you today?";
 const FIRST_SERVICE_RETRY_PROMPT = "Which service would you like to book?";
 const SERVICE_MENU_PROMPT =
-  "I missed the service. Did you say Pedicure or Manicure?";
+  "For service, press 1 for Pedicure, 2 for Manicure, 3 for Gel Manicure, 4 for Full Set, 5 for Dip Powder, or 0 for a person.";
 const NO_INPUT_RECOVERY_PROMPT =
   "Take your time. When you're ready, tell me the service, day, and time.";
 let importCounter = 0;
@@ -1133,7 +1133,7 @@ test("Connect AI reception has one reachable greeting and no outer service promp
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:max-length-ms:*:*"], "15000");
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName"], "2500");
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedDate"], "1300");
-  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedTime"], "1100");
+  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedTime"], "1800");
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference"], "2000");
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:customerName"], "1200");
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:bookingConfirmation"], "700");
@@ -1521,7 +1521,7 @@ test("Lex booking slot prompt attempts allow service and staff interruption with
   const expected = {
     serviceName: { startMin: 8000, endMin: 1500, endMax: 1700, max: 15000 },
     requestedDate: { startMin: 8000, endMin: 1200, endMax: 1400, max: 15000 },
-    requestedTime: { startMin: 8000, endMin: 1000, endMax: 1200, max: 15000 },
+    requestedTime: { startMin: 8000, endMin: 1700, endMax: 1900, max: 15000 },
     staffPreference: { startMin: 8000, endMin: 1300, endMax: 1500, max: 15000 },
     customerName: { startMin: 8000, endMin: 1100, endMax: 1300, max: 15000 },
     customerPhone: { startMin: 8000, endMin: 1100, endMax: 1300, max: 15000 },
@@ -3749,6 +3749,51 @@ test("DialogCodeHook 1100 AM ASR retains time while asking for missing service",
   assert.equal(response.sessionState.sessionAttributes.requestedDate, usEasternDate(1));
   assert.equal(response.sessionState.sessionAttributes.requestedTime, "11 AM");
   assert.equal(response.messages[0].content, "I have tomorrow at 11 AM. Which service would you like to book?");
+});
+
+test("DialogCodeHook preserves trusted 11 AM when repeat ASR compacts it to 110 am", async () => {
+  const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
+  globalThis.fetch = async () => {
+    throw new Error("fetch should not be called before missing service is clarified");
+  };
+
+  const response = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "i want to book an appointment today at 110 am for cu",
+      inputMode: "Speech",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: "connect-live-110-am-repeat",
+          requestedDate: usEasternDate(0),
+          requestedTime: "11 AM",
+          lastAskedSlot: "serviceName",
+          activeDtmfMenu: "service",
+          askedSlotsCount: "1",
+          fallbackCount: "1"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          name: "BookAppointmentIntent",
+          state: "InProgress",
+          confirmationState: "None",
+          slots: {
+            requestedDate: slot(usEasternDate(0)),
+            requestedTime: slot("11 AM")
+          }
+        }
+      }
+    })
+  );
+
+  assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName");
+  assert.match(response.sessionState.sessionAttributes.requestedDate, /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(response.sessionState.sessionAttributes.requestedTime, "11 AM");
+  assert.doesNotMatch(response.messages[0].content, /1:10 AM/i);
 });
 
 test("DialogCodeHook Pedicure tomorrow at 1100 AM retains service date and time", async () => {
@@ -7338,6 +7383,129 @@ test("DialogCodeHook keeps low-confidence contextual phone set behind confirmati
   assert.equal(response.sessionState.sessionAttributes.awaitingServiceConfirmation, "true");
   assert.equal(response.sessionState.dialogAction.slotToElicit, "serviceName");
   assert.match(response.messages?.[0]?.content || "", /Did you say Full Set/i);
+});
+
+test("DialogCodeHook accepts a noisy affirmative after proposing live food set", async () => {
+  const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
+  globalThis.fetch = async () => {
+    throw new Error("fetch should not be called before the missing time is collected");
+  };
+
+  const first = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "hi i want to book an appointment today for food set with amy",
+      inputMode: "Speech",
+      sessionId: "connect-live-food-set-confirmation",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: "connect-live-food-set-confirmation",
+          lastAskedSlot: "serviceName",
+          activeDtmfMenu: "service"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          name: "BookAppointmentIntent",
+          state: "InProgress",
+          confirmationState: "None",
+          slots: {}
+        }
+      }
+    })
+  );
+  assert.equal(first.sessionState.sessionAttributes.proposedServiceName, "Full Set");
+  assert.match(first.messages[0].content, /Did you say Full Set/i);
+
+  const second = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "yeah who's that",
+      inputMode: "Speech",
+      sessionId: "connect-live-food-set-confirmation",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: first.sessionState.sessionAttributes,
+        intent: {
+          ...baseEvent().sessionState.intent,
+          name: "BookAppointmentIntent",
+          state: "InProgress",
+          confirmationState: "None",
+          slots: {}
+        }
+      }
+    })
+  );
+
+  assert.equal(second.sessionState.sessionAttributes.serviceName, "Full Set");
+  assert.equal(second.sessionState.sessionAttributes.confirmedServiceName, "Full Set");
+  assert.equal(second.sessionState.dialogAction.slotToElicit, "requestedTime");
+  assert.doesNotMatch(second.messages[0].content, /Did you say Full Set/i);
+});
+
+test("DialogCodeHook reads service keypad options on the second service prompt", async () => {
+  const handler = await loadHandler({ DEFAULT_SALON_TIMEZONE: "America/New_York" });
+  globalThis.fetch = async () => {
+    throw new Error("Amazon Connect service menu should remain local");
+  };
+  const contactId = "connect-live-service-menu-second-prompt";
+
+  const first = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "hi i want to book a service",
+      inputMode: "Speech",
+      sessionId: contactId,
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          salonId: "salon-explicit",
+          CalledNumber: "+18483487681",
+          CustomerEndpointAddress: "+17325956266",
+          AmazonConnectContactId: contactId,
+          provider: "AMAZON_CONNECT"
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          name: "BookAppointmentIntent",
+          state: "InProgress",
+          confirmationState: "None",
+          slots: {}
+        }
+      }
+    })
+  );
+  assert.equal(first.messages[0].content, "Which service would you like to book?");
+
+  const second = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "tell me a little of service",
+      inputMode: "Speech",
+      sessionId: contactId,
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: first.sessionState.sessionAttributes,
+        intent: {
+          ...baseEvent().sessionState.intent,
+          name: "BookAppointmentIntent",
+          state: "InProgress",
+          confirmationState: "None",
+          slots: {}
+        }
+      }
+    })
+  );
+
+  assert.equal(second.sessionState.dialogAction.slotToElicit, "serviceName");
+  assert.equal(second.sessionState.sessionAttributes.activeDtmfMenu, "service");
+  assert.equal(second.sessionState.sessionAttributes.askedSlotsCount, "2");
+  assert.match(second.messages[0].content, /press 1 for Pedicure/i);
+  assert.match(second.messages[0].content, /4 for Full Set/i);
+  assert.match(second.messages[0].content, /0 for a person/i);
 });
 
 test("DialogCodeHook clears one-letter staff noise and asks staff again without API staffPreference", async () => {
