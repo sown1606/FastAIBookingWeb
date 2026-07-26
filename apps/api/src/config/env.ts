@@ -110,6 +110,12 @@ const envSchema = z.object({
   TWILIO_MESSAGING_SERVICE_SID: z.string().optional(),
   FREE_STAFF_LIMIT: z.coerce.number().int().nonnegative().default(5),
   EXTRA_STAFF_PRICE: z.coerce.number().nonnegative().default(0),
+  STRIPE_SECRET_KEY: nonEmptyStringOrUndefined,
+  STRIPE_PUBLISHABLE_KEY: nonEmptyStringOrUndefined,
+  STRIPE_WEBHOOK_SECRET: nonEmptyStringOrUndefined,
+  STRIPE_PRICE_ID_AI_RECEPTION: nonEmptyStringOrUndefined,
+  STRIPE_PRICE_ID_HUMAN_RECEPTION: nonEmptyStringOrUndefined,
+  REGISTRATION_ATTEMPT_TTL_MINUTES: z.coerce.number().int().min(15).max(1440).default(120),
   CALLRAIL_WEBHOOK_SECRET: nonEmptyStringOrUndefined,
   CALLRAIL_WEBHOOK_PATH: z.string().default("/api/v1/integrations/callrail/webhook"),
   CALLRAIL_API_KEY: nonEmptyStringOrUndefined,
@@ -151,6 +157,9 @@ const envSchema = z.object({
   AMAZON_CONNECT_CONTACT_FLOW_ID_HUMAN_ESCALATION: z.string().optional(),
   AMAZON_CONNECT_PHONE_NUMBER: z.string().optional(),
   AMAZON_CONNECT_PHONE_NUMBER_ID: z.string().optional(),
+  AMAZON_CONNECT_PROVISION_PHONE_COUNTRY_CODE: z.enum(["US"]).default("US"),
+  AMAZON_CONNECT_PROVISION_PHONE_TYPE: z.enum(["DID", "TOLL_FREE"]).default("DID"),
+  AMAZON_CONNECT_PHONE_CLAIM_WAIT_MS: z.coerce.number().int().min(1000).max(30000).default(12000),
   AMAZON_CONNECT_RECORDING_BUCKET: z.string().optional(),
   AMAZON_CONNECT_RECORDING_PREFIX: z.string().optional(),
   AMAZON_LEX_BOT_ID: z.string().optional(),
@@ -398,6 +407,33 @@ const integrationStatuses = {
       !asNonEmpty(base.FASTAIBOOKING_API_INTERNAL_TOKEN) ? "FASTAIBOOKING_API_INTERNAL_TOKEN" : null
     ].filter((value): value is string => Boolean(value))
   },
+  stripe: {
+    configured: Boolean(
+      asNonEmpty(base.STRIPE_SECRET_KEY) &&
+        asNonEmpty(base.STRIPE_PUBLISHABLE_KEY) &&
+        asNonEmpty(base.STRIPE_WEBHOOK_SECRET) &&
+        asNonEmpty(base.STRIPE_PRICE_ID_AI_RECEPTION) &&
+        asNonEmpty(base.STRIPE_PRICE_ID_HUMAN_RECEPTION)
+    ),
+    registrationConfigured: Boolean(
+      asNonEmpty(base.STRIPE_SECRET_KEY) &&
+        asNonEmpty(base.STRIPE_PUBLISHABLE_KEY) &&
+        asNonEmpty(base.STRIPE_WEBHOOK_SECRET) &&
+        asNonEmpty(base.STRIPE_PRICE_ID_AI_RECEPTION) &&
+        asNonEmpty(base.STRIPE_PRICE_ID_HUMAN_RECEPTION)
+    ),
+    missing: [
+      !asNonEmpty(base.STRIPE_SECRET_KEY) ? "STRIPE_SECRET_KEY" : null,
+      !asNonEmpty(base.STRIPE_PUBLISHABLE_KEY) ? "STRIPE_PUBLISHABLE_KEY" : null,
+      !asNonEmpty(base.STRIPE_WEBHOOK_SECRET) ? "STRIPE_WEBHOOK_SECRET" : null,
+      !asNonEmpty(base.STRIPE_PRICE_ID_AI_RECEPTION)
+        ? "STRIPE_PRICE_ID_AI_RECEPTION"
+        : null,
+      !asNonEmpty(base.STRIPE_PRICE_ID_HUMAN_RECEPTION)
+        ? "STRIPE_PRICE_ID_HUMAN_RECEPTION"
+        : null
+    ].filter((value): value is string => Boolean(value))
+  },
   pushNotifications: {
     configured: hasFirebaseAdminCredentials,
     code: hasFirebaseAdminCredentials
@@ -433,6 +469,11 @@ export const env = {
   CALLRAIL_AI_FLOW_ID: asNonEmpty(base.CALLRAIL_AI_FLOW_ID),
   CALLRAIL_LIVE_PERSON_FLOW_ID: asNonEmpty(base.CALLRAIL_LIVE_PERSON_FLOW_ID),
   CALL_CENTER_DEFAULT_PHONE: asNonEmpty(base.CALL_CENTER_DEFAULT_PHONE),
+  STRIPE_SECRET_KEY: asNonEmpty(base.STRIPE_SECRET_KEY),
+  STRIPE_PUBLISHABLE_KEY: asNonEmpty(base.STRIPE_PUBLISHABLE_KEY),
+  STRIPE_WEBHOOK_SECRET: asNonEmpty(base.STRIPE_WEBHOOK_SECRET),
+  STRIPE_PRICE_ID_AI_RECEPTION: asNonEmpty(base.STRIPE_PRICE_ID_AI_RECEPTION),
+  STRIPE_PRICE_ID_HUMAN_RECEPTION: asNonEmpty(base.STRIPE_PRICE_ID_HUMAN_RECEPTION),
   DEMO_SALON_NAME: base.DEMO_SALON_NAME,
   DEMO_ORIGINAL_PHONE_NUMBER: base.DEMO_ORIGINAL_PHONE_NUMBER,
   DEMO_FORWARDING_PHONE_NUMBER: base.DEMO_FORWARDING_PHONE_NUMBER,

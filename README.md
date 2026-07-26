@@ -1,5 +1,8 @@
 # FastAIBooking
 
+Self-service trial, Stripe, and per-salon Amazon Connect setup are documented in
+[`docs/SELF_SERVICE_BILLING_AND_PHONE_PROVISIONING.md`](docs/SELF_SERVICE_BILLING_AND_PHONE_PROVISIONING.md).
+
 Monorepo for the FastAIBooking SaaS booking platform for U.S. nail salons.
 
 Current demo focus: one clean demo salon across Platform Admin, Owner, Staff, and Call Center Agent/Operator workspace flows.

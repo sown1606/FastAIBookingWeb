@@ -108,3 +108,20 @@ export const getBillingUsageHistoryForSalon = async (
     take
   });
 };
+
+export const getSubscriptionBillingForSalon = async (salonId: string) => {
+  return prisma.subscription.findUnique({
+    where: { salonId },
+    select: {
+      planCode: true,
+      basePriceCents: true,
+      status: true,
+      currentPeriodStart: true,
+      currentPeriodEnd: true,
+      trialEndsAt: true,
+      paymentMethodBrand: true,
+      paymentMethodLast4: true,
+      cancelAtPeriodEnd: true
+    }
+  });
+};

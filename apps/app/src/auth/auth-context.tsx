@@ -9,6 +9,9 @@ interface OwnerRegistrationPayload {
   email: string;
   password: string;
   phone?: string;
+  planCode: "ai_reception" | "human_reception";
+  setupIntentId: string;
+  billingConsentAccepted: true;
   salon: {
     name: string;
     contactEmail?: string;
@@ -30,10 +33,17 @@ interface AuthContextValue {
     password: string,
     mode: "owner" | "staff" | "call-center" | "auto"
   ) => Promise<void>;
-  registerOwner: (payload: OwnerRegistrationPayload) => Promise<void>;
+  registerOwner: (payload: OwnerRegistrationPayload) => Promise<OwnerRegistrationResult>;
   forgotPassword: (email: string) => Promise<void>;
   resetPassword: (token: string, newPassword: string) => Promise<void>;
   logout: () => Promise<void>;
+}
+
+interface OwnerRegistrationResult {
+  phoneProvisioning: {
+    status: "PENDING" | "SEARCHING" | "CLAIMING" | "CONFIGURING" | "ACTIVE" | "FAILED";
+    phoneNumber: string | null;
+  } | null;
 }
 
 interface MeResponse {
@@ -151,13 +161,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setSessionState(auth);
       },
       registerOwner: async (payload) => {
-        const auth = await apiPost<AuthSession, OwnerRegistrationPayload>(
+        const auth = await apiPost<AuthSession & OwnerRegistrationResult, OwnerRegistrationPayload>(
           "/api/v1/auth/register-owner",
-          payload
+          payload,
+          { timeout: 45_000 }
         );
         assertRoleSupported(auth.user.role);
         setSession(auth);
         setSessionState(auth);
+        return {
+          phoneProvisioning: auth.phoneProvisioning
+        };
       },
       forgotPassword: async (email) => {
         await apiPost<null, { email: string }>("/api/v1/auth/forgot-password", {

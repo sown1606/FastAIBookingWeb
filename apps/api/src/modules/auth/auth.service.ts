@@ -1,21 +1,43 @@
 import { randomUUID } from "crypto";
 import jwt from "jsonwebtoken";
-import { Prisma, Role, SalonStatus, SubscriptionStatus } from "@prisma/client";
+import {
+  OwnerRegistrationStatus,
+  PhoneProvisioningStatus,
+  Prisma,
+  Role,
+  SalonStatus,
+  SubscriptionStatus
+} from "@prisma/client";
+import { env } from "../../config/env";
 import { prisma } from "../../db/prisma";
 import { createAuditLog } from "../../lib/audit";
 import { generateSecureToken, hashToken } from "../../lib/crypto";
 import { AppError } from "../../lib/errors";
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from "../../lib/jwt";
+import { logger } from "../../lib/logger";
 import { sendPasswordResetEmail } from "../../lib/mailer";
 import { hashPassword, verifyPassword } from "../../lib/password";
-import { getCurrentBillingPeriod } from "../../utils/date";
 import { DEFAULT_LANGUAGE, resolveUserLanguage, SupportedLanguage } from "../../utils/language";
 import { requireUsPhone } from "../../utils/phone";
+import { BillingPlanCode, getBillingPlan } from "../billing/billing.plans";
+import {
+  getPhoneProvisioningForSalon,
+  PhoneProvisioningResult,
+  provisionPhoneNumberForSalon
+} from "../billing/phone-provisioning.service";
+import {
+  createStripeTrialRegistration,
+  retrieveStripeTrialRegistration,
+  verifyRegistrationSetupIntent
+} from "../billing/stripe-billing.service";
 
 interface RegisterOwnerInput {
   fullName: string;
   email: string;
   password: string;
+  planCode: BillingPlanCode;
+  setupIntentId: string;
+  billingConsentAccepted: true;
   phone?: string;
   salon: {
     name: string;
@@ -107,10 +129,7 @@ const normalizeOptionalPhone = (value: string | undefined, label: string): strin
   return value ? requireUsPhone(value, label) : undefined;
 };
 
-export const registerSalonOwner = async (
-  input: RegisterOwnerInput,
-  requestLanguage: SupportedLanguage = DEFAULT_LANGUAGE
-): Promise<{
+interface RegisteredOwnerResult {
   user: {
     id: string;
     fullName: string;
@@ -127,25 +146,201 @@ export const registerSalonOwner = async (
     status: SalonStatus;
     subscriptionStatus: SubscriptionStatus;
   };
+  phoneProvisioning: PhoneProvisioningResult | null;
   accessToken: string;
   refreshToken: string;
-}> => {
+}
+
+const provisionRegisteredSalon = async (
+  salonId: string,
+  actorUserId: string
+): Promise<PhoneProvisioningResult | null> => {
+  try {
+    return await provisionPhoneNumberForSalon(salonId, actorUserId);
+  } catch (error) {
+    logger.error(
+      {
+        salonId,
+        errorCode: error instanceof AppError ? error.code : "PHONE_PROVISIONING_START_FAILED"
+      },
+      "Unable to start phone provisioning after owner registration"
+    );
+    return getPhoneProvisioningForSalon(salonId);
+  }
+};
+
+const completeExistingRegistration = async (
+  input: RegisterOwnerInput,
+  requestLanguage: SupportedLanguage
+): Promise<RegisteredOwnerResult | null> => {
   const existing = await prisma.user.findUnique({
-    where: { email: input.email.toLowerCase() }
+    where: { email: input.email.trim().toLowerCase() },
+    include: {
+      salon: {
+        include: {
+          subscription: true
+        }
+      }
+    }
   });
-  if (existing) {
+  if (!existing) {
+    return null;
+  }
+  if (
+    existing.role !== Role.SALON_OWNER ||
+    !existing.salon ||
+    existing.salon.subscription?.stripeSetupIntentId !== input.setupIntentId
+  ) {
+    throw new AppError("Email is already registered.", 409, "EMAIL_ALREADY_EXISTS");
+  }
+  if (!(await verifyPassword(input.password, existing.passwordHash))) {
     throw new AppError("Email is already registered.", 409, "EMAIL_ALREADY_EXISTS");
   }
 
+  const tokens = await issueTokens({
+    id: existing.id,
+    email: existing.email,
+    role: existing.role,
+    salonId: existing.salonId,
+    staffId: existing.staffId
+  });
+  const phoneProvisioning = await provisionRegisteredSalon(existing.salon.id, existing.id);
+
+  return {
+    user: {
+      id: existing.id,
+      fullName: existing.fullName,
+      email: existing.email,
+      role: existing.role,
+      salonId: existing.salonId,
+      staffId: existing.staffId,
+      language: resolveUserLanguage(existing.language, requestLanguage)
+    },
+    salon: {
+      id: existing.salon.id,
+      name: existing.salon.name,
+      timezone: existing.salon.timezone,
+      status: existing.salon.status,
+      subscriptionStatus: existing.salon.subscriptionStatus
+    },
+    phoneProvisioning,
+    ...tokens
+  };
+};
+
+export const registerSalonOwner = async (
+  input: RegisterOwnerInput,
+  requestLanguage: SupportedLanguage = DEFAULT_LANGUAGE
+): Promise<RegisteredOwnerResult> => {
+  const normalizedEmail = input.email.trim().toLowerCase();
+  const completedRegistration = await completeExistingRegistration(input, requestLanguage);
+  if (completedRegistration) {
+    return completedRegistration;
+  }
+
+  const verifiedPayment = await verifyRegistrationSetupIntent({
+    setupIntentId: input.setupIntentId,
+    email: normalizedEmail,
+    planCode: input.planCode
+  });
+  const plan = getBillingPlan(input.planCode);
+  const expiresAt = new Date(
+    Date.now() + env.REGISTRATION_ATTEMPT_TTL_MINUTES * 60 * 1000
+  );
+  const attempt = await prisma.ownerRegistrationAttempt.upsert({
+    where: { setupIntentId: input.setupIntentId },
+    create: {
+      email: normalizedEmail,
+      setupIntentId: input.setupIntentId,
+      planCode: input.planCode,
+      expiresAt
+    },
+    update: {},
+    select: {
+      id: true,
+      email: true,
+      planCode: true,
+      status: true,
+      stripeCustomerId: true,
+      stripeSubscriptionId: true,
+      expiresAt: true
+    }
+  });
+  if (attempt.email !== normalizedEmail || attempt.planCode !== input.planCode) {
+    throw new AppError(
+      "Card verification does not match this registration.",
+      409,
+      "REGISTRATION_ATTEMPT_MISMATCH"
+    );
+  }
+  if (
+    attempt.expiresAt.getTime() < Date.now() &&
+    attempt.status !== OwnerRegistrationStatus.BILLING_READY
+  ) {
+    throw new AppError(
+      "Card verification has expired. Please verify the card again.",
+      410,
+      "REGISTRATION_ATTEMPT_EXPIRED"
+    );
+  }
+
   const passwordHash = await hashPassword(input.password);
-  const { periodStart, periodEnd } = getCurrentBillingPeriod();
   const ownerPhone = normalizeOptionalPhone(input.phone, "Owner phone");
   const salonContactPhone = normalizeOptionalPhone(input.salon.contactPhone ?? input.phone, "Salon phone");
+  let stripeRegistration;
+  if (attempt.stripeCustomerId && attempt.stripeSubscriptionId) {
+    stripeRegistration = await retrieveStripeTrialRegistration({
+      customerId: attempt.stripeCustomerId,
+      subscriptionId: attempt.stripeSubscriptionId,
+      planCode: input.planCode
+    });
+  } else {
+    try {
+      stripeRegistration = await createStripeTrialRegistration({
+        registrationAttemptId: attempt.id,
+        setupIntentId: input.setupIntentId,
+        paymentMethodId: verifiedPayment.paymentMethodId,
+        planCode: input.planCode,
+        email: normalizedEmail,
+        fullName: input.fullName,
+        phone: ownerPhone
+      });
+      await prisma.ownerRegistrationAttempt.update({
+        where: { id: attempt.id },
+        data: {
+          status: OwnerRegistrationStatus.BILLING_READY,
+          stripeCustomerId: stripeRegistration.customerId,
+          stripeSubscriptionId: stripeRegistration.subscriptionId,
+          lastErrorCode: null
+        }
+      });
+    } catch (error) {
+      await prisma.ownerRegistrationAttempt.update({
+        where: { id: attempt.id },
+        data: {
+          status: OwnerRegistrationStatus.FAILED,
+          lastErrorCode: error instanceof AppError ? error.code : "STRIPE_SUBSCRIPTION_FAILED"
+        }
+      });
+      throw error;
+    }
+  }
+  if (
+    stripeRegistration.status !== SubscriptionStatus.TRIAL ||
+    !stripeRegistration.trialEndsAt ||
+    stripeRegistration.trialEndsAt.getTime() <= Date.now()
+  ) {
+    throw new AppError(
+      "Stripe subscription is not in an active trial.",
+      409,
+      "STRIPE_SUBSCRIPTION_NOT_TRIALING"
+    );
+  }
 
   const result = await prisma.$transaction(async (tx) => {
     const user = await tx.user.create({
       data: {
-        email: input.email.toLowerCase(),
+        email: normalizedEmail,
         fullName: input.fullName,
         passwordHash,
         phone: ownerPhone,
@@ -162,7 +357,7 @@ export const registerSalonOwner = async (
         originalPhoneNumber: salonContactPhone,
         notificationPhoneNumber: salonContactPhone ?? ownerPhone,
         timezone: input.salon.timezone,
-        status: SalonStatus.ACTIVE,
+        status: SalonStatus.PENDING,
         ownerId: user.id,
         addressLine1: input.salon.addressLine1,
         addressLine2: input.salon.addressLine2,
@@ -170,7 +365,8 @@ export const registerSalonOwner = async (
         state: input.salon.state,
         postalCode: input.salon.postalCode,
         country: input.salon.country ?? "US",
-        subscriptionStatus: SubscriptionStatus.TRIAL
+        planName: input.planCode,
+        subscriptionStatus: stripeRegistration.status
       }
     });
 
@@ -188,13 +384,56 @@ export const registerSalonOwner = async (
     await tx.subscription.create({
       data: {
         salonId: salon.id,
-        planCode: "starter",
-        status: SubscriptionStatus.TRIAL,
-        basePriceCents: 0,
-        currentPeriodStart: periodStart,
-        currentPeriodEnd: periodEnd
+        planCode: input.planCode,
+        status: stripeRegistration.status,
+        basePriceCents: plan.monthlyPriceCents,
+        currentPeriodStart: stripeRegistration.currentPeriodStart,
+        currentPeriodEnd: stripeRegistration.currentPeriodEnd,
+        trialEndsAt: stripeRegistration.trialEndsAt,
+        stripeCustomerId: stripeRegistration.customerId,
+        stripeSubscriptionId: stripeRegistration.subscriptionId,
+        stripeSetupIntentId: verifiedPayment.setupIntentId,
+        stripePriceId: stripeRegistration.stripePriceId,
+        paymentMethodBrand: verifiedPayment.cardBrand,
+        paymentMethodLast4: verifiedPayment.cardLast4
       }
     });
+
+    await tx.phoneProvisioning.create({
+      data: {
+        salonId: salon.id,
+        status: PhoneProvisioningStatus.PENDING,
+        claimClientToken: randomUUID()
+      }
+    });
+
+    let assignedHumanAgentCount = 0;
+    if (plan.phoneRouting === "human") {
+      const activeAgents = await tx.user.findMany({
+        where: {
+          role: Role.CALL_CENTER_AGENT,
+          isActive: true
+        },
+        select: {
+          id: true
+        }
+      });
+      if (!activeAgents.length) {
+        throw new AppError(
+          "Real Person Reception is not staffed yet.",
+          503,
+          "HUMAN_RECEPTION_NOT_STAFFED"
+        );
+      }
+      await tx.callCenterSalonAssignment.createMany({
+        data: activeAgents.map((agent) => ({
+          salonId: salon.id,
+          agentUserId: agent.id,
+          assignedByUserId: user.id
+        }))
+      });
+      assignedHumanAgentCount = activeAgents.length;
+    }
 
     await createDefaultBusinessHours(salon.id, tx);
 
@@ -219,6 +458,36 @@ export const registerSalonOwner = async (
       },
       tx
     );
+
+    await createAuditLog(
+      {
+        salonId: salon.id,
+        actorUserId: user.id,
+        action: "TRIAL_SUBSCRIPTION_STARTED",
+        entityType: "Subscription",
+        entityId: stripeRegistration.subscriptionId,
+        metadata: {
+          planCode: input.planCode,
+          monthlyPriceCents: plan.monthlyPriceCents,
+          trialDays: plan.trialDays,
+          paymentMethodBrand: verifiedPayment.cardBrand,
+          paymentMethodLast4: verifiedPayment.cardLast4,
+          billingConsentAccepted: input.billingConsentAccepted,
+          billingTermsVersion: "trial_30d_monthly_v1",
+          assignedHumanAgentCount
+        }
+      },
+      tx
+    );
+
+    await tx.ownerRegistrationAttempt.update({
+      where: { id: attempt.id },
+      data: {
+        status: OwnerRegistrationStatus.COMPLETED,
+        completedAt: new Date(),
+        lastErrorCode: null
+      }
+    });
 
     return {
       user: {
@@ -247,9 +516,11 @@ export const registerSalonOwner = async (
     salonId: result.user.salonId,
     staffId: result.user.staffId
   });
+  const phoneProvisioning = await provisionRegisteredSalon(result.salon.id, result.user.id);
 
   return {
     ...result,
+    phoneProvisioning,
     ...tokens
   };
 };

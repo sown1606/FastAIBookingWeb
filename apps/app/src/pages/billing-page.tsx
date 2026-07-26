@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
-import { apiGet, extractErrorMessage } from "../lib/api";
+import { apiGet, apiPost, extractErrorMessage } from "../lib/api";
 import { formatCurrencyCents, formatDateTime } from "../lib/format";
 import { useI18n } from "../lib/i18n";
+import { formatUsPhoneInput } from "../lib/phone";
 
 interface BillingUsage {
   periodStart: string;
@@ -20,18 +21,52 @@ interface BillingUsageResponse {
   history: BillingUsage[];
 }
 
+interface SubscriptionBilling {
+  planCode: "ai_reception" | "human_reception";
+  basePriceCents: number;
+  status: "TRIAL" | "ACTIVE" | "PAST_DUE" | "CANCELED";
+  currentPeriodStart: string;
+  currentPeriodEnd: string;
+  trialEndsAt: string | null;
+  paymentMethodBrand: string | null;
+  paymentMethodLast4: string | null;
+  cancelAtPeriodEnd: boolean;
+}
+
+interface PhoneProvisioning {
+  status: "PENDING" | "SEARCHING" | "CLAIMING" | "CONFIGURING" | "ACTIVE" | "FAILED";
+  phoneNumber: string | null;
+  phoneNumberId: string | null;
+  contactFlowId: string | null;
+  lastErrorCode: string | null;
+  lastErrorMessage: string | null;
+  completedAt: string | null;
+}
+
+interface SubscriptionResponse {
+  subscription: SubscriptionBilling | null;
+  phoneProvisioning: PhoneProvisioning | null;
+}
+
 export const BillingPage = () => {
   const { t } = useI18n();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [billing, setBilling] = useState<BillingUsageResponse | null>(null);
+  const [subscriptionData, setSubscriptionData] = useState<SubscriptionResponse | null>(null);
+  const [retryingPhone, setRetryingPhone] = useState(false);
+  const [phoneError, setPhoneError] = useState("");
 
   const load = async () => {
     setError("");
     setLoading(true);
     try {
-      const result = await apiGet<BillingUsageResponse>("/api/v1/billing/usage?historyLimit=6");
-      setBilling(result);
+      const [usageResult, subscriptionResult] = await Promise.all([
+        apiGet<BillingUsageResponse>("/api/v1/billing/usage?historyLimit=6"),
+        apiGet<SubscriptionResponse>("/api/v1/billing/subscription")
+      ]);
+      setBilling(usageResult);
+      setSubscriptionData(subscriptionResult);
     } catch (loadError) {
       setError(extractErrorMessage(loadError));
     } finally {
@@ -56,9 +91,105 @@ export const BillingPage = () => {
   }
 
   const { currentUsage } = billing;
+  const subscription = subscriptionData?.subscription;
+  const phoneProvisioning = subscriptionData?.phoneProvisioning;
+
+  const retryPhoneProvisioning = async () => {
+    setRetryingPhone(true);
+    setPhoneError("");
+    try {
+      const next = await apiPost<PhoneProvisioning>(
+        "/api/v1/billing/phone-provisioning/retry",
+        undefined,
+        { timeout: 30_000 }
+      );
+      setSubscriptionData((current) =>
+        current ? { ...current, phoneProvisioning: next } : current
+      );
+    } catch (retryError) {
+      setPhoneError(extractErrorMessage(retryError));
+    } finally {
+      setRetryingPhone(false);
+    }
+  };
 
   return (
     <div className="stack">
+      {subscription ? (
+        <section className="card">
+          <h2>{t("billing.subscriptionTitle")}</h2>
+          <div className="metrics-grid">
+            <div>
+              <span className="muted">{t("billing.plan")}</span>
+              <strong>
+                {subscription.planCode === "human_reception"
+                  ? t("billing.planHuman")
+                  : t("billing.planAi")}
+              </strong>
+            </div>
+            <div>
+              <span className="muted">{t("billing.monthlyPrice")}</span>
+              <strong>{formatCurrencyCents(subscription.basePriceCents)}</strong>
+            </div>
+            <div>
+              <span className="muted">{t("billing.subscriptionStatus")}</span>
+              <strong>{subscription.status}</strong>
+            </div>
+            <div>
+              <span className="muted">{t("billing.visaCard")}</span>
+              <strong>
+                {subscription.paymentMethodLast4
+                  ? `Visa •••• ${subscription.paymentMethodLast4}`
+                  : t("common.none")}
+              </strong>
+            </div>
+          </div>
+          {subscription.trialEndsAt ? (
+            <p className="muted">
+              {t("billing.trialEnds")} {formatDateTime(subscription.trialEndsAt)}
+            </p>
+          ) : null}
+        </section>
+      ) : null}
+
+      <section className="card">
+        <h2>{t("billing.phoneTitle")}</h2>
+        {phoneProvisioning?.status === "ACTIVE" && phoneProvisioning.phoneNumber ? (
+          <div className="metrics-grid">
+            <div>
+              <span className="muted">{t("billing.awsPhone")}</span>
+              <strong>{formatUsPhoneInput(phoneProvisioning.phoneNumber)}</strong>
+            </div>
+            <div>
+              <span className="muted">{t("common.status")}</span>
+              <strong>{t("billing.phoneReady")}</strong>
+            </div>
+          </div>
+        ) : (
+          <>
+            <p className="muted">
+              {phoneProvisioning?.status === "FAILED"
+                ? t("billing.phoneFailed")
+                : t("billing.phonePreparing")}
+            </p>
+            {phoneProvisioning?.lastErrorMessage ? (
+              <div className="form-error">{phoneProvisioning.lastErrorMessage}</div>
+            ) : null}
+            {phoneError ? <div className="form-error">{phoneError}</div> : null}
+            <div className="form-actions">
+              <button
+                type="button"
+                className="button-secondary"
+                disabled={retryingPhone}
+                onClick={() => void retryPhoneProvisioning()}
+              >
+                {retryingPhone ? t("billing.phoneRetrying") : t("billing.phoneRetry")}
+              </button>
+            </div>
+          </>
+        )}
+      </section>
+
       <section className="card">
         <h2>{t("billing.title")}</h2>
         <p className="muted">{t("billing.hint")}</p>

@@ -14,7 +14,15 @@ const vietnameseApiMessages: Record<string, string> = {
   "Role is not allowed for this login.": "Tài khoản này không được đăng nhập bằng vai trò đã chọn.",
   "Staff access is not configured.": "Tài khoản nhân viên chưa được cấu hình quyền truy cập.",
   "Unauthorized.": "Phiên đăng nhập không hợp lệ.",
-  "Forbidden.": "Bạn không có quyền thực hiện thao tác này."
+  "Forbidden.": "Bạn không có quyền thực hiện thao tác này.",
+  "Registration billing is not configured yet.": "Đăng ký đang tạm khóa cho đến khi cấu hình Stripe hoàn tất.",
+  "Amazon Connect phone provisioning is not configured.": "Chưa cấu hình đầy đủ Amazon Connect để tự động cấp số.",
+  "A Visa card is required for the trial.": "Cần thẻ Visa để bắt đầu thời gian dùng thử.",
+  "Card verification is incomplete or does not match this registration.": "Xác thực thẻ chưa hoàn tất hoặc không khớp với đăng ký này.",
+  "Card verification does not match this registration.": "Xác thực thẻ không khớp với đăng ký này.",
+  "Card verification has expired. Please verify the card again.": "Phiên xác thực thẻ đã hết hạn. Vui lòng xác thực lại.",
+  "No Amazon Connect phone number is currently available.": "Hiện chưa có số Amazon Connect phù hợp. Vui lòng thử lại.",
+  "Real Person Reception is not staffed yet.": "Gói Real Person Reception chưa có nhân sự trực sẵn sàng."
 };
 
 const resolveLocale = (): Locale => {

@@ -10,6 +10,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@stripe/react-stripe-js": "^6.8.0",
+    "@stripe/stripe-js": "^9.12.0",
     "amazon-connect-streams": "^2.25.2",
     "axios": "^1.8.2",
     "firebase": "^12.14.0",

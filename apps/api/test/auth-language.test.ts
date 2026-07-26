@@ -168,12 +168,15 @@ test("login owner uses DB user language before Accept-Language header", async ()
   assert.equal(result.body.data.user.language, "en-US");
 });
 
-test("register owner stores and returns language from Accept-Language header", async () => {
+test("register owner fails closed when Stripe registration is not configured", async () => {
   const result = await postJson("/api/v1/auth/register-owner", "en-US", {
     fullName: "Register Language",
     email: registerEmail,
     phone: "+17325550123",
     password,
+    planCode: "ai_reception",
+    setupIntentId: "seti_registration_language_test",
+    billingConsentAccepted: true,
     salon: {
       name: "Language Nails",
       contactEmail: registerEmail,
@@ -187,8 +190,7 @@ test("register owner stores and returns language from Accept-Language header", a
     }
   });
 
-  assert.equal(result.status, 201);
-  assert.equal(result.body.message, "Salon owner registered successfully.");
-  assert.equal(result.body.data.user.language, "en-US");
-  assert.equal(createdUser?.language, "en-US");
+  assert.equal(result.status, 503);
+  assert.equal(result.body.error.code, "STRIPE_REGISTRATION_NOT_CONFIGURED");
+  assert.equal(createdUser, null);
 });

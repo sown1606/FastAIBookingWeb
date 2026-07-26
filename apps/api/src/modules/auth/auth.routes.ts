@@ -7,6 +7,7 @@ import { validate } from "../../middleware/validate";
 import { sendSuccess } from "../../utils/response";
 import { isValidUsPhone } from "../../utils/phone";
 import { resolveRequestLanguage, SupportedLanguage } from "../../utils/language";
+import { BILLING_PLAN_CODES } from "../billing/billing.plans";
 import {
   changePassword,
   forgotPassword,
@@ -29,6 +30,9 @@ const registerOwnerSchema = z.object({
   email: z.string().email(),
   phone: usPhoneSchema.optional(),
   password: z.string().min(8).max(128),
+  planCode: z.enum(BILLING_PLAN_CODES),
+  setupIntentId: z.string().regex(/^seti_[A-Za-z0-9_]+$/),
+  billingConsentAccepted: z.literal(true),
   salon: z.object({
     name: z.string().min(2).max(160),
     contactEmail: z.string().email().optional(),

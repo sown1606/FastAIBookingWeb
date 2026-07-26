@@ -15,7 +15,11 @@ import { alertsRouter } from "./modules/alerts/alerts.routes";
 import { appointmentsRouter } from "./modules/appointments/appointments.routes";
 import { authRouter } from "./modules/auth/auth.routes";
 import { availabilityRouter } from "./modules/availability/availability.routes";
-import { billingRouter } from "./modules/billing/billing.routes";
+import {
+  billingPublicRouter,
+  billingRouter,
+  stripeWebhookRouter
+} from "./modules/billing/billing.routes";
 import { businessHoursRouter } from "./modules/business-hours/business-hours.routes";
 import { aiInternalRouter, aiRouter } from "./modules/ai/ai.routes";
 import { callCenterRouter } from "./modules/call-center/call-center.routes";
@@ -50,6 +54,11 @@ app.use(
   })
 );
 app.use(
+  `${PUBLIC_API_PREFIX}/billing/stripe/webhook`,
+  express.raw({ type: "application/json", limit: "1mb" }),
+  stripeWebhookRouter
+);
+app.use(
   express.json({
     limit: "5mb",
     verify: (req, _res, buffer) => {
@@ -82,6 +91,7 @@ app.use("/health", healthRouter);
 app.use(`${PUBLIC_API_PREFIX}/health`, healthRouter);
 
 app.use(`${PUBLIC_API_PREFIX}/auth`, authRouter);
+app.use(`${PUBLIC_API_PREFIX}/billing`, billingPublicRouter);
 app.use(`${PUBLIC_API_PREFIX}/admin`, adminRouter);
 app.use(`${PUBLIC_API_PREFIX}/internal/ai`, aiInternalRouter);
 app.use(`${PUBLIC_API_PREFIX}/ai`, aiInternalRouter);

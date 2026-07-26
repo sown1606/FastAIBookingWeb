@@ -1204,6 +1204,127 @@ pre {
   flex-wrap: wrap;
 }
 
+.notice {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+  color: var(--muted);
+}
+
+.registration-plan-grid {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.registration-plan-card {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  padding: 16px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.registration-plan-card:hover {
+  transform: translateY(-1px);
+  border-color: var(--border-strong);
+}
+
+.registration-plan-card.selected {
+  border-color: var(--primary);
+  box-shadow: 0 10px 24px rgba(155, 111, 30, 0.14);
+  background: linear-gradient(180deg, #fffaf0, var(--surface-soft));
+}
+
+.registration-plan-card.disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.registration-plan-card.disabled:hover {
+  transform: none;
+  border-color: var(--border);
+}
+
+.registration-plan-card input {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 18px;
+  height: 18px;
+  accent-color: var(--primary);
+}
+
+.registration-plan-card strong {
+  padding-right: 28px;
+}
+
+.registration-plan-card span {
+  color: var(--primary-strong);
+  font-size: 1.35rem;
+  font-weight: 900;
+}
+
+.registration-plan-card small,
+.registration-plan-summary small {
+  color: var(--muted);
+}
+
+.registration-payment {
+  gap: 16px;
+}
+
+.registration-plan-summary {
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+  display: grid;
+  gap: 4px;
+}
+
+.registration-plan-summary > span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.stripe-payment-element {
+  min-height: 170px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: #fff;
+}
+
+.registration-consent {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: flex-start;
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.registration-consent input {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  accent-color: var(--primary);
+}
+
+.registration-payment-actions {
+  justify-content: space-between;
+}
+
 .demo-account-card {
   background: var(--surface-soft);
   border-color: var(--border);
