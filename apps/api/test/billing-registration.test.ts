@@ -61,11 +61,13 @@ test("registration source requires a succeeded Visa SetupIntent and explicit con
 
 test("public SetupIntent creation is rate limited", () => {
   const routesSource = readRepoFile("apps/api/src/modules/billing/billing.routes.ts");
+  const appSource = readRepoFile("apps/api/src/app.ts");
 
   assert.match(routesSource, /registrationSetupIntentRateLimit/);
   assert.match(routesSource, /windowMs: 15 \* 60 \* 1000/);
   assert.match(routesSource, /limit: 10/);
   assert.match(routesSource, /REGISTRATION_RATE_LIMITED/);
+  assert.match(appSource, /app\.set\("trust proxy", 1\)/);
 });
 
 test("phone provisioning is idempotent and always attaches the shared AI Connect flow", () => {
