@@ -12005,7 +12005,9 @@ export const createAmazonConnectAIAppointment = async (
         "AGENTS_BUSY",
         "CONNECT_METRICS_DEFERRED_TO_CONNECT_FLOW"
       ].includes(operatorQueueOutcome);
-    const message = canTransferToQueue ? OPERATOR_TRANSFER_PROMPT : OPERATOR_BUSY_PROMPT;
+    const message = canTransferToQueue
+      ? OPERATOR_TRANSFER_PROMPT
+      : escalation?.messageToCaller ?? OPERATOR_BUSY_PROMPT;
     const parsed = buildInternalParsedIntent({
       intentType: "LIVE_PERSON_REQUEST",
       customerName: normalized.customerName,

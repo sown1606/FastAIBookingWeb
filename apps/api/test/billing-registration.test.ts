@@ -24,7 +24,9 @@ test("public plans use the approved monthly prices and 30-day default trial", ()
   assert.equal(getBillingPlan("ai_reception").trialDays, 30);
   assert.equal(getBillingPlan("human_reception").trialDays, 30);
   assert.equal(getBillingPlan("ai_reception").phoneRouting, "ai");
-  assert.equal(getBillingPlan("human_reception").phoneRouting, "human");
+  assert.equal(getBillingPlan("human_reception").phoneRouting, "ai");
+  assert.equal(getBillingPlan("ai_reception").operatorTransferIncluded, false);
+  assert.equal(getBillingPlan("human_reception").operatorTransferIncluded, true);
 });
 
 test("Stripe subscription states map to salon access states", () => {
@@ -66,7 +68,7 @@ test("public SetupIntent creation is rate limited", () => {
   assert.match(routesSource, /REGISTRATION_RATE_LIMITED/);
 });
 
-test("phone provisioning is idempotent and attaches plan-specific Connect flows", () => {
+test("phone provisioning is idempotent and always attaches the shared AI Connect flow", () => {
   const source = readRepoFile(
     "apps/api/src/modules/billing/phone-provisioning.service.ts"
   );
@@ -76,9 +78,10 @@ test("phone provisioning is idempotent and attaches plan-specific Connect flows"
   assert.match(source, /ClientToken: provisioning\.claimClientToken/);
   assert.match(source, /AssociatePhoneNumberContactFlowCommand/);
   assert.match(source, /AMAZON_CONNECT_CONTACT_FLOW_ID_AI_RECEPTION/);
-  assert.match(source, /AMAZON_CONNECT_CONTACT_FLOW_ID_HUMAN_ESCALATION/);
+  assert.doesNotMatch(source, /AMAZON_CONNECT_CONTACT_FLOW_ID_HUMAN_ESCALATION/);
   assert.match(source, /PhoneProvisioningStatus\.ACTIVE/);
   assert.match(source, /customerIncomingPhoneNumber: input\.phoneNumber/);
+  assert.match(source, /callCenterEnabled: plan\.operatorTransferIncluded/);
   assert.match(source, /skipDuplicates: true/);
   assert.match(
     routesSource,
@@ -97,6 +100,45 @@ test("real-person registration requires and assigns active call-center staff", (
   assert.match(stripeSource, /role: Role\.CALL_CENTER_AGENT/);
   assert.match(authSource, /tx\.callCenterSalonAssignment\.createMany/);
   assert.match(authSource, /assignedHumanAgentCount/);
+  assert.match(authSource, /if \(plan\.operatorTransferIncluded\)/);
+});
+
+test("operator transfer is subscription-gated and new salons receive a Lex-ready service catalog", () => {
+  const salonSource = readRepoFile("apps/api/src/modules/salon/salon.service.ts");
+  const callCenterSource = readRepoFile(
+    "apps/api/src/modules/call-center/call-center.service.ts"
+  );
+  const authSource = readRepoFile("apps/api/src/modules/auth/auth.service.ts");
+
+  assert.match(salonSource, /hasOperatorTransferEntitlement/);
+  assert.match(salonSource, /OPERATOR_PLAN_REQUIRED/);
+  assert.match(callCenterSource, /OPERATOR_NOT_INCLUDED/);
+  for (const serviceName of [
+    "Manicure",
+    "Pedicure",
+    "Gel Manicure",
+    "Full Set",
+    "Dip Powder",
+    "Other Services"
+  ]) {
+    assert.match(authSource, new RegExp(`name: "${serviceName}"`));
+  }
+  assert.match(authSource, /await createDefaultServices\(salon\.id, tx\)/);
+});
+
+test("owner forwarding setup supports major US carriers and only verifies observed calls", () => {
+  const forwardingSource = readRepoFile(
+    "apps/api/src/modules/ai-reception/ai-reception.service.ts"
+  );
+  const ownerRoutes = readRepoFile("apps/api/src/modules/owner/owner.routes.ts");
+
+  assert.match(forwardingSource, /"tmobile"/);
+  assert.match(forwardingSource, /"att"/);
+  assert.match(forwardingSource, /"verizon"/);
+  assert.match(forwardingSource, /"uscellular"/);
+  assert.match(forwardingSource, /recentInboundCall/);
+  assert.match(forwardingSource, /AI_RECEPTION_FORWARDING_TEST_REQUESTED/);
+  assert.match(ownerRoutes, /z\.enum\(AI_RECEPTION_CARRIERS\)/);
 });
 
 test("Stripe webhook is mounted on a raw body before the JSON parser", () => {

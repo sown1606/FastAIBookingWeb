@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../auth/auth-context";
-import { apiGet, apiPut, extractErrorMessage } from "../lib/api";
+import { apiGet, apiPost, apiPut, extractErrorMessage } from "../lib/api";
 import { ErrorBlock, LoadingBlock } from "../components/states";
 import { useToast } from "../components/toast";
 import {
@@ -13,6 +13,7 @@ import {
 import { formatUsPhoneInput, validateOptionalUsPhone } from "../lib/phone";
 import { useI18n } from "../lib/i18n";
 import { InfoHint } from "../components/info-hint";
+import { formatDateTime } from "../lib/format";
 
 interface SalonProfile {
   id: string;
@@ -46,8 +47,45 @@ interface SalonSettings {
 
 interface AiReceptionConfig {
   status: "not_configured" | "pending" | "active" | "failed";
+  carrier: "tmobile" | "att" | "verizon" | "uscellular" | "other";
+  carrierLabel: string;
+  carrierOptions: Array<{
+    value: AiReceptionConfig["carrier"];
+    label: string;
+  }>;
   originalPhoneNumberFormatted: string | null;
   forwardToNumberFormatted: string | null;
+  activationCode: string | null;
+  fallbackActivationCode: string | null;
+  deactivationCode: string | null;
+  statusCheckCode: string | null;
+  lastTestedAt: string | null;
+  lastVerifiedAt: string | null;
+  setupInstructions: string[];
+  carrierGuide: {
+    summary: string;
+    steps: string[];
+    verifySteps: string[];
+    troubleshooting: string[];
+    sourceUrl: string;
+  };
+  forwardingVerification: {
+    status: "verified" | "test_not_observed" | "awaiting_test";
+    verified: boolean;
+    detail: string;
+  };
+  operatorTransferIncluded: boolean;
+  operatorTransferActive: boolean;
+  readiness: {
+    awsPhoneReady: boolean;
+    lexFlowReady: boolean;
+    forwardingVerified: boolean;
+    staffReady: boolean;
+    servicesReady: boolean;
+    activeBookableStaffCount: number;
+    activeServiceCount: number;
+    readyForCalls: boolean;
+  };
 }
 
 const aiReceptionStatusClasses: Record<AiReceptionConfig["status"], string> = {
@@ -64,6 +102,9 @@ export const SalonProfilePage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [aiReception, setAiReception] = useState<AiReceptionConfig | null>(null);
+  const [selectedCarrier, setSelectedCarrier] =
+    useState<AiReceptionConfig["carrier"]>("tmobile");
+  const [forwardingBusy, setForwardingBusy] = useState(false);
   const [profileForm, setProfileForm] = useState({
     name: "",
     contactEmail: "",
@@ -144,12 +185,14 @@ export const SalonProfilePage = () => {
         cancellationPolicy: settingsResult.cancellationPolicy ?? "",
         aiReceptionEnabled: settingsResult.aiReceptionEnabled,
         aiTransferRingCount: String(settingsResult.aiTransferRingCount),
-        callCenterEnabled: settingsResult.callCenterEnabled,
+        callCenterEnabled:
+          settingsResult.callCenterEnabled && aiReceptionResult.operatorTransferIncluded,
         aiGreetingPrompt: settingsResult.aiGreetingPrompt ?? "",
         callerLanguage: settingsResult.callerLanguage,
         callCenterRoutingNote: settingsResult.callCenterRoutingNote ?? ""
       });
       setAiReception(aiReceptionResult);
+      setSelectedCarrier(aiReceptionResult.carrier);
     } catch (loadError) {
       setError(extractErrorMessage(loadError));
     } finally {
@@ -189,7 +232,8 @@ export const SalonProfilePage = () => {
           cancellationPolicy: settingsForm.cancellationPolicy || null,
           aiReceptionEnabled: settingsForm.aiReceptionEnabled,
           aiTransferRingCount: Number(settingsForm.aiTransferRingCount),
-          callCenterEnabled: settingsForm.callCenterEnabled,
+          callCenterEnabled:
+            Boolean(aiReception?.operatorTransferIncluded) && settingsForm.callCenterEnabled,
           aiGreetingPrompt: settingsForm.aiGreetingPrompt || null,
           callerLanguage: settingsForm.callerLanguage
         }),
@@ -230,6 +274,68 @@ export const SalonProfilePage = () => {
     } catch (saveError) {
       notify("error", extractErrorMessage(saveError));
     }
+  };
+
+  const generateForwardingInstructions = async () => {
+    if (!salonId) {
+      return;
+    }
+    if (!validateOptionalUsPhone(profileForm.originalPhoneNumber)) {
+      notify("error", t("profile.phoneValidation"));
+      return;
+    }
+    setForwardingBusy(true);
+    try {
+      const next = await apiPost<
+        AiReceptionConfig,
+        {
+          carrier: AiReceptionConfig["carrier"];
+          originalPhoneNumber: string;
+        }
+      >(`/api/v1/owner/salons/${salonId}/ai-reception/generate-forwarding-code`, {
+        carrier: selectedCarrier,
+        originalPhoneNumber: profileForm.originalPhoneNumber
+      });
+      setAiReception(next);
+      setSelectedCarrier(next.carrier);
+      notify("success", t("profile.aiReceptionCodeGenerated"));
+    } catch (generateError) {
+      notify("error", extractErrorMessage(generateError));
+    } finally {
+      setForwardingBusy(false);
+    }
+  };
+
+  const checkForwardingTest = async () => {
+    if (!salonId) {
+      return;
+    }
+    setForwardingBusy(true);
+    try {
+      const next = await apiPost<AiReceptionConfig>(
+        `/api/v1/owner/salons/${salonId}/ai-reception/mark-forwarding-tested`
+      );
+      setAiReception(next);
+      notify(
+        next.forwardingVerification.verified ? "success" : "info",
+        next.forwardingVerification.verified
+          ? t("profile.aiReceptionTestVerified")
+          : t("profile.aiReceptionTestPending")
+      );
+    } catch (testError) {
+      notify("error", extractErrorMessage(testError));
+    } finally {
+      setForwardingBusy(false);
+    }
+  };
+
+  const openDialer = (code: string) => {
+    window.location.href = `tel:${encodeURIComponent(code)}`;
+  };
+
+  const copyForwardingCode = async (code: string) => {
+    await navigator.clipboard.writeText(code);
+    notify("success", t("profile.copyCodeSuccess"));
   };
 
   if (loading) {
@@ -429,6 +535,7 @@ export const SalonProfilePage = () => {
               <input
                 type="checkbox"
                 checked={settingsForm.callCenterEnabled}
+                disabled={!aiReception?.operatorTransferIncluded}
                 onChange={(event) =>
                   setSettingsForm((prev) => ({
                     ...prev,
@@ -436,6 +543,11 @@ export const SalonProfilePage = () => {
                   }))
                 }
               />
+              <small>
+                {aiReception?.operatorTransferIncluded
+                  ? t("profile.operatorIncludedHint")
+                  : t("profile.operatorUpgradeHint")}
+              </small>
             </label>
             <label className="field">
               <span>{t("profile.notificationPhone")}</span>
@@ -601,6 +713,203 @@ export const SalonProfilePage = () => {
           </div>
         </form>
       </section>
+
+      {aiReception ? (
+        <section className="card">
+          <div className="section-header">
+            <div>
+              <h2>{t("profile.forwardingGuideTitle")}</h2>
+              <p className="muted">{t("profile.forwardingGuideHint")}</p>
+            </div>
+            <span
+              className={
+                aiReception.forwardingVerification.verified
+                  ? "status-pill success"
+                  : "status-pill warning"
+              }
+            >
+              {aiReception.forwardingVerification.verified
+                ? t("profile.forwardingVerified")
+                : t("profile.forwardingNeedsTest")}
+            </span>
+          </div>
+
+          <div className="metrics-grid">
+            <div>
+              <span className="muted">{t("profile.awsNumberReady")}</span>
+              <strong>
+                {aiReception.readiness.awsPhoneReady
+                  ? t("common.ready")
+                  : t("common.pending")}
+              </strong>
+            </div>
+            <div>
+              <span className="muted">{t("profile.lexFlowReady")}</span>
+              <strong>
+                {aiReception.readiness.lexFlowReady
+                  ? t("common.ready")
+                  : t("common.pending")}
+              </strong>
+            </div>
+            <div>
+              <span className="muted">{t("profile.staffReady")}</span>
+              <strong>
+                {aiReception.readiness.activeBookableStaffCount} {t("profile.staffCountUnit")}
+              </strong>
+            </div>
+            <div>
+              <span className="muted">{t("profile.servicesReady")}</span>
+              <strong>
+                {aiReception.readiness.activeServiceCount} {t("profile.serviceCountUnit")}
+              </strong>
+            </div>
+          </div>
+
+          <div className="form-grid two-columns">
+            <label className="field">
+              <span>{t("profile.carrier")}</span>
+              <select
+                value={selectedCarrier}
+                onChange={(event) =>
+                  setSelectedCarrier(event.target.value as AiReceptionConfig["carrier"])
+                }
+              >
+                {aiReception.carrierOptions.map((option) => (
+                  <option value={option.value} key={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <small>{t("profile.carrierChooseHint")}</small>
+            </label>
+            <label className="field">
+              <span>{t("profile.forwardToNumber")}</span>
+              <input value={aiReception.forwardToNumberFormatted ?? ""} readOnly />
+              <small>{t("profile.forwardNumberDoNotPort")}</small>
+            </label>
+          </div>
+
+          <div className="form-actions">
+            <button
+              type="button"
+              className="button-primary"
+              disabled={forwardingBusy || !profileForm.originalPhoneNumber}
+              onClick={() => void generateForwardingInstructions()}
+            >
+              {forwardingBusy
+                ? t("common.loading")
+                : t("profile.generateCarrierInstructions")}
+            </button>
+            <button
+              type="button"
+              className="button-secondary"
+              disabled={forwardingBusy}
+              onClick={() => void checkForwardingTest()}
+            >
+              {t("profile.checkTestCall")}
+            </button>
+          </div>
+
+          <div className="notice">
+            <strong>{aiReception.carrierLabel}</strong>
+            <p>{aiReception.carrierGuide.summary}</p>
+          </div>
+
+          {aiReception.activationCode ? (
+            <div className="metrics-grid">
+              <div>
+                <span className="muted">{t("profile.activationCode")}</span>
+                <strong>
+                  <code>{aiReception.activationCode}</code>
+                </strong>
+                <div className="form-actions">
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => openDialer(aiReception.activationCode!)}
+                  >
+                    {t("profile.openDialer")}
+                  </button>
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => void copyForwardingCode(aiReception.activationCode!)}
+                  >
+                    {t("profile.copyCode")}
+                  </button>
+                </div>
+              </div>
+              {aiReception.deactivationCode ? (
+                <div>
+                  <span className="muted">{t("profile.deactivationCode")}</span>
+                  <strong>
+                    <code>{aiReception.deactivationCode}</code>
+                  </strong>
+                </div>
+              ) : null}
+              {aiReception.statusCheckCode ? (
+                <div>
+                  <span className="muted">{t("profile.statusCheckCode")}</span>
+                  <strong>
+                    <code>{aiReception.statusCheckCode}</code>
+                  </strong>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          <div className="two-column-details">
+            <div>
+              <h3>{t("profile.carrierStepsTitle")}</h3>
+              <ol>
+                {aiReception.carrierGuide.steps.map((step) => (
+                  <li key={step}>{step}</li>
+                ))}
+              </ol>
+            </div>
+            <div>
+              <h3>{t("profile.verifyStepsTitle")}</h3>
+              <ol>
+                {aiReception.carrierGuide.verifySteps.map((step) => (
+                  <li key={step}>{step}</li>
+                ))}
+              </ol>
+            </div>
+          </div>
+
+          <div>
+            <h3>{t("profile.forwardingTroubleshootingTitle")}</h3>
+            <ul>
+              {aiReception.carrierGuide.troubleshooting.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </div>
+
+          <p className="muted">{aiReception.forwardingVerification.detail}</p>
+          <p className="muted">
+            {t("profile.lastTested")}:{" "}
+            {aiReception.lastTestedAt
+              ? formatDateTime(aiReception.lastTestedAt)
+              : t("common.none")}
+            {" · "}
+            {t("profile.lastVerified")}:{" "}
+            {aiReception.lastVerifiedAt
+              ? formatDateTime(aiReception.lastVerifiedAt)
+              : t("common.none")}
+          </p>
+          {aiReception.carrierGuide.sourceUrl ? (
+            <a
+              href={aiReception.carrierGuide.sourceUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="button-secondary"
+            >
+              {t("profile.openCarrierGuide")}
+            </a>
+          ) : null}
+        </section>
+      ) : null}
 
       <section className="card phone-flow-card">
         <div className="section-header">

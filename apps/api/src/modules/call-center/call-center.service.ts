@@ -22,6 +22,7 @@ import {
   rescheduleAppointment,
   updateAppointment
 } from "../appointments/appointments.service";
+import { hasOperatorTransferEntitlement } from "../billing/billing.plans";
 import { normalizePhoneForMatching } from "../calls/providers/callrail.provider";
 import { createCustomer, searchCustomers } from "../customers/customers.service";
 import { sendPushToAssignedCallCenterAgentsOrOperators } from "../notifications/notifications.service";
@@ -35,6 +36,8 @@ const toJson = (value: unknown): Prisma.InputJsonValue => {
 const AMAZON_CONNECT_OPERATOR_QUEUE_NAME = "FastAIBooking Operator Queue";
 const OPERATOR_TRANSFER_PROMPT = "Let me check for an available operator.";
 const OPERATOR_BUSY_PROMPT = "All of our operators are currently busy. Please call back later. Goodbye.";
+const OPERATOR_NOT_INCLUDED_PROMPT =
+  "Live operator service is not included for this salon. Please continue with the AI receptionist or call the salon directly.";
 
 type OperatorQueueMetrics = {
   staffedAgents: number;
@@ -552,6 +555,12 @@ export const createOrUpdateCallEscalation = async (input: {
     where: { id: input.salonId },
     include: {
       settings: true,
+      subscription: {
+        select: {
+          planCode: true,
+          status: true
+        }
+      },
       callCenterAssignments: {
         select: {
           agentUserId: true
@@ -565,7 +574,11 @@ export const createOrUpdateCallEscalation = async (input: {
   }
 
   const settings = salon.settings;
-  const callCenterEnabled = settings?.callCenterEnabled ?? false;
+  const operatorEntitled = hasOperatorTransferEntitlement(
+    salon.subscription?.planCode,
+    salon.subscription?.status
+  );
+  const callCenterEnabled = Boolean(settings?.callCenterEnabled && operatorEntitled);
   const hasAssignedAgents = salon.callCenterAssignments.length > 0;
 
   let status: CallEscalationStatus = CallEscalationStatus.PENDING;
@@ -595,6 +608,8 @@ export const createOrUpdateCallEscalation = async (input: {
     } else {
       operatorQueueOutcome = "CONNECT_METRICS_ERROR";
     }
+  } else if (!operatorEntitled) {
+    operatorQueueOutcome = "OPERATOR_NOT_INCLUDED";
   } else if (!callCenterEnabled) {
     operatorQueueOutcome = "CALL_CENTER_DISABLED";
   } else if (!hasAssignedAgents) {
@@ -620,14 +635,20 @@ export const createOrUpdateCallEscalation = async (input: {
     queuedAt = null;
   } else {
     status = CallEscalationStatus.CLOSED;
-    routingOutcome = CallRoutingOutcome.CALL_CENTER_ESCALATION;
-    finalResolution = OPERATOR_BUSY_PROMPT;
+    routingOutcome =
+      operatorQueueOutcome === "OPERATOR_NOT_INCLUDED"
+        ? CallRoutingOutcome.AI_RECEPTION
+        : CallRoutingOutcome.CALL_CENTER_ESCALATION;
+    finalResolution =
+      operatorQueueOutcome === "OPERATOR_NOT_INCLUDED"
+        ? OPERATOR_NOT_INCLUDED_PROMPT
+        : OPERATOR_BUSY_PROMPT;
     closedAt = new Date();
   }
   const messageToCaller =
     status === CallEscalationStatus.PENDING || status === CallEscalationStatus.QUEUED
       ? input.messageToCaller ?? OPERATOR_TRANSFER_PROMPT
-      : OPERATOR_BUSY_PROMPT;
+      : finalResolution;
   const metadata =
     input.metadata && typeof input.metadata === "object" && !Array.isArray(input.metadata)
       ? {
@@ -635,12 +656,14 @@ export const createOrUpdateCallEscalation = async (input: {
           operatorQueueOutcome,
           connectMetrics,
           callCenterEnabled,
+          operatorEntitled,
           assignedAgentCount: salon.callCenterAssignments.length
         }
       : {
           operatorQueueOutcome,
           connectMetrics,
           callCenterEnabled,
+          operatorEntitled,
           assignedAgentCount: salon.callCenterAssignments.length,
           originalMetadata: input.metadata
         };

@@ -9,6 +9,7 @@ import {
   BILLING_TRIAL_DAYS,
   getBillingPlan,
   getBillingPlans,
+  hasOperatorTransferEntitlement,
   requireStripePriceId
 } from "./billing.plans";
 import {
@@ -42,7 +43,10 @@ const hasActiveHumanReceptionStaff = async (): Promise<boolean> =>
   })) > 0;
 
 const assertPlanOperationallyReady = async (planCode: BillingPlanCode): Promise<void> => {
-  if (getBillingPlan(planCode).phoneRouting === "human" && !(await hasActiveHumanReceptionStaff())) {
+  if (
+    getBillingPlan(planCode).operatorTransferIncluded &&
+    !(await hasActiveHumanReceptionStaff())
+  ) {
     throw new AppError(
       "Real Person Reception is not staffed yet.",
       503,
@@ -55,15 +59,16 @@ export const getPublicRegistrationBillingConfig = async () => {
   const stripeReady = isStripeRegistrationConfigured();
   const humanReceptionStaffed = await hasActiveHumanReceptionStaff();
   const plans = getBillingPlans().map(
-    ({ code, name, monthlyPriceCents, trialDays, phoneRouting }) => ({
+    ({ code, name, monthlyPriceCents, trialDays, operatorTransferIncluded }) => ({
       code,
       name,
       monthlyPriceCents,
       trialDays,
+      operatorTransferIncluded,
       ready:
         stripeReady &&
         isAmazonConnectProvisioningConfigured(code) &&
-        (phoneRouting !== "human" || humanReceptionStaffed)
+        (!operatorTransferIncluded || humanReceptionStaffed)
     })
   );
   return {
@@ -332,7 +337,10 @@ const syncSubscription = async (subscription: Stripe.Subscription): Promise<void
         ...(stripeCustomerId ? [{ stripeCustomerId }] : [])
       ]
     },
-    select: { salonId: true }
+    select: {
+      salonId: true,
+      planCode: true
+    }
   });
 
   if (!existing) {
@@ -344,6 +352,9 @@ const syncSubscription = async (subscription: Stripe.Subscription): Promise<void
   }
 
   const status = mapStripeSubscriptionStatus(subscription.status);
+  const operatorTransferEnabled = hasOperatorTransferEntitlement(existing.planCode, status);
+  const subscriptionProvidesService =
+    status === SubscriptionStatus.TRIAL || status === SubscriptionStatus.ACTIVE;
   await prisma.$transaction([
     prisma.subscription.update({
       where: { salonId: existing.salonId },
@@ -358,6 +369,14 @@ const syncSubscription = async (subscription: Stripe.Subscription): Promise<void
     prisma.salon.update({
       where: { id: existing.salonId },
       data: { subscriptionStatus: status }
+    }),
+    prisma.salonSetting.update({
+      where: { salonId: existing.salonId },
+      data: {
+        aiForwardingEnabled: subscriptionProvidesService,
+        aiReceptionEnabled: subscriptionProvidesService,
+        callCenterEnabled: operatorTransferEnabled
+      }
     })
   ]);
 };

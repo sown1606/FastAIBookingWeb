@@ -7,6 +7,7 @@ import { validate } from "../../middleware/validate";
 import { isValidUsPhone } from "../../utils/phone";
 import { sendSuccess } from "../../utils/response";
 import {
+  AI_RECEPTION_CARRIERS,
   assertOwnerSalonAccess,
   generateAiReceptionForwardingCodeForSalon,
   getAiReceptionConfigForSalon,
@@ -27,13 +28,10 @@ const optionalUsPhoneSchema = z
   .nullable()
   .optional();
 
-const aiReceptionStatusSchema = z.enum(["not_configured", "pending", "active", "failed"]);
-
 const updateAiReceptionSchema = z.object({
-  carrier: z.enum(["tmobile"]).optional(),
+  carrier: z.enum(AI_RECEPTION_CARRIERS).optional(),
   originalPhoneNumber: optionalUsPhoneSchema,
-  forwardingPhoneNumber: optionalUsPhoneSchema,
-  status: aiReceptionStatusSchema.optional()
+  forwardingPhoneNumber: optionalUsPhoneSchema
 });
 
 const listCallLogsQuerySchema = z.object({

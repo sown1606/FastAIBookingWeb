@@ -14,6 +14,7 @@ import { AppError } from "../../lib/errors";
 import { logger } from "../../lib/logger";
 import { markAiReceptionWebhookVerifiedForSalon } from "../ai-reception/ai-reception.service";
 import { createSalonAlert } from "../alerts/alerts.service";
+import { hasOperatorTransferEntitlement } from "../billing/billing.plans";
 import { buildSalonRoutingSummary } from "../salon/routing-summary";
 import { CallRailProviderAdapter, normalizePhoneForMatching } from "./providers/callrail.provider";
 
@@ -608,6 +609,12 @@ const findSalonForRouting = async (input: {
       where: { id: input.salonId },
       include: {
         settings: true,
+        subscription: {
+          select: {
+            planCode: true,
+            status: true
+          }
+        },
         callCenterAssignments: {
           include: {
             agent: {
@@ -641,6 +648,12 @@ const findSalonForRouting = async (input: {
     },
     include: {
       settings: true,
+      subscription: {
+        select: {
+          planCode: true,
+          status: true
+        }
+      },
       callCenterAssignments: {
         include: {
           agent: {
@@ -673,7 +686,11 @@ export const buildCallRoutingPlan = async (input: {
 
   const settings = salon.settings;
   const livePersonRequested = isLivePersonRequest(input);
-  const callCenterEnabled = settings?.callCenterEnabled ?? false;
+  const operatorEntitled = hasOperatorTransferEntitlement(
+    salon.subscription?.planCode,
+    salon.subscription?.status
+  );
+  const callCenterEnabled = Boolean(settings?.callCenterEnabled && operatorEntitled);
   const aiReceptionEnabled = isAiReceptionEnabled(settings);
   const routingSummary = buildSalonRoutingSummary(settings);
 
@@ -713,10 +730,14 @@ export const buildCallRoutingPlan = async (input: {
   if (livePersonRequested) {
     return {
       salonId: salon.id,
-      routeType: "SALON_ORIGINAL_PHONE",
-      routingOutcome: "SALON_RING" as const,
-      transferNumber: salon.originalPhoneNumber ?? salon.contactPhone ?? null,
-      reason: "LIVE_PERSON_REQUEST_CALL_CENTER_DISABLED",
+      routeType: "OPERATOR_NOT_INCLUDED",
+      routingOutcome: operatorEntitled
+        ? ("CALL_CENTER_ESCALATION" as const)
+        : ("AI_RECEPTION" as const),
+      transferNumber: null,
+      reason: operatorEntitled
+        ? "LIVE_PERSON_REQUEST_CALL_CENTER_DISABLED"
+        : "LIVE_PERSON_REQUEST_OPERATOR_NOT_INCLUDED",
       routingSummary
     };
   }

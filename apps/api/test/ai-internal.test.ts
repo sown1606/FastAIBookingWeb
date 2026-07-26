@@ -99,6 +99,10 @@ const createInitialState = () => {
         smsFallbackEnabled: false,
         voicemailEnabled: true
       },
+      subscription: {
+        planCode: "human_reception",
+        status: "ACTIVE"
+      },
       callCenterAssignments: [{ agentUserId: "agent-1" }]
     },
     {
@@ -116,6 +120,10 @@ const createInitialState = () => {
         callbackRequestEnabled: true,
         smsFallbackEnabled: false,
         voicemailEnabled: true
+      },
+      subscription: {
+        planCode: "human_reception",
+        status: "ACTIVE"
       },
       callCenterAssignments: [{ agentUserId: "agent-1" }]
     }
@@ -11416,6 +11424,38 @@ test("DTMF zero uses the same pending operator route without booking pollution",
   assert.equal(state.bookingAttempts[0].requestedStaff, undefined);
   assert.equal((state.bookingAttempts[0].normalizedRequest as any).serviceName, undefined);
   assert.equal((state.bookingAttempts[0].normalizedRequest as any).staffPreference, undefined);
+});
+
+test("AI-only subscriptions never activate press zero or voice operator transfer", async () => {
+  state.salons[0].subscription.planCode = "ai_reception";
+
+  for (const [transcript, inputMode, intentName] of [
+    ["0", "DTMF", "BookAppointmentIntent"],
+    ["I want to speak to a real person.", "Speech", "HumanEscalationIntent"]
+  ] as const) {
+    const result = await postInternalAppointment(
+      bookingPayload({
+        intentName,
+        amazonConnectContactId: `connect-ai-only-${inputMode.toLowerCase()}`,
+        currentTurnTranscript: transcript,
+        transcript,
+        inputMode
+      })
+    );
+
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.data.outcome, "HUMAN_ESCALATION");
+    assert.equal(
+      result.body.data.lexResponse.message,
+      "Live operator service is not included for this salon. Please continue with the AI receptionist or call the salon directly."
+    );
+    assert.equal(result.body.data.lexResponse.sessionAttributes.transferToQueue, "false");
+    assert.equal(result.body.data.lexResponse.sessionAttributes.forceHumanEscalation, "false");
+    assert.equal(result.body.data.lexResponse.sessionAttributes.queueId, undefined);
+    assert.equal(state.escalations.at(-1)?.status, CallEscalationStatus.CLOSED);
+    assert.equal(state.escalations.at(-1)?.routingOutcome, CallRoutingOutcome.AI_RECEPTION);
+    assert.equal(state.escalations.at(-1)?.metadata.operatorQueueOutcome, "OPERATOR_NOT_INCLUDED");
+  }
 });
 
 test("operator queue entry callback transitions pending escalation to queued once", async () => {

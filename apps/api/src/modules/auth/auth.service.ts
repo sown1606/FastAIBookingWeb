@@ -80,6 +80,57 @@ const createDefaultBusinessHours = async (
   });
 };
 
+const DEFAULT_REGISTRATION_SERVICES = [
+  {
+    name: "Manicure",
+    description: "Cuticle care, shaping, polish, and hand massage.",
+    durationMinutes: 40,
+    priceCents: 3_500
+  },
+  {
+    name: "Pedicure",
+    description: "Soak, scrub, callus care, massage, and polish.",
+    durationMinutes: 45,
+    priceCents: 4_500
+  },
+  {
+    name: "Gel Manicure",
+    description: "Cuticle care, shaping, gel color, and hand massage.",
+    durationMinutes: 60,
+    priceCents: 5_000
+  },
+  {
+    name: "Full Set",
+    description: "Full acrylic set with shaping and gel finish.",
+    durationMinutes: 100,
+    priceCents: 8_500
+  },
+  {
+    name: "Dip Powder",
+    description: "Prep, dip color layers, shaping, and glossy top coat.",
+    durationMinutes: 70,
+    priceCents: 5_800
+  },
+  {
+    name: "Other Services",
+    description: "Custom service or add-on. Staff confirms details before the appointment.",
+    durationMinutes: 60,
+    priceCents: 0
+  }
+] as const;
+
+const createDefaultServices = async (
+  salonId: string,
+  executor: Prisma.TransactionClient
+): Promise<void> => {
+  await executor.service.createMany({
+    data: DEFAULT_REGISTRATION_SERVICES.map((service) => ({
+      salonId,
+      ...service
+    }))
+  });
+};
+
 const issueTokens = async (user: {
   id: string;
   email: string;
@@ -408,7 +459,7 @@ export const registerSalonOwner = async (
     });
 
     let assignedHumanAgentCount = 0;
-    if (plan.phoneRouting === "human") {
+    if (plan.operatorTransferIncluded) {
       const activeAgents = await tx.user.findMany({
         where: {
           role: Role.CALL_CENTER_AGENT,
@@ -435,6 +486,7 @@ export const registerSalonOwner = async (
       assignedHumanAgentCount = activeAgents.length;
     }
 
+    await createDefaultServices(salon.id, tx);
     await createDefaultBusinessHours(salon.id, tx);
 
     await createAuditLog(

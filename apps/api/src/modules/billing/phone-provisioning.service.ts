@@ -48,19 +48,12 @@ const areaCodeFromPhone = (value: string | null | undefined): string | null => {
 };
 
 export const requireAmazonConnectProvisioningConfig = (planCode: BillingPlanCode) => {
-  const plan = getBillingPlan(planCode);
-  const contactFlowId =
-    plan.phoneRouting === "human"
-      ? env.AMAZON_CONNECT_CONTACT_FLOW_ID_HUMAN_ESCALATION
-      : env.AMAZON_CONNECT_CONTACT_FLOW_ID_AI_RECEPTION;
+  getBillingPlan(planCode);
+  const contactFlowId = env.AMAZON_CONNECT_CONTACT_FLOW_ID_AI_RECEPTION;
   const missing = [
     !env.AWS_REGION ? "AWS_REGION" : null,
     !env.AMAZON_CONNECT_INSTANCE_ID ? "AMAZON_CONNECT_INSTANCE_ID" : null,
-    !contactFlowId
-      ? plan.phoneRouting === "human"
-        ? "AMAZON_CONNECT_CONTACT_FLOW_ID_HUMAN_ESCALATION"
-        : "AMAZON_CONNECT_CONTACT_FLOW_ID_AI_RECEPTION"
-      : null
+    !contactFlowId ? "AMAZON_CONNECT_CONTACT_FLOW_ID_AI_RECEPTION" : null
   ].filter((value): value is string => Boolean(value));
 
   if (missing.length) {
@@ -256,15 +249,11 @@ const persistActivePhone = async (input: {
     });
     await tx.salonSetting.update({
       where: { salonId: input.salonId },
-      data:
-        plan.phoneRouting === "human"
-          ? {
-              aiReceptionEnabled: false,
-              callCenterEnabled: true
-            }
-          : {
-              aiReceptionEnabled: true
-            }
+      data: {
+        aiForwardingEnabled: true,
+        aiReceptionEnabled: true,
+        callCenterEnabled: plan.operatorTransferIncluded
+      }
     });
     await tx.salonAiReceptionSetup.upsert({
       where: { salonId: input.salonId },
@@ -274,15 +263,14 @@ const persistActivePhone = async (input: {
         originalPhoneNumber: originalPhoneDigits,
         forwardingPhoneNumber: forwardingDigits,
         forwardingType: AiReceptionForwardingType.NO_ANSWER,
-        status: AiReceptionSetupStatus.ACTIVE,
-        lastVerifiedAt: now
+        status: AiReceptionSetupStatus.PENDING
       },
       update: {
         provider: ExternalProvider.AMAZON_CONNECT,
         originalPhoneNumber: originalPhoneDigits,
         forwardingPhoneNumber: forwardingDigits,
-        status: AiReceptionSetupStatus.ACTIVE,
-        lastVerifiedAt: now
+        status: AiReceptionSetupStatus.PENDING,
+        lastVerifiedAt: null
       }
     });
     await tx.integrationConfig.createMany({

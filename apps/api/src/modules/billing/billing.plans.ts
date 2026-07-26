@@ -12,7 +12,8 @@ export interface BillingPlan {
   monthlyPriceCents: number;
   trialDays: number;
   stripePriceId: string | null;
-  phoneRouting: "ai" | "human";
+  phoneRouting: "ai";
+  operatorTransferIncluded: boolean;
 }
 
 export const isBillingPlanCode = (value: string): value is BillingPlanCode =>
@@ -25,15 +26,17 @@ export const getBillingPlans = (): BillingPlan[] => [
     monthlyPriceCents: 8_900,
     trialDays: BILLING_TRIAL_DAYS,
     stripePriceId: env.STRIPE_PRICE_ID_AI_RECEPTION ?? null,
-    phoneRouting: "ai"
+    phoneRouting: "ai",
+    operatorTransferIncluded: false
   },
   {
     code: "human_reception",
-    name: "Real Person Reception",
+    name: "AI + Live Operator",
     monthlyPriceCents: 49_900,
     trialDays: BILLING_TRIAL_DAYS,
     stripePriceId: env.STRIPE_PRICE_ID_HUMAN_RECEPTION ?? null,
-    phoneRouting: "human"
+    phoneRouting: "ai",
+    operatorTransferIncluded: true
   }
 ];
 
@@ -56,3 +59,14 @@ export const requireStripePriceId = (code: BillingPlanCode): string => {
   }
   return plan.stripePriceId;
 };
+
+export const hasOperatorTransferEntitlement = (
+  planCode: string | null | undefined,
+  subscriptionStatus: string | null | undefined
+): boolean =>
+  Boolean(
+    planCode &&
+      isBillingPlanCode(planCode) &&
+      getBillingPlan(planCode).operatorTransferIncluded &&
+      (subscriptionStatus === "TRIAL" || subscriptionStatus === "ACTIVE")
+  );

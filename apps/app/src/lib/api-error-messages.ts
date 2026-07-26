@@ -22,7 +22,9 @@ const vietnameseApiMessages: Record<string, string> = {
   "Card verification does not match this registration.": "Xác thực thẻ không khớp với đăng ký này.",
   "Card verification has expired. Please verify the card again.": "Phiên xác thực thẻ đã hết hạn. Vui lòng xác thực lại.",
   "No Amazon Connect phone number is currently available.": "Hiện chưa có số Amazon Connect phù hợp. Vui lòng thử lại.",
-  "Real Person Reception is not staffed yet.": "Gói Real Person Reception chưa có nhân sự trực sẵn sàng."
+  "Real Person Reception is not staffed yet.": "Gói AI + Live Operator chưa có nhân sự trực sẵn sàng.",
+  "Live operator transfer requires the AI + Live Operator subscription.":
+    "Chỉ gói AI + Live Operator $499 mới được bật tính năng bấm 0 gặp operator."
 };
 
 const resolveLocale = (): Locale => {

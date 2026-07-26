@@ -604,6 +604,22 @@ textarea:focus-visible {
   grid-template-columns: 1fr;
 }
 
+.two-column-details {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 18px;
+}
+
+.two-column-details > div {
+  min-width: 0;
+}
+
+.two-column-details li,
+.card li {
+  margin-bottom: 8px;
+  line-height: 1.5;
+}
+
 .settings-panel {
   grid-column: 1 / -1;
   border: 1px solid var(--border);
@@ -3310,6 +3326,10 @@ pre {
   }
 
   .form-grid.two-columns {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .two-column-details {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 

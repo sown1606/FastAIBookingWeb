@@ -7,6 +7,7 @@ import {
   sendPushToActiveSalonStaff,
   sendPushToAssignedCallCenterAgentsOrOperators
 } from "../notifications/notifications.service";
+import { hasOperatorTransferEntitlement } from "../billing/billing.plans";
 import { buildSalonRoutingSummary } from "./routing-summary";
 
 interface UpdateSalonProfileInput {
@@ -225,6 +226,25 @@ export const updateSalonSettings = async (
   actorUserId: string,
   input: UpdateSalonSettingsInput
 ) => {
+  if (input.callCenterEnabled) {
+    const subscription = await prisma.subscription.findUnique({
+      where: { salonId },
+      select: {
+        planCode: true,
+        status: true
+      }
+    });
+    if (
+      !hasOperatorTransferEntitlement(subscription?.planCode, subscription?.status)
+    ) {
+      throw new AppError(
+        "Live operator transfer requires the AI + Live Operator subscription.",
+        403,
+        "OPERATOR_PLAN_REQUIRED"
+      );
+    }
+  }
+
   const previousSettings = await prisma.salonSetting.findUnique({
     where: { salonId },
     select: {

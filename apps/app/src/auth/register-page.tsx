@@ -22,6 +22,7 @@ interface RegistrationBillingConfig {
     name: string;
     monthlyPriceCents: number;
     trialDays: number;
+    operatorTransferIncluded: boolean;
     ready: boolean;
   }>;
 }
@@ -453,6 +454,11 @@ export const RegisterPage = () => {
                 ${(plan.monthlyPriceCents / 100).toFixed(0)}/{t("pricing.month")}
               </span>
               <small>{t("auth.register.trialSummary", { days: plan.trialDays })}</small>
+              <small>
+                {plan.operatorTransferIncluded
+                  ? t("auth.register.planOperatorFeature")
+                  : t("auth.register.planAiFeature")}
+              </small>
             </label>
           ))}
         </div>
