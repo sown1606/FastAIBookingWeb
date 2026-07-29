@@ -6708,6 +6708,7 @@ const buildPastRequestedTimeMessage = (decision: ReturnType<typeof buildPastRequ
 
 const salonSelect = {
   id: true,
+  name: true,
   timezone: true,
   ownerId: true
 } as const;
@@ -6717,7 +6718,7 @@ const resolveAmazonConnectSalon = async (input: {
   amazonConnectPhoneNumber?: string;
   calledNumber?: string;
 }): Promise<{
-  salon: { id: string; timezone: string; ownerId: string };
+  salon: { id: string; name: string; timezone: string; ownerId: string };
   resolutionSource: SalonResolutionSource;
 }> => {
   const explicitSalonId = input.salonId?.trim();
@@ -6982,6 +6983,37 @@ const upsertAmazonConnectCallSession = async (input: {
       finalResolution
     }
   });
+};
+
+export const getAmazonConnectContactContext = async (input: {
+  salonId?: string;
+  amazonConnectPhoneNumber?: string;
+  calledNumber?: string;
+  amazonConnectContactId?: string;
+  callerPhone?: string;
+}) => {
+  const { salon, resolutionSource } = await resolveAmazonConnectSalon({
+    salonId: input.salonId,
+    amazonConnectPhoneNumber: input.amazonConnectPhoneNumber,
+    calledNumber: input.calledNumber
+  });
+  const callSession = await upsertAmazonConnectCallSession({
+    salonId: salon.id,
+    contactId: input.amazonConnectContactId,
+    customerPhone: input.callerPhone,
+    amazonConnectPhoneNumber: input.amazonConnectPhoneNumber,
+    calledNumber: input.calledNumber,
+    finalResolution: "Amazon Connect salon context resolved before the AI greeting."
+  });
+
+  return {
+    salonId: salon.id,
+    salonName: salon.name,
+    salonTimezone: salon.timezone,
+    salonGreeting: `Thank you for calling ${salon.name}.`,
+    callSessionId: callSession?.id ?? null,
+    resolutionSource
+  };
 };
 
 const readProviderDisconnectedAtFromCallSession = (

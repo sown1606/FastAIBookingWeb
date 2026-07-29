@@ -1653,10 +1653,60 @@ pre {
   box-shadow: var(--shadow-sm);
 }
 
+.operator-active-call-banner.is-live {
+  border-color: #22854a;
+  background: linear-gradient(135deg, #e4f8ea 0%, #f7fff9 72%);
+  box-shadow: 0 0 0 2px rgba(34, 133, 74, 0.12), var(--shadow-sm);
+}
+
 .operator-active-call-banner h2 {
   margin: 3px 0 0;
   font-size: 1.04rem;
   line-height: 1.25;
+}
+
+.operator-salon-call-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.operator-salon-call-card {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-soft);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.operator-salon-call-card strong,
+.operator-salon-call-card span {
+  overflow-wrap: anywhere;
+}
+
+.operator-salon-call-card span {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.operator-salon-call-card.is-selected {
+  border-color: var(--primary);
+}
+
+.operator-salon-call-card.has-call,
+.operator-salon-call-card.is-live {
+  border-color: #22854a;
+  background: #dff6e6;
+}
+
+.operator-salon-call-card.is-live {
+  box-shadow: 0 0 0 2px rgba(34, 133, 74, 0.14);
 }
 
 .operator-label-list,

@@ -254,6 +254,21 @@ test("call-center CCP is embedded-first with collapsed technical details", () =>
   assert.doesNotMatch(source, /<details className="ccp-technical-details" open=/);
 });
 
+test("operator dashboard highlights the active salon and keeps multi-salon queue context fresh", () => {
+  const source = readRepoFile("apps/app/src/pages/call-center-page.tsx");
+  const styles = readRepoFile("apps/app/src/styles.css");
+
+  assert.match(source, /getAttributes\?: \(\) => Record<string, AmazonConnectAttribute>/);
+  assert.match(source, /getContactAttribute\(nextContact, "salonId"\)/);
+  assert.match(source, /getContactAttribute\(nextContact, "salonName"\)/);
+  assert.match(source, /operator-salon-call-board/);
+  assert.match(source, /openQueueCountBySalon/);
+  assert.match(source, /if \(isOwner\) \{\s*return;\s*\}/);
+  assert.doesNotMatch(source, /if \(isOwner \|\| ccpEmbeddedReady\)/);
+  assert.match(styles, /\.operator-active-call-banner\.is-live/);
+  assert.match(styles, /\.operator-salon-call-card\.has-call/);
+});
+
 test("customer delete reloads list without fetching deleted selected history", () => {
   const source = readRepoFile("apps/app/src/pages/customers-page.tsx");
 

@@ -317,6 +317,8 @@ const ANY_STAFF_TRAILING_FILLER_PATTERN =
   "\\s+(?:is\\s+(?:fine|okay|ok)|works\\s+for\\s+me|if\\s+i|please)$";
 const OPERATOR_TRANSFER_PROMPT = "Let me check for an available operator.";
 const OPERATOR_BUSY_PROMPT = "All of our operators are currently busy. Please call back later. Goodbye.";
+const OPERATOR_CALLBACK_PROMPT =
+  "All of our operators are currently assisting other callers. We will call you back as soon as someone is available. Goodbye.";
 const SERVICE_DTMF_PROMPT =
   "Hi, I can help book your appointment. Tell me the service, day, time, and staff. You can press 0 for a person.";
 const SERVICE_KEYPAD_PROMPT =
@@ -7318,7 +7320,7 @@ async function postInternalOperatorQueueOutcome(payload) {
         "Content-Type": "application/json",
         Authorization: `Bearer ${INTERNAL_TOKEN}`,
         "X-FastAIBooking-Wait-Operation": "operator_queue_outcome",
-        "X-FastAIBooking-Wait-Prompt": OPERATOR_BUSY_PROMPT,
+        "X-FastAIBooking-Wait-Prompt": OPERATOR_CALLBACK_PROMPT,
         Connection: "keep-alive"
       },
       body: JSON.stringify(payload),
@@ -7346,9 +7348,110 @@ async function postInternalOperatorQueueOutcome(payload) {
   }
 }
 
+async function postInternalContactContext(payload) {
+  if (!API_BASE_URL || !INTERNAL_TOKEN) {
+    return {
+      ok: false,
+      code: "backend_not_configured"
+    };
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/v1/internal/ai/contact-context`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${INTERNAL_TOKEN}`,
+        "X-FastAIBooking-Wait-Operation": "amazon_connect_contact_context",
+        Connection: "keep-alive"
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      return {
+        ok: false,
+        code: "backend_error",
+        message: await response.text()
+      };
+    }
+    return {
+      ok: true,
+      data: await response.json()
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      code: error?.name === "AbortError" ? "backend_timeout" : "backend_unreachable",
+      message: error?.message
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function isAmazonConnectContactContextEvent(event) {
+  return Boolean(
+    (event?.Name === "ContactFlowEvent" || event?.Details?.Name === "ContactFlowEvent") &&
+      event.Details.Parameters?.fastAiResolveContactContext === "true"
+  );
+}
+
+async function handleAmazonConnectContactContextEvent(event) {
+  const contactData = event.Details?.ContactData || {};
+  const parameters = event.Details?.Parameters || {};
+  const attributes = contactData.Attributes || {};
+  const calledNumber =
+    parameters.calledNumber ||
+    attributes.calledNumber ||
+    contactData.SystemEndpoint?.Address;
+  const payload = {
+    salonId: parameters.salonId || attributes.salonId || undefined,
+    amazonConnectContactId:
+      parameters.amazonConnectContactId ||
+      parameters.contactId ||
+      attributes.AmazonConnectContactId ||
+      attributes.contactId ||
+      contactData.ContactId,
+    amazonConnectPhoneNumber: calledNumber,
+    calledNumber,
+    callerPhone:
+      parameters.callerPhone ||
+      attributes.callerPhone ||
+      contactData.CustomerEndpoint?.Address
+  };
+  const result = await postInternalContactContext(payload);
+  if (!result.ok) {
+    console.error("Amazon Connect contact context callback failed", {
+      code: result.code,
+      contactId: payload.amazonConnectContactId
+    });
+    return {
+      salonContextResolved: "false",
+      salonId: "",
+      salonName: "",
+      salonTimezone: "",
+      salonGreeting: "Thank you for calling.",
+      callSessionId: ""
+    };
+  }
+
+  const context = result.data?.data || result.data || {};
+  return {
+    salonContextResolved: "true",
+    salonId: String(context.salonId || ""),
+    salonName: String(context.salonName || ""),
+    salonTimezone: String(context.salonTimezone || ""),
+    salonGreeting: String(context.salonGreeting || "Thank you for calling."),
+    callSessionId: String(context.callSessionId || "")
+  };
+}
+
 function isOperatorQueueOutcomeEvent(event) {
   return Boolean(
-    event?.Details?.Name === "ContactFlowEvent" &&
+    (event?.Name === "ContactFlowEvent" || event?.Details?.Name === "ContactFlowEvent") &&
       event.Details.Parameters?.fastAiOperatorQueueOutcome
   );
 }
@@ -7383,7 +7486,7 @@ async function handleOperatorQueueOutcomeEvent(event) {
   return {
     operatorQueueOutcomeRecorded: result.ok ? "true" : "false",
     operatorQueueOutcome: outcome,
-    messageToCaller: OPERATOR_BUSY_PROMPT
+    messageToCaller: OPERATOR_CALLBACK_PROMPT
   };
 }
 
@@ -10848,6 +10951,9 @@ export const handler = async (event) => {
     ...event,
     lambdaReceivedAt: event?.lambdaReceivedAt || new Date().toISOString()
   };
+  if (isAmazonConnectContactContextEvent(eventWithTiming)) {
+    return handleAmazonConnectContactContextEvent(eventWithTiming);
+  }
   if (isOperatorQueueOutcomeEvent(eventWithTiming)) {
     return handleOperatorQueueOutcomeEvent(eventWithTiming);
   }

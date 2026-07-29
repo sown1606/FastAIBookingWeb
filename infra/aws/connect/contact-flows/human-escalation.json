@@ -129,8 +129,7 @@
         "InvocationTimeLimitSeconds": 3,
         "InvocationType": "SYNCHRONOUS",
         "LambdaInvocationAttributes": {
-          "fastAiOperatorQueueOutcome": "CONNECT_FLOW_ERROR",
-          "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147"
+          "fastAiOperatorQueueOutcome": "CONNECT_FLOW_ERROR"
         },
         "ResponseValidation": {
           "ResponseType": "STRING_MAP"
@@ -154,8 +153,7 @@
         "InvocationTimeLimitSeconds": 3,
         "InvocationType": "SYNCHRONOUS",
         "LambdaInvocationAttributes": {
-          "fastAiOperatorQueueOutcome": "QUEUE_AT_CAPACITY",
-          "salonId": "9bd14a12-85ed-418a-af7d-3f5cb329c147"
+          "fastAiOperatorQueueOutcome": "QUEUE_AT_CAPACITY"
         },
         "ResponseValidation": {
           "ResponseType": "STRING_MAP"
@@ -219,7 +217,7 @@
       "Type": "MessageParticipant",
       "Parameters": {
         "SkipWhenDTMFBufferEnabled": "false",
-        "Text": "All of our operators are currently busy. Please call back later. Goodbye."
+        "Text": "All of our operators are currently assisting other callers. We will call you back as soon as someone is available. Goodbye."
       },
       "Transitions": {
         "NextAction": "eab531ca-686c-470f-9ed2-426e5ead1400",

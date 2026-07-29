@@ -31,6 +31,35 @@
         },
         "overrideConsoleVoice": false
       },
+      "resolve-salon-contact-context": {
+        "position": {
+          "x": 500,
+          "y": 0
+        },
+        "parameters": {
+          "LambdaFunctionARN": {
+            "displayName": "fastaibooking-booking-handler"
+          }
+        }
+      },
+      "set-resolved-salon-context": {
+        "position": {
+          "x": 620,
+          "y": 0
+        }
+      },
+      "salon-name-greeting": {
+        "position": {
+          "x": 700,
+          "y": 80
+        }
+      },
+      "generic-salon-greeting": {
+        "position": {
+          "x": 620,
+          "y": 160
+        }
+      },
       "67ada978-600a-4d39-9965-6230c52810a9": {
         "position": {
           "x": 560,
@@ -319,6 +348,10 @@
           "ContactId": "$.ContactId",
           "AmazonConnectContactId": "$.ContactId",
           "InitialContactId": "$.InitialContactId",
+          "salonId": "$.Attributes.salonId",
+          "salonName": "$.Attributes.salonName",
+          "salonTimezone": "$.Attributes.salonTimezone",
+          "callSessionId": "$.Attributes.callSessionId",
           "operatorHelpMentioned": "true",
           "x-amz-lex:audio:start-timeout-ms:*:*": "5000",
           "x-amz-lex:audio:end-timeout-ms:*:*": "2000",
@@ -734,7 +767,7 @@
       "Type": "MessageParticipant",
       "Parameters": {
         "SkipWhenDTMFBufferEnabled": "false",
-        "Text": "All of our operators are currently busy. Please call back later. Goodbye."
+        "Text": "All of our operators are currently assisting other callers. We will call you back as soon as someone is available. Goodbye."
       },
       "Transitions": {
         "NextAction": "transfer-return-goodbye",
@@ -781,6 +814,90 @@
           "connectFlowSourceVersion": "2026-07-21-thuyet-p0-greeting-service-time-hotfix"
         },
         "TargetContact": "Current"
+      },
+      "Transitions": {
+        "NextAction": "resolve-salon-contact-context",
+        "Errors": [
+          {
+            "NextAction": "generic-salon-greeting",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "resolve-salon-contact-context",
+      "Type": "InvokeLambdaFunction",
+      "Parameters": {
+        "LambdaFunctionARN": "arn:aws:lambda:us-east-1:197452633989:function:fastaibooking-booking-handler",
+        "InvocationTimeLimitSeconds": 3,
+        "InvocationType": "SYNCHRONOUS",
+        "LambdaInvocationAttributes": {
+          "fastAiResolveContactContext": "true",
+          "calledNumber": "$.SystemEndpoint.Address",
+          "callerPhone": "$.CustomerEndpoint.Address",
+          "contactId": "$.ContactId"
+        },
+        "ResponseValidation": {
+          "ResponseType": "STRING_MAP"
+        }
+      },
+      "Transitions": {
+        "NextAction": "set-resolved-salon-context",
+        "Errors": [
+          {
+            "NextAction": "generic-salon-greeting",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "set-resolved-salon-context",
+      "Type": "UpdateContactAttributes",
+      "Parameters": {
+        "Attributes": {
+          "salonId": "$.External.salonId",
+          "salonName": "$.External.salonName",
+          "salonTimezone": "$.External.salonTimezone",
+          "callSessionId": "$.External.callSessionId",
+          "salonContextResolved": "$.External.salonContextResolved"
+        },
+        "TargetContact": "Current"
+      },
+      "Transitions": {
+        "NextAction": "salon-name-greeting",
+        "Errors": [
+          {
+            "NextAction": "salon-name-greeting",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "salon-name-greeting",
+      "Type": "MessageParticipant",
+      "Parameters": {
+        "SkipWhenDTMFBufferEnabled": "false",
+        "Text": "$.External.salonGreeting"
+      },
+      "Transitions": {
+        "NextAction": "3b2877ca-bc16-4019-a8e6-04200c0ded06",
+        "Errors": [
+          {
+            "NextAction": "generic-salon-greeting",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "generic-salon-greeting",
+      "Type": "MessageParticipant",
+      "Parameters": {
+        "SkipWhenDTMFBufferEnabled": "false",
+        "Text": "Thank you for calling."
       },
       "Transitions": {
         "NextAction": "3b2877ca-bc16-4019-a8e6-04200c0ded06",

@@ -1019,6 +1019,27 @@ const postOperatorQueueOutcome = async (
   };
 };
 
+const postAmazonConnectContactContext = async (
+  payload: Record<string, unknown>,
+  token = env.FASTAIBOOKING_API_INTERNAL_TOKEN
+) => {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json"
+  };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  const response = await fetch(`${baseUrl}/api/v1/internal/ai/contact-context`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(payload)
+  });
+  return {
+    response,
+    body: await response.json()
+  };
+};
+
 const bookingPayload = (overrides: Record<string, unknown> = {}) => ({
   salonId: ids.salonA,
   intentName: "BookAppointmentIntent",
@@ -11497,7 +11518,27 @@ test("operator queue entry callback transitions pending escalation to queued onc
   assert.equal(state.callSessions[0].finalResolution, "Waiting in the human operator queue.");
 });
 
-test("operator queue timeout callback closes the existing escalation once", async () => {
+test("Amazon Connect contact context resolves the called salon before the greeting", async () => {
+  const result = await postAmazonConnectContactContext({
+    calledNumber: "+18483487681",
+    amazonConnectPhoneNumber: "+18483487681",
+    amazonConnectContactId: "connect-contact-context",
+    callerPhone: "+17325956266"
+  });
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.salonId, ids.salonA);
+  assert.equal(result.body.data.salonName, "Kiet Nails & Beauty");
+  assert.equal(
+    result.body.data.salonGreeting,
+    "Thank you for calling Kiet Nails & Beauty."
+  );
+  assert.equal(state.callSessions.length, 1);
+  assert.equal(state.callSessions[0].salonId, ids.salonA);
+  assert.equal(state.callSessions[0].providerCallId, "connect-contact-context");
+});
+
+test("operator queue timeout creates a salon-scoped missed call callback once", async () => {
   const contactId = "connect-queue-timeout";
   const queued = await postInternalAppointment(
     bookingPayload({
@@ -11512,13 +11553,11 @@ test("operator queue timeout callback closes the existing escalation once", asyn
   assert.equal(state.escalations[0].status, CallEscalationStatus.PENDING);
 
   const callback = await postOperatorQueueOutcome({
-    salonId: ids.salonA,
     contactId,
     outcome: "QUEUE_WAIT_TIMEOUT"
   });
-  const firstClosedAtMs = state.escalations[0].closedAt?.getTime();
+  const firstEndedAtMs = state.callSessions[0].endedAt?.getTime();
   const secondCallback = await postOperatorQueueOutcome({
-    salonId: ids.salonA,
     contactId,
     outcome: "QUEUE_WAIT_TIMEOUT"
   });
@@ -11526,13 +11565,24 @@ test("operator queue timeout callback closes the existing escalation once", asyn
   assert.equal(callback.response.status, 200);
   assert.equal(secondCallback.response.status, 200);
   assert.equal(state.escalations.length, 1);
-  assert.equal(callback.body.data.status, CallEscalationStatus.CLOSED);
-  assert.equal(state.escalations[0].status, CallEscalationStatus.CLOSED);
-  assert.equal(state.escalations[0].closedAt?.getTime(), firstClosedAtMs);
-  assert.equal(state.escalations[0].routingOutcome, CallRoutingOutcome.CALL_CENTER_ESCALATION);
-  assert.equal(state.escalations[0].messageToCaller, "All of our operators are currently busy. Please call back later. Goodbye.");
+  assert.equal(callback.body.data.status, CallEscalationStatus.CALLBACK_REQUESTED);
+  assert.equal(state.escalations[0].salonId, ids.salonA);
+  assert.equal(state.escalations[0].status, CallEscalationStatus.CALLBACK_REQUESTED);
+  assert.equal(state.escalations[0].closedAt, null);
+  assert.equal(state.escalations[0].routingOutcome, CallRoutingOutcome.CALLBACK_REQUEST);
+  assert.equal(state.escalations[0].callbackPhone, "+17325956266");
+  assert.equal(
+    state.escalations[0].messageToCaller,
+    "All of our operators are currently assisting other callers. We will call you back as soon as someone is available. Goodbye."
+  );
   assert.equal(state.escalations[0].metadata.operatorQueueOutcome, "QUEUE_WAIT_TIMEOUT");
-  assert.equal(state.callSessions[0].finalResolution, "All of our operators are currently busy. Please call back later. Goodbye.");
+  assert.equal(state.callSessions[0].status, CallSessionStatus.MISSED);
+  assert.equal(state.callSessions[0].routingOutcome, CallRoutingOutcome.CALLBACK_REQUEST);
+  assert.equal(state.callSessions[0].endedAt?.getTime(), firstEndedAtMs);
+  assert.equal(
+    state.callSessions[0].finalResolution,
+    "All of our operators are currently assisting other callers. We will call you back as soon as someone is available. Goodbye."
+  );
 });
 
 test("cancel and reschedule intents use upcoming appointment context without transfer", async () => {

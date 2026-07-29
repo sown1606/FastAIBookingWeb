@@ -250,11 +250,16 @@ type AmazonConnectConnection = {
   getEndpoint?: () => AmazonConnectEndpoint | null;
 };
 
+type AmazonConnectAttribute = {
+  value?: string;
+};
+
 type AmazonConnectContact = {
   getContactId?: () => string;
   getStatus?: () => AmazonConnectState;
   getState?: () => AmazonConnectState;
   getConnections?: () => AmazonConnectConnection[];
+  getAttributes?: () => Record<string, AmazonConnectAttribute>;
   onConnected?: (callback: (contact: AmazonConnectContact) => void) => unknown;
   onEnded?: (callback: (contact: AmazonConnectContact) => void) => unknown;
   onRefresh?: (callback: (contact: AmazonConnectContact) => void) => unknown;
@@ -314,6 +319,14 @@ type CcpStatus =
   | "frame_blocked"
   | "popup_blocked"
   | "error";
+
+type ActiveContactContext = {
+  contactId: string;
+  callerPhone: string | null;
+  salonId: string;
+  salonName: string;
+  active: boolean;
+};
 
 const getAmazonConnect = (): AmazonConnectGlobal | undefined => {
   return (globalThis as typeof globalThis & { connect?: AmazonConnectGlobal }).connect;
@@ -474,6 +487,10 @@ const getCallerPhoneFromContact = (contact: AmazonConnectContact): string | null
   return null;
 };
 
+const getContactAttribute = (contact: AmazonConnectContact, key: string): string => {
+  return contact.getAttributes?.()?.[key]?.value?.trim() ?? "";
+};
+
 const getQueueCallerPhone = (item: QueueItem | EscalationDetail | null): string | null => {
   if (!item) {
     return null;
@@ -512,6 +529,7 @@ interface AmazonConnectCcpPanelProps {
   embeddedEnabled: boolean;
   showTechnicalDetails: boolean;
   onQueueMatch: (item: QueueItem) => void;
+  onContactContext: (context: ActiveContactContext) => void;
   onEmbeddedReadyChange: (ready: boolean) => void;
   onDirectRefresh: () => void;
 }
@@ -524,6 +542,7 @@ const AmazonConnectCcpPanel = ({
   embeddedEnabled,
   showTechnicalDetails,
   onQueueMatch,
+  onContactContext,
   onEmbeddedReadyChange,
   onDirectRefresh
 }: AmazonConnectCcpPanelProps) => {
@@ -785,15 +804,33 @@ const AmazonConnectCcpPanel = ({
           const updateContact = (nextContact: AmazonConnectContact) => {
             const contactId = nextContact.getContactId?.() ?? "";
             const callerPhone = getCallerPhoneFromContact(nextContact);
+            const nextContactStatus =
+              getStateName(nextContact.getStatus?.() ?? nextContact.getState?.()) ?? "";
             setActiveContactId(contactId);
             setActiveCallerPhone(callerPhone ?? "");
-            setContactStatus(getStateName(nextContact.getStatus?.() ?? nextContact.getState?.()) ?? "");
+            setContactStatus(nextContactStatus);
+            onContactContext({
+              contactId,
+              callerPhone,
+              salonId: getContactAttribute(nextContact, "salonId"),
+              salonName: getContactAttribute(nextContact, "salonName"),
+              active: !/ended|destroyed|disconnected|missed|error/i.test(nextContactStatus)
+            });
             void matchActiveContact(callerPhone, contactId || null);
           };
           updateContact(contact);
           contact.onConnected?.(updateContact);
           contact.onRefresh?.(updateContact);
-          contact.onEnded?.(updateContact);
+          contact.onEnded?.((endedContact) => {
+            updateContact(endedContact);
+            onContactContext({
+              contactId: endedContact.getContactId?.() ?? "",
+              callerPhone: getCallerPhoneFromContact(endedContact),
+              salonId: getContactAttribute(endedContact, "salonId"),
+              salonName: getContactAttribute(endedContact, "salonName"),
+              active: false
+            });
+          });
         });
       } catch (initError) {
         if (!cancelled) {
@@ -822,6 +859,7 @@ const AmazonConnectCcpPanel = ({
     embeddedBlocked,
     embeddedEnabled,
     matchActiveContact,
+    onContactContext,
     region,
     retryNonce,
     showFrameBlockedError,
@@ -998,6 +1036,7 @@ export const CallCenterPage = () => {
   const [customers, setCustomers] = useState<CustomerItem[]>([]);
   const [appointments, setAppointments] = useState<AppointmentItem[]>([]);
   const [queue, setQueue] = useState<QueueItem[]>([]);
+  const [activeContactContext, setActiveContactContext] = useState<ActiveContactContext | null>(null);
   const [ccpEmbeddedReady, setCcpEmbeddedReady] = useState(false);
   const [selectedEscalationId, setSelectedEscalationId] = useState("");
   const [selectedEscalation, setSelectedEscalation] = useState<EscalationDetail | null>(null);
@@ -1286,7 +1325,19 @@ export const CallCenterPage = () => {
   }, [loading, selectedEscalationId, targetEscalationId]);
 
   useEffect(() => {
-    if (isOwner || ccpEmbeddedReady) {
+    if (
+      !activeContactContext?.active ||
+      !activeContactContext.salonId ||
+      activeContactContext.salonId === selectedSalonId ||
+      !salons.some((salon) => salon.id === activeContactContext.salonId)
+    ) {
+      return;
+    }
+    void changeSalon(activeContactContext.salonId);
+  }, [activeContactContext, salons, selectedSalonId]);
+
+  useEffect(() => {
+    if (isOwner) {
       return;
     }
 
@@ -1643,6 +1694,15 @@ export const CallCenterPage = () => {
     setSelectedEscalationId(item.id);
   }, []);
 
+  const handleContactContext = useCallback((context: ActiveContactContext) => {
+    setActiveContactContext((current) => {
+      if (!context.active) {
+        return current?.contactId === context.contactId ? null : current;
+      }
+      return context;
+    });
+  }, []);
+
   const handleEmbeddedReadyChange = useCallback((ready: boolean) => {
     setCcpEmbeddedReady(ready);
   }, []);
@@ -1684,6 +1744,15 @@ export const CallCenterPage = () => {
         return new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime();
       });
   }, [queue, selectedSalonId]);
+  const openQueueCountBySalon = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of queue) {
+      if (item.status !== "CLOSED") {
+        counts.set(item.salon.id, (counts.get(item.salon.id) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [queue]);
   const openRequests = selectedSalonQueue.filter((item) => item.status !== "CLOSED").length;
   const amazonConnectRuntimeReady = Boolean(runtime?.amazonConnect.configured);
   const amazonConnectPlatformReady = Boolean(runtime?.amazonConnect.adminConfigured);
@@ -2220,12 +2289,20 @@ export const CallCenterPage = () => {
       <FormDialog />
 
       <aside className="operator-context-panel">
-        <section className="card operator-active-call-banner">
+        <section
+          className={
+            activeContactContext?.active
+              ? "card operator-active-call-banner is-live"
+              : "card operator-active-call-banner"
+          }
+        >
           <div className="section-header compact-header">
             <div>
               <span className="eyebrow">{t("callCenter.activeCall")}</span>
               <h2>
-                {selectedEscalation
+                {activeContactContext?.salonName
+                  ? t("callCenter.handlingCallFor", { salonName: activeContactContext.salonName })
+                  : selectedEscalation
                   ? t("callCenter.handlingCallFor", { salonName: selectedEscalation.salon.name })
                   : t("callCenter.noActiveCall")}
               </h2>
@@ -2238,11 +2315,17 @@ export const CallCenterPage = () => {
           <div className="operator-label-list compact">
             <div className="operator-label-row">
               <span>{t("profile.salonName")}</span>
-              <strong>{selectedSalonDetail?.name ?? selectedSalonName}</strong>
+              <strong>
+                {activeContactContext?.salonName || selectedSalonDetail?.name || selectedSalonName}
+              </strong>
             </div>
             <div className="operator-label-row">
               <span>{t("callCenter.callerPhone")}</span>
-              <strong>{selectedCallerPhone ?? t("callCenter.unknownCaller")}</strong>
+              <strong>
+                {activeContactContext?.callerPhone ||
+                  selectedCallerPhone ||
+                  t("callCenter.unknownCaller")}
+              </strong>
             </div>
             <div className="operator-label-row">
               <span>{t("common.status")}</span>
@@ -2258,6 +2341,34 @@ export const CallCenterPage = () => {
               <span>{t("callCenter.waitingTime")}</span>
               <strong>{selectedEscalation ? formatWaitingTime(selectedWaitingMinutes) : t("common.none")}</strong>
             </div>
+          </div>
+
+          <div className="operator-salon-call-board" aria-label={t("callCenter.salonCallBoard")}>
+            {salons.map((salon) => {
+              const waitingCount = openQueueCountBySalon.get(salon.id) ?? 0;
+              const isLiveSalon =
+                activeContactContext?.active && activeContactContext.salonId === salon.id;
+              return (
+                <button
+                  type="button"
+                  key={salon.id}
+                  className={[
+                    "operator-salon-call-card",
+                    waitingCount > 0 ? "has-call" : "",
+                    isLiveSalon ? "is-live" : "",
+                    salon.id === selectedSalonId ? "is-selected" : ""
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                  onClick={() => void changeSalon(salon.id)}
+                >
+                  <strong>{salon.name}</strong>
+                  <span>
+                    {t("callCenter.waitingCallerCount", { count: waitingCount })}
+                  </span>
+                </button>
+              );
+            })}
           </div>
 
           <label className="field compact manual-salon-selector">
@@ -2418,6 +2529,7 @@ export const CallCenterPage = () => {
             embeddedEnabled={embeddedCcpEnabled}
             showTechnicalDetails={!isBasicMode}
             onQueueMatch={handleQueueMatch}
+            onContactContext={handleContactContext}
             onEmbeddedReadyChange={handleEmbeddedReadyChange}
             onDirectRefresh={refreshDirectCcpQueue}
           />

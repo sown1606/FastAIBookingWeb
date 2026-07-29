@@ -22,6 +22,7 @@ import {
   createAmazonConnectAIAppointment,
   createAmazonConnectAIRecoverableFailure,
   exportAIInteractions,
+  getAmazonConnectContactContext,
   getAmazonConnectReleaseEvidenceForInternal,
   getAIInteractionById,
   listAIInteractions,
@@ -94,6 +95,14 @@ const operatorQueueOutcomeSchema = z.object({
     "QUEUE_AT_CAPACITY",
     "CONNECT_FLOW_ERROR"
   ])
+});
+
+const amazonConnectContactContextSchema = z.object({
+  salonId: z.string().trim().min(1).optional(),
+  amazonConnectContactId: z.string().trim().min(1).max(160).optional(),
+  amazonConnectPhoneNumber: z.string().trim().min(1).max(40).optional(),
+  calledNumber: z.string().trim().min(1).max(40).optional(),
+  callerPhone: z.string().trim().min(3).max(40).optional()
 });
 
 const internalReleaseEvidenceParamsSchema = z.object({
@@ -464,6 +473,19 @@ aiInternalRouter.get(
         ...result,
         apiRelease: getApiReleaseIdentity()
       }
+    });
+  })
+);
+
+aiInternalRouter.post(
+  "/contact-context",
+  requireInternalApiToken,
+  validate(amazonConnectContactContextSchema),
+  asyncHandler(async (req, res) => {
+    const payload = req.body as z.infer<typeof amazonConnectContactContextSchema>;
+    const context = await getAmazonConnectContactContext(payload);
+    return sendSuccess(res, {
+      data: context
     });
   })
 );

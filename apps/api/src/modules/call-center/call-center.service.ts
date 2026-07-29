@@ -36,6 +36,8 @@ const toJson = (value: unknown): Prisma.InputJsonValue => {
 const AMAZON_CONNECT_OPERATOR_QUEUE_NAME = "FastAIBooking Operator Queue";
 const OPERATOR_TRANSFER_PROMPT = "Let me check for an available operator.";
 const OPERATOR_BUSY_PROMPT = "All of our operators are currently busy. Please call back later. Goodbye.";
+const OPERATOR_CALLBACK_PROMPT =
+  "All of our operators are currently assisting other callers. We will call you back as soon as someone is available. Goodbye.";
 const OPERATOR_NOT_INCLUDED_PROMPT =
   "Live operator service is not included for this salon. Please continue with the AI receptionist or call the salon directly.";
 
@@ -633,6 +635,16 @@ export const createOrUpdateCallEscalation = async (input: {
     routingOutcome = CallRoutingOutcome.CALL_CENTER_ESCALATION;
     finalResolution = "Human operator transfer requested; waiting for Amazon Connect queue evidence.";
     queuedAt = null;
+  } else if (
+    operatorQueueOutcome === "QUEUE_WAIT_TIMEOUT" ||
+    operatorQueueOutcome === "QUEUE_AT_CAPACITY"
+  ) {
+    status = CallEscalationStatus.CALLBACK_REQUESTED;
+    routingOutcome = CallRoutingOutcome.CALLBACK_REQUEST;
+    finalResolution = OPERATOR_CALLBACK_PROMPT;
+    callbackPhone = input.customerPhone ?? null;
+    queuedAt = null;
+    closedAt = null;
   } else {
     status = CallEscalationStatus.CLOSED;
     routingOutcome =
@@ -842,6 +854,23 @@ export const recordOperatorQueueOutcome = async (input: {
 
   if (!existingCallSession) {
     throw new AppError("Call session or Amazon Connect ContactId is required.", 400, "CALL_SESSION_REQUIRED");
+  }
+
+  const callbackRequired =
+    input.operatorQueueOutcome === "QUEUE_WAIT_TIMEOUT" ||
+    input.operatorQueueOutcome === "QUEUE_AT_CAPACITY";
+  if (callbackRequired) {
+    await prisma.callSession.update({
+      where: {
+        id: existingCallSession.id
+      },
+      data: {
+        status: CallSessionStatus.MISSED,
+        endedAt: existingCallSession.endedAt ?? new Date(),
+        routingOutcome: CallRoutingOutcome.CALLBACK_REQUEST,
+        finalResolution: OPERATOR_CALLBACK_PROMPT
+      }
+    });
   }
 
   return createOrUpdateCallEscalation({

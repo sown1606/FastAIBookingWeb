@@ -934,9 +934,14 @@ test("Connect human escalation flow transfers without duplicate wait prompt", ()
   assert.equal(queueTransfer.Type, "TransferContactToQueue");
   assert.equal(flowErrorCallback.Type, "InvokeLambdaFunction");
   assert.equal(flowErrorCallback.Parameters.LambdaInvocationAttributes.fastAiOperatorQueueOutcome, "CONNECT_FLOW_ERROR");
+  assert.equal(flowErrorCallback.Parameters.LambdaInvocationAttributes.salonId, undefined);
   assert.equal(queueAtCapacityCallback.Type, "InvokeLambdaFunction");
   assert.equal(queueAtCapacityCallback.Parameters.LambdaInvocationAttributes.fastAiOperatorQueueOutcome, "QUEUE_AT_CAPACITY");
-  assert.equal(fallbackMessage.Parameters.Text, "All of our operators are currently busy. Please call back later. Goodbye.");
+  assert.equal(queueAtCapacityCallback.Parameters.LambdaInvocationAttributes.salonId, undefined);
+  assert.equal(
+    fallbackMessage.Parameters.Text,
+    "All of our operators are currently assisting other callers. We will call you back as soon as someone is available. Goodbye."
+  );
   assert.equal(
     humanEscalationFlow.Actions.some(
       (action) =>
@@ -969,17 +974,131 @@ test("Connect customer queue flow has bounded wait timeout and disconnect fallba
 
   assert.equal(entryCallback.Type, "InvokeLambdaFunction");
   assert.equal(entryCallback.Parameters.LambdaInvocationAttributes.fastAiOperatorQueueOutcome, "AMAZON_CONNECT_ENQUEUED");
+  assert.equal(entryCallback.Parameters.LambdaInvocationAttributes.salonId, undefined);
   assert.equal(loop.Type, "MessageParticipantIteratively");
-  assert.equal(loop.Parameters.InterruptFrequencySeconds, "90");
+  assert.equal(loop.Parameters.InterruptFrequencySeconds, "30");
   assert.equal(
     loop.Parameters.Messages.some((message) => /continue to hold/i.test(message.Text || "")),
     true
   );
   assert.equal(timeoutCallback.Type, "InvokeLambdaFunction");
   assert.equal(timeoutCallback.Parameters.LambdaInvocationAttributes.fastAiOperatorQueueOutcome, "QUEUE_WAIT_TIMEOUT");
+  assert.equal(timeoutCallback.Parameters.LambdaInvocationAttributes.salonId, undefined);
   assert.equal(timeoutMessage.Type, "MessageParticipant");
-  assert.equal(timeoutMessage.Parameters.Text, "All of our operators are currently busy. Please call back later. Goodbye.");
+  assert.equal(
+    timeoutMessage.Parameters.Text,
+    "All of our operators are currently assisting other callers. We will call you back as soon as someone is available. Goodbye."
+  );
   assert.equal(disconnect.Type, "DisconnectParticipant");
+});
+
+test("Connect resolves salon context before greeting and propagates it to Lex and the operator queue", () => {
+  const flow = JSON.parse(
+    readFileSync(path.join(connectRoot, "ai-reception.json"), "utf8")
+  );
+  const actionsById = new Map(flow.Actions.map((action) => [action.Identifier, action]));
+  const runtimeAttributes = actionsById.get("set-fastaibooking-runtime-attrs");
+  const resolver = actionsById.get(runtimeAttributes.Transitions.NextAction);
+  const salonAttributes = actionsById.get(resolver.Transitions.NextAction);
+  const greeting = actionsById.get(salonAttributes.Transitions.NextAction);
+  const initialLex = actionsById.get(greeting.Transitions.NextAction);
+
+  assert.equal(resolver.Type, "InvokeLambdaFunction");
+  assert.equal(
+    resolver.Parameters.LambdaInvocationAttributes.fastAiResolveContactContext,
+    "true"
+  );
+  assert.equal(resolver.Parameters.LambdaInvocationAttributes.calledNumber, "$.SystemEndpoint.Address");
+  assert.equal(salonAttributes.Parameters.Attributes.salonId, "$.External.salonId");
+  assert.equal(salonAttributes.Parameters.Attributes.salonName, "$.External.salonName");
+  assert.equal(greeting.Type, "MessageParticipant");
+  assert.equal(greeting.Parameters.Text, "$.External.salonGreeting");
+  assert.equal(initialLex.Parameters.LexSessionAttributes.salonId, "$.Attributes.salonId");
+  assert.equal(initialLex.Parameters.LexSessionAttributes.salonName, "$.Attributes.salonName");
+});
+
+test("Amazon Connect contact context callback returns the called salon greeting as a string map", async () => {
+  const handler = await loadHandler();
+  const calls = installFetchMock(() =>
+    jsonResponse({
+      salonId: "salon-kiet",
+      salonName: "Kiet Nails & Beauty",
+      salonTimezone: "America/New_York",
+      salonGreeting: "Thank you for calling Kiet Nails & Beauty.",
+      callSessionId: "call-session-context"
+    })
+  );
+
+  const response = await handler({
+    Name: "ContactFlowEvent",
+    Details: {
+      Parameters: {
+        fastAiResolveContactContext: "true",
+        calledNumber: "+18483487681",
+        callerPhone: "+17325956266",
+        contactId: "connect-contact-context"
+      },
+      ContactData: {
+        ContactId: "connect-contact-context",
+        Attributes: {},
+        CustomerEndpoint: {
+          Address: "+17325956266"
+        },
+        SystemEndpoint: {
+          Address: "+18483487681"
+        }
+      }
+    }
+  });
+
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].url, /\/api\/v1\/internal\/ai\/contact-context$/);
+  assert.equal(calls[0].body.calledNumber, "+18483487681");
+  assert.equal(response.salonContextResolved, "true");
+  assert.equal(response.salonId, "salon-kiet");
+  assert.equal(response.salonName, "Kiet Nails & Beauty");
+  assert.equal(response.salonGreeting, "Thank you for calling Kiet Nails & Beauty.");
+  assert.equal(response.callSessionId, "call-session-context");
+});
+
+test("Amazon Connect queue callback accepts the production top-level event name", async () => {
+  const handler = await loadHandler();
+  const calls = installFetchMock(() =>
+    jsonResponse({
+      escalationId: "escalation-queue",
+      status: "QUEUED",
+      routingOutcome: "QUEUED",
+      operatorQueueOutcome: "AMAZON_CONNECT_ENQUEUED"
+    })
+  );
+
+  const response = await handler({
+    Name: "ContactFlowEvent",
+    Details: {
+      Parameters: {
+        fastAiOperatorQueueOutcome: "AMAZON_CONNECT_ENQUEUED"
+      },
+      ContactData: {
+        ContactId: "connect-queue-production-shape",
+        Attributes: {
+          salonId: "salon-kiet",
+          callSessionId: "call-session-queue",
+          callerPhone: "+17325956266"
+        },
+        CustomerEndpoint: {
+          Address: "+17325956266"
+        }
+      }
+    }
+  });
+
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].url, /\/api\/v1\/internal\/ai\/operator-queue-outcome$/);
+  assert.equal(calls[0].body.salonId, "salon-kiet");
+  assert.equal(calls[0].body.callSessionId, "call-session-queue");
+  assert.equal(calls[0].body.outcome, "AMAZON_CONNECT_ENQUEUED");
+  assert.equal(response.operatorQueueOutcomeRecorded, "true");
+  assert.equal(response.operatorQueueOutcome, "AMAZON_CONNECT_ENQUEUED");
 });
 
 const collectReachableActions = (flow) => {
