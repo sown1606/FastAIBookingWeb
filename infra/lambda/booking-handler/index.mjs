@@ -6919,7 +6919,11 @@ function buildLexResponse(event, message, state = "Fulfilled", sessionAttributes
     responseSessionAttributes.sessionAttributeKeysToClear = JSON.stringify(keysToClear);
   }
   const needsCallerInput = responseStillNeedsCallerInput(responseMessage, dialogAction, responseSessionAttributes);
-  if (needsCallerInput && dialogAction.type === "Close") {
+  if (
+    needsCallerInput &&
+    dialogAction.type === "Close" &&
+    responseSessionAttributes.transferToQueue !== "true"
+  ) {
     dialogAction = {
       type: "ElicitIntent"
     };

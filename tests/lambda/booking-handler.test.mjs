@@ -10744,6 +10744,84 @@ test("press 0 from service prompt escalates to operator", async () => {
   assert.equal(fetchCalls[0].body.attributes.lexTurnDebug.dtmfRouting.accepted, true);
 });
 
+test("production operator requests close Lex so Connect can enter the transfer flow", async () => {
+  const handler = await loadHandler();
+  const fetchCalls = installFetchMock(() =>
+    jsonResponse(
+      successfulBackendPayload({
+        outcome: "HUMAN_ESCALATION",
+        appointment: null,
+        lexResponse: {
+          fulfillmentState: "Fulfilled",
+          message: "Let me check for an available operator.",
+          messageContentType: "PlainText",
+          sessionAttributes: {
+            conversationState: "TRANSFER",
+            conversationOutcome: "NEEDS_INPUT",
+            conversationComplete: "false",
+            transferToQueue: "true",
+            forceHumanEscalation: "true",
+            escalationReason: "caller_requested_human"
+          }
+        }
+      })
+    )
+  );
+
+  const operatorResponse = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "operator please",
+      inputMode: "Speech",
+      sessionState: {
+        ...baseEvent().sessionState,
+        intent: {
+          ...baseEvent().sessionState.intent,
+          slots: {}
+        }
+      }
+    })
+  );
+
+  assert.equal(operatorResponse.sessionState.dialogAction.type, "Close");
+  assert.equal(operatorResponse.sessionState.sessionAttributes.conversationState, "TRANSFER");
+  assert.equal(operatorResponse.sessionState.sessionAttributes.transferToQueue, "true");
+
+  const keypadResponse = await handler(
+    baseEvent({
+      invocationSource: "DialogCodeHook",
+      inputTranscript: "0",
+      inputMode: "Text",
+      sessionState: {
+        ...baseEvent().sessionState,
+        sessionAttributes: {
+          ...baseEvent().sessionState.sessionAttributes,
+          provider: "AMAZON_CONNECT",
+          lastAskedSlot: "serviceName",
+          activeDtmfMenu: "service",
+          activeDtmfOptionsJson: JSON.stringify({
+            "0": "__operator__",
+            "1": "Pedicure",
+            "2": "Manicure",
+            "3": "Gel Manicure",
+            "4": "Full Set",
+            "5": "Dip Powder"
+          })
+        },
+        intent: {
+          ...baseEvent().sessionState.intent,
+          slots: {}
+        }
+      }
+    })
+  );
+
+  assert.equal(keypadResponse.sessionState.dialogAction.type, "Close");
+  assert.equal(keypadResponse.sessionState.sessionAttributes.conversationState, "TRANSFER");
+  assert.equal(keypadResponse.sessionState.sessionAttributes.transferToQueue, "true");
+  assert.equal(fetchCalls[1].body.attributes.escalationReason, "customer_pressed_zero");
+});
+
 test("DialogCodeHook maps staff DTMF only when staffPreference was last asked", async () => {
   const handler = await loadHandler();
   globalThis.fetch = async () => {
