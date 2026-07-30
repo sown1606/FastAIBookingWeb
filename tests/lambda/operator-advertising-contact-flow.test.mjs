@@ -7,6 +7,7 @@ const readFlow = async (relativePath) =>
 
 const mainFlowPath = "infra/aws/connect/contact-flows/operator-advertising-main-line.json";
 const queueFlowPath = "infra/aws/connect/contact-flows/operator-advertising-customer-queue.json";
+const manifestPath = "infra/aws/connect/operator-advertising-source-manifest.json";
 
 const actionMap = (flow) => new Map(flow.Actions.map((action) => [action.Identifier, action]));
 
@@ -30,28 +31,25 @@ test("advertising operator flows have complete action graphs", async () => {
   }
 });
 
-test("advertising main line is keypad-only and contains no AI integration", async () => {
+test("Anh Kiet advertising main line is English-only with no menu or AI integration", async () => {
   const flow = await readFlow(mainFlowPath);
   const actions = actionMap(flow);
   const actionTypes = new Set(flow.Actions.map((action) => action.Type));
+  const serialized = JSON.stringify(flow);
 
   assert.equal(actionTypes.has("ConnectParticipantWithLexBot"), false);
   assert.equal(actionTypes.has("InvokeLambdaFunction"), false);
-
-  const menu = actions.get("language-menu-first-attempt");
-  assert.equal(menu.Type, "GetParticipantInput");
-  assert.deepEqual(
-    menu.Transitions.Conditions.map((condition) => ({
-      digit: condition.Condition.Operands[0],
-      next: condition.NextAction
-    })),
-    [
-      { digit: "1", next: "set-language-english" },
-      { digit: "2", next: "set-language-vietnamese" }
-    ]
+  assert.equal(actionTypes.has("GetParticipantInput"), false);
+  assert.equal(actionTypes.has("Compare"), false);
+  assert.equal(serialized.includes("press 1"), false);
+  assert.equal(serialized.includes("press 2"), false);
+  assert.equal(serialized.includes("vietnamese"), false);
+  assert.equal(serialized.includes("operatorLanguage\":\"vi"), false);
+  assert.equal(actions.get("set-hotline-attributes").Parameters.Attributes.operatorLanguage, "en");
+  assert.equal(
+    actions.get("set-hotline-attributes").Parameters.Attributes.operatorHotline,
+    "anh-kiet-advertising"
   );
-  assert.equal(actions.get("set-language-english").Parameters.Attributes.operatorLanguage, "en");
-  assert.equal(actions.get("set-language-vietnamese").Parameters.Attributes.operatorLanguage, "vi");
 });
 
 test("advertising main line checks for an available operator before queueing", async () => {
@@ -61,9 +59,9 @@ test("advertising main line checks for an available operator before queueing", a
 
   assert.equal(staffing.Type, "CheckMetricData");
   assert.equal(staffing.Parameters.MetricType, "NumberOfAgentsAvailable");
-  assert.equal(staffing.Transitions.NextAction, "main-busy-language-branch");
+  assert.equal(staffing.Transitions.NextAction, "main-enable-voicemail");
   assert.deepEqual(staffing.Transitions.Conditions[0], {
-    NextAction: "connecting-language-branch",
+    NextAction: "english-connecting-message",
     Condition: {
       Operator: "NumberGreaterThan",
       Operands: ["0"]
@@ -80,7 +78,7 @@ test("busy paths enable IVR recording and provide a 60-second voicemail window",
     const recordingActions = flow.Actions.filter(
       (action) => action.Type === "UpdateContactRecordingBehavior"
     );
-    assert.equal(recordingActions.length, 2);
+    assert.equal(recordingActions.length, 1);
     for (const action of recordingActions) {
       assert.equal(action.Parameters.RecordingBehavior.IVRRecordingBehavior, "Enabled");
       assert.deepEqual(action.Parameters.RecordingBehavior.RecordedParticipants, []);
@@ -101,12 +99,30 @@ test("advertising customer queue falls back after fifteen seconds", async () => 
     (action) => action.Type === "MessageParticipantIteratively"
   );
 
-  assert.equal(loopActions.length, 2);
+  assert.equal(loopActions.length, 1);
   for (const action of loopActions) {
     assert.equal(action.Parameters.InterruptFrequencySeconds, "15");
     assert.equal(
       action.Transitions.Conditions[0].NextAction,
-      "queue-busy-language-branch"
+      "queue-enable-voicemail"
     );
   }
+});
+
+test("Anh Kiet hotline manifest pins the claimed number and English-only release", async () => {
+  const manifest = await readFlow(manifestPath);
+
+  assert.equal(manifest.deploymentStatus, "PROMOTED_PENDING_POST_PSTN");
+  assert.equal(manifest.owner, "Anh Kiet");
+  assert.equal(manifest.language, "en-US");
+  assert.equal(manifest.keypadMenuEnabled, false);
+  assert.equal(manifest.phoneNumber.e164, "+19739542668");
+  assert.equal(
+    manifest.phoneNumber.associatedMainContactFlowId,
+    manifest.resources.mainContactFlowId
+  );
+  assert.deepEqual(
+    manifest.resources.operatorUsers.map((user) => user.username),
+    ["ken-operator01", "ken-operator02"]
+  );
 });

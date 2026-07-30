@@ -27,129 +27,21 @@
         "TextToSpeechVoice": "Joanna"
       },
       "Transitions": {
-        "NextAction": "language-menu-first-attempt",
+        "NextAction": "set-hotline-attributes",
         "Errors": [
           {
-            "NextAction": "language-menu-first-attempt",
+            "NextAction": "set-hotline-attributes",
             "ErrorType": "NoMatchingError"
           }
         ]
       }
     },
     {
-      "Identifier": "language-menu-first-attempt",
-      "Type": "GetParticipantInput",
-      "Parameters": {
-        "PromptId": "arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/prompt/1ac1e61e-ba03-4794-b360-85d1749bcf08",
-        "StoreInput": "False",
-        "InputTimeLimitSeconds": "8"
-      },
-      "Transitions": {
-        "NextAction": "language-menu-second-attempt",
-        "Errors": [
-          {
-            "NextAction": "language-menu-second-attempt",
-            "ErrorType": "NoMatchingError"
-          },
-          {
-            "NextAction": "language-menu-second-attempt",
-            "ErrorType": "NoMatchingCondition"
-          },
-          {
-            "NextAction": "language-menu-second-attempt",
-            "ErrorType": "InputTimeLimitExceeded"
-          }
-        ],
-        "Conditions": [
-          {
-            "NextAction": "set-language-english",
-            "Condition": {
-              "Operator": "Equals",
-              "Operands": [
-                "1"
-              ]
-            }
-          },
-          {
-            "NextAction": "set-language-vietnamese",
-            "Condition": {
-              "Operator": "Equals",
-              "Operands": [
-                "2"
-              ]
-            }
-          }
-        ]
-      }
-    },
-    {
-      "Identifier": "language-menu-second-attempt",
-      "Type": "GetParticipantInput",
-      "Parameters": {
-        "PromptId": "arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/prompt/1ac1e61e-ba03-4794-b360-85d1749bcf08",
-        "StoreInput": "False",
-        "InputTimeLimitSeconds": "8"
-      },
-      "Transitions": {
-        "NextAction": "no-valid-language-selection",
-        "Errors": [
-          {
-            "NextAction": "no-valid-language-selection",
-            "ErrorType": "NoMatchingError"
-          },
-          {
-            "NextAction": "no-valid-language-selection",
-            "ErrorType": "NoMatchingCondition"
-          },
-          {
-            "NextAction": "no-valid-language-selection",
-            "ErrorType": "InputTimeLimitExceeded"
-          }
-        ],
-        "Conditions": [
-          {
-            "NextAction": "set-language-english",
-            "Condition": {
-              "Operator": "Equals",
-              "Operands": [
-                "1"
-              ]
-            }
-          },
-          {
-            "NextAction": "set-language-vietnamese",
-            "Condition": {
-              "Operator": "Equals",
-              "Operands": [
-                "2"
-              ]
-            }
-          }
-        ]
-      }
-    },
-    {
-      "Identifier": "no-valid-language-selection",
-      "Type": "MessageParticipant",
-      "Parameters": {
-        "PromptId": "arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/prompt/8cee49ee-9821-4f55-8bd9-2106a50bc4e3"
-      },
-      "Transitions": {
-        "NextAction": "main-disconnect",
-        "Errors": [
-          {
-            "NextAction": "main-disconnect",
-            "ErrorType": "NoMatchingError"
-          }
-        ]
-      }
-    },
-    {
-      "Identifier": "set-language-english",
+      "Identifier": "set-hotline-attributes",
       "Type": "UpdateContactAttributes",
       "Parameters": {
         "Attributes": {
-          "operatorHotline": "advertising",
+          "operatorHotline": "anh-kiet-advertising",
           "operatorLanguage": "en"
         }
       },
@@ -157,26 +49,7 @@
         "NextAction": "set-advertising-operator-queue",
         "Errors": [
           {
-            "NextAction": "main-busy-language-branch",
-            "ErrorType": "NoMatchingError"
-          }
-        ]
-      }
-    },
-    {
-      "Identifier": "set-language-vietnamese",
-      "Type": "UpdateContactAttributes",
-      "Parameters": {
-        "Attributes": {
-          "operatorHotline": "advertising",
-          "operatorLanguage": "vi"
-        }
-      },
-      "Transitions": {
-        "NextAction": "set-advertising-operator-queue",
-        "Errors": [
-          {
-            "NextAction": "main-busy-language-branch",
+            "NextAction": "main-enable-voicemail",
             "ErrorType": "NoMatchingError"
           }
         ]
@@ -192,7 +65,7 @@
         "NextAction": "check-available-operators",
         "Errors": [
           {
-            "NextAction": "main-busy-language-branch",
+            "NextAction": "main-enable-voicemail",
             "ErrorType": "NoMatchingError"
           }
         ]
@@ -206,51 +79,24 @@
         "QueueId": "arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/queue/712ee52c-0288-4dd9-811d-e8397d659aed"
       },
       "Transitions": {
-        "NextAction": "main-busy-language-branch",
+        "NextAction": "main-enable-voicemail",
         "Errors": [
           {
-            "NextAction": "main-busy-language-branch",
+            "NextAction": "main-enable-voicemail",
             "ErrorType": "NoMatchingCondition"
           },
           {
-            "NextAction": "main-busy-language-branch",
+            "NextAction": "main-enable-voicemail",
             "ErrorType": "NoMatchingError"
           }
         ],
         "Conditions": [
           {
-            "NextAction": "connecting-language-branch",
+            "NextAction": "english-connecting-message",
             "Condition": {
               "Operator": "NumberGreaterThan",
               "Operands": [
                 "0"
-              ]
-            }
-          }
-        ]
-      }
-    },
-    {
-      "Identifier": "connecting-language-branch",
-      "Type": "Compare",
-      "Parameters": {
-        "ComparisonValue": "$.Attributes.operatorLanguage"
-      },
-      "Transitions": {
-        "NextAction": "english-connecting-message",
-        "Errors": [
-          {
-            "NextAction": "english-connecting-message",
-            "ErrorType": "NoMatchingCondition"
-          }
-        ],
-        "Conditions": [
-          {
-            "NextAction": "vietnamese-connecting-message",
-            "Condition": {
-              "Operator": "Equals",
-              "Operands": [
-                "vi"
               ]
             }
           }
@@ -267,23 +113,7 @@
         "NextAction": "set-advertising-customer-queue-flow",
         "Errors": [
           {
-            "NextAction": "main-busy-language-branch",
-            "ErrorType": "NoMatchingError"
-          }
-        ]
-      }
-    },
-    {
-      "Identifier": "vietnamese-connecting-message",
-      "Type": "MessageParticipant",
-      "Parameters": {
-        "PromptId": "arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/prompt/36b9a232-09e0-4226-94e4-8d52b600d919"
-      },
-      "Transitions": {
-        "NextAction": "set-advertising-customer-queue-flow",
-        "Errors": [
-          {
-            "NextAction": "main-busy-language-branch",
+            "NextAction": "main-enable-voicemail",
             "ErrorType": "NoMatchingError"
           }
         ]
@@ -301,7 +131,7 @@
         "NextAction": "transfer-to-advertising-operator-queue",
         "Errors": [
           {
-            "NextAction": "main-busy-language-branch",
+            "NextAction": "main-enable-voicemail",
             "ErrorType": "NoMatchingError"
           }
         ],
@@ -316,45 +146,18 @@
         "NextAction": "main-disconnect",
         "Errors": [
           {
-            "NextAction": "main-busy-language-branch",
+            "NextAction": "main-enable-voicemail",
             "ErrorType": "QueueAtCapacity"
           },
           {
-            "NextAction": "main-busy-language-branch",
+            "NextAction": "main-enable-voicemail",
             "ErrorType": "NoMatchingError"
           }
         ]
       }
     },
     {
-      "Identifier": "main-busy-language-branch",
-      "Type": "Compare",
-      "Parameters": {
-        "ComparisonValue": "$.Attributes.operatorLanguage"
-      },
-      "Transitions": {
-        "NextAction": "main-enable-english-voicemail",
-        "Errors": [
-          {
-            "NextAction": "main-enable-english-voicemail",
-            "ErrorType": "NoMatchingCondition"
-          }
-        ],
-        "Conditions": [
-          {
-            "NextAction": "main-enable-vietnamese-voicemail",
-            "Condition": {
-              "Operator": "Equals",
-              "Operands": [
-                "vi"
-              ]
-            }
-          }
-        ]
-      }
-    },
-    {
-      "Identifier": "main-enable-english-voicemail",
+      "Identifier": "main-enable-voicemail",
       "Type": "UpdateContactRecordingBehavior",
       "Parameters": {
         "RecordingBehavior": {
@@ -363,47 +166,16 @@
         }
       },
       "Transitions": {
-        "NextAction": "main-english-busy-message",
+        "NextAction": "main-busy-message",
         "Errors": [],
         "Conditions": []
       }
     },
     {
-      "Identifier": "main-enable-vietnamese-voicemail",
-      "Type": "UpdateContactRecordingBehavior",
-      "Parameters": {
-        "RecordingBehavior": {
-          "RecordedParticipants": [],
-          "IVRRecordingBehavior": "Enabled"
-        }
-      },
-      "Transitions": {
-        "NextAction": "main-vietnamese-busy-message",
-        "Errors": [],
-        "Conditions": []
-      }
-    },
-    {
-      "Identifier": "main-english-busy-message",
+      "Identifier": "main-busy-message",
       "Type": "MessageParticipant",
       "Parameters": {
         "Text": "All of our operators are currently assisting other callers. Please call again later, or leave a message after the beep."
-      },
-      "Transitions": {
-        "NextAction": "main-voicemail-beep",
-        "Errors": [
-          {
-            "NextAction": "main-disconnect",
-            "ErrorType": "NoMatchingError"
-          }
-        ]
-      }
-    },
-    {
-      "Identifier": "main-vietnamese-busy-message",
-      "Type": "MessageParticipant",
-      "Parameters": {
-        "PromptId": "arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/prompt/c6781620-3fe1-4482-8ed2-e5a9ecff8fa7"
       },
       "Transitions": {
         "NextAction": "main-voicemail-beep",
@@ -438,7 +210,7 @@
         "PromptId": "arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/prompt/612e4046-24b4-4efc-b175-9d50a026dbd2"
       },
       "Transitions": {
-        "NextAction": "main-thank-you-language-branch",
+        "NextAction": "main-thank-you",
         "Errors": [
           {
             "NextAction": "main-disconnect",
@@ -448,53 +220,10 @@
       }
     },
     {
-      "Identifier": "main-thank-you-language-branch",
-      "Type": "Compare",
-      "Parameters": {
-        "ComparisonValue": "$.Attributes.operatorLanguage"
-      },
-      "Transitions": {
-        "NextAction": "main-english-thank-you",
-        "Errors": [
-          {
-            "NextAction": "main-english-thank-you",
-            "ErrorType": "NoMatchingCondition"
-          }
-        ],
-        "Conditions": [
-          {
-            "NextAction": "main-vietnamese-thank-you",
-            "Condition": {
-              "Operator": "Equals",
-              "Operands": [
-                "vi"
-              ]
-            }
-          }
-        ]
-      }
-    },
-    {
-      "Identifier": "main-english-thank-you",
+      "Identifier": "main-thank-you",
       "Type": "MessageParticipant",
       "Parameters": {
         "Text": "Thank you. Your message has been recorded. Goodbye."
-      },
-      "Transitions": {
-        "NextAction": "main-disconnect",
-        "Errors": [
-          {
-            "NextAction": "main-disconnect",
-            "ErrorType": "NoMatchingError"
-          }
-        ]
-      }
-    },
-    {
-      "Identifier": "main-vietnamese-thank-you",
-      "Type": "MessageParticipant",
-      "Parameters": {
-        "PromptId": "arn:aws:connect:us-east-1:197452633989:instance/74f78377-766f-46b7-a745-4bc97b68a8dc/prompt/2e45f34f-7cf2-414d-a401-bb31f561caab"
       },
       "Transitions": {
         "NextAction": "main-disconnect",

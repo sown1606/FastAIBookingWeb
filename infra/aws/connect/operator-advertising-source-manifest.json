@@ -1,21 +1,41 @@
 {
   "schemaVersion": "fastaibooking.operator-advertising-hotline.v1",
-  "deploymentStatus": "AWAITING_PHONE_SELECTION",
+  "deploymentStatus": "PROMOTED_PENDING_POST_PSTN",
+  "owner": "Anh Kiet",
+  "language": "en-US",
+  "keypadMenuEnabled": false,
   "aws": {
     "accountId": "197452633989",
     "region": "us-east-1",
     "instanceId": "74f78377-766f-46b7-a745-4bc97b68a8dc",
     "instanceAlias": "fastaibooking"
   },
-  "phoneNumber": null,
+  "phoneNumber": {
+    "e164": "+19739542668",
+    "display": "(973) 954-2668",
+    "phoneNumberId": "e320eace-fb9f-4ba3-a17f-8596f61445af",
+    "phoneNumberArn": "arn:aws:connect:us-east-1:197452633989:phone-number/e320eace-fb9f-4ba3-a17f-8596f61445af",
+    "status": "CLAIMED",
+    "associatedMainContactFlowId": "6f553fdb-e5e8-4093-8960-004cbbf42017"
+  },
   "resources": {
+    "mainContactFlowName": "Anh Kiet Advertising Operator Main Line",
     "mainContactFlowId": "6f553fdb-e5e8-4093-8960-004cbbf42017",
+    "customerQueueFlowName": "Anh Kiet Advertising Customer Queue",
     "customerQueueFlowId": "5ed6f76c-6411-4bb1-9d7d-1b74e8877cee",
+    "operatorQueueName": "Anh Kiet Advertising Operator Queue",
     "operatorQueueId": "712ee52c-0288-4dd9-811d-e8397d659aed",
+    "routingProfileName": "Anh Kiet Advertising Operator Routing Profile",
     "routingProfileId": "a8093ec8-4004-486f-aa29-bf1e031285b1",
-    "operatorUsernames": [
-      "ken-operator01",
-      "ken-operator02"
+    "operatorUsers": [
+      {
+        "username": "ken-operator01",
+        "userId": "c7e1b7a5-ff5c-4a51-96ac-e8ab87686dd2"
+      },
+      {
+        "username": "ken-operator02",
+        "userId": "4c8334c4-6a96-400e-b67c-d4913f6a2920"
+      }
     ],
     "promptBucket": "amazon-connect-6aec9105047f",
     "promptPrefix": "connect/fastaibooking/Prompts/operator-advertising"
