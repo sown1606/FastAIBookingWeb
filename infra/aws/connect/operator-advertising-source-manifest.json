@@ -1,0 +1,37 @@
+{
+  "schemaVersion": "fastaibooking.operator-advertising-hotline.v1",
+  "deploymentStatus": "AWAITING_PHONE_SELECTION",
+  "aws": {
+    "accountId": "197452633989",
+    "region": "us-east-1",
+    "instanceId": "74f78377-766f-46b7-a745-4bc97b68a8dc",
+    "instanceAlias": "fastaibooking"
+  },
+  "phoneNumber": null,
+  "resources": {
+    "mainContactFlowId": "6f553fdb-e5e8-4093-8960-004cbbf42017",
+    "customerQueueFlowId": "5ed6f76c-6411-4bb1-9d7d-1b74e8877cee",
+    "operatorQueueId": "712ee52c-0288-4dd9-811d-e8397d659aed",
+    "routingProfileId": "a8093ec8-4004-486f-aa29-bf1e031285b1",
+    "operatorUsernames": [
+      "ken-operator01",
+      "ken-operator02"
+    ],
+    "promptBucket": "amazon-connect-6aec9105047f",
+    "promptPrefix": "connect/fastaibooking/Prompts/operator-advertising"
+  },
+  "files": [
+    {
+      "path": "infra/aws/connect/contact-flows/operator-advertising-main-line.json"
+    },
+    {
+      "path": "infra/aws/connect/contact-flows/operator-advertising-customer-queue.json"
+    },
+    {
+      "path": "infra/aws/connect/prompts/operator-advertising/README.md"
+    },
+    {
+      "path": "tests/lambda/operator-advertising-contact-flow.test.mjs"
+    }
+  ]
+}
