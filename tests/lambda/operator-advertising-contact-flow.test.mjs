@@ -52,6 +52,44 @@ test("Anh Kiet advertising main line is English-only with no menu or AI integrat
   );
 });
 
+test("Anh Kiet hotline uses Joanna Neural Conversational at ninety percent speed", async () => {
+  const flows = await Promise.all([readFlow(mainFlowPath), readFlow(queueFlowPath)]);
+
+  for (const flow of flows) {
+    const voiceActions = flow.Actions.filter(
+      (action) => action.Type === "UpdateContactTextToSpeechVoice"
+    );
+    assert.equal(voiceActions.length, 1);
+    assert.deepEqual(voiceActions[0].Parameters, {
+      TextToSpeechVoice: "Joanna",
+      TextToSpeechEngine: "Neural",
+      TextToSpeechStyle: "Conversational"
+    });
+
+    const directMessages = flow.Actions
+      .filter((action) => action.Type === "MessageParticipant")
+      .map((action) => action.Parameters);
+    const iterativeMessages = flow.Actions
+      .filter((action) => action.Type === "MessageParticipantIteratively")
+      .flatMap((action) => action.Parameters.Messages);
+    const synthesizedMessages = [...directMessages, ...iterativeMessages].filter(
+      (message) => message.SSML
+    );
+
+    assert.ok(synthesizedMessages.length > 0);
+    assert.equal(
+      [...directMessages, ...iterativeMessages].some((message) => message.Text),
+      false
+    );
+    for (const message of synthesizedMessages) {
+      assert.match(
+        message.SSML,
+        /^<speak><prosody rate="90%">.+<\/prosody><\/speak>$/
+      );
+    }
+  }
+});
+
 test("advertising main line checks for an available operator before queueing", async () => {
   const flow = await readFlow(mainFlowPath);
   const actions = actionMap(flow);
@@ -116,6 +154,12 @@ test("Anh Kiet hotline manifest pins the claimed number and English-only release
   assert.equal(manifest.owner, "Anh Kiet");
   assert.equal(manifest.language, "en-US");
   assert.equal(manifest.keypadMenuEnabled, false);
+  assert.deepEqual(manifest.textToSpeech, {
+    voice: "Joanna",
+    engine: "Neural",
+    style: "Conversational",
+    ssmlRate: "90%"
+  });
   assert.equal(manifest.phoneNumber.e164, "+19739542668");
   assert.equal(
     manifest.phoneNumber.associatedMainContactFlowId,

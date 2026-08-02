@@ -4,6 +4,12 @@
   "owner": "Anh Kiet",
   "language": "en-US",
   "keypadMenuEnabled": false,
+  "textToSpeech": {
+    "voice": "Joanna",
+    "engine": "Neural",
+    "style": "Conversational",
+    "ssmlRate": "90%"
+  },
   "aws": {
     "accountId": "197452633989",
     "region": "us-east-1",

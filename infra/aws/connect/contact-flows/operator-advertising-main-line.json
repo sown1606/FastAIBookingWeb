@@ -24,7 +24,9 @@
       "Identifier": "set-english-voice",
       "Type": "UpdateContactTextToSpeechVoice",
       "Parameters": {
-        "TextToSpeechVoice": "Joanna"
+        "TextToSpeechVoice": "Joanna",
+        "TextToSpeechEngine": "Neural",
+        "TextToSpeechStyle": "Conversational"
       },
       "Transitions": {
         "NextAction": "set-hotline-attributes",
@@ -107,7 +109,7 @@
       "Identifier": "english-connecting-message",
       "Type": "MessageParticipant",
       "Parameters": {
-        "Text": "Please hold while we connect your call to an operator."
+        "SSML": "<speak><prosody rate=\"90%\">Please hold while we connect your call to an operator.</prosody></speak>"
       },
       "Transitions": {
         "NextAction": "set-advertising-customer-queue-flow",
@@ -175,7 +177,7 @@
       "Identifier": "main-busy-message",
       "Type": "MessageParticipant",
       "Parameters": {
-        "Text": "All of our operators are currently assisting other callers. Please call again later, or leave a message after the beep."
+        "SSML": "<speak><prosody rate=\"90%\">All of our operators are currently assisting other callers. Please call again later, or leave a message after the beep.</prosody></speak>"
       },
       "Transitions": {
         "NextAction": "main-voicemail-beep",
@@ -223,7 +225,7 @@
       "Identifier": "main-thank-you",
       "Type": "MessageParticipant",
       "Parameters": {
-        "Text": "Thank you. Your message has been recorded. Goodbye."
+        "SSML": "<speak><prosody rate=\"90%\">Thank you. Your message has been recorded. Goodbye.</prosody></speak>"
       },
       "Transitions": {
         "NextAction": "main-disconnect",
