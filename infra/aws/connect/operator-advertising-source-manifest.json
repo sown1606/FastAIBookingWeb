@@ -33,6 +33,14 @@
     "operatorQueueId": "712ee52c-0288-4dd9-811d-e8397d659aed",
     "routingProfileName": "Anh Kiet Advertising Operator Routing Profile",
     "routingProfileId": "a8093ec8-4004-486f-aa29-bf1e031285b1",
+    "contactSearchSecurityProfile": {
+      "name": "Anh Kiet Hotline Contact Search",
+      "securityProfileId": "996e025b-cf73-4eda-a9be-6e2d3f90c116",
+      "permissions": [
+        "AutomatedVoiceInteraction.Recordings.Unredacted.Access",
+        "ContactSearch.View"
+      ]
+    },
     "operatorUsers": [
       {
         "username": "ken-operator01",

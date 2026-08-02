@@ -169,4 +169,12 @@ test("Anh Kiet hotline manifest pins the claimed number and English-only release
     manifest.resources.operatorUsers.map((user) => user.username),
     ["ken-operator01", "ken-operator02"]
   );
+  assert.deepEqual(manifest.resources.contactSearchSecurityProfile, {
+    name: "Anh Kiet Hotline Contact Search",
+    securityProfileId: "996e025b-cf73-4eda-a9be-6e2d3f90c116",
+    permissions: [
+      "AutomatedVoiceInteraction.Recordings.Unredacted.Access",
+      "ContactSearch.View"
+    ]
+  });
 });
