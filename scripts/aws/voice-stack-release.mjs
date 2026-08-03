@@ -696,7 +696,7 @@ const defaultEc2Config = () => ({
   user: process.env.EC2_USER || "ubuntu",
   key: process.env.EC2_KEY || path.join(ROOT, "fastAibooking.pem"),
   appDir: process.env.EC2_APP_DIR || "/home/ubuntu/fastAibooking",
-  publicApiBaseUrl: process.env.FASTAIBOOKING_PUBLIC_API_BASE_URL || "https://api-new-nail.kendemo.com"
+  publicApiBaseUrl: process.env.FASTAIBOOKING_PUBLIC_API_BASE_URL || "https://api.aifastbooking.com"
 });
 
 function assertSshAvailable(ec2 = defaultEc2Config()) {

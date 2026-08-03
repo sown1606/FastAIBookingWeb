@@ -2,11 +2,11 @@
 set -euo pipefail
 
 # Example:
-# AWS_PROFILE=nailnew AWS_REGION=us-east-1 APP_ORIGIN=https://app-new-nail.kendemo.com FORCE_REAPPLY=true ./scripts/aws/ensure-connect-approved-origins.sh
+# AWS_PROFILE=nailnew AWS_REGION=us-east-1 APP_ORIGIN=https://app.aifastbooking.com FORCE_REAPPLY=true ./scripts/aws/ensure-connect-approved-origins.sh
 
 AWS_PROFILE="${AWS_PROFILE:-nailnew}"
 AWS_REGION="${AWS_REGION:-us-east-1}"
-APP_ORIGIN="${APP_ORIGIN:-https://app-new-nail.kendemo.com}"
+APP_ORIGIN="${APP_ORIGIN:-https://app.aifastbooking.com}"
 LOCAL_ORIGIN="${LOCAL_ORIGIN:-http://localhost:5173}"
 INSTANCE_ALIAS_SEARCH="${INSTANCE_ALIAS_SEARCH:-fastaibooking}"
 EXPECTED_AWS_ACCOUNT_ID="${EXPECTED_AWS_ACCOUNT_ID:-197452633989}"

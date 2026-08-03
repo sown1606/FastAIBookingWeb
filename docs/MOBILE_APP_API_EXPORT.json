@@ -1,5 +1,5 @@
 {
-  "baseUrl": "https://api-new-nail.kendemo.com",
+  "baseUrl": "https://api.aifastbooking.com",
   "defaults": {
     "headers": {
       "Accept-Language": "vi-VN",
@@ -19,6 +19,133 @@
     }
   },
   "endpoints": [
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/registration-callback",
+      "authRequired": false,
+      "roles": [],
+      "bodySample": {
+        "phone": "<US_E164_PHONE>",
+        "fullName": "Anh Nguyen",
+        "email": "anh@example.com",
+        "note": "Please call after 3 PM"
+      },
+      "responseSample": {
+        "id": "...",
+        "status": "NEW",
+        "createdAt": "2026-08-03T12:00:00.000Z"
+      },
+      "note": "Public callback lead. Only phone is required."
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/registration-assistant",
+      "authRequired": false,
+      "roles": [],
+      "bodySample": {
+        "messages": [
+          {
+            "role": "user",
+            "text": "I do not want to add a card yet."
+          }
+        ]
+      },
+      "responseSample": {
+        "message": "You can register now and add a card later.",
+        "suggestedAction": "PAYMENT",
+        "source": "guided"
+      },
+      "note": "Public AI-assisted registration guidance. Send 1 to 10 assistant/user messages."
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/billing/registration-config",
+      "authRequired": false,
+      "roles": [],
+      "responseSample": {
+        "ready": true,
+        "publishableKey": "pk_...",
+        "trialDays": 30,
+        "requiredCardBrand": "visa",
+        "plans": []
+      },
+      "note": "Public plan, Stripe, and registration-readiness configuration."
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/billing/registration/setup-intent",
+      "authRequired": false,
+      "roles": [],
+      "bodySample": {
+        "email": "owner@example.com",
+        "planCode": "ai_reception"
+      },
+      "responseSample": {
+        "setupIntentId": "seti_...",
+        "clientSecret": "seti_..._secret_..."
+      },
+      "note": "Optional card setup before owner registration."
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/register-owner",
+      "authRequired": false,
+      "roles": [
+        "SALON_OWNER"
+      ],
+      "bodySample": {
+        "fullName": "New Owner",
+        "email": "owner@example.com",
+        "phone": "<US_E164_PHONE>",
+        "password": "Owner123!",
+        "planCode": "ai_reception",
+        "salon": {
+          "name": "New Nail Studio",
+          "timezone": "America/New_York",
+          "country": "US"
+        }
+      },
+      "responseSample": {
+        "accessToken": "...",
+        "refreshToken": "...",
+        "salon": {
+          "subscriptionStatus": "PENDING_PAYMENT"
+        },
+        "phoneProvisioning": null
+      },
+      "note": "Card is optional. Omit setupIntentId and billingConsentAccepted to defer payment."
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/billing/payment-method/setup-intent",
+      "authRequired": true,
+      "roles": [
+        "SALON_OWNER"
+      ],
+      "responseSample": {
+        "setupIntentId": "seti_...",
+        "clientSecret": "seti_..._secret_..."
+      },
+      "note": "Create a SetupIntent for an authenticated PENDING_PAYMENT owner."
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/billing/payment-method/activate",
+      "authRequired": true,
+      "roles": [
+        "SALON_OWNER"
+      ],
+      "bodySample": {
+        "setupIntentId": "seti_..."
+      },
+      "responseSample": {
+        "subscription": {
+          "status": "TRIAL"
+        },
+        "phoneProvisioning": {}
+      },
+      "note": "Attach the verified card, start the trial, and continue phone provisioning."
+    },
     {
       "method": "POST",
       "path": "/api/v1/auth/login-owner",
@@ -173,9 +300,11 @@
       "responseSample": {
         "locale": "vi-VN",
         "aiReceptionEnabled": true,
-        "callCenterEnabled": true
+        "callCenterEnabled": true,
+        "appointmentReminderMinutes": 60,
+        "ownerUpcomingReminderEnabled": true
       },
-      "note": "Owner booking, AI, call-center, and notification settings."
+      "note": "Owner booking, AI, call-center, notification, and upcoming-appointment reminder settings."
     },
     {
       "method": "PUT",
@@ -187,12 +316,16 @@
       "bodySample": {
         "locale": "vi-VN",
         "aiReceptionEnabled": true,
-        "callCenterEnabled": true
+        "callCenterEnabled": true,
+        "appointmentReminderMinutes": 60,
+        "ownerUpcomingReminderEnabled": true
       },
       "responseSample": {
-        "locale": "vi-VN"
+        "locale": "vi-VN",
+        "appointmentReminderMinutes": 60,
+        "ownerUpcomingReminderEnabled": true
       },
-      "note": "Update salon settings."
+      "note": "Reminder minutes accept 60, 120, or 180. Owner reminder defaults to enabled."
     },
     {
       "method": "GET",
@@ -493,6 +626,24 @@
         ]
       },
       "note": "Staff can read active services they can perform."
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/staff/me/reminders",
+      "authRequired": true,
+      "roles": [
+        "STAFF"
+      ],
+      "responseSample": [
+        {
+          "id": "...",
+          "appointmentId": "...",
+          "reminderType": "BEFORE_BOOKING",
+          "remindAt": "2026-08-03T13:00:00.000Z",
+          "message": "Your appointment starts in 1 hour."
+        }
+      ],
+      "note": "Pending reminders for the authenticated staff member. Push type is appointment_upcoming_reminder."
     },
     {
       "method": "GET",

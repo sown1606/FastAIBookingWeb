@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BASE_URL="${BASE_URL:-https://api-new-nail.kendemo.com}"
-ADMIN_WEB_URL="${ADMIN_WEB_URL:-https://admin-new-nail.kendemo.com}"
-APP_WEB_URL="${APP_WEB_URL:-https://app-new-nail.kendemo.com}"
+BASE_URL="${BASE_URL:-https://api.aifastbooking.com}"
+ADMIN_WEB_URL="${ADMIN_WEB_URL:-https://admin.aifastbooking.com}"
+APP_WEB_URL="${APP_WEB_URL:-https://app.aifastbooking.com}"
 
 check_url() {
   local url="$1"

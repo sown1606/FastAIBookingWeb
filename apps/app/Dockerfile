@@ -12,9 +12,9 @@ COPY apps/app/index.html ./index.html
 COPY apps/app/public ./public
 COPY apps/app/src ./src
 
-ARG VITE_API_BASE_URL=https://api-new-nail.kendemo.com
-ARG VITE_APP_BASE_URL=https://app-new-nail.kendemo.com
-ARG VITE_ADMIN_BASE_URL=https://admin-new-nail.kendemo.com
+ARG VITE_API_BASE_URL=https://api.aifastbooking.com
+ARG VITE_APP_BASE_URL=https://app.aifastbooking.com
+ARG VITE_ADMIN_BASE_URL=https://admin.aifastbooking.com
 ARG VITE_AMAZON_CONNECT_CCP_URL=
 ARG VITE_AMAZON_CONNECT_EMBEDDED_CCP_ENABLED=false
 ARG VITE_APP_NAME=FastAIBooking

@@ -169,6 +169,26 @@ test("appointment reminders are configurable and processed outside booking reque
   assert.match(serverSource, /startAppointmentReminderWorker/);
 });
 
+test("mobile API handoff documents every optional-onboarding and reminder contract", () => {
+  const markdown = readRepoFile("docs/MOBILE_APP_API.md");
+  const exportJson = readRepoFile("docs/MOBILE_APP_API_EXPORT.json");
+  const postman = readRepoFile("FastAIBooking_Postman_Collection.json");
+
+  for (const source of [markdown, exportJson, postman]) {
+    assert.match(source, /api\.aifastbooking\.com/);
+    assert.match(source, /registration-callback/);
+    assert.match(source, /registration-assistant/);
+    assert.match(source, /registration\/setup-intent/);
+    assert.match(source, /payment-method\/setup-intent/);
+    assert.match(source, /payment-method\/activate/);
+  }
+  for (const source of [markdown, exportJson]) {
+    assert.match(source, /appointmentReminderMinutes/);
+    assert.match(source, /ownerUpcomingReminderEnabled/);
+    assert.match(source, /staff\/me\/reminders/);
+  }
+});
+
 test("operator transfer is subscription-gated and new salons receive a Lex-ready service catalog", () => {
   const salonSource = readRepoFile("apps/api/src/modules/salon/salon.service.ts");
   const callCenterSource = readRepoFile(

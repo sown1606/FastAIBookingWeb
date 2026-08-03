@@ -340,7 +340,10 @@ const validateCcpUrl = (
     return { url: null, error: "missing" };
   }
   const lowered = trimmed.toLowerCase();
-  if (lowered.includes("app-new-nail.kendemo.com")) {
+  if (
+    lowered.includes("app.aifastbooking.com") ||
+    lowered.includes("app-new-nail.kendemo.com")
+  ) {
     return { url: null, error: "app-url" };
   }
   if (!lowered.includes("/ccp-v2")) {
@@ -565,7 +568,7 @@ const AmazonConnectCcpPanel = ({
 
   const ccpValidation = useMemo(() => validateCcpUrl(ccpUrl), [ccpUrl]);
   const appOrigin = typeof window === "undefined" ? "" : window.location.origin;
-  const approvedOrigin = appOrigin || "https://app-new-nail.kendemo.com";
+  const approvedOrigin = appOrigin || "https://app.aifastbooking.com";
   const awsRegion = region || "us-east-1";
   const approvedOriginScriptCommand = `AWS_PROFILE=nailnew AWS_REGION=${awsRegion} APP_ORIGIN=${approvedOrigin} FORCE_REAPPLY=true ./scripts/aws/ensure-connect-approved-origins.sh`;
   const listApprovedOriginsCommand = `aws connect list-approved-origins --profile nailnew --region ${awsRegion} --instance-id ${instanceId || "<connect-instance-id>"}`;

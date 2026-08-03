@@ -32,6 +32,9 @@ DOMAINS=(
   "api-new-nail.kendemo.com"
   "admin-new-nail.kendemo.com"
   "app-new-nail.kendemo.com"
+  "api.aifastbooking.com"
+  "admin.aifastbooking.com"
+  "app.aifastbooking.com"
 )
 
 "${COMPOSE[@]}" up -d nginx
@@ -44,6 +47,8 @@ done
 "${COMPOSE[@]}" run --rm certbot certonly \
   --webroot \
   --webroot-path /var/www/certbot \
+  --cert-name api-new-nail.kendemo.com \
+  --expand \
   --email "${LETSENCRYPT_EMAIL}" \
   --agree-tos \
   --no-eff-email \

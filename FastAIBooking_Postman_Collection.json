@@ -157,10 +157,10 @@
                 "register-owner"
               ]
             },
-            "description": "",
+            "description": "Card is optional. This sample defers payment; add setupIntentId and billingConsentAccepted only after Stripe confirmation.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fullName\": \"New Owner\",\n  \"email\": \"new.owner+{{$timestamp}}@example.com\",\n  \"phone\": \"+15550001111\",\n  \"password\": \"Owner123!\",\n  \"salon\": {\n    \"name\": \"New Nail Studio {{$timestamp}}\",\n    \"contactEmail\": \"contact+{{$timestamp}}@example.com\",\n    \"contactPhone\": \"+15550002222\",\n    \"timezone\": \"America/New_York\",\n    \"addressLine1\": \"100 Main St\",\n    \"city\": \"Jersey City\",\n    \"state\": \"NJ\",\n    \"postalCode\": \"07302\",\n    \"country\": \"US\"\n  }\n}"
+              "raw": "{\n  \"fullName\": \"New Owner\",\n  \"email\": \"new.owner+{{$timestamp}}@example.com\",\n  \"phone\": \"+15550001111\",\n  \"password\": \"Owner123!\",\n  \"planCode\": \"ai_reception\",\n  \"salon\": {\n    \"name\": \"New Nail Studio {{$timestamp}}\",\n    \"contactEmail\": \"contact+{{$timestamp}}@example.com\",\n    \"contactPhone\": \"+15550002222\",\n    \"timezone\": \"America/New_York\",\n    \"addressLine1\": \"100 Main St\",\n    \"city\": \"Jersey City\",\n    \"state\": \"NJ\",\n    \"postalCode\": \"07302\",\n    \"country\": \"US\"\n  }\n}"
             }
           },
           "response": [],
@@ -696,6 +696,74 @@
           ]
         },
         {
+          "name": "Registration Callback Lead",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept-Language",
+                "value": "{{language}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/registration-callback",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "registration-callback"
+              ]
+            },
+            "description": "Public callback lead. Only phone is required; admin can follow up from Registration Leads.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"+12025550123\",\n  \"fullName\": \"Anh Nguyen\",\n  \"email\": \"anh@example.com\",\n  \"note\": \"Please call after 3 PM\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Registration Assistant",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept-Language",
+                "value": "{{language}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/registration-assistant",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "registration-assistant"
+              ]
+            },
+            "description": "Public guided or AI-assisted registration help. Never send passwords or card details.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"text\": \"I want to register without adding a card yet.\"\n    }\n  ]\n}"
+            }
+          },
+          "response": []
+        },
+        {
           "name": "Staff Change Password",
           "request": {
             "method": "POST",
@@ -871,7 +939,7 @@
             "description": "",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"currency\": \"USD\",\n  \"locale\": \"en-US\",\n  \"bookingLeadTimeMinutes\": 30,\n  \"cancellationPolicy\": \"Please notify us at least 24 hours in advance.\"\n}"
+              "raw": "{\n  \"currency\": \"USD\",\n  \"locale\": \"en-US\",\n  \"bookingLeadTimeMinutes\": 30,\n  \"appointmentReminderMinutes\": 60,\n  \"ownerUpcomingReminderEnabled\": true,\n  \"cancellationPolicy\": \"Please notify us at least 24 hours in advance.\"\n}"
             },
             "auth": {
               "type": "bearer",
@@ -1414,6 +1482,131 @@
     {
       "name": "Billing",
       "item": [
+        {
+          "name": "Get Registration Billing Config",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/billing/registration-config",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "billing",
+                "registration-config"
+              ]
+            },
+            "description": "Public registration plan, Stripe, and readiness configuration."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Registration SetupIntent",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/billing/registration/setup-intent",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "billing",
+                "registration",
+                "setup-intent"
+              ]
+            },
+            "description": "Optional public Visa setup before owner registration.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"new.owner+{{$timestamp}}@example.com\",\n  \"planCode\": \"ai_reception\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Deferred Payment SetupIntent",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/billing/payment-method/setup-intent",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "billing",
+                "payment-method",
+                "setup-intent"
+              ]
+            },
+            "description": "Create a SetupIntent after a card-deferred registration.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{ownerAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Activate Deferred Payment Method",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/billing/payment-method/activate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "billing",
+                "payment-method",
+                "activate"
+              ]
+            },
+            "description": "Activate a verified deferred card and start the trial.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{ownerAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"setupIntentId\": \"seti_replace_me\"\n}"
+            }
+          },
+          "response": []
+        },
         {
           "name": "Get Billing Usage",
           "request": {
@@ -5157,7 +5350,7 @@
                 },
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"locale\": \"vi-VN\",\n  \"aiReceptionEnabled\": true,\n  \"callCenterEnabled\": true\n}"
+                "raw": "{\n  \"locale\": \"vi-VN\",\n  \"aiReceptionEnabled\": true,\n  \"callCenterEnabled\": true,\n  \"appointmentReminderMinutes\": 60,\n  \"ownerUpcomingReminderEnabled\": true\n}"
                 }
               }
             },
@@ -8288,7 +8481,7 @@
   "variable": [
     {
       "key": "baseUrl",
-      "value": "https://api-new-nail.kendemo.com"
+      "value": "https://api.aifastbooking.com"
     },
     {
       "key": "apiPrefix",

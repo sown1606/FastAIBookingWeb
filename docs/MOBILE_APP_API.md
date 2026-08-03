@@ -1,6 +1,6 @@
 # Mobile App API
 
-Base URL: `https://api-new-nail.kendemo.com`
+Base URL: `https://api.aifastbooking.com`
 
 Use `Accept-Language: vi-VN` by default. Every protected request uses:
 
@@ -27,6 +27,87 @@ When the API returns `401`, call `POST /api/v1/auth/refresh` with the stored `re
 Display appointment times in the salon timezone from `/api/v1/auth/me`, `/api/v1/salon/profile`, or `/api/v1/staff/me/profile`. The mobile app must send appointment `startTime` as a UTC ISO string. Business hours are salon-local, not device-local.
 
 ## Auth
+
+### Public registration
+
+The registration screen supports two paths without authentication:
+
+1. Save a callback lead for the admin team.
+2. Complete owner and salon registration. A card is optional at registration and can be added later from Billing.
+
+Save a callback lead:
+
+```http
+POST /api/v1/auth/registration-callback
+Content-Type: application/json
+
+{
+  "phone": "<US_E164_PHONE>",
+  "fullName": "Anh Nguyen",
+  "email": "anh@example.com",
+  "note": "Please call after 3 PM"
+}
+```
+
+Only `phone` is required. The response returns `id`, `status`, and `createdAt`. Platform admins can review and update these leads through `GET /api/v1/admin/registration-leads` and `PATCH /api/v1/admin/registration-leads/:id`.
+
+AI-assisted registration guidance:
+
+```http
+POST /api/v1/auth/registration-assistant
+Content-Type: application/json
+
+{
+  "messages": [
+    { "role": "assistant", "text": "How can I help with registration?" },
+    { "role": "user", "text": "I do not want to add a card yet." }
+  ]
+}
+```
+
+Send 1 to 10 messages; each message uses role `assistant` or `user`. This endpoint returns registration guidance only and never creates the account itself.
+
+Registration billing configuration:
+
+```http
+GET /api/v1/billing/registration-config
+```
+
+This public endpoint returns the available plans, `ready`, `trialDays`, `requiredCardBrand`, and the Stripe `publishableKey` when configured.
+
+Optional card setup before registration:
+
+```http
+POST /api/v1/billing/registration/setup-intent
+Content-Type: application/json
+
+{ "email": "owner@example.com", "planCode": "ai_reception" }
+```
+
+Confirm the returned Stripe `clientSecret` in the mobile Stripe SDK. If the SetupIntent succeeds, include both `setupIntentId` and `billingConsentAccepted: true` in `register-owner`. To defer payment, omit both fields.
+
+Register an owner without a card:
+
+```http
+POST /api/v1/auth/register-owner
+Content-Type: application/json
+
+{
+  "fullName": "New Owner",
+  "email": "owner@example.com",
+  "phone": "<US_E164_PHONE>",
+  "password": "Owner123!",
+  "planCode": "ai_reception",
+  "salon": {
+    "name": "New Nail Studio",
+    "timezone": "America/New_York",
+    "contactPhone": "<US_E164_PHONE>",
+    "country": "US"
+  }
+}
+```
+
+Supported `planCode` values are `ai_reception` and `human_reception`. A deferred registration has subscription status `PENDING_PAYMENT`; the account can sign in immediately and should show a non-blocking reminder to add a payment method.
 
 Owner login:
 
@@ -59,6 +140,8 @@ Other auth endpoints:
 
 - `POST /api/v1/auth/login`
 - `POST /api/v1/auth/register-owner`
+- `POST /api/v1/auth/registration-callback`
+- `POST /api/v1/auth/registration-assistant`
 - `POST /api/v1/auth/refresh` body `{ "refreshToken": "<refreshToken>" }`
 - `POST /api/v1/auth/logout` body `{ "refreshToken": "<refreshToken>" }`
 - `GET /api/v1/auth/me`
@@ -91,6 +174,17 @@ Salon profile and settings:
 - `GET /api/v1/business-hours`
 - `PUT /api/v1/business-hours`
 - `GET /api/v1/health/readiness`
+
+Appointment reminder settings are part of `GET /api/v1/salon/settings` and `PUT /api/v1/salon/settings`:
+
+```json
+{
+  "appointmentReminderMinutes": 60,
+  "ownerUpcomingReminderEnabled": true
+}
+```
+
+`appointmentReminderMinutes` accepts only `60`, `120`, or `180` and defaults to `60`. `ownerUpcomingReminderEnabled` defaults to `true`; set it to `false` when the owner does not want to receive the same upcoming-appointment notification that is sent to the assigned staff member. Updating the interval also reschedules pending, undelivered booking reminders.
 
 Staff:
 
@@ -293,6 +387,11 @@ Alerts, calls, and AI logs:
 
 Billing:
 
+- `GET /api/v1/billing/registration-config` - public registration plan and Stripe readiness.
+- `POST /api/v1/billing/registration/setup-intent` - public optional card setup before owner registration.
+- `POST /api/v1/billing/payment-method/setup-intent` - owner-only deferred card setup.
+- `POST /api/v1/billing/payment-method/activate` - owner-only activation body `{ "setupIntentId": "seti_..." }`.
+- `GET /api/v1/billing/subscription`
 - `GET /api/v1/billing/usage?historyLimit=12`
 
 ## Staff APIs
@@ -308,6 +407,8 @@ Staff app bootstrap:
 - `POST /api/v1/auth/change-password`
 
 `GET /api/v1/staff/me/profile` includes `user`, `staff`, `salon`, `serviceIds`, and `assignedServices` for bootstrap.
+
+`GET /api/v1/staff/me/reminders` returns pending reminder records for the authenticated staff member. Upcoming-booking push data uses `type: "appointment_upcoming_reminder"` with `appointmentId`, `salonId`, `staffId`, and `/appointments?appointmentId=...` as the URL.
 
 Get assigned services:
 

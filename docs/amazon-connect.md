@@ -69,7 +69,7 @@ The operator dashboard embeds the Amazon Connect CCP from `apps/app`, so the web
 
 Required origins:
 
-- `https://app-new-nail.kendemo.com`
+- `https://app.aifastbooking.com`
 - `http://localhost:5173`
 
 The CCP URL must use the Connect instance alias and `/ccp-v2/`:
@@ -87,20 +87,20 @@ VITE_AMAZON_CONNECT_CCP_URL=https://fastaibooking.my.connect.aws/ccp-v2/
 Current production values:
 
 - Direct CCP URL: `https://fastaibooking.my.connect.aws/ccp-v2/`
-- App origin: `https://app-new-nail.kendemo.com`
+- App origin: `https://app.aifastbooking.com`
 - Amazon Connect instance alias: `fastaibooking`
 - Region: `us-east-1`
 
 Use the repeatable helper to verify and add Approved origins:
 
 ```bash
-AWS_PROFILE=nailnew AWS_REGION=us-east-1 APP_ORIGIN=https://app-new-nail.kendemo.com ./scripts/aws/ensure-connect-approved-origins.sh
+AWS_PROFILE=nailnew AWS_REGION=us-east-1 APP_ORIGIN=https://app.aifastbooking.com ./scripts/aws/ensure-connect-approved-origins.sh
 ```
 
 If the production origin is already present but the embedded CCP still reports CSP `frame-ancestors 'self'`, re-apply only the exact app origin:
 
 ```bash
-AWS_PROFILE=nailnew AWS_REGION=us-east-1 APP_ORIGIN=https://app-new-nail.kendemo.com FORCE_REAPPLY=true ./scripts/aws/ensure-connect-approved-origins.sh
+AWS_PROFILE=nailnew AWS_REGION=us-east-1 APP_ORIGIN=https://app.aifastbooking.com FORCE_REAPPLY=true ./scripts/aws/ensure-connect-approved-origins.sh
 ```
 
 The helper prints the AWS caller identity, Connect instance alias/id/region, and Approved origins before and after. It does not remove unrelated origins.
@@ -123,13 +123,13 @@ aws connect disassociate-approved-origin \
   --profile nailnew \
   --region us-east-1 \
   --instance-id "$INSTANCE_ID" \
-  --origin "https://app-new-nail.kendemo.com"
+  --origin "https://app.aifastbooking.com"
 
 aws connect associate-approved-origin \
   --profile nailnew \
   --region us-east-1 \
   --instance-id "$INSTANCE_ID" \
-  --origin "https://app-new-nail.kendemo.com"
+  --origin "https://app.aifastbooking.com"
 
 aws connect associate-approved-origin \
   --profile nailnew \

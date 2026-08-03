@@ -124,9 +124,9 @@ services:
       context: .
       dockerfile: apps/admin/Dockerfile
       args:
-        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-https://api-new-nail.kendemo.com}
-        VITE_ADMIN_BASE_URL: ${VITE_ADMIN_BASE_URL:-https://admin-new-nail.kendemo.com}
-        VITE_APP_BASE_URL: ${VITE_APP_BASE_URL:-https://app-new-nail.kendemo.com}
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-https://api.aifastbooking.com}
+        VITE_ADMIN_BASE_URL: ${VITE_ADMIN_BASE_URL:-https://admin.aifastbooking.com}
+        VITE_APP_BASE_URL: ${VITE_APP_BASE_URL:-https://app.aifastbooking.com}
         VITE_AMAZON_CONNECT_CCP_URL: ${VITE_AMAZON_CONNECT_CCP_URL:-}
         VITE_APP_NAME: ${VITE_ADMIN_APP_NAME:-FastAIBooking Admin}
     container_name: fastaibooking-admin
@@ -158,9 +158,9 @@ services:
       context: .
       dockerfile: apps/app/Dockerfile
       args:
-        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-https://api-new-nail.kendemo.com}
-        VITE_APP_BASE_URL: ${VITE_APP_BASE_URL:-https://app-new-nail.kendemo.com}
-        VITE_ADMIN_BASE_URL: ${VITE_ADMIN_BASE_URL:-https://admin-new-nail.kendemo.com}
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-https://api.aifastbooking.com}
+        VITE_APP_BASE_URL: ${VITE_APP_BASE_URL:-https://app.aifastbooking.com}
+        VITE_ADMIN_BASE_URL: ${VITE_ADMIN_BASE_URL:-https://admin.aifastbooking.com}
         VITE_AMAZON_CONNECT_CCP_URL: ${VITE_AMAZON_CONNECT_CCP_URL:-}
         VITE_AMAZON_CONNECT_EMBEDDED_CCP_ENABLED: ${VITE_AMAZON_CONNECT_EMBEDDED_CCP_ENABLED:-false}
         VITE_APP_NAME: ${VITE_OWNER_APP_NAME:-FastAIBooking}

@@ -235,7 +235,9 @@ test("edge nginx config enables gzip for API JSON responses", () => {
   const sslConfig = readRepoFile("infra/nginx/default-ssl.conf");
 
   for (const source of [plainConfig, sslConfig]) {
-    assert.match(source, /server_name api-new-nail\.kendemo\.com/);
+    assert.match(source, /server_name api\.aifastbooking\.com api-new-nail\.kendemo\.com/);
+    assert.match(source, /server_name admin\.aifastbooking\.com admin-new-nail\.kendemo\.com/);
+    assert.match(source, /server_name app\.aifastbooking\.com app-new-nail\.kendemo\.com/);
     assert.match(source, /gzip on;/);
     assert.match(source, /gzip_comp_level 5;/);
     assert.match(source, /gzip_min_length 1024;/);

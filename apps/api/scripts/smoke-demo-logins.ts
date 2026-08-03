@@ -22,7 +22,7 @@ interface LoginResponse {
 const baseUrl = (
   process.env.BASE_URL ??
   process.env.API_BASE_URL ??
-  "https://api-new-nail.kendemo.com"
+  "https://api.aifastbooking.com"
 ).replace(/\/$/, "");
 
 const accounts = {
