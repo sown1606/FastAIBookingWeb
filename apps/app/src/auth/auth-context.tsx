@@ -10,8 +10,8 @@ interface OwnerRegistrationPayload {
   password: string;
   phone?: string;
   planCode: "ai_reception" | "human_reception";
-  setupIntentId: string;
-  billingConsentAccepted: true;
+  setupIntentId?: string;
+  billingConsentAccepted?: true;
   salon: {
     name: string;
     contactEmail?: string;

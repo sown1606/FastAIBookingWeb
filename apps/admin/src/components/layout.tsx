@@ -5,6 +5,7 @@ import { useI18n, type TranslationKey } from "../lib/i18n";
 const navItems: Array<{ to: string; labelKey: TranslationKey }> = [
   { to: "/dashboard", labelKey: "nav.dashboard" },
   { to: "/salons", labelKey: "nav.salons" },
+  { to: "/registration-leads", labelKey: "nav.registrationLeads" },
   { to: "/salons/new", labelKey: "nav.createSalon" },
   { to: "/call-center-agents", labelKey: "nav.callCenterAgents" },
   { to: "/calls", labelKey: "nav.calls" },
@@ -34,6 +35,7 @@ const toTitleKey = (pathname: string): TranslationKey => {
   if (pathname.startsWith("/salons/new")) return "nav.createSalon";
   if (pathname.startsWith("/salons/")) return "nav.salons";
   if (pathname.startsWith("/salons")) return "nav.salons";
+  if (pathname.startsWith("/registration-leads")) return "nav.registrationLeads";
   if (pathname.startsWith("/call-center-agents")) return "nav.callCenterAgents";
   if (pathname.startsWith("/calls/")) return "nav.calls";
   if (pathname.startsWith("/calls")) return "nav.calls";

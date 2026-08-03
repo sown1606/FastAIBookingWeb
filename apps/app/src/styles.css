@@ -1341,6 +1341,80 @@ pre {
   justify-content: space-between;
 }
 
+.registration-path-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+}
+
+.registration-path-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+  padding: 18px;
+  display: grid;
+  gap: 10px;
+}
+
+.registration-path-card h2,
+.registration-path-card p {
+  margin: 0;
+}
+
+.registration-assistant {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: #fffaf0;
+  padding: 12px 14px;
+}
+
+.registration-assistant summary {
+  cursor: pointer;
+  color: var(--primary-strong);
+  font-weight: 900;
+}
+
+.registration-assistant-body,
+.registration-assistant-messages {
+  display: grid;
+  gap: 10px;
+}
+
+.registration-assistant-body {
+  margin-top: 12px;
+}
+
+.registration-assistant-messages {
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.assistant-message {
+  width: min(92%, 620px);
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.assistant-message.mine {
+  justify-self: end;
+  background: #e4f4ed;
+}
+
+.registration-assistant-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+@media (max-width: 640px) {
+  .registration-assistant-form {
+    grid-template-columns: 1fr;
+  }
+}
+
 .demo-account-card {
   background: var(--surface-soft);
   border-color: var(--border);

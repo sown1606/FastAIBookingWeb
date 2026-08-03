@@ -169,6 +169,7 @@ export const SalonsPage = () => {
               onChange={(event) => setSubscriptionStatus(event.target.value)}
             >
               <option value="">{t("common.all")}</option>
+              <option value="PENDING_PAYMENT">PENDING_PAYMENT</option>
               <option value="TRIAL">TRIAL</option>
               <option value="ACTIVE">ACTIVE</option>
               <option value="PAST_DUE">PAST_DUE</option>

@@ -9,6 +9,7 @@ import { getCountryOptions, getTimezoneOptions } from "../lib/form-options";
 import { formatUsPhoneInput, requiredLabel, validateOptionalUsPhone } from "../lib/phone";
 import { useI18n } from "../lib/i18n";
 import { AuthFrame } from "./auth-frame";
+import { RegistrationAssistant } from "./registration-assistant";
 
 type BillingPlanCode = "ai_reception" | "human_reception";
 
@@ -31,6 +32,25 @@ interface SetupIntentResponse {
   setupIntentId: string;
   clientSecret: string;
 }
+
+const defaultPlans: RegistrationBillingConfig["plans"] = [
+  {
+    code: "ai_reception",
+    name: "AI Reception",
+    monthlyPriceCents: 8_900,
+    trialDays: 30,
+    operatorTransferIncluded: false,
+    ready: false
+  },
+  {
+    code: "human_reception",
+    name: "AI + Live Operator",
+    monthlyPriceCents: 49_900,
+    trialDays: 30,
+    operatorTransferIncluded: true,
+    ready: false
+  }
+];
 
 interface RegistrationPaymentStepProps {
   plan: RegistrationBillingConfig["plans"][number];
@@ -139,6 +159,10 @@ export const RegisterPage = () => {
   const [billingConfig, setBillingConfig] = useState<RegistrationBillingConfig | null>(null);
   const [billingConfigError, setBillingConfigError] = useState("");
   const [setupIntent, setSetupIntent] = useState<SetupIntentResponse | null>(null);
+  const [registrationMode, setRegistrationMode] = useState<"callback" | "form" | null>(null);
+  const [callbackPhone, setCallbackPhone] = useState("");
+  const [callbackName, setCallbackName] = useState("");
+  const [callbackSaved, setCallbackSaved] = useState(false);
 
   const [form, setForm] = useState({
     fullName: "",
@@ -190,19 +214,15 @@ export const RegisterPage = () => {
         : null,
     [billingConfig]
   );
-  const selectedPlan = billingConfig?.plans.find((plan) => plan.code === form.planCode) ?? null;
+  const displayPlans = billingConfig?.plans ?? defaultPlans;
+  const selectedPlan = displayPlans.find((plan) => plan.code === form.planCode) ?? null;
 
   const onChange = (field: keyof typeof form, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  const onContinueToCard = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const onContinueToCard = async () => {
     setError("");
-    if (!validateOptionalUsPhone(form.phone) || !validateOptionalUsPhone(form.salonPhone)) {
-      setError(t("form.phoneInvalid"));
-      return;
-    }
     if (!billingConfig?.ready || !stripePromise) {
       setError(t("auth.register.billingUnavailable"));
       return;
@@ -226,7 +246,7 @@ export const RegisterPage = () => {
     }
   };
 
-  const onCompleteRegistration = async (setupIntentId: string) => {
+  const onCompleteRegistration = async (setupIntentId?: string) => {
     setError("");
     setSubmitting(true);
     try {
@@ -236,8 +256,12 @@ export const RegisterPage = () => {
         password: form.password,
         phone: form.phone || undefined,
         planCode: form.planCode,
-        setupIntentId,
-        billingConsentAccepted: true,
+        ...(setupIntentId
+          ? {
+              setupIntentId,
+              billingConsentAccepted: true as const
+            }
+          : {}),
         salon: {
           name: form.salonName,
           contactEmail: form.salonEmail || undefined,
@@ -249,7 +273,10 @@ export const RegisterPage = () => {
           country: form.country || undefined
         }
       });
-      if (
+      if (!setupIntentId) {
+        notify("info", t("auth.register.paymentDeferred"));
+        navigate("/dashboard");
+      } else if (
         registration.phoneProvisioning?.status === "ACTIVE" &&
         registration.phoneProvisioning.phoneNumber
       ) {
@@ -259,6 +286,48 @@ export const RegisterPage = () => {
         notify("info", t("auth.register.phonePending"));
         navigate("/billing");
       }
+    } catch (submitError) {
+      const message = extractErrorMessage(submitError);
+      setError(message);
+      notify("error", message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const onSubmitRegistrationForm = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError("");
+    if (!validateOptionalUsPhone(form.phone) || !validateOptionalUsPhone(form.salonPhone)) {
+      setError(t("form.phoneInvalid"));
+      return;
+    }
+    const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+    if (submitter?.value === "card") {
+      await onContinueToCard();
+      return;
+    }
+    await onCompleteRegistration();
+  };
+
+  const submitCallbackRequest = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError("");
+    if (!callbackPhone || !validateOptionalUsPhone(callbackPhone)) {
+      setError(t("form.phoneInvalid"));
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await apiPost<
+        { id: string; status: "NEW"; createdAt: string },
+        { phone: string; fullName?: string }
+      >("/api/v1/auth/registration-callback", {
+        phone: callbackPhone,
+        fullName: callbackName || undefined
+      });
+      setCallbackSaved(true);
+      notify("success", t("auth.register.callbackSaved"));
     } catch (submitError) {
       const message = extractErrorMessage(submitError);
       setError(message);
@@ -303,21 +372,102 @@ export const RegisterPage = () => {
     );
   }
 
+  if (registrationMode !== "form") {
+    return (
+      <AuthFrame wide>
+        <div className="auth-heading">
+          <h1>{t("auth.register.welcomeTitle")}</h1>
+          <p className="muted">{t("auth.register.welcomeHelper")}</p>
+        </div>
+        <div className="registration-path-grid">
+          <section className="registration-path-card">
+            <h2>{t("auth.register.callbackTitle")}</h2>
+            <p className="muted">{t("auth.register.callbackHelper")}</p>
+            {registrationMode === "callback" ? (
+              callbackSaved ? (
+                <div className="notice">{t("auth.register.callbackSaved")}</div>
+              ) : (
+                <form className="form-grid" onSubmit={submitCallbackRequest}>
+                  <label className="field">
+                    <span>{t("auth.register.ownerNameOptional")}</span>
+                    <input
+                      value={callbackName}
+                      onChange={(event) => setCallbackName(event.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>{requiredLabel(t("common.phone"))}</span>
+                    <input
+                      type="tel"
+                      inputMode="tel"
+                      placeholder="(212) 555-0100"
+                      value={callbackPhone}
+                      onChange={(event) =>
+                        setCallbackPhone(formatUsPhoneInput(event.target.value))
+                      }
+                      required
+                    />
+                  </label>
+                  {error ? <div className="form-error">{error}</div> : null}
+                  <button type="submit" className="button-primary" disabled={submitting}>
+                    {submitting
+                      ? t("auth.register.callbackSaving")
+                      : t("auth.register.requestCallback")}
+                  </button>
+                </form>
+              )
+            ) : (
+              <button
+                type="button"
+                className="button-primary"
+                onClick={() => {
+                  setError("");
+                  setRegistrationMode("callback");
+                }}
+              >
+                {t("auth.register.chooseCallback")}
+              </button>
+            )}
+          </section>
+          <section className="registration-path-card">
+            <h2>{t("auth.register.formTitle")}</h2>
+            <p className="muted">{t("auth.register.formHelper")}</p>
+            <button
+              type="button"
+              className="button-primary"
+              onClick={() => {
+                setError("");
+                setRegistrationMode("form");
+              }}
+            >
+              {t("auth.register.openForm")}
+            </button>
+          </section>
+        </div>
+        <RegistrationAssistant onChoose={setRegistrationMode} />
+        <div className="auth-links">
+          <Link to="/login">{t("auth.login.back")}</Link>
+        </div>
+      </AuthFrame>
+    );
+  }
+
   return (
     <AuthFrame wide>
       <div className="auth-heading">
         <h1>{t("auth.register.title")}</h1>
         <p className="muted">{t("auth.register.helper")}</p>
       </div>
+      <RegistrationAssistant onChoose={setRegistrationMode} />
       {!billingConfigError && !billingConfig ? (
         <div className="notice">{t("auth.register.loadingBilling")}</div>
       ) : null}
       {billingConfigError || (billingConfig && !billingConfig.ready) ? (
-        <div className="form-error">
-          {billingConfigError || t("auth.register.billingUnavailable")}
+        <div className="notice">
+          {t("auth.register.cardOptionalUnavailable")}
         </div>
       ) : null}
-      <form className="form-grid two-columns" onSubmit={onContinueToCard}>
+      <form className="form-grid two-columns" onSubmit={onSubmitRegistrationForm}>
         <div className="form-section-title">
           <strong>{t("auth.register.ownerInfo")}</strong>
         </div>
@@ -436,9 +586,9 @@ export const RegisterPage = () => {
           <strong>{t("auth.register.choosePlan")}</strong>
         </div>
         <div className="registration-plan-grid">
-          {(billingConfig?.plans ?? []).map((plan) => (
+          {displayPlans.map((plan) => (
             <label
-              className={`registration-plan-card ${form.planCode === plan.code ? "selected" : ""} ${!plan.ready ? "disabled" : ""}`}
+              className={`registration-plan-card ${form.planCode === plan.code ? "selected" : ""}`}
               key={plan.code}
             >
               <input
@@ -446,7 +596,6 @@ export const RegisterPage = () => {
                 name="planCode"
                 value={plan.code}
                 checked={form.planCode === plan.code}
-                disabled={!plan.ready}
                 onChange={() => onChange("planCode", plan.code)}
               />
               <strong>{plan.name}</strong>
@@ -468,6 +617,17 @@ export const RegisterPage = () => {
           <button
             type="submit"
             className="button-primary"
+            name="registration-action"
+            value="skip-card"
+            disabled={submitting}
+          >
+            {submitting ? t("auth.register.submitting") : t("auth.register.createWithoutCard")}
+          </button>
+          <button
+            type="submit"
+            className="button-secondary"
+            name="registration-action"
+            value="card"
             disabled={submitting || !billingConfig?.ready || !selectedPlan?.ready}
           >
             {submitting ? t("auth.register.preparingCard") : t("auth.register.continueToVisa")}
@@ -475,6 +635,16 @@ export const RegisterPage = () => {
         </div>
       </form>
       <div className="auth-links">
+        <button
+          type="button"
+          className="button-secondary"
+          onClick={() => {
+            setError("");
+            setRegistrationMode(null);
+          }}
+        >
+          {t("common.back")}
+        </button>
         <Link to="/login">{t("auth.login.back")}</Link>
       </div>
     </AuthFrame>

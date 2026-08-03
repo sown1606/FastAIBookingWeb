@@ -42,6 +42,8 @@ const settingsUpdateSchema = z.object({
   currency: z.string().min(3).max(3).optional(),
   locale: z.string().min(2).max(16).optional(),
   bookingLeadTimeMinutes: z.coerce.number().int().nonnegative().optional(),
+  appointmentReminderMinutes: z.union([z.literal(60), z.literal(120), z.literal(180)]).optional(),
+  ownerUpcomingReminderEnabled: z.boolean().optional(),
   cancellationPolicy: z.string().max(1000).nullable().optional(),
   aiReceptionEnabled: z.boolean().optional(),
   aiForwardingEnabled: z.boolean().optional(),

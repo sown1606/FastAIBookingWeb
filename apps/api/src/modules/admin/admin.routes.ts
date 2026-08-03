@@ -4,6 +4,7 @@ import {
   AppointmentStatus,
   CallSessionStatus,
   ExternalProvider,
+  RegistrationLeadStatus,
   Role,
   SalonStatus,
   SubscriptionStatus
@@ -70,13 +71,15 @@ import {
   listCallCenterAgentsForAdmin,
   listSalonCallCenterAssignmentsForAdmin,
   listSalonIntegrationsForAdmin,
+  listRegistrationLeadsForAdmin,
   listSalonsForAdmin,
   permanentlyDeleteSalonForAdmin,
   replaceSalonCallCenterAssignmentsForAdmin,
   replaceSalonIntegrationsForAdmin,
   setSalonStatusForAdmin,
   updateSalonForAdmin,
-  updateSalonSettingsForAdmin
+  updateSalonSettingsForAdmin,
+  updateRegistrationLeadStatusForAdmin
 } from "./admin.service";
 import {
   buildDebugExportDownloadFilename,
@@ -94,6 +97,16 @@ const salonListQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(100).default(20),
   status: z.nativeEnum(SalonStatus).optional(),
   subscriptionStatus: z.nativeEnum(SubscriptionStatus).optional()
+});
+
+const registrationLeadListQuerySchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(20),
+  status: z.nativeEnum(RegistrationLeadStatus).optional()
+});
+
+const registrationLeadStatusSchema = z.object({
+  status: z.nativeEnum(RegistrationLeadStatus)
 });
 
 const idSchema = z.object({
@@ -426,6 +439,35 @@ adminRouter.post(
 );
 
 adminRouter.use(authenticate, requireRoles(Role.PLATFORM_ADMIN));
+
+adminRouter.get(
+  "/registration-leads",
+  validate(registrationLeadListQuerySchema, "query"),
+  asyncHandler(async (req, res) => {
+    const query = req.query as unknown as z.infer<typeof registrationLeadListQuerySchema>;
+    const result = await listRegistrationLeadsForAdmin(query);
+    return sendSuccess(res, { data: result });
+  })
+);
+
+adminRouter.patch(
+  "/registration-leads/:id",
+  validate(idSchema, "params"),
+  validate(registrationLeadStatusSchema),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params as z.infer<typeof idSchema>;
+    const payload = req.body as z.infer<typeof registrationLeadStatusSchema>;
+    const lead = await updateRegistrationLeadStatusForAdmin(
+      id,
+      req.auth!.userId,
+      payload.status
+    );
+    return sendSuccess(res, {
+      message: "Registration lead updated.",
+      data: lead
+    });
+  })
+);
 
 adminRouter.get(
   "/call-center/agents",

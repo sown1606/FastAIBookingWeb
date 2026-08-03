@@ -373,6 +373,12 @@ const replaceStaffReminders = async (
     endTime: Date;
   }
 ) => {
+  const settings = await tx.salonSetting.findUnique({
+    where: { salonId: input.salonId },
+    select: { appointmentReminderMinutes: true }
+  });
+  const reminderMinutes = settings?.appointmentReminderMinutes ?? 60;
+
   await tx.staffReminder.deleteMany({
     where: {
       appointmentId: input.appointmentId
@@ -386,8 +392,8 @@ const replaceStaffReminders = async (
         staffId: input.staffId,
         appointmentId: input.appointmentId,
         reminderType: "BEFORE_BOOKING",
-        remindAt: new Date(input.startTime.getTime() - 15 * 60 * 1000),
-        message: "Lich hen cua ban sap bat dau trong 15 phut."
+        remindAt: new Date(input.startTime.getTime() - reminderMinutes * 60 * 1000),
+        message: `Your appointment starts in ${reminderMinutes / 60} hour${reminderMinutes === 60 ? "" : "s"}.`
       },
       {
         salonId: input.salonId,

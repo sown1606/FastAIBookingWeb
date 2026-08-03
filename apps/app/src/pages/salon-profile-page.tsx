@@ -36,6 +36,8 @@ interface SalonSettings {
   currency: string;
   locale: string;
   bookingLeadTimeMinutes: number;
+  appointmentReminderMinutes: 60 | 120 | 180;
+  ownerUpcomingReminderEnabled: boolean;
   cancellationPolicy: string | null;
   aiReceptionEnabled: boolean;
   aiTransferRingCount: number;
@@ -124,6 +126,8 @@ export const SalonProfilePage = () => {
     currency: "USD",
     locale: "en-US",
     bookingLeadTimeMinutes: "0",
+    appointmentReminderMinutes: "60",
+    ownerUpcomingReminderEnabled: true,
     cancellationPolicy: "",
     aiReceptionEnabled: false,
     aiTransferRingCount: "3",
@@ -182,6 +186,8 @@ export const SalonProfilePage = () => {
         currency: settingsResult.currency,
         locale: settingsResult.locale,
         bookingLeadTimeMinutes: String(settingsResult.bookingLeadTimeMinutes),
+        appointmentReminderMinutes: String(settingsResult.appointmentReminderMinutes),
+        ownerUpcomingReminderEnabled: settingsResult.ownerUpcomingReminderEnabled,
         cancellationPolicy: settingsResult.cancellationPolicy ?? "",
         aiReceptionEnabled: settingsResult.aiReceptionEnabled,
         aiTransferRingCount: String(settingsResult.aiTransferRingCount),
@@ -229,6 +235,8 @@ export const SalonProfilePage = () => {
           currency: settingsForm.currency,
           locale: settingsForm.locale,
           bookingLeadTimeMinutes: Number(settingsForm.bookingLeadTimeMinutes),
+          appointmentReminderMinutes: Number(settingsForm.appointmentReminderMinutes),
+          ownerUpcomingReminderEnabled: settingsForm.ownerUpcomingReminderEnabled,
           cancellationPolicy: settingsForm.cancellationPolicy || null,
           aiReceptionEnabled: settingsForm.aiReceptionEnabled,
           aiTransferRingCount: Number(settingsForm.aiTransferRingCount),
@@ -438,6 +446,37 @@ export const SalonProfilePage = () => {
                   }))
                 }
               />
+            </label>
+            <label className="field">
+              <span>{t("profile.appointmentReminder")}</span>
+              <select
+                value={settingsForm.appointmentReminderMinutes}
+                onChange={(event) =>
+                  setSettingsForm((prev) => ({
+                    ...prev,
+                    appointmentReminderMinutes: event.target.value
+                  }))
+                }
+              >
+                <option value="60">{t("profile.reminderOneHour")}</option>
+                <option value="120">{t("profile.reminderTwoHours")}</option>
+                <option value="180">{t("profile.reminderThreeHours")}</option>
+              </select>
+              <small>{t("profile.appointmentReminderHint")}</small>
+            </label>
+            <label className="field checkbox-row">
+              <span>{t("profile.ownerUpcomingReminder")}</span>
+              <input
+                type="checkbox"
+                checked={settingsForm.ownerUpcomingReminderEnabled}
+                onChange={(event) =>
+                  setSettingsForm((prev) => ({
+                    ...prev,
+                    ownerUpcomingReminderEnabled: event.target.checked
+                  }))
+                }
+              />
+              <small>{t("profile.ownerUpcomingReminderHint")}</small>
             </label>
             <label className="field">
               <span>{t("profile.cancelPolicy")}</span>

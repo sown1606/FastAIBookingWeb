@@ -36,8 +36,8 @@ interface RegisterOwnerInput {
   email: string;
   password: string;
   planCode: BillingPlanCode;
-  setupIntentId: string;
-  billingConsentAccepted: true;
+  setupIntentId?: string;
+  billingConsentAccepted?: true;
   phone?: string;
   salon: {
     name: string;
@@ -240,7 +240,12 @@ const completeExistingRegistration = async (
   if (
     existing.role !== Role.SALON_OWNER ||
     !existing.salon ||
-    existing.salon.subscription?.stripeSetupIntentId !== input.setupIntentId
+    !(
+      (input.setupIntentId &&
+        existing.salon.subscription?.stripeSetupIntentId === input.setupIntentId) ||
+      (!input.setupIntentId &&
+        existing.salon.subscription?.status === SubscriptionStatus.PENDING_PAYMENT)
+    )
   ) {
     throw new AppError("Email is already registered.", 409, "EMAIL_ALREADY_EXISTS");
   }
@@ -255,7 +260,12 @@ const completeExistingRegistration = async (
     salonId: existing.salonId,
     staffId: existing.staffId
   });
-  const phoneProvisioning = await provisionRegisteredSalon(existing.salon.id, existing.id);
+  const subscriptionProvidesService =
+    existing.salon.subscription?.status === SubscriptionStatus.TRIAL ||
+    existing.salon.subscription?.status === SubscriptionStatus.ACTIVE;
+  const phoneProvisioning = subscriptionProvidesService
+    ? await provisionRegisteredSalon(existing.salon.id, existing.id)
+    : null;
 
   return {
     user: {
@@ -289,63 +299,77 @@ export const registerSalonOwner = async (
     return completedRegistration;
   }
 
-  const verifiedPayment = await verifyRegistrationSetupIntent({
-    setupIntentId: input.setupIntentId,
-    email: normalizedEmail,
-    planCode: input.planCode
-  });
   const plan = getBillingPlan(input.planCode);
-  const expiresAt = new Date(
-    Date.now() + env.REGISTRATION_ATTEMPT_TTL_MINUTES * 60 * 1000
-  );
-  const attempt = await prisma.ownerRegistrationAttempt.upsert({
-    where: { setupIntentId: input.setupIntentId },
-    create: {
+  const hasVerifiedCard = Boolean(input.setupIntentId && input.billingConsentAccepted);
+  let verifiedPayment: Awaited<ReturnType<typeof verifyRegistrationSetupIntent>> | null = null;
+  let stripeRegistration: Awaited<ReturnType<typeof createStripeTrialRegistration>> | null = null;
+  let attempt: {
+    id: string;
+    email: string;
+    planCode: string;
+    status: OwnerRegistrationStatus;
+    stripeCustomerId: string | null;
+    stripeSubscriptionId: string | null;
+    expiresAt: Date;
+  } | null = null;
+
+  if (hasVerifiedCard) {
+    verifiedPayment = await verifyRegistrationSetupIntent({
+      setupIntentId: input.setupIntentId!,
       email: normalizedEmail,
-      setupIntentId: input.setupIntentId,
-      planCode: input.planCode,
-      expiresAt
-    },
-    update: {},
-    select: {
-      id: true,
-      email: true,
-      planCode: true,
-      status: true,
-      stripeCustomerId: true,
-      stripeSubscriptionId: true,
-      expiresAt: true
+      planCode: input.planCode
+    });
+    const expiresAt = new Date(
+      Date.now() + env.REGISTRATION_ATTEMPT_TTL_MINUTES * 60 * 1000
+    );
+    attempt = await prisma.ownerRegistrationAttempt.upsert({
+      where: { setupIntentId: input.setupIntentId! },
+      create: {
+        email: normalizedEmail,
+        setupIntentId: input.setupIntentId!,
+        planCode: input.planCode,
+        expiresAt
+      },
+      update: {},
+      select: {
+        id: true,
+        email: true,
+        planCode: true,
+        status: true,
+        stripeCustomerId: true,
+        stripeSubscriptionId: true,
+        expiresAt: true
+      }
+    });
+    if (attempt.email !== normalizedEmail || attempt.planCode !== input.planCode) {
+      throw new AppError(
+        "Card verification does not match this registration.",
+        409,
+        "REGISTRATION_ATTEMPT_MISMATCH"
+      );
     }
-  });
-  if (attempt.email !== normalizedEmail || attempt.planCode !== input.planCode) {
-    throw new AppError(
-      "Card verification does not match this registration.",
-      409,
-      "REGISTRATION_ATTEMPT_MISMATCH"
-    );
-  }
-  if (
-    attempt.expiresAt.getTime() < Date.now() &&
-    attempt.status !== OwnerRegistrationStatus.BILLING_READY
-  ) {
-    throw new AppError(
-      "Card verification has expired. Please verify the card again.",
-      410,
-      "REGISTRATION_ATTEMPT_EXPIRED"
-    );
+    if (
+      attempt.expiresAt.getTime() < Date.now() &&
+      attempt.status !== OwnerRegistrationStatus.BILLING_READY
+    ) {
+      throw new AppError(
+        "Card verification has expired. Please verify the card again.",
+        410,
+        "REGISTRATION_ATTEMPT_EXPIRED"
+      );
+    }
   }
 
   const passwordHash = await hashPassword(input.password);
   const ownerPhone = normalizeOptionalPhone(input.phone, "Owner phone");
   const salonContactPhone = normalizeOptionalPhone(input.salon.contactPhone ?? input.phone, "Salon phone");
-  let stripeRegistration;
-  if (attempt.stripeCustomerId && attempt.stripeSubscriptionId) {
+  if (attempt?.stripeCustomerId && attempt.stripeSubscriptionId) {
     stripeRegistration = await retrieveStripeTrialRegistration({
       customerId: attempt.stripeCustomerId,
       subscriptionId: attempt.stripeSubscriptionId,
       planCode: input.planCode
     });
-  } else {
+  } else if (attempt && verifiedPayment && input.setupIntentId) {
     try {
       stripeRegistration = await createStripeTrialRegistration({
         registrationAttemptId: attempt.id,
@@ -376,11 +400,11 @@ export const registerSalonOwner = async (
       throw error;
     }
   }
-  if (
+  if (stripeRegistration && (
     stripeRegistration.status !== SubscriptionStatus.TRIAL ||
     !stripeRegistration.trialEndsAt ||
     stripeRegistration.trialEndsAt.getTime() <= Date.now()
-  ) {
+  )) {
     throw new AppError(
       "Stripe subscription is not in an active trial.",
       409,
@@ -388,6 +412,7 @@ export const registerSalonOwner = async (
     );
   }
 
+  const pendingPaymentStartedAt = new Date();
   const result = await prisma.$transaction(async (tx) => {
     const user = await tx.user.create({
       data: {
@@ -417,7 +442,7 @@ export const registerSalonOwner = async (
         postalCode: input.salon.postalCode,
         country: input.salon.country ?? "US",
         planName: input.planCode,
-        subscriptionStatus: stripeRegistration.status
+        subscriptionStatus: stripeRegistration?.status ?? SubscriptionStatus.PENDING_PAYMENT
       }
     });
 
@@ -432,34 +457,36 @@ export const registerSalonOwner = async (
       }
     });
 
-    await tx.subscription.create({
+    const subscription = await tx.subscription.create({
       data: {
         salonId: salon.id,
         planCode: input.planCode,
-        status: stripeRegistration.status,
+        status: stripeRegistration?.status ?? SubscriptionStatus.PENDING_PAYMENT,
         basePriceCents: plan.monthlyPriceCents,
-        currentPeriodStart: stripeRegistration.currentPeriodStart,
-        currentPeriodEnd: stripeRegistration.currentPeriodEnd,
-        trialEndsAt: stripeRegistration.trialEndsAt,
-        stripeCustomerId: stripeRegistration.customerId,
-        stripeSubscriptionId: stripeRegistration.subscriptionId,
-        stripeSetupIntentId: verifiedPayment.setupIntentId,
-        stripePriceId: stripeRegistration.stripePriceId,
-        paymentMethodBrand: verifiedPayment.cardBrand,
-        paymentMethodLast4: verifiedPayment.cardLast4
+        currentPeriodStart: stripeRegistration?.currentPeriodStart ?? pendingPaymentStartedAt,
+        currentPeriodEnd: stripeRegistration?.currentPeriodEnd ?? pendingPaymentStartedAt,
+        trialEndsAt: stripeRegistration?.trialEndsAt ?? null,
+        stripeCustomerId: stripeRegistration?.customerId ?? null,
+        stripeSubscriptionId: stripeRegistration?.subscriptionId ?? null,
+        stripeSetupIntentId: verifiedPayment?.setupIntentId ?? null,
+        stripePriceId: stripeRegistration?.stripePriceId ?? null,
+        paymentMethodBrand: verifiedPayment?.cardBrand ?? null,
+        paymentMethodLast4: verifiedPayment?.cardLast4 ?? null
       }
     });
 
-    await tx.phoneProvisioning.create({
-      data: {
-        salonId: salon.id,
-        status: PhoneProvisioningStatus.PENDING,
-        claimClientToken: randomUUID()
-      }
-    });
+    if (stripeRegistration) {
+      await tx.phoneProvisioning.create({
+        data: {
+          salonId: salon.id,
+          status: PhoneProvisioningStatus.PENDING,
+          claimClientToken: randomUUID()
+        }
+      });
+    }
 
     let assignedHumanAgentCount = 0;
-    if (plan.operatorTransferIncluded) {
+    if (stripeRegistration && plan.operatorTransferIncluded) {
       const activeAgents = await tx.user.findMany({
         where: {
           role: Role.CALL_CENTER_AGENT,
@@ -511,35 +538,69 @@ export const registerSalonOwner = async (
       tx
     );
 
-    await createAuditLog(
-      {
-        salonId: salon.id,
-        actorUserId: user.id,
-        action: "TRIAL_SUBSCRIPTION_STARTED",
-        entityType: "Subscription",
-        entityId: stripeRegistration.subscriptionId,
-        metadata: {
-          planCode: input.planCode,
-          monthlyPriceCents: plan.monthlyPriceCents,
-          trialDays: plan.trialDays,
-          paymentMethodBrand: verifiedPayment.cardBrand,
-          paymentMethodLast4: verifiedPayment.cardLast4,
-          billingConsentAccepted: input.billingConsentAccepted,
-          billingTermsVersion: "trial_30d_monthly_v1",
-          assignedHumanAgentCount
-        }
-      },
-      tx
-    );
+    if (stripeRegistration && verifiedPayment && attempt) {
+      await createAuditLog(
+        {
+          salonId: salon.id,
+          actorUserId: user.id,
+          action: "TRIAL_SUBSCRIPTION_STARTED",
+          entityType: "Subscription",
+          entityId: stripeRegistration.subscriptionId,
+          metadata: {
+            planCode: input.planCode,
+            monthlyPriceCents: plan.monthlyPriceCents,
+            trialDays: plan.trialDays,
+            paymentMethodBrand: verifiedPayment.cardBrand,
+            paymentMethodLast4: verifiedPayment.cardLast4,
+            billingConsentAccepted: input.billingConsentAccepted,
+            billingTermsVersion: "trial_30d_monthly_v1",
+            assignedHumanAgentCount
+          }
+        },
+        tx
+      );
 
-    await tx.ownerRegistrationAttempt.update({
-      where: { id: attempt.id },
-      data: {
-        status: OwnerRegistrationStatus.COMPLETED,
-        completedAt: new Date(),
-        lastErrorCode: null
-      }
-    });
+      await tx.ownerRegistrationAttempt.update({
+        where: { id: attempt.id },
+        data: {
+          status: OwnerRegistrationStatus.COMPLETED,
+          completedAt: new Date(),
+          lastErrorCode: null
+        }
+      });
+    } else {
+      await tx.userNotification.create({
+        data: {
+          userId: user.id,
+          salonId: salon.id,
+          title: requestLanguage === "vi-VN" ? "Bổ sung phương thức thanh toán" : "Add a payment method",
+          body:
+            requestLanguage === "vi-VN"
+              ? "Bạn có thể thêm thẻ Visa an toàn trong trang Chi phí khi sẵn sàng."
+              : "Add a Visa card securely from Billing when you are ready.",
+          type: "billing_payment_reminder",
+          url: "/billing",
+          data: {
+            type: "billing_payment_reminder",
+            salonId: salon.id
+          }
+        }
+      });
+      await createAuditLog(
+        {
+          salonId: salon.id,
+          actorUserId: user.id,
+          action: "PAYMENT_METHOD_DEFERRED",
+          entityType: "Subscription",
+          entityId: subscription.id,
+          metadata: {
+            planCode: input.planCode,
+            monthlyPriceCents: plan.monthlyPriceCents
+          }
+        },
+        tx
+      );
+    }
 
     return {
       user: {
@@ -568,7 +629,9 @@ export const registerSalonOwner = async (
     salonId: result.user.salonId,
     staffId: result.user.staffId
   });
-  const phoneProvisioning = await provisionRegisteredSalon(result.salon.id, result.user.id);
+  const phoneProvisioning = stripeRegistration
+    ? await provisionRegisteredSalon(result.salon.id, result.user.id)
+    : null;
 
   return {
     ...result,

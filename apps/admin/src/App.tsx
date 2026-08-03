@@ -13,6 +13,7 @@ import { AiLogsPage } from "./pages/ai-logs-page";
 import { AiLogDetailPage } from "./pages/ai-log-detail-page";
 import { HealthPage } from "./pages/health-page";
 import { CallCenterAgentsPage } from "./pages/call-center-agents-page";
+import { RegistrationLeadsPage } from "./pages/registration-leads-page";
 
 const AdminShell = () => {
   const { session, logout } = useAuth();
@@ -50,6 +51,7 @@ export const App = () => {
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="salons" element={<SalonsPage />} />
+        <Route path="registration-leads" element={<RegistrationLeadsPage />} />
         <Route path="salons/new" element={<SalonCreatePage />} />
         <Route path="salons/:salonId" element={<SalonDetailPage />} />
         <Route path="call-center-agents" element={<CallCenterAgentsPage />} />

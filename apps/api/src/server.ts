@@ -3,6 +3,10 @@ import { env } from "./config/env";
 import { prisma } from "./db/prisma";
 import { logger } from "./lib/logger";
 import { getEmailStartupConfig } from "./lib/mailer";
+import {
+  startAppointmentReminderWorker,
+  stopAppointmentReminderWorker
+} from "./modules/appointments/reminder-worker";
 
 const server = app.listen(env.PORT, () => {
   const emailConfig = getEmailStartupConfig();
@@ -18,8 +22,11 @@ const server = app.listen(env.PORT, () => {
   logger.info(`SMTP from: ${emailConfig.smtpFrom ?? "not configured"}`);
 });
 
+startAppointmentReminderWorker();
+
 const shutdown = async (signal: string): Promise<void> => {
   logger.info({ signal }, "Shutting down API server");
+  stopAppointmentReminderWorker();
   server.close(async () => {
     await prisma.$disconnect();
     process.exit(0);

@@ -61,7 +61,7 @@ interface SalonDetail {
   notificationPhoneNumber: string | null;
   timezone: string;
   status: "PENDING" | "ACTIVE" | "SUSPENDED";
-  subscriptionStatus: "TRIAL" | "ACTIVE" | "PAST_DUE" | "CANCELED";
+  subscriptionStatus: "PENDING_PAYMENT" | "TRIAL" | "ACTIVE" | "PAST_DUE" | "CANCELED";
   addressLine1: string | null;
   addressLine2: string | null;
   city: string | null;
@@ -453,7 +453,7 @@ export const SalonDetailPage = () => {
     notificationPhoneNumber: "",
     timezone: "",
     status: "ACTIVE" as "PENDING" | "ACTIVE" | "SUSPENDED",
-    subscriptionStatus: "TRIAL" as "TRIAL" | "ACTIVE" | "PAST_DUE" | "CANCELED",
+    subscriptionStatus: "TRIAL" as "PENDING_PAYMENT" | "TRIAL" | "ACTIVE" | "PAST_DUE" | "CANCELED",
     addressLine1: "",
     addressLine2: "",
     city: "",
@@ -1502,10 +1502,11 @@ export const SalonDetailPage = () => {
               onChange={(event) =>
                 setProfileForm((prev) => ({
                   ...prev,
-                  subscriptionStatus: event.target.value as "TRIAL" | "ACTIVE" | "PAST_DUE" | "CANCELED"
+                  subscriptionStatus: event.target.value as "PENDING_PAYMENT" | "TRIAL" | "ACTIVE" | "PAST_DUE" | "CANCELED"
                 }))
               }
             >
+              <option value="PENDING_PAYMENT">{t("status.PENDING_PAYMENT")}</option>
               <option value="TRIAL">{t("status.TRIAL")}</option>
               <option value="ACTIVE">{t("status.ACTIVE")}</option>
               <option value="PAST_DUE">{t("status.PAST_DUE")}</option>

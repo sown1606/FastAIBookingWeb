@@ -5,6 +5,7 @@ import {
   CallRoutingOutcome,
   ExternalProvider,
   Prisma,
+  RegistrationLeadStatus,
   Role,
   SalonStatus,
   StaffStatus,
@@ -27,6 +28,12 @@ interface ListSalonsInput {
   limit: number;
   status?: SalonStatus;
   subscriptionStatus?: SubscriptionStatus;
+}
+
+interface ListRegistrationLeadsInput {
+  page: number;
+  limit: number;
+  status?: RegistrationLeadStatus;
 }
 
 interface CreateSalonInputForAdmin {
@@ -137,6 +144,46 @@ const normalizeNotificationRecipients = (
         .filter((item) => item.length > 0)
     )
   );
+};
+
+export const listRegistrationLeadsForAdmin = async (input: ListRegistrationLeadsInput) => {
+  const where = input.status ? { status: input.status } : {};
+  const [items, total] = await Promise.all([
+    prisma.registrationLead.findMany({
+      where,
+      skip: (input.page - 1) * input.limit,
+      take: input.limit,
+      orderBy: { createdAt: "desc" }
+    }),
+    prisma.registrationLead.count({ where })
+  ]);
+  return {
+    items,
+    pagination: {
+      page: input.page,
+      limit: input.limit,
+      total
+    }
+  };
+};
+
+export const updateRegistrationLeadStatusForAdmin = async (
+  id: string,
+  actorUserId: string,
+  status: RegistrationLeadStatus
+) => {
+  const lead = await prisma.registrationLead.update({
+    where: { id },
+    data: { status }
+  });
+  await createAuditLog({
+    actorUserId,
+    action: "REGISTRATION_LEAD_STATUS_UPDATED",
+    entityType: "RegistrationLead",
+    entityId: lead.id,
+    metadata: { status }
+  });
+  return lead;
 };
 
 export const listSalonsForAdmin = async (input: ListSalonsInput) => {

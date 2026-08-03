@@ -18,6 +18,10 @@ import {
   provisionPhoneNumberForSalon
 } from "./phone-provisioning.service";
 import {
+  activateDeferredBilling,
+  createDeferredBillingSetupIntent
+} from "./deferred-billing.service";
+import {
   constructStripeWebhookEvent,
   createRegistrationSetupIntent,
   getPublicRegistrationBillingConfig,
@@ -31,6 +35,10 @@ const querySchema = z.object({
 const setupIntentSchema = z.object({
   email: z.string().email(),
   planCode: z.enum(BILLING_PLAN_CODES)
+});
+
+const activateDeferredBillingSchema = z.object({
+  setupIntentId: z.string().regex(/^seti_[A-Za-z0-9_]+$/)
 });
 
 const registrationSetupIntentRateLimit = rateLimit({
@@ -112,6 +120,40 @@ billingRouter.get(
         currentUsage,
         history
       }
+    });
+  })
+);
+
+billingRouter.post(
+  "/payment-method/setup-intent",
+  registrationSetupIntentRateLimit,
+  asyncHandler(async (req, res) => {
+    const setupIntent = await createDeferredBillingSetupIntent(
+      req.auth!.salonId!,
+      req.auth!.userId
+    );
+    return sendSuccess(res, {
+      statusCode: 201,
+      message: "Secure Visa verification initialized.",
+      data: setupIntent
+    });
+  })
+);
+
+billingRouter.post(
+  "/payment-method/activate",
+  registrationSetupIntentRateLimit,
+  validate(activateDeferredBillingSchema),
+  asyncHandler(async (req, res) => {
+    const payload = req.body as z.infer<typeof activateDeferredBillingSchema>;
+    const result = await activateDeferredBilling(
+      req.auth!.salonId!,
+      req.auth!.userId,
+      payload.setupIntentId
+    );
+    return sendSuccess(res, {
+      message: "Payment method added and trial started.",
+      data: result
     });
   })
 );

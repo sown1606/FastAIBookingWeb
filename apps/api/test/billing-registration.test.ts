@@ -37,12 +37,14 @@ test("Stripe subscription states map to salon access states", () => {
   assert.equal(mapStripeSubscriptionStatus("canceled"), SubscriptionStatus.CANCELED);
 });
 
-test("registration source requires a succeeded Visa SetupIntent and explicit consent", () => {
+test("registration supports either deferred billing or a verified Visa SetupIntent", () => {
   const stripeSource = readRepoFile(
     "apps/api/src/modules/billing/stripe-billing.service.ts"
   );
   const registrationSource = readRepoFile("apps/app/src/auth/register-page.tsx");
   const authSchemaSource = readRepoFile("apps/api/src/modules/auth/auth.routes.ts");
+  const authServiceSource = readRepoFile("apps/api/src/modules/auth/auth.service.ts");
+  const billingPageSource = readRepoFile("apps/app/src/pages/billing-page.tsx");
 
   assert.match(stripeSource, /setupIntent\.status !== "succeeded"/);
   assert.match(stripeSource, /paymentMethod\.card\.brand !== "visa"/);
@@ -53,10 +55,43 @@ test("registration source requires a succeeded Visa SetupIntent and explicit con
   assert.match(registrationSource, /<PaymentElement/);
   assert.match(registrationSource, /billingConsent/);
   assert.match(registrationSource, /billingConsentAccepted: true/);
-  assert.match(registrationSource, /disabled=\{!stripe \|\| !elements \|\| !consented \|\| submitting\}/);
+  assert.match(registrationSource, /value="skip-card"/);
+  assert.match(registrationSource, /value="card"/);
   assert.match(authSchemaSource, /planCode: z\.enum\(BILLING_PLAN_CODES\)/);
-  assert.match(authSchemaSource, /setupIntentId:/);
-  assert.match(authSchemaSource, /billingConsentAccepted: z\.literal\(true\)/);
+  assert.match(authSchemaSource, /setupIntentId:.*\.optional\(\)/);
+  assert.match(authSchemaSource, /billingConsentAccepted: z\.literal\(true\)\.optional\(\)/);
+  assert.match(
+    authSchemaSource,
+    /Boolean\(value\.setupIntentId\) !== Boolean\(value\.billingConsentAccepted\)/
+  );
+  assert.match(authServiceSource, /SubscriptionStatus\.PENDING_PAYMENT/);
+  assert.match(authServiceSource, /Add a Visa card securely from Billing when you are ready/);
+  assert.match(billingPageSource, /subscription\.status === "PENDING_PAYMENT"/);
+  assert.match(billingPageSource, /\/api\/v1\/billing\/payment-method\/setup-intent/);
+  assert.match(billingPageSource, /\/api\/v1\/billing\/payment-method\/activate/);
+});
+
+test("unauthenticated signup exposes callback and guided registration paths", () => {
+  const routesSource = readRepoFile("apps/api/src/modules/auth/auth.routes.ts");
+  const registrationServiceSource = readRepoFile(
+    "apps/api/src/modules/registration/registration.service.ts"
+  );
+  const registrationPageSource = readRepoFile("apps/app/src/auth/register-page.tsx");
+  const assistantSource = readRepoFile(
+    "apps/app/src/auth/registration-assistant.tsx"
+  );
+  const adminRoutesSource = readRepoFile("apps/api/src/modules/admin/admin.routes.ts");
+
+  assert.match(routesSource, /"\/registration-callback"/);
+  assert.match(routesSource, /"\/registration-assistant"/);
+  assert.match(routesSource, /publicRegistrationRateLimit/);
+  assert.match(registrationServiceSource, /prisma\.registrationLead\.create/);
+  assert.match(registrationServiceSource, /VertexAIProvider/);
+  assert.match(registrationPageSource, /\/api\/v1\/auth\/registration-callback/);
+  assert.match(registrationPageSource, /<RegistrationAssistant/);
+  assert.match(assistantSource, /\/api\/v1\/auth\/registration-assistant/);
+  assert.match(adminRoutesSource, /"\/registration-leads"/);
+  assert.match(adminRoutesSource, /"\/registration-leads\/:id"/);
 });
 
 test("public SetupIntent creation is rate limited", () => {
@@ -102,7 +137,36 @@ test("real-person registration requires and assigns active call-center staff", (
   assert.match(stripeSource, /role: Role\.CALL_CENTER_AGENT/);
   assert.match(authSource, /tx\.callCenterSalonAssignment\.createMany/);
   assert.match(authSource, /assignedHumanAgentCount/);
-  assert.match(authSource, /if \(plan\.operatorTransferIncluded\)/);
+  assert.match(authSource, /if \(stripeRegistration && plan\.operatorTransferIncluded\)/);
+});
+
+test("appointment reminders are configurable and processed outside booking requests", () => {
+  const schemaSource = readRepoFile("apps/api/prisma/schema.prisma");
+  const appointmentsSource = readRepoFile(
+    "apps/api/src/modules/appointments/appointments.service.ts"
+  );
+  const salonRoutesSource = readRepoFile("apps/api/src/modules/salon/salon.routes.ts");
+  const salonServiceSource = readRepoFile("apps/api/src/modules/salon/salon.service.ts");
+  const workerSource = readRepoFile(
+    "apps/api/src/modules/appointments/reminder-worker.ts"
+  );
+  const serverSource = readRepoFile("apps/api/src/server.ts");
+
+  assert.match(schemaSource, /appointmentReminderMinutes\s+Int\s+@default\(60\)/);
+  assert.match(schemaSource, /ownerUpcomingReminderEnabled\s+Boolean\s+@default\(true\)/);
+  assert.match(salonRoutesSource, /z\.literal\(60\)/);
+  assert.match(salonRoutesSource, /z\.literal\(120\)/);
+  assert.match(salonRoutesSource, /z\.literal\(180\)/);
+  assert.match(appointmentsSource, /settings\?\.appointmentReminderMinutes \?\? 60/);
+  assert.match(appointmentsSource, /reminderType: "BEFORE_BOOKING"/);
+  assert.match(salonServiceSource, /reschedulePendingAppointmentReminders/);
+  assert.match(workerSource, /ownerUpcomingReminderEnabled \?\? true/);
+  assert.match(workerSource, /reminderType: "BEFORE_BOOKING"/);
+  assert.match(workerSource, /startTime: \{ gt: now \}/);
+  assert.match(workerSource, /sendPushToAssignedStaff/);
+  assert.match(workerSource, /sendPushToSalonOwner/);
+  assert.match(workerSource, /deliveredAt: null/);
+  assert.match(serverSource, /startAppointmentReminderWorker/);
 });
 
 test("operator transfer is subscription-gated and new salons receive a Lex-ready service catalog", () => {

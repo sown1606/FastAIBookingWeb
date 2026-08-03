@@ -1,8 +1,10 @@
-import { useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
+import { loadStripe } from "@stripe/stripe-js";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/states";
 import { apiGet, apiPost, extractErrorMessage } from "../lib/api";
 import { formatCurrencyCents, formatDateTime } from "../lib/format";
-import { useI18n } from "../lib/i18n";
+import { statusLabelKey, useI18n } from "../lib/i18n";
 import { formatUsPhoneInput } from "../lib/phone";
 
 interface BillingUsage {
@@ -24,7 +26,7 @@ interface BillingUsageResponse {
 interface SubscriptionBilling {
   planCode: "ai_reception" | "human_reception";
   basePriceCents: number;
-  status: "TRIAL" | "ACTIVE" | "PAST_DUE" | "CANCELED";
+  status: "PENDING_PAYMENT" | "TRIAL" | "ACTIVE" | "PAST_DUE" | "CANCELED";
   currentPeriodStart: string;
   currentPeriodEnd: string;
   trialEndsAt: string | null;
@@ -48,6 +50,88 @@ interface SubscriptionResponse {
   phoneProvisioning: PhoneProvisioning | null;
 }
 
+interface RegistrationBillingConfig {
+  ready: boolean;
+  publishableKey: string | null;
+  trialDays: number;
+}
+
+interface SetupIntentResponse {
+  setupIntentId: string;
+  clientSecret: string;
+}
+
+const DeferredPaymentForm = ({
+  subscription,
+  submitting,
+  error,
+  onActivate,
+  onCancel
+}: {
+  subscription: SubscriptionBilling;
+  submitting: boolean;
+  error: string;
+  onActivate: (setupIntentId: string) => Promise<void>;
+  onCancel: () => void;
+}) => {
+  const { t } = useI18n();
+  const stripe = useStripe();
+  const elements = useElements();
+  const [consented, setConsented] = useState(false);
+  const [cardError, setCardError] = useState("");
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setCardError("");
+    if (!stripe || !elements || !consented) {
+      return;
+    }
+    const result = await stripe.confirmSetup({
+      elements,
+      confirmParams: { return_url: `${window.location.origin}/billing` },
+      redirect: "if_required"
+    });
+    if (result.error || result.setupIntent?.status !== "succeeded") {
+      setCardError(result.error?.message ?? t("auth.register.cardFailed"));
+      return;
+    }
+    await onActivate(result.setupIntent.id);
+  };
+
+  return (
+    <form className="form-grid registration-payment" onSubmit={submit}>
+      <PaymentElement options={{ layout: "tabs", paymentMethodOrder: ["card"] }} />
+      <label className="registration-consent">
+        <input
+          type="checkbox"
+          checked={consented}
+          onChange={(event) => setConsented(event.target.checked)}
+          required
+        />
+        <span>
+          {t("auth.register.billingConsent", {
+            days: 30,
+            price: formatCurrencyCents(subscription.basePriceCents)
+          })}
+        </span>
+      </label>
+      {cardError || error ? <div className="form-error">{cardError || error}</div> : null}
+      <div className="form-actions registration-payment-actions">
+        <button type="button" className="button-secondary" onClick={onCancel} disabled={submitting}>
+          {t("common.cancel")}
+        </button>
+        <button
+          type="submit"
+          className="button-primary"
+          disabled={!stripe || !elements || !consented || submitting}
+        >
+          {submitting ? t("billing.activatingPayment") : t("billing.startTrial")}
+        </button>
+      </div>
+    </form>
+  );
+};
+
 export const BillingPage = () => {
   const { t } = useI18n();
   const [loading, setLoading] = useState(true);
@@ -56,6 +140,17 @@ export const BillingPage = () => {
   const [subscriptionData, setSubscriptionData] = useState<SubscriptionResponse | null>(null);
   const [retryingPhone, setRetryingPhone] = useState(false);
   const [phoneError, setPhoneError] = useState("");
+  const [billingConfig, setBillingConfig] = useState<RegistrationBillingConfig | null>(null);
+  const [setupIntent, setSetupIntent] = useState<SetupIntentResponse | null>(null);
+  const [paymentBusy, setPaymentBusy] = useState(false);
+  const [paymentError, setPaymentError] = useState("");
+  const stripePromise = useMemo(
+    () =>
+      billingConfig?.ready && billingConfig.publishableKey
+        ? loadStripe(billingConfig.publishableKey)
+        : null,
+    [billingConfig]
+  );
 
   const load = async () => {
     setError("");
@@ -67,6 +162,15 @@ export const BillingPage = () => {
       ]);
       setBilling(usageResult);
       setSubscriptionData(subscriptionResult);
+      if (subscriptionResult.subscription?.status === "PENDING_PAYMENT") {
+        try {
+          setBillingConfig(
+            await apiGet<RegistrationBillingConfig>("/api/v1/billing/registration-config")
+          );
+        } catch {
+          setBillingConfig(null);
+        }
+      }
     } catch (loadError) {
       setError(extractErrorMessage(loadError));
     } finally {
@@ -93,6 +197,38 @@ export const BillingPage = () => {
   const { currentUsage } = billing;
   const subscription = subscriptionData?.subscription;
   const phoneProvisioning = subscriptionData?.phoneProvisioning;
+
+  const beginPaymentSetup = async () => {
+    setPaymentBusy(true);
+    setPaymentError("");
+    try {
+      setSetupIntent(
+        await apiPost<SetupIntentResponse>("/api/v1/billing/payment-method/setup-intent")
+      );
+    } catch (setupError) {
+      setPaymentError(extractErrorMessage(setupError));
+    } finally {
+      setPaymentBusy(false);
+    }
+  };
+
+  const activatePayment = async (setupIntentId: string) => {
+    setPaymentBusy(true);
+    setPaymentError("");
+    try {
+      const next = await apiPost<SubscriptionResponse, { setupIntentId: string }>(
+        "/api/v1/billing/payment-method/activate",
+        { setupIntentId },
+        { timeout: 45_000 }
+      );
+      setSubscriptionData(next);
+      setSetupIntent(null);
+    } catch (activationError) {
+      setPaymentError(extractErrorMessage(activationError));
+    } finally {
+      setPaymentBusy(false);
+    }
+  };
 
   const retryPhoneProvisioning = async () => {
     setRetryingPhone(true);
@@ -133,7 +269,11 @@ export const BillingPage = () => {
             </div>
             <div>
               <span className="muted">{t("billing.subscriptionStatus")}</span>
-              <strong>{subscription.status}</strong>
+              <strong>
+                {statusLabelKey(subscription.status)
+                  ? t(statusLabelKey(subscription.status)!)
+                  : subscription.status}
+              </strong>
             </div>
             <div>
               <span className="muted">{t("billing.visaCard")}</span>
@@ -149,10 +289,48 @@ export const BillingPage = () => {
               {t("billing.trialEnds")} {formatDateTime(subscription.trialEndsAt)}
             </p>
           ) : null}
+          {subscription.status === "PENDING_PAYMENT" ? (
+            <div className="stack compact-stack">
+              <div className="notice">{t("billing.paymentReminder")}</div>
+              {setupIntent && stripePromise ? (
+                <Elements
+                  stripe={stripePromise}
+                  options={{
+                    clientSecret: setupIntent.clientSecret,
+                    appearance: { theme: "stripe" }
+                  }}
+                >
+                  <DeferredPaymentForm
+                    subscription={subscription}
+                    submitting={paymentBusy}
+                    error={paymentError}
+                    onActivate={activatePayment}
+                    onCancel={() => {
+                      setPaymentError("");
+                      setSetupIntent(null);
+                    }}
+                  />
+                </Elements>
+              ) : (
+                <div className="form-actions">
+                  <button
+                    type="button"
+                    className="button-primary"
+                    disabled={paymentBusy || !stripePromise}
+                    onClick={() => void beginPaymentSetup()}
+                  >
+                    {paymentBusy ? t("billing.preparingPayment") : t("billing.addVisa")}
+                  </button>
+                </div>
+              )}
+              {paymentError && !setupIntent ? <div className="form-error">{paymentError}</div> : null}
+              {!stripePromise ? <small className="muted">{t("billing.paymentUnavailable")}</small> : null}
+            </div>
+          ) : null}
         </section>
       ) : null}
 
-      <section className="card">
+      {subscription?.status !== "PENDING_PAYMENT" ? <section className="card">
         <h2>{t("billing.phoneTitle")}</h2>
         {phoneProvisioning?.status === "ACTIVE" && phoneProvisioning.phoneNumber ? (
           <div className="metrics-grid">
@@ -188,7 +366,12 @@ export const BillingPage = () => {
             </div>
           </>
         )}
-      </section>
+      </section> : (
+        <section className="card">
+          <h2>{t("billing.phoneTitle")}</h2>
+          <p className="muted">{t("billing.phoneAfterPayment")}</p>
+        </section>
+      )}
 
       <section className="card">
         <h2>{t("billing.title")}</h2>

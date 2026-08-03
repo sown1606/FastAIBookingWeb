@@ -1,3 +1,4 @@
+import { AppointmentStatus } from "@prisma/client";
 import { prisma } from "../../db/prisma";
 import { createAuditLog } from "../../lib/audit";
 import { AppError } from "../../lib/errors";
@@ -30,6 +31,8 @@ interface UpdateSalonSettingsInput {
   currency?: string;
   locale?: string;
   bookingLeadTimeMinutes?: number;
+  appointmentReminderMinutes?: 60 | 120 | 180;
+  ownerUpcomingReminderEnabled?: boolean;
   cancellationPolicy?: string | null;
   aiReceptionEnabled?: boolean;
   aiTransferRingCount?: number;
@@ -121,6 +124,51 @@ const sendCallCenterRoutingNotePush = async (salonId: string): Promise<void> => 
       "Call center routing-note push notification failed."
     );
   }
+};
+
+const reschedulePendingAppointmentReminders = async (
+  salonId: string,
+  reminderMinutes: number
+): Promise<void> => {
+  const reminders = await prisma.staffReminder.findMany({
+    where: {
+      salonId,
+      reminderType: "BEFORE_BOOKING",
+      deliveredAt: null,
+      appointment: {
+        status: {
+          in: [AppointmentStatus.SCHEDULED, AppointmentStatus.CONFIRMED]
+        },
+        startTime: {
+          gt: new Date()
+        }
+      }
+    },
+    select: {
+      id: true,
+      appointment: {
+        select: {
+          startTime: true
+        }
+      }
+    }
+  });
+  if (!reminders.length) {
+    return;
+  }
+  await prisma.$transaction(
+    reminders.map((reminder) =>
+      prisma.staffReminder.update({
+        where: { id: reminder.id },
+        data: {
+          remindAt: new Date(
+            reminder.appointment.startTime.getTime() - reminderMinutes * 60 * 1000
+          ),
+          message: `Your appointment starts in ${reminderMinutes / 60} hour${reminderMinutes === 60 ? "" : "s"}.`
+        }
+      })
+    )
+  );
 };
 
 export const getSalonProfile = async (salonId: string) => {
@@ -273,6 +321,8 @@ export const updateSalonSettings = async (
       currency: data.currency,
       locale: data.locale,
       bookingLeadTimeMinutes: data.bookingLeadTimeMinutes ?? 0,
+      appointmentReminderMinutes: data.appointmentReminderMinutes ?? 60,
+      ownerUpcomingReminderEnabled: data.ownerUpcomingReminderEnabled ?? true,
       cancellationPolicy: data.cancellationPolicy,
       aiForwardingEnabled: data.aiReceptionEnabled ?? false,
       aiReceptionEnabled: data.aiReceptionEnabled ?? false,
@@ -292,6 +342,10 @@ export const updateSalonSettings = async (
       ...data
     }
   });
+
+  if (input.appointmentReminderMinutes !== undefined) {
+    await reschedulePendingAppointmentReminders(salonId, input.appointmentReminderMinutes);
+  }
 
   await createAuditLog({
     salonId,
