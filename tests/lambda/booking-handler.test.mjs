@@ -1311,10 +1311,10 @@ test("Connect AI reception has one reachable greeting and no outer service promp
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:start-timeout-ms:*:*"], "5000");
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:*:*"], "2000");
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:max-length-ms:*:*"], "15000");
-  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName"], "2500");
+  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:serviceName"], "1600");
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedDate"], "1300");
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:requestedTime"], "1800");
-  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference"], "2000");
+  assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:staffPreference"], "1400");
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:customerName"], "1200");
   assert.equal(primary.Parameters.LexSessionAttributes["x-amz-lex:audio:end-timeout-ms:BookAppointmentIntent:bookingConfirmation"], "700");
   assert.equal(primary.Parameters.LexSessionAttributes.lastAskedSlot, "serviceName");
