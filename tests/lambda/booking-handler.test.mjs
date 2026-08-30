@@ -699,7 +699,7 @@ test("Lex fulfillment progress updates cover slow booking, appointment changes, 
   }
 });
 
-test("current Lex source acknowledges the slow initial, service, and staff dialog hooks", () => {
+test("current Lex source acknowledges the slow initial hook without changing slot capture flow", () => {
   const lexRoot = path.join(repoRoot, "infra/aws/lex/FastAIBookingBot-v10");
   const intentRoot = path.join(
     lexRoot,
@@ -723,17 +723,8 @@ test("current Lex source acknowledges the slow initial, service, and staff dialo
       readFileSync(path.join(intentRoot, "Slots", slotName, "Slot.json"), "utf8")
     );
     const capture = slot.valueElicitationSetting.slotCaptureSetting;
-    assert.equal(
-      capture.captureResponse.messageGroupsList[0].message.plainTextMessage.value,
-      waitPrompt,
-      `${slotName} wait prompt`
-    );
-    assert.equal(capture.captureResponse.allowInterrupt, true, `${slotName} wait prompt interrupt`);
-    assert.equal(
-      capture.captureNextStep.dialogAction.type,
-      "InvokeDialogCodeHook",
-      `${slotName} wait prompt continues through the existing dialog hook`
-    );
+    assert.equal(capture.captureResponse, null, `${slotName} capture response remains unchanged`);
+    assert.equal(capture.captureNextStep, null, `${slotName} capture next step remains unchanged`);
     assert.equal(capture.codeHook.active, true, `${slotName} dialog hook remains active`);
     assert.equal(
       capture.codeHook.enableCodeHookInvocation,

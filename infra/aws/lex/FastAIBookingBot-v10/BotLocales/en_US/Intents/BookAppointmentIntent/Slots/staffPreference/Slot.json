@@ -58,32 +58,8 @@
           "timeoutConditional": null
         }
       },
-      "captureResponse": {
-        "messageGroupsList": [
-          {
-            "message": {
-              "plainTextMessage": {
-                "value": "Please wait. Let me check..."
-              }
-            },
-            "variations": null
-          }
-        ],
-        "allowInterrupt": true
-      },
-      "captureNextStep": {
-        "sessionAttributes": null,
-        "intent": {
-          "name": null,
-          "slots": null
-        },
-        "dialogAction": {
-          "type": "InvokeDialogCodeHook",
-          "slotToElicit": null,
-          "suppressNextMessage": null,
-          "intentsInScope": null
-        }
-      },
+      "captureResponse": null,
+      "captureNextStep": null,
       "captureConditional": null,
       "failureResponse": null,
       "failureNextStep": {
