@@ -699,6 +699,67 @@ test("Lex fulfillment progress updates cover slow booking, appointment changes, 
   }
 });
 
+test("current Lex source acknowledges the slow initial, service, and staff dialog hooks", () => {
+  const lexRoot = path.join(repoRoot, "infra/aws/lex/FastAIBookingBot-v10");
+  const intentRoot = path.join(
+    lexRoot,
+    "BotLocales/en_US/Intents/BookAppointmentIntent"
+  );
+  const waitPrompt = "Please wait. Let me check...";
+  const intent = JSON.parse(readFileSync(path.join(intentRoot, "Intent.json"), "utf8"));
+
+  assert.equal(
+    intent.initialResponseSetting.initialResponse.messageGroupsList[0].message.plainTextMessage.value,
+    waitPrompt
+  );
+  assert.equal(intent.initialResponseSetting.initialResponse.allowInterrupt, true);
+  assert.equal(
+    intent.initialResponseSetting.nextStep.dialogAction.type,
+    "InvokeDialogCodeHook"
+  );
+
+  for (const slotName of ["serviceName", "staffPreference"]) {
+    const slot = JSON.parse(
+      readFileSync(path.join(intentRoot, "Slots", slotName, "Slot.json"), "utf8")
+    );
+    const capture = slot.valueElicitationSetting.slotCaptureSetting;
+    assert.equal(
+      capture.captureResponse.messageGroupsList[0].message.plainTextMessage.value,
+      waitPrompt,
+      `${slotName} wait prompt`
+    );
+    assert.equal(capture.captureResponse.allowInterrupt, true, `${slotName} wait prompt interrupt`);
+    assert.equal(
+      capture.captureNextStep.dialogAction.type,
+      "InvokeDialogCodeHook",
+      `${slotName} wait prompt continues through the existing dialog hook`
+    );
+    assert.equal(capture.codeHook.active, true, `${slotName} dialog hook remains active`);
+    assert.equal(
+      capture.codeHook.enableCodeHookInvocation,
+      true,
+      `${slotName} dialog hook remains enabled`
+    );
+  }
+
+  for (const slotName of [
+    "bookingConfirmation",
+    "customerName",
+    "customerPhone",
+    "requestedDate",
+    "requestedTime"
+  ]) {
+    const slot = JSON.parse(
+      readFileSync(path.join(intentRoot, "Slots", slotName, "Slot.json"), "utf8")
+    );
+    assert.equal(
+      slot.valueElicitationSetting.slotCaptureSetting.captureResponse,
+      null,
+      `${slotName} remains unchanged`
+    );
+  }
+});
+
 test("Lex locale keeps Neural STT and avoids unified filler ASR regressions", () => {
   const locale = JSON.parse(
     readFileSync(

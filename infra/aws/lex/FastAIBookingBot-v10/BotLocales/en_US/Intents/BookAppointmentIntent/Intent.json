@@ -280,7 +280,19 @@
         "intentsInScope": null
       }
     },
-    "initialResponse": null
+    "initialResponse": {
+      "messageGroupsList": [
+        {
+          "message": {
+            "plainTextMessage": {
+              "value": "Please wait. Let me check..."
+            }
+          },
+          "variations": null
+        }
+      ],
+      "allowInterrupt": true
+    }
   },
   "inputContexts": null,
   "outputContexts": null,
